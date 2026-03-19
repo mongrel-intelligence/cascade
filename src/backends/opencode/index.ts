@@ -1,15 +1,5 @@
-import { spawn } from 'node:child_process';
-import { type Server, createServer } from 'node:net';
-
 import { createOpencodeClient } from '@opencode-ai/sdk/client';
-import type {
-	AssistantMessage,
-	Config,
-	Event,
-	Part,
-	Permission,
-	ToolPart,
-} from '@opencode-ai/sdk/client';
+import type { AssistantMessage, Config, Part } from '@opencode-ai/sdk/client';
 
 import { logger } from '../../utils/logging.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
@@ -20,18 +10,19 @@ import {
 } from '../nativeToolRetry.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { runContinuationLoop } from '../shared/continuationLoop.js';
-import { appendEngineLog } from '../shared/engineLog.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
-import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
-import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
+import { buildPermissionConfig } from './permissions.js';
+import {
+	type OpenCodeServerState,
+	attachServerState,
+	formatOpenCodeServerExitError,
+	startOpenCodeServer,
+} from './server.js';
 import { OpenCodeSettingsSchema, resolveOpenCodeSettings } from './settings.js';
-
-function withTrailingSlashRemoved(value: string): string {
-	return value.endsWith('/') ? value.slice(0, -1) : value;
-}
+import { type OpenCodeStreamState, getPartialOutput, processStreamEvent } from './stream.js';
 
 export function resolveOpenCodeModel(cascadeModel: string): string {
 	if (cascadeModel.includes('/') && !cascadeModel.includes(':')) return cascadeModel;
@@ -50,49 +41,8 @@ export function resolveOpenCodeModel(cascadeModel: string): string {
 	return DEFAULT_OPENCODE_MODEL;
 }
 
-type PermissionDecision = 'allow' | 'deny';
-
-type OpenCodePermissionConfig = NonNullable<Config['permission']>;
-
-export function buildPermissionConfig(
-	nativeToolCapabilities: string[] | undefined,
-	webSearch: boolean,
-): OpenCodePermissionConfig {
-	const canWrite = nativeToolCapabilities?.includes('fs:write') ?? false;
-	const canExec = nativeToolCapabilities?.includes('shell:exec') ?? false;
-
-	return {
-		edit: canWrite ? 'allow' : 'deny',
-		bash: canExec ? 'allow' : 'deny',
-		webfetch: webSearch ? 'allow' : 'deny',
-		doom_loop: 'deny',
-		external_directory: 'deny',
-	};
-}
-
-function normalizePermissionDecision(decision: PermissionDecision): 'always' | 'reject' {
-	return decision === 'allow' ? 'always' : 'reject';
-}
-
-export function resolvePermissionDecision(
-	permission: Pick<Permission, 'type'>,
-	config: OpenCodePermissionConfig,
-): PermissionDecision {
-	switch (permission.type) {
-		case 'edit':
-			return config.edit === 'allow' ? 'allow' : 'deny';
-		case 'bash':
-			return config.bash === 'allow' ? 'allow' : 'deny';
-		case 'webfetch':
-			return config.webfetch === 'allow' ? 'allow' : 'deny';
-		case 'external_directory':
-			return config.external_directory === 'allow' ? 'allow' : 'deny';
-		case 'doom_loop':
-			return config.doom_loop === 'allow' ? 'allow' : 'deny';
-		default:
-			return 'deny';
-	}
-}
+// Re-export for backward compatibility (tests import buildPermissionConfig from index.ts)
+export { buildPermissionConfig } from './permissions.js';
 
 function buildConfig(
 	input: AgentExecutionPlan,
@@ -120,99 +70,6 @@ function buildConfig(
 	};
 }
 
-async function reservePort(): Promise<number> {
-	return await new Promise<number>((resolve, reject) => {
-		const server: Server = createServer();
-		server.once('error', reject);
-		server.listen(0, '127.0.0.1', () => {
-			const address = server.address();
-			if (!address || typeof address === 'string') {
-				server.close(() => reject(new Error('Failed to reserve OpenCode server port')));
-				return;
-			}
-			server.close((error) => {
-				if (error) {
-					reject(error);
-					return;
-				}
-				resolve(address.port);
-			});
-		});
-	});
-}
-
-async function startOpenCodeServer(
-	config: Config,
-	projectSecrets: Record<string, string> | undefined,
-	engineLogPath: string | undefined,
-	cliToolsDir: string,
-	nativeToolShimDir?: string,
-): Promise<{ child: ReturnType<typeof spawn>; url: string }> {
-	const port = await reservePort();
-	const host = '127.0.0.1';
-	const env = {
-		...buildEnv(projectSecrets, cliToolsDir, nativeToolShimDir),
-		OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-	};
-	const args = ['serve', `--hostname=${host}`, `--port=${port}`];
-
-	appendEngineLog(
-		engineLogPath,
-		`$ opencode ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`,
-	);
-
-	return await new Promise((resolve, reject) => {
-		const child = spawn('opencode', args, {
-			env,
-			stdio: ['ignore', 'pipe', 'pipe'],
-		});
-		let output = '';
-		let settled = false;
-
-		const finish = (handler: () => void) => {
-			if (settled) return;
-			settled = true;
-			handler();
-		};
-
-		const onChunk = (chunk: Buffer | string) => {
-			const text = chunk.toString();
-			output += text;
-			appendEngineLog(engineLogPath, text);
-			for (const line of output.split('\n')) {
-				if (!line.startsWith('opencode server listening')) continue;
-				const match = line.match(/on\s+(https?:\/\/[^\s]+)/);
-				if (!match) continue;
-				finish(() => resolve({ child, url: withTrailingSlashRemoved(match[1]) }));
-				return;
-			}
-		};
-
-		child.stdout.on('data', onChunk);
-		child.stderr.on('data', onChunk);
-		child.once('error', (error) => {
-			finish(() => {
-				reject(
-					error instanceof Error && 'code' in error && error.code === 'ENOENT'
-						? new Error(
-								'OpenCode CLI not found in PATH. Install `opencode-ai` in the worker image.',
-							)
-						: error,
-				);
-			});
-		});
-		child.once('exit', (code) => {
-			finish(() => {
-				reject(
-					new Error(
-						`OpenCode server exited with code ${code ?? 1}${output.trim() ? `\n${output}` : ''}`,
-					),
-				);
-			});
-		});
-	});
-}
-
 function buildPromptParts(taskPrompt: string): Array<{ type: 'text'; text: string }> {
 	return [{ type: 'text', text: taskPrompt }];
 }
@@ -224,66 +81,6 @@ function getTextOutput(parts: Part[]): string {
 		.map((part) => part.text)
 		.join('')
 		.trim();
-}
-
-function getPartDelta(part: Part, delta?: string): string | undefined {
-	if (delta) return delta;
-	if (part.type !== 'text' || part.synthetic || part.ignored) return undefined;
-	return part.text;
-}
-
-function appendPartialOutput(state: OpenCodeStreamState, text: string): void {
-	const trimmed = text.trim();
-	if (!trimmed) return;
-	state.partialOutput.push(trimmed);
-}
-
-function getPartialOutput(state: OpenCodeStreamState | undefined): string {
-	if (!state) return '';
-	return state.partialOutput.join('\n').trim();
-}
-
-function summarizeServerOutput(serverState: OpenCodeServerState): string | undefined {
-	const summary = [serverState.stderr.trim(), serverState.stdout.trim()].filter(Boolean).join('\n');
-	if (!summary) return undefined;
-	return summary.length > 500 ? `${summary.slice(0, 500)}...` : summary;
-}
-
-function formatOpenCodeServerExitError(serverState: OpenCodeServerState): string {
-	const summary = summarizeServerOutput(serverState);
-	return summary
-		? `OpenCode server exited unexpectedly with code ${serverState.exitCode ?? 1}: ${summary}`
-		: `OpenCode server exited unexpectedly with code ${serverState.exitCode ?? 1}`;
-}
-
-function reportToolPart(
-	input: AgentExecutionPlan,
-	part: ToolPart,
-	reportedToolCalls: Set<string>,
-): void {
-	if (reportedToolCalls.has(part.callID)) return;
-	if (part.state.status === 'pending') return;
-	reportedToolCalls.add(part.callID);
-	input.progressReporter.onToolCall(part.tool, part.state.input);
-}
-
-function storeUsage(
-	input: AgentExecutionPlan,
-	model: string,
-	llmCallCount: number,
-	part: Extract<Part, { type: 'step-finish' }>,
-): void {
-	logLlmCall({
-		runId: input.runId,
-		callNumber: llmCallCount,
-		model,
-		inputTokens: part.tokens.input,
-		outputTokens: part.tokens.output,
-		cachedTokens: part.tokens.cache.read,
-		costUsd: part.cost,
-		response: JSON.stringify(part),
-		engineLabel: 'OpenCode',
-	});
 }
 
 async function cleanupSession(
@@ -299,120 +96,6 @@ async function cleanupSession(
 		// Best-effort cleanup
 	}
 }
-
-interface OpenCodeStreamState {
-	sessionId: string;
-	model: string;
-	input: AgentExecutionPlan;
-	permissionConfig: OpenCodePermissionConfig;
-	reportedToolCalls: Set<string>;
-	seenTextPartIds: Set<string>;
-	iterationCount: number;
-	llmCallCount: number;
-	totalCost: number;
-	partialOutput: string[];
-	toolCallCount: number;
-	finalError?: string;
-	idleResolver?: () => void;
-	idleRejecter?: (error: Error) => void;
-}
-
-interface OpenCodeServerState {
-	stdout: string;
-	stderr: string;
-	exitCode?: number;
-}
-
-async function handlePermissionEvent(
-	client: ReturnType<typeof createOpencodeClient>,
-	event: Extract<EventPayload, { type: 'permission.updated' }>,
-	state: OpenCodeStreamState,
-): Promise<boolean> {
-	if (event.properties.sessionID !== state.sessionId) return false;
-	const decision = resolvePermissionDecision(event.properties, state.permissionConfig);
-	await retryNativeToolOperation(
-		() =>
-			client.postSessionIdPermissionsPermissionId({
-				path: { id: state.sessionId, permissionID: event.properties.id },
-				body: { response: normalizePermissionDecision(decision) },
-				throwOnError: true,
-			}),
-		{
-			logWriter: state.input.logWriter,
-			operation: 'opencode.permission.respond',
-		},
-	);
-	return true;
-}
-
-function handleSessionTerminalEvent(event: EventPayload, state: OpenCodeStreamState): boolean {
-	if (
-		event.type === 'session.error' &&
-		(!event.properties.sessionID || event.properties.sessionID === state.sessionId)
-	) {
-		state.finalError =
-			typeof event.properties.error?.data?.message === 'string'
-				? event.properties.error.data.message
-				: event.properties.error?.name;
-		state.idleRejecter?.(new Error(state.finalError ?? 'OpenCode session error'));
-		return true;
-	}
-
-	if (event.type === 'session.idle' && event.properties.sessionID === state.sessionId) {
-		state.idleResolver?.();
-		return true;
-	}
-
-	if (
-		event.type === 'session.status' &&
-		event.properties.sessionID === state.sessionId &&
-		event.properties.status.type === 'idle'
-	) {
-		state.idleResolver?.();
-		return true;
-	}
-
-	return false;
-}
-
-async function handleMessagePartUpdated(
-	event: Extract<EventPayload, { type: 'message.part.updated' }>,
-	state: OpenCodeStreamState,
-): Promise<void> {
-	if (event.properties.part.sessionID !== state.sessionId) return;
-
-	const part = event.properties.part;
-	if (part.type === 'step-start') {
-		state.iterationCount += 1;
-		await state.input.progressReporter.onIteration(state.iterationCount, state.input.maxIterations);
-		return;
-	}
-
-	if (part.type === 'step-finish') {
-		state.llmCallCount += 1;
-		state.totalCost += part.cost;
-		storeUsage(state.input, state.model, state.llmCallCount, part);
-		return;
-	}
-
-	if (part.type === 'tool') {
-		state.toolCallCount += 1;
-		reportToolPart(state.input, part, state.reportedToolCalls);
-		return;
-	}
-
-	const textDelta = getPartDelta(part, event.properties.delta);
-	if (!textDelta) return;
-	if (!event.properties.delta && state.seenTextPartIds.has(part.id)) return;
-	state.seenTextPartIds.add(part.id);
-	appendPartialOutput(state, textDelta);
-	state.input.logWriter('INFO', 'OpenCode text', {
-		text: textDelta.length > 300 ? `${textDelta.slice(0, 300)}...` : textDelta,
-	});
-	state.input.progressReporter.onText(textDelta);
-}
-
-type EventPayload = Event;
 
 interface OpenCodeTurnResult {
 	result: AgentEngineResult;
@@ -578,55 +261,6 @@ function buildOpenCodeTurnResult(
 		: buildOpenCodeResultFromState(input, state);
 }
 
-async function processStreamEvent(
-	client: ReturnType<typeof createOpencodeClient>,
-	event: EventPayload,
-	state: OpenCodeStreamState,
-): Promise<void> {
-	appendEngineLog(state.input.engineLogPath, `${JSON.stringify(event)}\n`);
-	if (!event || !('type' in event)) return;
-	if (event.type === 'permission.updated' && (await handlePermissionEvent(client, event, state))) {
-		return;
-	}
-	if (handleSessionTerminalEvent(event, state)) return;
-	if (event.type === 'message.part.updated') {
-		await handleMessagePartUpdated(event, state);
-	}
-}
-
-function logOpenCodeStart(
-	input: AgentExecutionPlan,
-	model: string,
-	agent: 'build' | 'plan',
-	webSearch: boolean,
-	hasOffloadedContext: boolean,
-): void {
-	input.logWriter('INFO', 'Starting OpenCode execution', {
-		agentType: input.agentType,
-		model,
-		opencodeAgent: agent,
-		repoDir: input.repoDir,
-		maxIterations: input.maxIterations,
-		webSearch,
-		hasOffloadedContext,
-	});
-}
-
-function attachServerState(
-	server: Awaited<ReturnType<typeof startOpenCodeServer>>,
-	serverState: OpenCodeServerState,
-): void {
-	server.child.stdout?.on('data', (chunk: Buffer | string) => {
-		serverState.stdout += chunk.toString();
-	});
-	server.child.stderr?.on('data', (chunk: Buffer | string) => {
-		serverState.stderr += chunk.toString();
-	});
-	server.child.once('exit', (code) => {
-		serverState.exitCode = code ?? 1;
-	});
-}
-
 async function createOpenCodeSession(
 	client: ReturnType<typeof createOpencodeClient>,
 	input: AgentExecutionPlan,
@@ -668,6 +302,24 @@ function createOpenCodeStreamState(
 		partialOutput: [],
 		toolCallCount: 0,
 	};
+}
+
+function logOpenCodeStart(
+	input: AgentExecutionPlan,
+	model: string,
+	agent: 'build' | 'plan',
+	webSearch: boolean,
+	hasOffloadedContext: boolean,
+): void {
+	input.logWriter('INFO', 'Starting OpenCode execution', {
+		agentType: input.agentType,
+		model,
+		opencodeAgent: agent,
+		repoDir: input.repoDir,
+		maxIterations: input.maxIterations,
+		webSearch,
+		hasOffloadedContext,
+	});
 }
 
 async function runOpenCodeTurnLoop(
