@@ -1,0 +1,75 @@
+vars: {
+  d2-config: {
+    theme-id: 300
+  }
+}
+
+SCM: {
+  github
+  style: {
+    shadow: true
+    fill: DarkBlue
+  }
+}
+
+PM: {
+  trello
+  jira
+  style: {
+    shadow: true
+    fill: Orange
+  }
+}
+
+CASCADE: {
+  router
+  api
+  worker manager: {
+    worker1: {
+      agent harness
+      cascade tools
+      checked out repo
+    }
+    worker2: {
+      "..."
+    }
+    worker N: {
+      "..."
+    }
+  }
+
+  router -> QUEUE
+  QUEUE -> worker manager
+
+  api <-> DB
+  router <-> DB
+  worker manager <-> DB
+
+  DB: {
+    shape: cylinder
+  }
+
+  QUEUE: {
+    shape: queue
+  }
+}
+
+client: {
+  style: {
+    shadow: true
+    fill: Beige
+  }
+  dashboard
+  cli
+}
+
+client.dashboard <-> CASCADE.api
+client.cli <-> CASCADE.api
+
+SCM -> CASCADE.router: webhook triggers
+PM -> CASCADE.router: webhook triggers
+
+CASCADE.worker manager -> PM: updates, comments
+CASCADE.worker manager -> SCM: PRs, reviews, comments
+SCM -> CASCADE.worker manager: repo + PR contents
+
