@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,7 @@ import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../contextFiles.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { appendEngineLog } from '../shared/engineLog.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
@@ -61,11 +62,6 @@ type CodexLineContext = {
 	/** Accumulator for the turn currently in progress. Reset on turn.started/thread.started. */
 	currentTurn: CodexTurnAccumulator;
 };
-
-function appendEngineLog(path: string | undefined, chunk: string): void {
-	if (!path || chunk.length === 0) return;
-	appendFileSync(path, chunk, 'utf-8');
-}
 
 function tomlString(value: string): string {
 	return JSON.stringify(value);
