@@ -684,6 +684,13 @@ async function runOpenCodeTurnLoop(
 		logWriter: input.logWriter,
 		engineLabel: 'OpenCode',
 		executeTurn: async ({ promptText }) => {
+			// Snapshot cost before this turn so we can compute a per-turn delta.
+			// state.totalCost is a cumulative running total across all turns (it
+			// is never reset between continuation turns), so we must subtract the
+			// pre-turn value to avoid double-counting when the shared loop
+			// accumulates cost on its own side.
+			const costBeforeTurn = state.totalCost;
+
 			const eventAbort = new AbortController();
 			const eventStream = await retryNativeToolOperation(
 				() =>
@@ -721,8 +728,19 @@ async function runOpenCodeTurnLoop(
 				await idlePromise;
 
 				const { result: turnResult } = buildOpenCodeTurnResult(input, state, promptResponse);
+				// Compute per-turn cost delta so the shared loop accumulates correctly.
+				// state.totalCost is a cumulative running total across ALL continuation
+				// turns (accumulated via step-finish stream events and never reset between
+				// turns). If we returned the cumulative value directly, the shared loop
+				// would add it on top of what it already accumulated and double-count.
+				//
+				// Example: Turn 1 streams $0.30 → state.totalCost = 0.30, loop total = 0.30.
+				//          Turn 2 streams $0.20 more → state.totalCost = 0.50.
+				//          Without the delta, loop total = 0.30 + 0.50 = $0.80 (wrong).
+				//          With the delta (0.50 - 0.30 = 0.20), loop total = 0.30 + 0.20 = $0.50 (correct).
+				const perTurnCostDelta = state.totalCost - costBeforeTurn;
 				return {
-					result: turnResult,
+					result: { ...turnResult, cost: perTurnCostDelta },
 					toolCallCount: state.toolCallCount,
 				};
 			} finally {
