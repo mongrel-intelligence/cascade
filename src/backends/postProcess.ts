@@ -1,4 +1,10 @@
 import { logger } from '../utils/logging.js';
+import {
+	COMPLETION_ERROR_NO_PM_WRITE,
+	COMPLETION_ERROR_NO_PR,
+	COMPLETION_ERROR_NO_PUSH,
+	COMPLETION_ERROR_NO_REVIEW,
+} from './completion.js';
 import type { AgentEngine, AgentEngineResult } from './types.js';
 
 /**
@@ -29,7 +35,7 @@ export function postProcessResult(
 			prEvidenceSource: result.prEvidence?.source ?? null,
 		});
 		result.success = false;
-		result.error = 'Agent completed but no authoritative PR creation was recorded';
+		result.error = COMPLETION_ERROR_NO_PR;
 	}
 
 	if (options?.requiresReview && result.success && !options.hasAuthoritativeReview) {
@@ -38,7 +44,7 @@ export function postProcessResult(
 			engine: engine.definition.id,
 		});
 		result.success = false;
-		result.error = 'Agent completed but no authoritative PR review submission was recorded';
+		result.error = COMPLETION_ERROR_NO_REVIEW;
 	}
 
 	if (
@@ -51,7 +57,7 @@ export function postProcessResult(
 			engine: engine.definition.id,
 		});
 		result.success = false;
-		result.error = 'Agent completed but no authoritative pushed changes were recorded';
+		result.error = COMPLETION_ERROR_NO_PUSH;
 	}
 
 	if (options?.requiresPMWrite && result.success && options.hasPMWrite === false) {
@@ -60,6 +66,6 @@ export function postProcessResult(
 			engine: engine.definition.id,
 		});
 		result.success = false;
-		result.error = 'Agent completed but no PM write (checklist creation) was recorded';
+		result.error = COMPLETION_ERROR_NO_PM_WRITE;
 	}
 }
