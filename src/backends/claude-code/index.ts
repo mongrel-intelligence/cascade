@@ -17,13 +17,8 @@ import { logger } from '../../utils/logging.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
 import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
-import {
-	type CompletionRequirements,
-	applyCompletionEvidence,
-	getCompletionFailure,
-	readCompletionEvidence,
-} from '../completion.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { buildEngineResult } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
@@ -517,45 +512,6 @@ async function cleanupPersistedSession(repoDir: string): Promise<void> {
 	}
 }
 
-type ContinuationDecision =
-	| { done: true; result: AgentEngineResult }
-	| { done: false; promptText: string };
-
-/**
- * Check completion requirements and decide whether to continue or return a final result.
- * Logs the continuation warning when a new turn is needed.
- */
-function decideContinuation(
-	result: AgentEngineResult,
-	completionRequirements: CompletionRequirements | undefined,
-	continuationTurns: number,
-	maxContinuationTurns: number,
-	totalCost: number | undefined,
-	logWriter: AgentExecutionPlan['logWriter'],
-	toolCallCount: number,
-): ContinuationDecision {
-	const completionFailure = getCompletionFailure(
-		completionRequirements,
-		readCompletionEvidence(completionRequirements),
-	);
-	if (!completionFailure) {
-		return { done: true, result: { ...result, cost: totalCost } };
-	}
-	if (continuationTurns >= maxContinuationTurns) {
-		return {
-			done: true,
-			result: { ...result, success: false, error: completionFailure.error, cost: totalCost },
-		};
-	}
-	logWriter('WARN', 'Claude Code completion check failed; continuing session', {
-		reason: completionFailure.error,
-		continuationTurn: continuationTurns + 1,
-		maxContinuationTurns,
-		toolCallCount,
-	});
-	return { done: false, promptText: completionFailure.continuationPrompt };
-}
-
 /**
  * Claude Code SDK backend for CASCADE.
  *
@@ -644,85 +600,66 @@ export class ClaudeCodeEngine implements AgentEngine {
 		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
 		const sdkSettingsOptions = buildSettingsOptions(rawEngineSettings);
 
-		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
-		let continuationTurns = 0;
 		// Use AsyncIterable prompt for the first turn when images are present; string otherwise.
 		// Continuation turns always use a plain string prompt.
-		let promptInput: string | AsyncIterable<SDKUserMessage> =
+		const initialPromptInput: string | AsyncIterable<SDKUserMessage> =
 			supportedImages.length > 0 ? buildPromptWithImages(taskPrompt, supportedImages) : taskPrompt;
-		let isContinuation = false;
 		let turnCount = 0;
-		let totalCost: number | undefined;
 
-		for (;;) {
-			const stderrChunks: string[] = [];
-			const stream = query({
-				prompt: promptInput,
-				options: {
-					model,
-					systemPrompt,
-					cwd: input.repoDir,
-					additionalDirectories: [getWorkspaceDir()],
-					maxBudgetUsd: input.budgetUsd,
-					permissionMode: 'bypassPermissions',
-					allowDangerouslySkipPermissions: true,
-					tools: sdkTools,
-					allowedTools: sdkTools,
-					persistSession: true,
-					hooks,
-					env,
-					debug: true,
-					stderr: (data: string) => {
-						stderrChunks.push(data);
-						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+		return runContinuationLoop({
+			initialPrompt: taskPrompt,
+			completionRequirements: input.completionRequirements,
+			logWriter: input.logWriter,
+			engineLabel: 'Claude Code',
+			executeTurn: async ({ promptText, isContinuation }) => {
+				// Use the AsyncIterable prompt for the first turn when images are present,
+				// fall back to string for continuation turns (which always use plain text).
+				const promptInput: string | AsyncIterable<SDKUserMessage> =
+					!isContinuation && supportedImages.length > 0 ? initialPromptInput : promptText;
+				const stderrChunks: string[] = [];
+				const stream = query({
+					prompt: promptInput,
+					options: {
+						model,
+						systemPrompt,
+						cwd: input.repoDir,
+						additionalDirectories: [getWorkspaceDir()],
+						maxBudgetUsd: input.budgetUsd,
+						permissionMode: 'bypassPermissions',
+						allowDangerouslySkipPermissions: true,
+						tools: sdkTools,
+						allowedTools: sdkTools,
+						persistSession: true,
+						hooks,
+						env,
+						debug: true,
+						stderr: (data: string) => {
+							stderrChunks.push(data);
+							input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+						},
+						...(isContinuation ? { continue: true } : {}),
+						...sdkSettingsOptions,
 					},
-					...(isContinuation ? { continue: true } : {}),
-					...sdkSettingsOptions,
-				},
-			});
+				});
 
-			const {
-				assistantMessages,
-				resultMessage,
-				turnCount: newTurnCount,
-				toolCallCount,
-			} = await consumeStream(stream, input, model, turnCount);
-			turnCount = newTurnCount;
+				const {
+					assistantMessages,
+					resultMessage,
+					turnCount: newTurnCount,
+					toolCallCount,
+				} = await consumeStream(stream, input, model, turnCount);
+				turnCount = newTurnCount;
 
-			const turnResult = buildResult(
-				assistantMessages,
-				resultMessage,
-				stderrChunks,
-				input,
-				startTime,
-			);
+				const turnResult = buildResult(
+					assistantMessages,
+					resultMessage,
+					stderrChunks,
+					input,
+					startTime,
+				);
 
-			// Accumulate cost across continuation turns
-			if (turnResult.cost !== undefined) {
-				totalCost = (totalCost ?? 0) + turnResult.cost;
-			}
-
-			const result = applyCompletionEvidence(turnResult, input.completionRequirements);
-
-			// Don't continue on non-success results
-			if (!result.success) {
-				return { ...result, cost: totalCost };
-			}
-
-			const decision = decideContinuation(
-				result,
-				input.completionRequirements,
-				continuationTurns,
-				maxContinuationTurns,
-				totalCost,
-				input.logWriter,
-				toolCallCount,
-			);
-			if (decision.done) return decision.result;
-
-			continuationTurns++;
-			promptInput = decision.promptText;
-			isContinuation = true;
-		}
+				return { result: turnResult, toolCallCount };
+			},
+		});
 	}
 }

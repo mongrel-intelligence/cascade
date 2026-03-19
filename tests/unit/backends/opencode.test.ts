@@ -874,7 +874,6 @@ describe('OpenCodeEngine', () => {
 			expect.objectContaining({
 				reason: 'Agent completed but no authoritative PR creation was recorded',
 				continuationTurn: 1,
-				usedStreamedStateFallback: true,
 			}),
 		);
 	});

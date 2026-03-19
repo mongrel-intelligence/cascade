@@ -14,16 +14,12 @@ import type {
 import { logger } from '../../utils/logging.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
 import {
-	applyCompletionEvidence,
-	getCompletionFailure,
-	readCompletionEvidence,
-} from '../completion.js';
-import {
 	formatNativeToolTransportError,
 	isRetryableNativeToolError,
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
@@ -682,81 +678,59 @@ async function runOpenCodeTurnLoop(
 	initialPrompt: string,
 	state: OpenCodeStreamState,
 ): Promise<AgentEngineResult> {
-	const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
-	let continuationTurns = 0;
-	let promptText = initialPrompt;
-	for (;;) {
-		const eventAbort = new AbortController();
-		const eventStream = await retryNativeToolOperation(
-			() =>
-				client.event.subscribe({
-					signal: eventAbort.signal,
-				}),
-			{
-				logWriter: input.logWriter,
-				operation: 'opencode.event.subscribe',
-			},
-		);
+	return runContinuationLoop({
+		initialPrompt,
+		completionRequirements: input.completionRequirements,
+		logWriter: input.logWriter,
+		engineLabel: 'OpenCode',
+		executeTurn: async ({ promptText }) => {
+			const eventAbort = new AbortController();
+			const eventStream = await retryNativeToolOperation(
+				() =>
+					client.event.subscribe({
+						signal: eventAbort.signal,
+					}),
+				{
+					logWriter: input.logWriter,
+					operation: 'opencode.event.subscribe',
+				},
+			);
 
-		const streamTask = (async () => {
-			try {
-				for await (const event of eventStream.stream) {
-					await processStreamEvent(client, event, state);
+			const streamTask = (async () => {
+				try {
+					for await (const event of eventStream.stream) {
+						await processStreamEvent(client, event, state);
+					}
+				} catch (error) {
+					if (eventAbort.signal.aborted) return;
+					state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
 				}
-			} catch (error) {
-				if (eventAbort.signal.aborted) return;
-				state.idleRejecter?.(error instanceof Error ? error : new Error(String(error)));
-			}
-		})();
+			})();
 
-		try {
-			const idlePromise = createIdlePromise(state);
-			const promptResponse = await promptOpenCodeSession(
-				client,
-				sessionId,
-				agent,
-				input,
-				promptText,
-				state,
-			);
+			try {
+				const idlePromise = createIdlePromise(state);
+				const promptResponse = await promptOpenCodeSession(
+					client,
+					sessionId,
+					agent,
+					input,
+					promptText,
+					state,
+				);
 
-			await idlePromise;
+				await idlePromise;
 
-			const { result: rawTurnResult, usedStreamedStateFallback } = buildOpenCodeTurnResult(
-				input,
-				state,
-				promptResponse,
-			);
-			const turnResult = applyCompletionEvidence(rawTurnResult, input.completionRequirements);
-			if (!turnResult.success) return turnResult;
-
-			const completionFailure = getCompletionFailure(
-				input.completionRequirements,
-				readCompletionEvidence(input.completionRequirements),
-			);
-			if (!completionFailure) return turnResult;
-			if (continuationTurns >= maxContinuationTurns) {
+				const { result: turnResult } = buildOpenCodeTurnResult(input, state, promptResponse);
 				return {
-					...turnResult,
-					success: false,
-					error: completionFailure.error,
+					result: turnResult,
+					toolCallCount: state.toolCallCount,
 				};
+			} finally {
+				eventAbort.abort();
+				await streamTask;
 			}
-
-			continuationTurns += 1;
-			input.logWriter('WARN', 'OpenCode completion check failed; continuing session', {
-				reason: completionFailure.error,
-				continuationTurn: continuationTurns,
-				maxContinuationTurns,
-				toolCallCount: state.toolCallCount,
-				usedStreamedStateFallback,
-			});
-			promptText = completionFailure.continuationPrompt;
-		} finally {
-			eventAbort.abort();
-			await streamTask;
-		}
-	}
+		},
+	});
 }
 
 /**
