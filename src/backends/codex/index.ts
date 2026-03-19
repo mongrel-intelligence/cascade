@@ -6,13 +6,12 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { writeProjectCredential } from '../../db/repositories/credentialsRepository.js';
-import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
+import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
-import { buildTextPrEvidence } from '../shared/resultBuilder.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
@@ -721,8 +720,10 @@ export class CodexEngine implements AgentEngine {
 					? readFileSync(lastMessagePath, 'utf-8').trim()
 					: rawTextParts.join('\n').trim();
 			const stderrOutput = stderrChunks.join('').trim();
-			const prUrl = extractPRUrl(finalOutput) ?? extractPRUrl(rawTextParts.join('\n'));
-			const prEvidence = buildTextPrEvidence(prUrl);
+			let { prUrl, prEvidence } = extractAndBuildPrEvidence(finalOutput);
+			if (!prUrl) {
+				({ prUrl, prEvidence } = extractAndBuildPrEvidence(rawTextParts.join('\n')));
+			}
 
 			input.logWriter('DEBUG', 'Codex process exited', {
 				exitCode,
@@ -736,14 +737,14 @@ export class CodexEngine implements AgentEngine {
 			}
 
 			if (exitCode !== 0) {
-				return {
+				return buildEngineResult({
 					success: false,
 					output: finalOutput,
 					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
 					cost,
 					prUrl,
 					prEvidence,
-				};
+				});
 			}
 
 			input.logWriter('INFO', 'Codex execution completed', {
@@ -753,13 +754,13 @@ export class CodexEngine implements AgentEngine {
 				durationMs: Date.now() - startTime,
 			});
 
-			return {
+			return buildEngineResult({
 				success: true,
 				output: finalOutput,
 				cost,
 				prUrl,
 				prEvidence,
-			};
+			});
 		} finally {
 			CodexEngine._cleanupLastMessagePath(lastMessagePath);
 			// When called directly (not via adapter), afterExecute won't be invoked.

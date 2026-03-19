@@ -24,6 +24,7 @@ import {
 	readCompletionEvidence,
 } from '../completion.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { buildEngineResult } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import { buildTextPrEvidence } from '../shared/resultBuilder.js';
@@ -300,7 +301,7 @@ function buildResult(
 		durationMs: Date.now() - startTime,
 	});
 
-	return { success, output, cost, error, prUrl, prEvidence };
+	return buildEngineResult({ success, output, cost, error, prUrl, prEvidence });
 }
 
 /**
