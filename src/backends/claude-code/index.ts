@@ -23,16 +23,20 @@ import {
 	getCompletionFailure,
 	readCompletionEvidence,
 } from '../completion.js';
-import { cleanupContextFiles } from '../contextFiles.js';
-import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, ContextImage } from '../types.js';
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 import { ClaudeCodeSettingsSchema, resolveClaudeCodeSettings } from './settings.js';
 
-export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
+export {
+	buildToolGuidance,
+	buildTaskPrompt,
+	buildSystemPrompt,
+} from '../shared/nativeToolPrompts.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
 
 /**
