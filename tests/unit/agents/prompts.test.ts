@@ -494,4 +494,146 @@ describe('getTemplateVariables', () => {
 		expect(names).toContain('workItemId');
 		expect(names).toContain('projectId');
 	});
+
+	it('includes squintEnabled variable', () => {
+		const vars = getTemplateVariables();
+		const names = vars.map((v) => v.name);
+		expect(names).toContain('squintEnabled');
+	});
+
+	it('squintEnabled variable belongs to Squint group', () => {
+		const vars = getTemplateVariables();
+		const squintVar = vars.find((v) => v.name === 'squintEnabled');
+		expect(squintVar?.group).toBe('Squint');
+	});
+});
+
+describe('squintEnabled template gating', () => {
+	it('implementation prompt with squintEnabled=true includes squint instructions', () => {
+		const prompt = getSystemPrompt('implementation', { squintEnabled: true });
+		expect(prompt).toContain('squint features show');
+		expect(prompt).toContain('squint flows show');
+		expect(prompt).toContain('squint modules show');
+		expect(prompt).toContain('squint-modules');
+		expect(prompt).toContain('squint-features');
+	});
+
+	it('implementation prompt with squintEnabled=false excludes squint instructions', () => {
+		const prompt = getSystemPrompt('implementation', { squintEnabled: false });
+		expect(prompt).not.toContain('squint features show');
+		expect(prompt).not.toContain('squint flows show');
+		expect(prompt).not.toContain('squint modules show');
+		expect(prompt).not.toContain('squint-modules');
+		expect(prompt).not.toContain('squint-features');
+	});
+
+	it('implementation prompt with squintEnabled=false still contains core instructions', () => {
+		const prompt = getSystemPrompt('implementation', { squintEnabled: false });
+		expect(prompt).toContain('CLAUDE.md');
+		expect(prompt).toContain('Tmux');
+		expect(prompt).toContain('conventional commits');
+	});
+
+	it('planning prompt with squintEnabled=true includes squint instructions', () => {
+		const prompt = getSystemPrompt('planning', { squintEnabled: true });
+		expect(prompt).toContain('squint features show');
+		expect(prompt).toContain('squint flows show');
+		expect(prompt).toContain('squint modules show');
+	});
+
+	it('planning prompt with squintEnabled=false excludes squint instructions', () => {
+		const prompt = getSystemPrompt('planning', { squintEnabled: false });
+		expect(prompt).not.toContain('squint features show');
+		expect(prompt).not.toContain('squint flows show');
+		expect(prompt).not.toContain('squint modules show');
+	});
+
+	it('planning prompt with squintEnabled=false still contains core instructions', () => {
+		const prompt = getSystemPrompt('planning', { squintEnabled: false });
+		expect(prompt).toContain('ReadWorkItem');
+		expect(prompt).toContain('implementation plan');
+	});
+
+	it('splitting prompt with squintEnabled=true includes squint instructions', () => {
+		const prompt = getSystemPrompt('splitting', { squintEnabled: true });
+		expect(prompt).toContain('squint features show');
+		expect(prompt).toContain('squint modules show');
+	});
+
+	it('splitting prompt with squintEnabled=false excludes squint instructions', () => {
+		const prompt = getSystemPrompt('splitting', { squintEnabled: false });
+		expect(prompt).not.toContain('squint features show');
+		expect(prompt).not.toContain('squint modules show');
+	});
+
+	it('review prompt with squintEnabled=true includes squint instructions', () => {
+		const prompt = getSystemPrompt('review', { squintEnabled: true });
+		expect(prompt).toContain('squint modules show');
+		expect(prompt).toContain('Squint for Conflict Detection');
+		expect(prompt).toContain('squint features show');
+	});
+
+	it('review prompt with squintEnabled=false excludes squint-specific instructions', () => {
+		const prompt = getSystemPrompt('review', { squintEnabled: false });
+		expect(prompt).not.toContain('Squint for Conflict Detection');
+		expect(prompt).not.toContain('squint modules show');
+		expect(prompt).not.toContain('squint features show');
+		expect(prompt).not.toContain('Use squint to see the forest');
+		expect(prompt).not.toContain('with squint evidence');
+	});
+
+	it('review prompt with squintEnabled=true includes philosophy squint reference', () => {
+		const prompt = getSystemPrompt('review', { squintEnabled: true });
+		expect(prompt).toContain('Use squint to see the forest, not just the trees.');
+	});
+
+	it('review prompt with squintEnabled=false still contains core review instructions', () => {
+		const prompt = getSystemPrompt('review', { squintEnabled: false });
+		expect(prompt).toContain('BLOCKING');
+		expect(prompt).toContain('APPROVE');
+		expect(prompt).toContain('REQUEST_CHANGES');
+	});
+
+	it('respond-to-planning-comment prompt with squintEnabled=true includes squint instructions', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment', { squintEnabled: true });
+		expect(prompt).toContain('squint features show');
+		expect(prompt).toContain('squint flows show');
+		expect(prompt).toContain('squint modules show');
+	});
+
+	it('respond-to-planning-comment prompt with squintEnabled=false excludes squint instructions', () => {
+		const prompt = getSystemPrompt('respond-to-planning-comment', { squintEnabled: false });
+		expect(prompt).not.toContain('squint features show');
+		expect(prompt).not.toContain('squint flows show');
+		expect(prompt).not.toContain('squint modules show');
+	});
+
+	it('squint-exploration partial with squintEnabled=true includes squint protocol', () => {
+		const partial = getRawPartial('squint-exploration');
+		// The partial itself contains the conditional; render it with the context
+		const rendered = renderCustomPrompt(partial, { squintEnabled: true });
+		expect(rendered).toContain('squint features show');
+		expect(rendered).toContain('squint symbols show');
+	});
+
+	it('squint-exploration partial with squintEnabled=false shows fallback message', () => {
+		const partial = getRawPartial('squint-exploration');
+		const rendered = renderCustomPrompt(partial, { squintEnabled: false });
+		expect(rendered).not.toContain('squint features show');
+		expect(rendered).toContain('no Squint database');
+	});
+
+	it('tmux partial with squintEnabled=true includes squint session name examples', () => {
+		const partial = getRawPartial('tmux');
+		const rendered = renderCustomPrompt(partial, { squintEnabled: true });
+		expect(rendered).toContain('squint-modules');
+		expect(rendered).toContain('squint-features');
+	});
+
+	it('tmux partial with squintEnabled=false excludes squint session name examples', () => {
+		const partial = getRawPartial('tmux');
+		const rendered = renderCustomPrompt(partial, { squintEnabled: false });
+		expect(rendered).not.toContain('squint-modules');
+		expect(rendered).not.toContain('squint-features');
+	});
 });

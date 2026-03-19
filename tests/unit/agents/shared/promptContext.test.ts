@@ -5,9 +5,17 @@ vi.mock('../../../../src/pm/index.js', () => ({
 	getPMProviderOrNull: vi.fn(),
 }));
 
+// Mock resolveSquintDbPath to control squint availability
+vi.mock('../../../../src/utils/squintDb.js', () => ({
+	resolveSquintDbPath: vi.fn(),
+}));
+
 import { buildPromptContext } from '../../../../src/agents/shared/promptContext.js';
 import { getPMProviderOrNull } from '../../../../src/pm/index.js';
+import { resolveSquintDbPath } from '../../../../src/utils/squintDb.js';
 import { createMockPMProvider } from '../../../helpers/mockPMProvider.js';
+
+const mockResolveSquintDbPath = vi.mocked(resolveSquintDbPath);
 
 const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
 
@@ -428,6 +436,66 @@ describe('buildPromptContext', () => {
 			);
 			expect(ctx.logDir).toBe('/tmp/logs');
 			expect(ctx.detectedAgentType).toBe('implementation');
+		});
+	});
+
+	describe('squintEnabled', () => {
+		beforeEach(() => {
+			const mockProvider = createMockPMProvider();
+			mockProvider.type = 'trello';
+			mockProvider.getWorkItemUrl = vi.fn((id: string) => `https://trello.com/c/${id}`);
+			mockGetPMProvider.mockReturnValue(mockProvider);
+		});
+
+		it('returns squintEnabled: true when resolveSquintDbPath returns a path', () => {
+			mockResolveSquintDbPath.mockReturnValue('/repo/.squint.db');
+			const ctx = buildPromptContext(
+				'card1',
+				makeProject() as never,
+				undefined,
+				undefined,
+				undefined,
+				'/repo',
+			);
+			expect(ctx.squintEnabled).toBe(true);
+		});
+
+		it('returns squintEnabled: false when resolveSquintDbPath returns null', () => {
+			mockResolveSquintDbPath.mockReturnValue(null);
+			const ctx = buildPromptContext(
+				'card1',
+				makeProject() as never,
+				undefined,
+				undefined,
+				undefined,
+				'/repo',
+			);
+			expect(ctx.squintEnabled).toBe(false);
+		});
+
+		it('returns squintEnabled: false when repoDir is not provided', () => {
+			mockResolveSquintDbPath.mockReturnValue('/some/path.db');
+			const ctx = buildPromptContext('card1', makeProject() as never);
+			expect(ctx.squintEnabled).toBe(false);
+		});
+
+		it('does not call resolveSquintDbPath when repoDir is undefined', () => {
+			mockResolveSquintDbPath.mockReturnValue('/some/path.db');
+			buildPromptContext('card1', makeProject() as never);
+			expect(mockResolveSquintDbPath).not.toHaveBeenCalled();
+		});
+
+		it('calls resolveSquintDbPath with the provided repoDir', () => {
+			mockResolveSquintDbPath.mockReturnValue(null);
+			buildPromptContext(
+				'card1',
+				makeProject() as never,
+				undefined,
+				undefined,
+				undefined,
+				'/workspace/my-repo',
+			);
+			expect(mockResolveSquintDbPath).toHaveBeenCalledWith('/workspace/my-repo');
 		});
 	});
 });

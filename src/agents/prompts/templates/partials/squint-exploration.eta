@@ -1,3 +1,4 @@
+<% if (it.squintEnabled) { %>
 ### Squint Codebase Intelligence Protocol (MANDATORY)
 
 **DO NOT read source files until you have completed these drill-down steps.**
@@ -98,7 +99,15 @@ squint symbols list --kind function --domain <name> --json
 - Searching for specific string patterns or regex
 - Config files, tests, or non-code files that squint doesn't index
 - Any file squint identified as relevant — squint shows structure, files show content
+<% } else { %>
+### Codebase Exploration Protocol
 
-#### If no SquintOverview was pre-loaded
+The repository has no Squint database. Skip squint steps and proceed directly to reading files.
 
-The repository has no Squint database. Skip these steps and proceed directly to reading files.
+Use these tools to explore the codebase:
+- `ListDirectory` — list directory contents to understand structure
+- `ReadFile` — read file contents for implementation details
+- `RipGrep` — search for patterns in code (regex, respects gitignore)
+- `AstGrep` — AST-aware code search (use $VAR for captures)
+- `Tmux` — run shell commands (for exploration: grep, find, etc.)
+<% } %>

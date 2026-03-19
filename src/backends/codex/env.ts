@@ -18,6 +18,9 @@ const ALLOWED_ENV_EXACT = new Set([
 
 	// Codex auth
 	'OPENAI_API_KEY',
+
+	// Squint
+	'SQUINT_DB_PATH',
 ]);
 
 const ALLOWED_ENV_PREFIXES = SHARED_ALLOWED_ENV_PREFIXES;

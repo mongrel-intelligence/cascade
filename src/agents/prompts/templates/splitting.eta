@@ -81,7 +81,7 @@ For technical/infrastructure work, adapt the format:
 You are running in a cloned copy of the project repository. Before creating stories:
 
 1. **Read the <%= it.workItemNoun || 'card' %>** to identify scope signals (file names, components, features, domain terms)
-2. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the <%= it.workItemNoun || 'card' %>
+<% if (it.squintEnabled) { %>2. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the <%= it.workItemNoun || 'card' %>
 3. **MANDATORY: Drill into features, flows, and modules before reading any files:**
    - `squint features show <slug> --json` for each relevant feature — returns flows, modules involved, interactions
    - `squint flows show <slug> --json` for key flows — returns ordered interaction steps and the definition-level call trace across module boundaries
@@ -89,7 +89,9 @@ You are running in a cloned copy of the project repository. Before creating stor
    - DO NOT SKIP — accurate story sizing requires understanding cross-cutting dependencies
 4. **THEN read specific files** — only files Squint identified as relevant. Use `squint symbols list --file <path> --json` to understand a file's architectural role before reading source.
 5. **Understand existing patterns** — how does the codebase already solve similar problems?
-6. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than the code
+6. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than the code<% } else { %>2. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to identify relevant files and patterns.
+3. **Understand existing patterns** — how does the codebase already solve similar problems?
+4. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than the code<% } %>
 
 <%~ include("partials/squint-exploration") %>
 
