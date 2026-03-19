@@ -28,6 +28,7 @@ import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
+import { buildTextPrEvidence } from '../shared/resultBuilder.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
@@ -447,12 +448,7 @@ function buildOpenCodeResultFromState(
 ): OpenCodeTurnResult {
 	const output = getPartialOutput(state);
 	const prUrl = extractPRUrl(output);
-	const prEvidence = prUrl
-		? {
-				source: 'text' as const,
-				authoritative: false,
-			}
-		: undefined;
+	const prEvidence = buildTextPrEvidence(prUrl);
 
 	if (state.finalError) {
 		return {
@@ -548,12 +544,7 @@ function buildOpenCodeResultFromResponse(
 	const output = getTextOutput(response.parts) || getPartialOutput(state);
 	const assistant = response.info;
 	const prUrl = extractPRUrl(output);
-	const prEvidence = prUrl
-		? {
-				source: 'text' as const,
-				authoritative: false,
-			}
-		: undefined;
+	const prEvidence = buildTextPrEvidence(prUrl);
 
 	if (assistant.error || state.finalError) {
 		return {
@@ -853,12 +844,7 @@ export class OpenCodeEngine implements AgentEngine {
 		} catch (error) {
 			const output = getPartialOutput(state);
 			const prUrl = extractPRUrl(output) ?? undefined;
-			const prEvidence = prUrl
-				? {
-						source: 'text' as const,
-						authoritative: false,
-					}
-				: undefined;
+			const prEvidence = buildTextPrEvidence(prUrl);
 			const errorMessage =
 				serverState.exitCode !== undefined
 					? formatOpenCodeServerExitError(serverState)
