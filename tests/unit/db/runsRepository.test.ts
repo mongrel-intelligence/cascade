@@ -82,6 +82,7 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 
 vi.mock('../../../src/db/repositories/joinHelpers.js', () => ({
 	buildAgentRunWorkItemJoin: () => 'mock-join-condition',
+	enrichedRunSelect: {},
 }));
 
 import {
