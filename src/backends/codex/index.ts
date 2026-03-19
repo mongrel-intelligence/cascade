@@ -720,8 +720,10 @@ export class CodexEngine implements AgentEngine {
 					? readFileSync(lastMessagePath, 'utf-8').trim()
 					: rawTextParts.join('\n').trim();
 			const stderrOutput = stderrChunks.join('').trim();
-			const allOutput = finalOutput || rawTextParts.join('\n');
-			const { prUrl, prEvidence } = extractAndBuildPrEvidence(allOutput);
+			let { prUrl, prEvidence } = extractAndBuildPrEvidence(finalOutput);
+			if (!prUrl) {
+				({ prUrl, prEvidence } = extractAndBuildPrEvidence(rawTextParts.join('\n')));
+			}
 
 			input.logWriter('DEBUG', 'Codex process exited', {
 				exitCode,

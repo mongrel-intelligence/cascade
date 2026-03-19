@@ -24,9 +24,10 @@ import {
 	readCompletionEvidence,
 } from '../completion.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
-import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
+import { buildEngineResult } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
+import { buildTextPrEvidence } from '../shared/resultBuilder.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, ContextImage } from '../types.js';
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
@@ -289,7 +290,7 @@ function buildResult(
 	}
 
 	const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
-	const prEvidence = extractAndBuildPrEvidence(prUrl ?? '').prEvidence;
+	const prEvidence = buildTextPrEvidence(prUrl);
 
 	input.logWriter('INFO', 'Claude Code SDK turn completed', {
 		success,
