@@ -227,11 +227,8 @@ export class ClaudeCodeEngine implements AgentEngine {
 			injectionsForPrompt,
 			input.repoDir,
 		);
-		// Resolve model again here for backward compatibility: execute() may be called
-		// directly (e.g. in tests) without going through the adapter, so we cannot rely
-		// solely on the adapter's engine.resolveModel() pre-resolution. Since
-		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
-		// is safe.
+		// resolveClaudeModel() is idempotent; calling it here ensures execute() works when
+		// invoked directly (e.g. in tests) without going through the adapter.
 		const model = resolveClaudeModel(input.model);
 		const resolvedSettings = resolveClaudeCodeSettings(input.project, input.engineSettings);
 		// Only the explicitly-configured fields (raw, pre-default) are passed to the SDK.
