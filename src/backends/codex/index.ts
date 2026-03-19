@@ -404,11 +404,8 @@ export class CodexEngine implements AgentEngine {
 			input.contextInjections,
 			input.repoDir,
 		);
-		// Resolve model again here for backward compatibility: execute() may be called
-		// directly (e.g. in tests) without going through the adapter, so we cannot rely
-		// solely on the adapter's engine.resolveModel() pre-resolution. Since
-		// resolveCodexModel() is idempotent, calling it twice via the normal adapter path
-		// is safe.
+		// resolveCodexModel() is idempotent; calling it here ensures execute() works when
+		// invoked directly (e.g. in tests) without going through the adapter.
 		const model = resolveCodexModel(input.model);
 		const settings = resolveCodexSettings(
 			input.project,
