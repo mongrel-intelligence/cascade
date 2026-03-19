@@ -1,5 +1,4 @@
 import { spawn } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
 import { type Server, createServer } from 'node:net';
 
 import { createOpencodeClient } from '@opencode-ai/sdk/client';
@@ -27,16 +26,12 @@ import {
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { appendEngineLog } from '../shared/engineLog.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
 import { OpenCodeSettingsSchema, resolveOpenCodeSettings } from './settings.js';
-
-function appendEngineLog(path: string | undefined, chunk: string): void {
-	if (!path || chunk.length === 0) return;
-	appendFileSync(path, chunk, 'utf-8');
-}
 
 function withTrailingSlashRemoved(value: string): string {
 	return value.endsWith('/') ? value.slice(0, -1) : value;
