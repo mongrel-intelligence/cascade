@@ -6,7 +6,7 @@
  * server-side secrets from leaking into agent environments.
  */
 
-import { buildNativeToolPath } from '../nativeToolRuntime.js';
+import { buildEngineEnv } from '../shared/envBuilder.js';
 import {
 	SHARED_ALLOWED_ENV_EXACT,
 	SHARED_ALLOWED_ENV_PREFIXES,
@@ -62,15 +62,13 @@ export function buildClaudeEnv(
 ): {
 	env: Record<string, string | undefined>;
 } {
-	const env: Record<string, string | undefined> = {
-		...filterProcessEnv(process.env),
-		...projectSecrets,
-		CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0',
-	};
-
-	if (cliToolsDir) {
-		env.PATH = buildNativeToolPath(env.PATH, cliToolsDir, nativeToolShimDir);
-	}
+	const env = buildEngineEnv({
+		allowedEnvExact: ALLOWED_ENV_EXACT,
+		extraVars: { CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0' },
+		projectSecrets,
+		cliToolsDir,
+		nativeToolShimDir,
+	});
 
 	return { env };
 }
