@@ -12,7 +12,6 @@ import type {
 } from '@opencode-ai/sdk/client';
 
 import { logger } from '../../utils/logging.js';
-import { extractPRUrl } from '../../utils/prUrl.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
 import {
 	applyCompletionEvidence,
@@ -26,9 +25,9 @@ import {
 } from '../nativeToolRetry.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
+import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
-import { buildTextPrEvidence } from '../shared/resultBuilder.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildEnv } from './env.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
@@ -419,24 +418,6 @@ async function handleMessagePartUpdated(
 
 type EventPayload = Event;
 
-function buildOpenCodeResult(
-	success: boolean,
-	output: string,
-	cost: number | undefined,
-	prUrl: string | undefined,
-	prEvidence: AgentEngineResult['prEvidence'],
-	error?: string,
-): AgentEngineResult {
-	return {
-		success,
-		output,
-		cost,
-		prUrl,
-		prEvidence,
-		error,
-	};
-}
-
 interface OpenCodeTurnResult {
 	result: AgentEngineResult;
 	usedStreamedStateFallback: boolean;
@@ -447,19 +428,18 @@ function buildOpenCodeResultFromState(
 	state: OpenCodeStreamState,
 ): OpenCodeTurnResult {
 	const output = getPartialOutput(state);
-	const prUrl = extractPRUrl(output);
-	const prEvidence = buildTextPrEvidence(prUrl);
+	const { prUrl, prEvidence } = extractAndBuildPrEvidence(output);
 
 	if (state.finalError) {
 		return {
-			result: buildOpenCodeResult(
-				false,
+			result: buildEngineResult({
+				success: false,
 				output,
-				state.totalCost || undefined,
+				cost: state.totalCost || undefined,
 				prUrl,
 				prEvidence,
-				state.finalError,
-			),
+				error: state.finalError,
+			}),
 			usedStreamedStateFallback: true,
 		};
 	}
@@ -471,7 +451,13 @@ function buildOpenCodeResultFromState(
 	});
 
 	return {
-		result: buildOpenCodeResult(true, output, state.totalCost || undefined, prUrl, prEvidence),
+		result: buildEngineResult({
+			success: true,
+			output,
+			cost: state.totalCost || undefined,
+			prUrl,
+			prEvidence,
+		}),
 		usedStreamedStateFallback: true,
 	};
 }
@@ -543,22 +529,22 @@ function buildOpenCodeResultFromResponse(
 ): OpenCodeTurnResult {
 	const output = getTextOutput(response.parts) || getPartialOutput(state);
 	const assistant = response.info;
-	const prUrl = extractPRUrl(output);
-	const prEvidence = buildTextPrEvidence(prUrl);
+	const { prUrl, prEvidence } = extractAndBuildPrEvidence(output);
 
 	if (assistant.error || state.finalError) {
 		return {
-			result: buildOpenCodeResult(
-				false,
+			result: buildEngineResult({
+				success: false,
 				output,
-				state.totalCost || assistant.cost || undefined,
+				cost: state.totalCost || assistant.cost || undefined,
 				prUrl,
 				prEvidence,
-				state.finalError ??
+				error:
+					state.finalError ??
 					(typeof assistant.error?.data?.message === 'string'
 						? assistant.error.data.message
 						: assistant.error?.name),
-			),
+			}),
 			usedStreamedStateFallback: false,
 		};
 	}
@@ -570,13 +556,13 @@ function buildOpenCodeResultFromResponse(
 	});
 
 	return {
-		result: buildOpenCodeResult(
-			true,
+		result: buildEngineResult({
+			success: true,
 			output,
-			state.totalCost || assistant.cost || undefined,
+			cost: state.totalCost || assistant.cost || undefined,
 			prUrl,
 			prEvidence,
-		),
+		}),
 		usedStreamedStateFallback: false,
 	};
 }
@@ -843,8 +829,7 @@ export class OpenCodeEngine implements AgentEngine {
 			return await runOpenCodeTurnLoop(client, sessionId, agent, input, taskPrompt, state);
 		} catch (error) {
 			const output = getPartialOutput(state);
-			const prUrl = extractPRUrl(output) ?? undefined;
-			const prEvidence = buildTextPrEvidence(prUrl);
+			const { prUrl, prEvidence } = extractAndBuildPrEvidence(output);
 			const errorMessage =
 				serverState.exitCode !== undefined
 					? formatOpenCodeServerExitError(serverState)
@@ -855,7 +840,14 @@ export class OpenCodeEngine implements AgentEngine {
 				serverExitCode: serverState.exitCode ?? null,
 				hasPartialOutput: output.length > 0,
 			});
-			return buildOpenCodeResult(false, output, undefined, prUrl, prEvidence, errorMessage);
+			return buildEngineResult({
+				success: false,
+				output,
+				cost: undefined,
+				prUrl,
+				prEvidence,
+				error: errorMessage,
+			});
 		} finally {
 			if (sessionId && server) {
 				const client = createOpencodeClient({
