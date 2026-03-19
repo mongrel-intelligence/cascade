@@ -578,6 +578,13 @@ describe('squintEnabled template gating', () => {
 		expect(prompt).not.toContain('Squint for Conflict Detection');
 		expect(prompt).not.toContain('squint modules show');
 		expect(prompt).not.toContain('squint features show');
+		expect(prompt).not.toContain('Use squint to see the forest');
+		expect(prompt).not.toContain('with squint evidence');
+	});
+
+	it('review prompt with squintEnabled=true includes philosophy squint reference', () => {
+		const prompt = getSystemPrompt('review', { squintEnabled: true });
+		expect(prompt).toContain('Use squint to see the forest, not just the trees.');
 	});
 
 	it('review prompt with squintEnabled=false still contains core review instructions', () => {

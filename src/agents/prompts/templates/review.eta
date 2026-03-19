@@ -13,7 +13,7 @@ CRITICAL:
 
 **Accuracy over thoroughness**: A review with zero comments that correctly approves good code is better than a review that invents problems. Only report issues you can demonstrate.
 
-**Architecture-aware**: Code can be correct yet harmful. A well-tested function in the wrong module, a clean implementation that duplicates an existing pattern, a performant solution that creates tight coupling — these are real problems even though every line compiles and every test passes. Use squint to see the forest, not just the trees.
+**Architecture-aware**: Code can be correct yet harmful. A well-tested function in the wrong module, a clean implementation that duplicates an existing pattern, a performant solution that creates tight coupling — these are real problems even though every line compiles and every test passes.<% if (it.squintEnabled) { %> Use squint to see the forest, not just the trees.<% } %>
 
 ## Process
 
@@ -227,8 +227,8 @@ Use CreatePRReview with:
 
 ## Architecture & Design
 [Only if strategic issues found — skip entirely for clean PRs]
-- **[SHOULD_FIX] Pattern conflict**: ...with squint evidence
-- **[BLOCKING] Dependency violation**: ...with squint evidence
+- **[SHOULD_FIX] Pattern conflict**: ...with evidence<% if (it.squintEnabled) { %> (squint: `squint symbols show <name>`)<% } %>
+- **[BLOCKING] Dependency violation**: ...with evidence<% if (it.squintEnabled) { %> (squint: `squint modules show <path>`)<% } %>
 
 ## Code Issues
 [Only if tactical issues found — skip entirely for clean PRs]
