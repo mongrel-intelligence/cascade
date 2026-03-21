@@ -30,7 +30,7 @@ import type { TriggerResult } from './types/index.js';
 import { scrubSensitiveEnv } from './utils/envScrub.js';
 import { logger, setLogLevel } from './utils/index.js';
 
-interface TrelloJobData {
+export interface TrelloJobData {
 	type: 'trello';
 	source: 'trello';
 	payload: unknown;
@@ -42,7 +42,7 @@ interface TrelloJobData {
 	triggerResult?: TriggerResult;
 }
 
-interface GitHubJobData {
+export interface GitHubJobData {
 	type: 'github';
 	source: 'github';
 	payload: unknown;
@@ -54,7 +54,7 @@ interface GitHubJobData {
 	triggerResult?: TriggerResult;
 }
 
-interface JiraJobData {
+export interface JiraJobData {
 	type: 'jira';
 	source: 'jira';
 	payload: unknown;
@@ -66,7 +66,7 @@ interface JiraJobData {
 	triggerResult?: TriggerResult;
 }
 
-interface ManualRunJobData {
+export interface ManualRunJobData {
 	type: 'manual-run';
 	projectId: string;
 	agentType: string;
@@ -78,25 +78,25 @@ interface ManualRunJobData {
 	modelOverride?: string;
 }
 
-interface RetryRunJobData {
+export interface RetryRunJobData {
 	type: 'retry-run';
 	runId: string;
 	projectId: string;
 	modelOverride?: string;
 }
 
-interface DebugAnalysisJobData {
+export interface DebugAnalysisJobData {
 	type: 'debug-analysis';
 	runId: string;
 	projectId: string;
 	workItemId?: string;
 }
 
-type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
+export type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
 
-type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
+export type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
 
-async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
+export async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
 	const { loadProjectConfigById } = await import('./config/provider.js');
 
 	if (jobData.type === 'manual-run') {
@@ -140,7 +140,7 @@ async function processDashboardJob(jobId: string, jobData: DashboardJobData): Pr
 	}
 }
 
-async function dispatchJob(
+export async function dispatchJob(
 	jobId: string,
 	jobData: JobData,
 	triggerRegistry: TriggerRegistry,
@@ -210,7 +210,7 @@ async function dispatchJob(
 	}
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
 	const jobId = process.env.JOB_ID;
 	const jobType = process.env.JOB_TYPE;
 	const jobDataRaw = process.env.JOB_DATA;
@@ -298,9 +298,12 @@ async function main(): Promise<void> {
 	}
 }
 
-main().catch(async (err) => {
-	console.error('[Worker] Unhandled error:', err);
-	captureException(err, { tags: { source: 'worker_unhandled' }, level: 'fatal' });
-	await flush();
-	process.exit(1);
-});
+// Only auto-run when executed as an entry point, not when imported by tests.
+if (!process.env.VITEST) {
+	main().catch(async (err) => {
+		console.error('[Worker] Unhandled error:', err);
+		captureException(err, { tags: { source: 'worker_unhandled' }, level: 'fatal' });
+		await flush();
+		process.exit(1);
+	});
+}
