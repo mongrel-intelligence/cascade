@@ -10,6 +10,7 @@ const mockPulls = {
 	createReview: vi.fn(),
 	create: vi.fn(),
 	list: vi.fn(),
+	merge: vi.fn(),
 };
 
 const mockIssues = {
@@ -656,6 +657,262 @@ describe('githubClient', () => {
 
 			await withGitHubToken('token-b', () => githubClient.getPR('owner', 'repo', 2));
 			expect(Octokit).toHaveBeenCalledWith({ auth: 'token-b' });
+		});
+	});
+
+	describe('getOpenPRByBranch', () => {
+		it('returns CreatedPR when a matching open PR is found', async () => {
+			mockPulls.list.mockResolvedValue({
+				data: [
+					{
+						number: 42,
+						html_url: 'https://github.com/owner/repo/pull/42',
+						title: 'My Feature',
+					},
+				],
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getOpenPRByBranch('owner', 'repo', 'feature/my-feature'),
+			);
+
+			expect(result).toEqual({
+				number: 42,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				title: 'My Feature',
+			});
+		});
+
+		it('returns null when no open PR exists', async () => {
+			mockPulls.list.mockResolvedValue({ data: [] });
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getOpenPRByBranch('owner', 'repo', 'feature/no-pr'),
+			);
+
+			expect(result).toBeNull();
+		});
+
+		it('formats head param as owner:branch', async () => {
+			mockPulls.list.mockResolvedValue({ data: [] });
+
+			await withGitHubToken('test-token', () =>
+				githubClient.getOpenPRByBranch('myorg', 'myrepo', 'fix/some-bug'),
+			);
+
+			expect(mockPulls.list).toHaveBeenCalledWith(
+				expect.objectContaining({
+					head: 'myorg:fix/some-bug',
+					state: 'open',
+					per_page: 1,
+				}),
+			);
+		});
+
+		it('maps html_url to htmlUrl correctly', async () => {
+			mockPulls.list.mockResolvedValue({
+				data: [
+					{
+						number: 7,
+						html_url: 'https://github.com/owner/repo/pull/7',
+						title: 'Another PR',
+					},
+				],
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getOpenPRByBranch('owner', 'repo', 'branch'),
+			);
+
+			expect(result?.htmlUrl).toBe('https://github.com/owner/repo/pull/7');
+		});
+	});
+
+	describe('getFailedWorkflowRunJobs', () => {
+		it('returns empty runs and failedJobs when no runs have failure conclusion', async () => {
+			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
+				data: {
+					workflow_runs: [
+						{ id: 1, name: 'CI', conclusion: 'success' },
+						{ id: 2, name: 'Build', conclusion: 'skipped' },
+					],
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getFailedWorkflowRunJobs('owner', 'repo', 'sha123'),
+			);
+
+			expect(result).toEqual({ runs: [], failedJobs: [] });
+			expect(mockActions.listJobsForWorkflowRun).not.toHaveBeenCalled();
+		});
+
+		it('filters only failure and timed_out runs', async () => {
+			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
+				data: {
+					workflow_runs: [
+						{ id: 1, name: 'CI', conclusion: 'failure' },
+						{ id: 2, name: 'Build', conclusion: 'success' },
+						{ id: 3, name: 'Deploy', conclusion: 'timed_out' },
+					],
+				},
+			});
+			mockActions.listJobsForWorkflowRun.mockResolvedValue({
+				data: { jobs: [] },
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getFailedWorkflowRunJobs('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.runs).toHaveLength(2);
+			expect(result.runs.map((r) => r.id)).toEqual([1, 3]);
+			expect(mockActions.listJobsForWorkflowRun).toHaveBeenCalledTimes(2);
+		});
+
+		it('maps failed job steps correctly', async () => {
+			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
+				data: {
+					workflow_runs: [{ id: 10, name: 'CI', conclusion: 'failure' }],
+				},
+			});
+			mockActions.listJobsForWorkflowRun.mockResolvedValue({
+				data: {
+					jobs: [
+						{
+							name: 'test',
+							conclusion: 'failure',
+							steps: [
+								{ name: 'checkout', conclusion: 'success' },
+								{ name: 'run tests', conclusion: 'failure' },
+							],
+						},
+					],
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getFailedWorkflowRunJobs('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.failedJobs).toHaveLength(1);
+			expect(result.failedJobs[0]).toEqual({
+				runName: 'CI',
+				runId: 10,
+				jobName: 'test',
+				conclusion: 'failure',
+				steps: [
+					{ name: 'checkout', conclusion: 'success' },
+					{ name: 'run tests', conclusion: 'failure' },
+				],
+			});
+		});
+
+		it('falls back to Run #${id} when run name is null', async () => {
+			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
+				data: {
+					workflow_runs: [{ id: 99, name: null, conclusion: 'failure' }],
+				},
+			});
+			mockActions.listJobsForWorkflowRun.mockResolvedValue({
+				data: {
+					jobs: [
+						{
+							name: 'build',
+							conclusion: 'failure',
+							steps: [],
+						},
+					],
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getFailedWorkflowRunJobs('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.runs[0].name).toBe('Run #99');
+			expect(result.failedJobs[0].runName).toBe('Run #99');
+		});
+
+		it('handles multiple workflow runs with mixed results', async () => {
+			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
+				data: {
+					workflow_runs: [
+						{ id: 1, name: 'CI', conclusion: 'failure' },
+						{ id: 2, name: 'Lint', conclusion: 'failure' },
+					],
+				},
+			});
+			mockActions.listJobsForWorkflowRun.mockImplementation(({ run_id }: { run_id: number }) => {
+				if (run_id === 1) {
+					return Promise.resolve({
+						data: {
+							jobs: [
+								{ name: 'unit-tests', conclusion: 'failure', steps: [] },
+								{ name: 'integration-tests', conclusion: 'success', steps: [] },
+							],
+						},
+					});
+				}
+				return Promise.resolve({
+					data: {
+						jobs: [{ name: 'eslint', conclusion: 'timed_out', steps: [] }],
+					},
+				});
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getFailedWorkflowRunJobs('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.runs).toHaveLength(2);
+			expect(result.failedJobs).toHaveLength(2);
+			expect(result.failedJobs.map((j) => j.jobName)).toEqual(['unit-tests', 'eslint']);
+		});
+	});
+
+	describe('mergePR', () => {
+		it('calls pulls.merge with correct params', async () => {
+			mockPulls.merge.mockResolvedValue({});
+
+			await withGitHubToken('test-token', () => githubClient.mergePR('owner', 'repo', 42));
+
+			expect(mockPulls.merge).toHaveBeenCalledWith({
+				owner: 'owner',
+				repo: 'repo',
+				pull_number: 42,
+				merge_method: 'squash',
+			});
+		});
+
+		it('defaults to squash merge method', async () => {
+			mockPulls.merge.mockResolvedValue({});
+
+			await withGitHubToken('test-token', () => githubClient.mergePR('owner', 'repo', 10));
+
+			expect(mockPulls.merge).toHaveBeenCalledWith(
+				expect.objectContaining({ merge_method: 'squash' }),
+			);
+		});
+
+		it('accepts custom merge method', async () => {
+			mockPulls.merge.mockResolvedValue({});
+
+			await withGitHubToken('test-token', () =>
+				githubClient.mergePR('owner', 'repo', 55, 'rebase'),
+			);
+
+			expect(mockPulls.merge).toHaveBeenCalledWith(
+				expect.objectContaining({ merge_method: 'rebase', pull_number: 55 }),
+			);
+
+			mockPulls.merge.mockClear();
+
+			await withGitHubToken('test-token', () => githubClient.mergePR('owner', 'repo', 56, 'merge'));
+
+			expect(mockPulls.merge).toHaveBeenCalledWith(
+				expect.objectContaining({ merge_method: 'merge', pull_number: 56 }),
+			);
 		});
 	});
 
