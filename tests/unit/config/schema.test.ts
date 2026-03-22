@@ -154,7 +154,7 @@ describe.concurrent('ProjectConfigSchema', () => {
 		expect(() => ProjectConfigSchema.parse(config)).toThrow('Unsupported engine settings');
 	});
 
-	it('applies default "llmist" for agentEngine.default when object provided', () => {
+	it('applies default "claude-code" for agentEngine.default when object provided', () => {
 		const config = {
 			id: 'test',
 			orgId: 'default',
@@ -165,7 +165,7 @@ describe.concurrent('ProjectConfigSchema', () => {
 		};
 
 		const result = ProjectConfigSchema.parse(config);
-		expect(result.agentEngine?.default).toBe('llmist');
+		expect(result.agentEngine?.default).toBe('claude-code');
 		expect(result.agentEngine?.overrides).toEqual({});
 	});
 
@@ -260,7 +260,7 @@ describe.concurrent('validateConfig', () => {
 		expect(() => validateConfig({ projects: [] })).toThrow();
 	});
 
-	it('applies default "llmist" for project agentEngine.default', () => {
+	it('applies default "claude-code" for project agentEngine.default', () => {
 		const config = {
 			projects: [
 				{
@@ -275,7 +275,7 @@ describe.concurrent('validateConfig', () => {
 		};
 
 		const result = validateConfig(config);
-		expect(result.projects[0].agentEngine?.default).toBe('llmist');
+		expect(result.projects[0].agentEngine?.default).toBe('claude-code');
 	});
 
 	it('accepts custom project agentEngine value', () => {

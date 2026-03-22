@@ -42,9 +42,9 @@ describe('DEFAULT_ENGINE_CATALOG', () => {
 		}
 	});
 
-	it('is ordered: llmist, claude-code, codex, opencode', () => {
-		expect(DEFAULT_ENGINE_CATALOG[0].id).toBe('llmist');
-		expect(DEFAULT_ENGINE_CATALOG[1].id).toBe('claude-code');
+	it('is ordered: claude-code, llmist, codex, opencode', () => {
+		expect(DEFAULT_ENGINE_CATALOG[0].id).toBe('claude-code');
+		expect(DEFAULT_ENGINE_CATALOG[1].id).toBe('llmist');
 		expect(DEFAULT_ENGINE_CATALOG[2].id).toBe('codex');
 		expect(DEFAULT_ENGINE_CATALOG[3].id).toBe('opencode');
 	});

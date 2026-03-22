@@ -109,7 +109,7 @@ export function ProjectsTable({
 									<Badge variant="outline">{project.baseBranch ?? 'main'}</Badge>
 								</TableCell>
 								<TableCell className="hidden md:table-cell">
-									{project.agentEngine ?? 'llmist'}
+									{project.agentEngine ?? 'claude-code'}
 								</TableCell>
 								<TableCell className="hidden md:table-cell text-right tabular-nums">
 									{project.workItemBudgetUsd ? `$${project.workItemBudgetUsd}` : '-'}

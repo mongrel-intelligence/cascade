@@ -45,7 +45,7 @@ const sampleProject = {
 	baseBranch: 'main',
 	branchPrefix: 'cascade/',
 	model: 'claude-sonnet-4-5-20250929',
-	agentEngine: 'llmist',
+	agentEngine: 'claude-code',
 	workItemBudgetUsd: '5.00',
 	maxInFlightItems: 3,
 };
