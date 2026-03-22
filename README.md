@@ -48,7 +48,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 ## 🏗️ Architecture
 
 <p align="center">
-  <img src="docs/architecture.svg" alt="CASCADE architecture diagram" />
+  <img src="docs/architecture.jpg" alt="CASCADE architecture diagram" />
 </p>
 
 Cascade runs as three independent services:
