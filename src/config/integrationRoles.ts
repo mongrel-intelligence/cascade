@@ -24,6 +24,12 @@ export const PROVIDER_CREDENTIAL_ROLES: Record<IntegrationProvider, CredentialRo
 	jira: [
 		{ role: 'email', label: 'Email', envVarKey: 'JIRA_EMAIL' },
 		{ role: 'api_token', label: 'API Token', envVarKey: 'JIRA_API_TOKEN' },
+		{
+			role: 'webhook_secret',
+			label: 'Webhook Secret',
+			envVarKey: 'JIRA_WEBHOOK_SECRET',
+			optional: true,
+		},
 	],
 	github: [
 		{

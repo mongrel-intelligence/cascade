@@ -24,6 +24,7 @@ import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
 	verifyGitHubWebhookSignature,
+	verifyJiraWebhookSignature,
 	verifyTrelloWebhookSignature,
 } from './webhookVerification.js';
 import {
@@ -128,6 +129,7 @@ app.post(
 	createWebhookHandler({
 		source: 'jira',
 		parsePayload: parseJiraPayload,
+		verifySignature: verifyJiraWebhookSignature,
 		processWebhook: async (payload) => {
 			const adapter = new JiraRouterAdapter();
 			const result = await processRouterWebhook(adapter, payload, triggerRegistry);

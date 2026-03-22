@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
 	verifyGitHubSignature,
+	verifyJiraSignature,
 	verifyTrelloSignature,
 } from '../../../src/webhook/signatureVerification.js';
 
@@ -18,6 +19,11 @@ function trelloSignature(body: string, callbackUrl: string, secret: string): str
 	return createHmac('sha1', secret)
 		.update(body + callbackUrl, 'utf8')
 		.digest('base64');
+}
+
+function jiraSignature(body: string, secret: string): string {
+	const hex = createHmac('sha256', secret).update(body, 'utf8').digest('hex');
+	return `sha256=${hex}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,5 +134,57 @@ describe('verifyTrelloSignature', () => {
 		const sig1 = trelloSignature(body, 'https://url-a.example.com', secret);
 		const sig2 = trelloSignature(body, 'https://url-b.example.com', secret);
 		expect(sig1).not.toBe(sig2);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// verifyJiraSignature
+// ---------------------------------------------------------------------------
+
+describe('verifyJiraSignature', () => {
+	const secret = 'my-jira-secret';
+	const body = '{"webhookEvent":"jira:issue_updated","issue":{"key":"PROJ-1"}}';
+
+	it('returns true for a valid signature', () => {
+		const sig = jiraSignature(body, secret);
+		expect(verifyJiraSignature(body, sig, secret)).toBe(true);
+	});
+
+	it('returns false for an empty body with a signature for non-empty body', () => {
+		const sig = jiraSignature(body, secret);
+		expect(verifyJiraSignature('', sig, secret)).toBe(false);
+	});
+
+	it('returns true for an empty body when the signature matches the empty body', () => {
+		const sig = jiraSignature('', secret);
+		expect(verifyJiraSignature('', sig, secret)).toBe(true);
+	});
+
+	it('returns false when the signature is an empty string', () => {
+		expect(verifyJiraSignature(body, '', secret)).toBe(false);
+	});
+
+	it('returns false when the signature prefix is missing (raw hex only)', () => {
+		const rawHex = createHmac('sha256', secret).update(body, 'utf8').digest('hex');
+		expect(verifyJiraSignature(body, rawHex, secret)).toBe(false);
+	});
+
+	it('returns false when signed with a different secret', () => {
+		const sig = jiraSignature(body, 'wrong-secret');
+		expect(verifyJiraSignature(body, sig, secret)).toBe(false);
+	});
+
+	it('returns false when the body has been tampered with', () => {
+		const sig = jiraSignature(body, secret);
+		expect(verifyJiraSignature(`${body}tampered`, sig, secret)).toBe(false);
+	});
+
+	it('returns false for a completely garbage signature string', () => {
+		expect(verifyJiraSignature(body, 'not-a-real-signature', secret)).toBe(false);
+	});
+
+	it('is timing-safe: the comparison does not short-circuit on length mismatch within prefix', () => {
+		// Provide a correctly-prefixed but shorter hex to exercise the length branch
+		expect(verifyJiraSignature(body, 'sha256=abc', secret)).toBe(false);
 	});
 });

@@ -7,7 +7,11 @@
 
 import type { Context } from 'hono';
 import { logger } from '../utils/logging.js';
-import { verifyGitHubSignature, verifyTrelloSignature } from '../webhook/signatureVerification.js';
+import {
+	verifyGitHubSignature,
+	verifyJiraSignature,
+	verifyTrelloSignature,
+} from '../webhook/signatureVerification.js';
 import { loadProjectConfig, routerConfig } from './config.js';
 import { resolveWebhookSecret } from './platformClients/credentials.js';
 
@@ -145,4 +149,52 @@ export async function verifyGitHubWebhookSignature(
 	return valid
 		? { valid: true, reason: 'Signature valid' }
 		: { valid: false, reason: 'GitHub signature mismatch' };
+}
+
+/**
+ * Extract the JIRA project key from a raw webhook payload.
+ * JIRA sends the project key at `issue.fields.project.key`.
+ */
+export function extractJiraProjectKey(rawBody: string): string | undefined {
+	try {
+		const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+		const issue = parsed?.issue as Record<string, unknown> | undefined;
+		const fields = issue?.fields as Record<string, unknown> | undefined;
+		const project = fields?.project as Record<string, unknown> | undefined;
+		return project?.key as string | undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * verifySignature callback for the JIRA webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ *
+ * JIRA Cloud sends the signature as `sha256=<hex>` in the `X-Hub-Signature` header.
+ */
+export async function verifyJiraWebhookSignature(
+	c: Context,
+	rawBody: string,
+): Promise<{ valid: boolean; reason: string } | null> {
+	const signatureHeader = c.req.header('X-Hub-Signature');
+	const jiraProjectKey = extractJiraProjectKey(rawBody);
+
+	if (!jiraProjectKey) return null;
+
+	const { projects } = await loadProjectConfig();
+	const project = projects.find((p) => p.jira?.projectKey === jiraProjectKey);
+	if (!project) return null;
+
+	const secret = await resolveWebhookSecret(project.id, 'jira');
+	if (!secret) return null; // No secret configured — skip verification
+
+	if (!signatureHeader) {
+		return { valid: false, reason: 'Missing signature header' };
+	}
+
+	const valid = verifyJiraSignature(rawBody, signatureHeader, secret);
+	return valid
+		? { valid: true, reason: 'Signature valid' }
+		: { valid: false, reason: 'JIRA signature mismatch' };
 }
