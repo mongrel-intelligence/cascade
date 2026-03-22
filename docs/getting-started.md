@@ -135,7 +135,7 @@ node bin/cascade.js projects credentials-set my-project \
 
 Which credentials you need depends on which agent engine you plan to use. You can always add more later.
 
-#### LLMist engine (default)
+#### LLMist engine
 
 LLMist supports OpenRouter, Anthropic, and OpenAI. Store the key for whichever provider you prefer:
 
@@ -159,7 +159,7 @@ node bin/cascade.js projects credentials-set my-project \
   --name "OpenAI"
 ```
 
-#### Claude Code engine
+#### Claude Code engine (default)
 
 Requires either an Anthropic API key or a Claude Max subscription token:
 

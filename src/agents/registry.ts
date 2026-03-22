@@ -11,7 +11,7 @@ import { logger } from '../utils/logging.js';
  * Engine resolution order:
  * 1. Project-level agent type override
  * 2. Project-level default engine
- * 3. Fallback: 'llmist'
+ * 3. Fallback: 'claude-code'
  *
  * All engines — including llmist — go through the shared adapter
  * (executeWithEngine), which handles repo setup, lifecycle, progress
