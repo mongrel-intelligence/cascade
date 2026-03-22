@@ -4,10 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // vi.mock factories are hoisted to the top of the file, so any variables they
 // reference must also be hoisted via vi.hoisted().
 
-const { mockPoolEnd, mockPoolConstructor } = vi.hoisted(() => {
+const { mockPoolEnd, mockPoolConstructor, mockReadFileSync, mockExistsSync } = vi.hoisted(() => {
 	const mockPoolEnd = vi.fn().mockResolvedValue(undefined);
 	const mockPoolConstructor = vi.fn().mockImplementation(() => ({ end: mockPoolEnd }));
-	return { mockPoolEnd, mockPoolConstructor };
+	const mockReadFileSync = vi.fn().mockReturnValue('mock-ca-cert-content');
+	const mockExistsSync = vi.fn().mockReturnValue(true);
+	return { mockPoolEnd, mockPoolConstructor, mockReadFileSync, mockExistsSync };
 });
 
 vi.mock('pg', () => ({
@@ -18,6 +20,13 @@ vi.mock('pg', () => ({
 
 vi.mock('drizzle-orm/node-postgres', () => ({
 	drizzle: vi.fn().mockReturnValue({ __isMockDrizzle: true }),
+}));
+
+vi.mock('node:fs', () => ({
+	default: {
+		readFileSync: mockReadFileSync,
+	},
+	existsSync: mockExistsSync,
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
@@ -150,20 +159,54 @@ describe('getDb', () => {
 
 	it('creates pool with SSL disabled when DATABASE_SSL=false', () => {
 		vi.stubEnv('DATABASE_SSL', 'false');
+		vi.stubEnv('DATABASE_CA_CERT', '');
 
 		getDb();
 
 		expect(mockPoolConstructor).toHaveBeenCalledWith(expect.objectContaining({ ssl: false }));
 	});
 
-	it('creates pool with rejectUnauthorized:false by default (DATABASE_SSL not set)', () => {
+	it('creates pool with rejectUnauthorized:true by default (DATABASE_SSL not set)', () => {
 		vi.stubEnv('DATABASE_SSL', '');
+		vi.stubEnv('DATABASE_CA_CERT', '');
 
 		getDb();
 
 		expect(mockPoolConstructor).toHaveBeenCalledWith(
-			expect.objectContaining({ ssl: { rejectUnauthorized: false } }),
+			expect.objectContaining({ ssl: { rejectUnauthorized: true } }),
 		);
+	});
+
+	it('creates pool with custom CA cert when DATABASE_CA_CERT is set', () => {
+		vi.stubEnv('DATABASE_SSL', '');
+		vi.stubEnv('DATABASE_CA_CERT', '/path/to/ca.pem');
+
+		getDb();
+
+		expect(mockReadFileSync).toHaveBeenCalledWith('/path/to/ca.pem', 'utf8');
+		expect(mockPoolConstructor).toHaveBeenCalledWith(
+			expect.objectContaining({
+				ssl: { rejectUnauthorized: true, ca: 'mock-ca-cert-content' },
+			}),
+		);
+	});
+
+	it('throws a descriptive error when DATABASE_CA_CERT path does not exist', () => {
+		vi.stubEnv('DATABASE_SSL', '');
+		vi.stubEnv('DATABASE_CA_CERT', '/nonexistent/ca.pem');
+		mockExistsSync.mockReturnValueOnce(false);
+
+		expect(() => getDb()).toThrow('DATABASE_CA_CERT file not found: /nonexistent/ca.pem');
+	});
+
+	it('DATABASE_CA_CERT is ignored when DATABASE_SSL=false', () => {
+		vi.stubEnv('DATABASE_SSL', 'false');
+		vi.stubEnv('DATABASE_CA_CERT', '/path/to/ca.pem');
+
+		getDb();
+
+		expect(mockReadFileSync).not.toHaveBeenCalled();
+		expect(mockPoolConstructor).toHaveBeenCalledWith(expect.objectContaining({ ssl: false }));
 	});
 
 	it('returns singleton — second call returns same instance', () => {
