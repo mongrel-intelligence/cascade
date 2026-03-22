@@ -11,6 +11,8 @@ Cascade is an open-source platform that automates the full software development 
 PM Card → Split → Plan → Implement → PR → Review → Iterate → Merge
 ```
 
+[![What is Cascade?](https://img.youtube.com/vi/gcDLVZw6HS8/maxresdefault.jpg)](https://youtu.be/gcDLVZw6HS8)
+
 [![Watch the demo](docs/assets/demo-thumbnail.jpg)](https://youtu.be/HMfFtj2i_Mw)
 
 ---
