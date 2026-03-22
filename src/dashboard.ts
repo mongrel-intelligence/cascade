@@ -19,7 +19,6 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { trpcServer } from '@hono/trpc-server';
 import { Hono } from 'hono';
 import { getCookie } from 'hono/cookie';
-import { cors } from 'hono/cors';
 import { logger as honoLogger } from 'hono/logger';
 import { initPrompts } from './agents/prompts/index.js';
 import { SESSION_COOKIE_NAME } from './api/auth/cookie.js';
@@ -30,6 +29,7 @@ import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
 import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { captureException, flush, setTag } from './sentry.js';
+import { buildCorsMiddleware } from './utils/corsConfig.js';
 
 setTag('role', 'dashboard');
 
@@ -40,12 +40,13 @@ registerBuiltInEngines();
 const app = new Hono();
 
 // Middleware
-const corsOrigin = process.env.CORS_ORIGIN;
-const corsOrigins = corsOrigin
-	?.split(',')
-	.map((o) => o.trim())
-	.filter(Boolean);
-app.use('*', corsOrigins?.length ? cors({ origin: corsOrigins, credentials: true }) : cors());
+app.use(
+	'*',
+	buildCorsMiddleware({
+		corsOriginEnv: process.env.CORS_ORIGIN,
+		isProduction: process.env.NODE_ENV === 'production',
+	}),
+);
 app.use('*', honoLogger());
 
 // Health check
