@@ -81,6 +81,7 @@ jobs:
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:dev .
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             ./node_modules/.bin/drizzle-kit migrate
 
@@ -88,6 +89,7 @@ jobs:
         run: |
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             npx tsx tools/migrate-triggers.ts
 
@@ -95,6 +97,7 @@ jobs:
         run: |
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             npx tsx tools/migrate-hooks.ts --apply
 
@@ -103,6 +106,7 @@ jobs:
           docker run --rm \
             --env-file /opt/services/cascade-dev.env \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             npx tsx tools/migrate-project-credentials-reencrypt.ts
 
