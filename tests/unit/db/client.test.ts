@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // vi.mock factories are hoisted to the top of the file, so any variables they
 // reference must also be hoisted via vi.hoisted().
 
-const { mockPoolEnd, mockPoolConstructor, mockReadFileSync } = vi.hoisted(() => {
+const { mockPoolEnd, mockPoolConstructor, mockReadFileSync, mockExistsSync } = vi.hoisted(() => {
 	const mockPoolEnd = vi.fn().mockResolvedValue(undefined);
 	const mockPoolConstructor = vi.fn().mockImplementation(() => ({ end: mockPoolEnd }));
 	const mockReadFileSync = vi.fn().mockReturnValue('mock-ca-cert-content');
-	return { mockPoolEnd, mockPoolConstructor, mockReadFileSync };
+	const mockExistsSync = vi.fn().mockReturnValue(true);
+	return { mockPoolEnd, mockPoolConstructor, mockReadFileSync, mockExistsSync };
 });
 
 vi.mock('pg', () => ({
@@ -25,6 +26,7 @@ vi.mock('node:fs', () => ({
 	default: {
 		readFileSync: mockReadFileSync,
 	},
+	existsSync: mockExistsSync,
 }));
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
@@ -187,6 +189,14 @@ describe('getDb', () => {
 				ssl: { rejectUnauthorized: true, ca: 'mock-ca-cert-content' },
 			}),
 		);
+	});
+
+	it('throws a descriptive error when DATABASE_CA_CERT path does not exist', () => {
+		vi.stubEnv('DATABASE_SSL', '');
+		vi.stubEnv('DATABASE_CA_CERT', '/nonexistent/ca.pem');
+		mockExistsSync.mockReturnValueOnce(false);
+
+		expect(() => getDb()).toThrow('DATABASE_CA_CERT file not found: /nonexistent/ca.pem');
 	});
 
 	it('DATABASE_CA_CERT is ignored when DATABASE_SSL=false', () => {

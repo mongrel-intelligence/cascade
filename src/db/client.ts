@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs, { existsSync } from 'node:fs';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from './schema/index.js';
@@ -35,7 +35,11 @@ function getSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {
 	}
 	const sslConfig: { rejectUnauthorized: boolean; ca?: string } = { rejectUnauthorized: true };
 	if (process.env.DATABASE_CA_CERT) {
-		sslConfig.ca = fs.readFileSync(process.env.DATABASE_CA_CERT, 'utf8');
+		const certPath = process.env.DATABASE_CA_CERT;
+		if (!existsSync(certPath)) {
+			throw new Error(`DATABASE_CA_CERT file not found: ${certPath}`);
+		}
+		sslConfig.ca = fs.readFileSync(certPath, 'utf8');
 	}
 	return sslConfig;
 }
