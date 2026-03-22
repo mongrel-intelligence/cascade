@@ -159,6 +159,73 @@ export async function linkPRToWorkItem(
 // Note: The dual-join helper has been extracted to joinHelpers.ts for reuse
 
 // ============================================================================
+// Shared query helpers (DRY refactoring)
+// ============================================================================
+
+/**
+ * Returns the shared select column map for PR summary queries.
+ * Evaluated lazily (called at query time) to avoid module-load-time schema access,
+ * which would break test files that mock schema/index.js without prWorkItems.
+ *
+ * Used by listPRsForProject, listPRsForOrg, listPRsForWorkItem, and listUnifiedWorkForProject.
+ */
+function getPRSummarySelect() {
+	return {
+		prNumber: prWorkItems.prNumber,
+		repoFullName: prWorkItems.repoFullName,
+		prUrl: prWorkItems.prUrl,
+		prTitle: prWorkItems.prTitle,
+		workItemId: prWorkItems.workItemId,
+		workItemUrl: prWorkItems.workItemUrl,
+		workItemTitle: prWorkItems.workItemTitle,
+		runCount: countDistinct(agentRuns.id),
+	};
+}
+
+/**
+ * Returns the shared groupBy columns for PR summary queries.
+ * Evaluated lazily (called at query time) to avoid module-load-time schema access.
+ *
+ * Used by listPRsForProject, listPRsForOrg, listPRsForWorkItem, and (via spread) listUnifiedWorkForProject.
+ */
+function getPRSummaryGroupBy() {
+	return [
+		prWorkItems.prNumber,
+		prWorkItems.repoFullName,
+		prWorkItems.prUrl,
+		prWorkItems.prTitle,
+		prWorkItems.workItemId,
+		prWorkItems.workItemUrl,
+		prWorkItems.workItemTitle,
+	] as const;
+}
+
+/**
+ * Internal query builder that executes the shared PR summary query pattern.
+ * Accepts a WHERE condition and returns the matching PR summaries ordered by prNumber.
+ */
+async function queryPRSummaries(whereCondition: SQL): Promise<PRSummary[]> {
+	const db = getDb();
+	return db
+		.select(getPRSummarySelect())
+		.from(prWorkItems)
+		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
+		.where(whereCondition)
+		.groupBy(...getPRSummaryGroupBy())
+		.orderBy(prWorkItems.prNumber);
+}
+
+/**
+ * Resolve project IDs for a given org. Returns an empty array if no projects found.
+ * Used by listPRsForOrg and listWorkItems (org-scoped queries).
+ */
+async function resolveOrgProjectIds(orgId: string): Promise<string[]> {
+	const db = getDb();
+	const rows = await db.select({ id: projects.id }).from(projects).where(eq(projects.orgId, orgId));
+	return rows.map((p) => p.id);
+}
+
+// ============================================================================
 // List queries
 // ============================================================================
 
@@ -183,12 +250,8 @@ export async function listWorkItems(orgId: string, projectId?: string): Promise<
 	if (projectId) {
 		conditions.push(eq(prWorkItems.projectId, projectId));
 	} else {
-		// Filter by org: join with projects and restrict to org
-		const projectIds = await db
-			.select({ id: projects.id })
-			.from(projects)
-			.where(eq(projects.orgId, orgId));
-		const ids = projectIds.map((p) => p.id);
+		// Filter by org: resolve project IDs for this org
+		const ids = await resolveOrgProjectIds(orgId);
 		if (ids.length === 0) return [];
 		conditions.push(inArray(prWorkItems.projectId, ids));
 	}
@@ -231,74 +294,16 @@ export interface PRSummary {
  * Optionally filter by projectId; if omitted, returns all PRs across the org.
  */
 export async function listPRsForProject(projectId: string): Promise<PRSummary[]> {
-	const db = getDb();
-	const rows = await db
-		.select({
-			prNumber: prWorkItems.prNumber,
-			repoFullName: prWorkItems.repoFullName,
-			prUrl: prWorkItems.prUrl,
-			prTitle: prWorkItems.prTitle,
-			workItemId: prWorkItems.workItemId,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
-			runCount: countDistinct(agentRuns.id),
-		})
-		.from(prWorkItems)
-		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
-		.where(eq(prWorkItems.projectId, projectId))
-		.groupBy(
-			prWorkItems.prNumber,
-			prWorkItems.repoFullName,
-			prWorkItems.prUrl,
-			prWorkItems.prTitle,
-			prWorkItems.workItemId,
-			prWorkItems.workItemUrl,
-			prWorkItems.workItemTitle,
-		)
-		.orderBy(prWorkItems.prNumber);
-
-	return rows;
+	return queryPRSummaries(eq(prWorkItems.projectId, projectId));
 }
 
 /**
  * Returns all PR entries for an org (all projects), with associated work item display info and run count.
  */
 export async function listPRsForOrg(orgId: string): Promise<PRSummary[]> {
-	const db = getDb();
-
-	const projectIds = await db
-		.select({ id: projects.id })
-		.from(projects)
-		.where(eq(projects.orgId, orgId));
-	const ids = projectIds.map((p) => p.id);
+	const ids = await resolveOrgProjectIds(orgId);
 	if (ids.length === 0) return [];
-
-	const rows = await db
-		.select({
-			prNumber: prWorkItems.prNumber,
-			repoFullName: prWorkItems.repoFullName,
-			prUrl: prWorkItems.prUrl,
-			prTitle: prWorkItems.prTitle,
-			workItemId: prWorkItems.workItemId,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
-			runCount: countDistinct(agentRuns.id),
-		})
-		.from(prWorkItems)
-		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
-		.where(inArray(prWorkItems.projectId, ids))
-		.groupBy(
-			prWorkItems.prNumber,
-			prWorkItems.repoFullName,
-			prWorkItems.prUrl,
-			prWorkItems.prTitle,
-			prWorkItems.workItemId,
-			prWorkItems.workItemUrl,
-			prWorkItems.workItemTitle,
-		)
-		.orderBy(prWorkItems.prNumber);
-
-	return rows;
+	return queryPRSummaries(inArray(prWorkItems.projectId, ids));
 }
 
 /**
@@ -308,33 +313,9 @@ export async function listPRsForWorkItem(
 	projectId: string,
 	workItemId: string,
 ): Promise<PRSummary[]> {
-	const db = getDb();
-	const rows = await db
-		.select({
-			prNumber: prWorkItems.prNumber,
-			repoFullName: prWorkItems.repoFullName,
-			prUrl: prWorkItems.prUrl,
-			prTitle: prWorkItems.prTitle,
-			workItemId: prWorkItems.workItemId,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
-			runCount: countDistinct(agentRuns.id),
-		})
-		.from(prWorkItems)
-		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
-		.where(and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)))
-		.groupBy(
-			prWorkItems.prNumber,
-			prWorkItems.repoFullName,
-			prWorkItems.prUrl,
-			prWorkItems.prTitle,
-			prWorkItems.workItemId,
-			prWorkItems.workItemUrl,
-			prWorkItems.workItemTitle,
-		)
-		.orderBy(prWorkItems.prNumber);
-
-	return rows;
+	return queryPRSummaries(
+		and(eq(prWorkItems.projectId, projectId), eq(prWorkItems.workItemId, workItemId)) as SQL,
+	);
 }
 
 /**
@@ -383,31 +364,14 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 	const rows = await db
 		.select({
 			id: prWorkItems.id,
-			prNumber: prWorkItems.prNumber,
-			repoFullName: prWorkItems.repoFullName,
-			prUrl: prWorkItems.prUrl,
-			prTitle: prWorkItems.prTitle,
-			workItemId: prWorkItems.workItemId,
-			workItemUrl: prWorkItems.workItemUrl,
-			workItemTitle: prWorkItems.workItemTitle,
+			...getPRSummarySelect(),
 			updatedAt: prWorkItems.updatedAt,
-			runCount: countDistinct(agentRuns.id),
 			totalCostUsd: sum(agentRuns.costUsd),
 		})
 		.from(prWorkItems)
 		.leftJoin(agentRuns, buildAgentRunWorkItemJoin())
 		.where(eq(prWorkItems.projectId, projectId))
-		.groupBy(
-			prWorkItems.id,
-			prWorkItems.prNumber,
-			prWorkItems.repoFullName,
-			prWorkItems.prUrl,
-			prWorkItems.prTitle,
-			prWorkItems.workItemId,
-			prWorkItems.workItemUrl,
-			prWorkItems.workItemTitle,
-			prWorkItems.updatedAt,
-		)
+		.groupBy(prWorkItems.id, ...getPRSummaryGroupBy(), prWorkItems.updatedAt)
 		.orderBy(desc(prWorkItems.updatedAt));
 
 	return rows.map((r) => {
