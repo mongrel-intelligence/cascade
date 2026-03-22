@@ -56,7 +56,7 @@
 			"branchPrefix": "feature/",
 
 			"agentEngine": {
-				"default": "llmist",
+				"default": "claude-code",
 				"overrides": {
 					"implementation": "claude-code",
 					"respond-to-review": "claude-code",

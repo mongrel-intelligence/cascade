@@ -96,7 +96,7 @@ async function resolveEffectiveConfig(
 		effectiveModel:
 			projectAc?.model ?? projectRow.model ?? 'openrouter:google/gemini-3-flash-preview',
 		effectiveMaxIterations: projectAc?.maxIterations ?? projectRow.maxIterations ?? 50,
-		effectiveEngine: projectAc?.agentEngine ?? projectRow.agentEngine ?? 'llmist',
+		effectiveEngine: projectAc?.agentEngine ?? projectRow.agentEngine ?? 'claude-code',
 		projectOverrides: {
 			model: projectRow.model,
 			maxIterations: projectRow.maxIterations,

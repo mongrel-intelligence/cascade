@@ -29,14 +29,14 @@ describe('resolveEngineName', () => {
 		expect(resolveEngineName('implementation', project)).toBe('custom-backend');
 	});
 
-	it('returns "llmist" when no project config', () => {
+	it('returns "claude-code" when no project config', () => {
 		const project = makeProject(); // no agentEngine
-		expect(resolveEngineName('implementation', project)).toBe('llmist');
+		expect(resolveEngineName('implementation', project)).toBe('claude-code');
 	});
 
-	it('returns "llmist" when nothing configured', () => {
+	it('returns "claude-code" when nothing configured', () => {
 		const project = makeProject(); // no agentEngine
-		expect(resolveEngineName('implementation', project)).toBe('llmist');
+		expect(resolveEngineName('implementation', project)).toBe('claude-code');
 	});
 
 	it('prioritizes override > project default > fallback', () => {

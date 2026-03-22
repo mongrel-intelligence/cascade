@@ -287,7 +287,7 @@ describe('configRepository', () => {
 			const proj = config.projects[0];
 
 			expect(proj.agentEngine).toBeDefined();
-			expect(proj.agentEngine?.default).toBe('llmist'); // Zod default
+			expect(proj.agentEngine?.default).toBe('claude-code'); // Zod default
 			expect(proj.agentEngine?.overrides).toEqual({
 				implementation: 'claude-code',
 			});

@@ -39,7 +39,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
 - **Extensible trigger system** — Add new events without touching core logic
-- **Pluggable agent engines** — `llmist` (default), `claude-code`, `codex`, and `opencode` built-in; easy to extend
+- **Pluggable agent engines** — `claude-code` (default), `llmist`, `codex`, and `opencode` built-in; easy to extend
 - **Credential encryption** — AES-256-GCM encryption for all stored secrets
 - **Agent resilience** — Built-in rate limiting, exponential-backoff retry, and context compaction
 
@@ -140,7 +140,7 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database.
 
-**Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). Alternatives: `claude-code` (Claude Code SDK), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
+**Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `claude-code` (Anthropic Claude Code SDK). Alternatives: `llmist` (supports OpenRouter, Anthropic, OpenAI), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
 
 **Credential management** — All secrets are stored in the `project_credentials` table, scoped to a project. Optional AES-256-GCM encryption via `CREDENTIAL_MASTER_KEY`.
 

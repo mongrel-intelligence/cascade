@@ -355,7 +355,7 @@ cascade projects trigger-set <project-id> --agent splitting --event pm:label-add
 
 ## Claude Code Engine
 
-CASCADE supports using Claude Code SDK as an alternative agent engine. Configure per-project via the CLI or dashboard:
+CASCADE uses the Claude Code SDK as the default agent engine. Configure per-project via the CLI or dashboard:
 
 ```bash
 # Set Claude Code as the default engine for a project

@@ -198,7 +198,7 @@ function DefinitionAgentSection({
 	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
 
 	// Resolved inherited engine — project override or system default
-	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? 'llmist';
+	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? 'claude-code';
 	// Per-field engine defaults for the EngineSettingsFields component
 	const engineDefaults =
 		systemDefaults && effectiveEngineId

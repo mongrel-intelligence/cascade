@@ -135,7 +135,7 @@ node bin/cascade.js projects credentials-set my-project \
 
 Which credentials you need depends on which agent engine you plan to use. You can always add more later.
 
-#### LLMist engine (default)
+#### LLMist engine
 
 LLMist supports OpenRouter, Anthropic, and OpenAI. Store the key for whichever provider you prefer:
 
@@ -159,7 +159,7 @@ node bin/cascade.js projects credentials-set my-project \
   --name "OpenAI"
 ```
 
-#### Claude Code engine
+#### Claude Code engine (default)
 
 Requires either an Anthropic API key or a Claude Max subscription token:
 
@@ -207,12 +207,12 @@ You can also manage all of this through the dashboard UI: **Projects** > select 
 
 ## 7. Choose Agent Engine
 
-Cascade supports multiple agent engines. The default is **LLMist** — change it if you want to use a different engine.
+Cascade supports multiple agent engines. The default is **Claude Code** — change it if you want to use a different engine.
 
 | Engine | Description |
 |--------|-------------|
-| `llmist` | LLMist SDK with Cascade gadgets (default) |
-| `claude-code` | Anthropic Claude Code SDK |
+| `claude-code` | Anthropic Claude Code SDK (default) |
+| `llmist` | LLMist SDK with Cascade gadgets |
 | `codex` | OpenAI Codex CLI |
 | `opencode` | OpenCode headless agent |
 

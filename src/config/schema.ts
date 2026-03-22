@@ -8,7 +8,7 @@ export const PROJECT_DEFAULTS = {
 	progressModel: 'openrouter:google/gemini-2.5-flash-lite',
 	progressIntervalMinutes: 5,
 	workItemBudgetUsd: 5,
-	agentEngine: 'llmist',
+	agentEngine: 'claude-code',
 } as const;
 
 const AgentEngineConfigSchema = z.object({

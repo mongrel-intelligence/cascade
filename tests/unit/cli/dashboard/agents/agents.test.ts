@@ -38,7 +38,7 @@ const sampleAgentConfig = {
 	projectId: 'my-project',
 	model: 'claude-sonnet-4-5-20250929',
 	maxIterations: 50,
-	agentEngine: 'llmist',
+	agentEngine: 'claude-code',
 	maxConcurrency: null,
 	prompt: null,
 };

@@ -615,7 +615,7 @@ describe('projectsRouter', () => {
 			expect(PROJECT_DEFAULTS.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
 			expect(PROJECT_DEFAULTS.progressIntervalMinutes).toBe(5);
 			expect(PROJECT_DEFAULTS.workItemBudgetUsd).toBe(5);
-			expect(PROJECT_DEFAULTS.agentEngine).toBe('llmist');
+			expect(PROJECT_DEFAULTS.agentEngine).toBe('claude-code');
 		});
 
 		it('CLAUDE_CODE_SETTING_DEFAULTS match the resolver fallback values', () => {
