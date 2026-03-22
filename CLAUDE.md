@@ -120,7 +120,8 @@ Required:
 Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
-- `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
+- `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled with certificate validation)
+- `DATABASE_CA_CERT` - Path to a PEM-encoded CA certificate file for managed databases that use a private CA (e.g., AWS RDS, Azure Database, GCP Cloud SQL). When set, the certificate is read and passed as the `ca` option to `pg.Pool`, enabling TLS certificate validation against the specified CA. Example: `DATABASE_CA_CERT=/etc/ssl/certs/rds-ca.pem`
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code engine (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
 - `WEBHOOK_CALLBACK_BASE_URL` - Base URL for webhook callbacks (e.g., `https://cascade.example.com`). Used by `tools/setup-webhooks.ts` and the `cascade webhooks create` CLI command to construct the full webhook URL.
