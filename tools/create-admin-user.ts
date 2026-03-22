@@ -3,11 +3,13 @@
  *
  * Usage (local, with tsx):
  *   node --env-file=.env --import tsx tools/create-admin-user.ts \
- *     --email admin@example.com --password changeme --name "Admin"
+ *     --email admin@example.com --password 'MySecurePass1!' --name "Admin"
  *
  * Inside Docker:
  *   docker compose exec dashboard node dist/tools/create-admin-user.mjs \
- *     --email admin@example.com --password changeme --name "Admin"
+ *     --email admin@example.com --password 'MySecurePass1!' --name "Admin"
+ *
+ * Note: passwords must be at least 12 characters.
  */
 
 import bcrypt from 'bcrypt';
@@ -31,6 +33,11 @@ function parseArgs(argv: string[]): { email: string; password: string; name: str
 
 	if (!email || !password || !name) {
 		console.error('Usage: create-admin-user --email <email> --password <password> --name <name>');
+		process.exit(1);
+	}
+
+	if (password.length < 12) {
+		console.error('Error: password must be at least 12 characters.');
 		process.exit(1);
 	}
 

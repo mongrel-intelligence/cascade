@@ -105,7 +105,10 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 							type="password"
 							value={password}
 							onChange={(e) => setPassword(e.target.value)}
-							placeholder={isEdit ? 'Enter new password to change' : 'Password'}
+							placeholder={
+								isEdit ? 'Enter new password to change (min 12 chars)' : 'Minimum 12 characters'
+							}
+							minLength={12}
 							required={!isEdit}
 						/>
 					</div>
