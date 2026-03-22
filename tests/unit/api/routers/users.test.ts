@@ -131,10 +131,10 @@ describe('usersRouter', () => {
 			const result = await caller.create({
 				email: 'newuser@example.com',
 				name: 'New User',
-				password: 'secret123',
+				password: 'secret123456789',
 			});
 
-			expect(mockBcryptHash).toHaveBeenCalledWith('secret123', 10);
+			expect(mockBcryptHash).toHaveBeenCalledWith('secret123456789', 10);
 			expect(mockCreateUser).toHaveBeenCalledWith({
 				orgId: 'org-1',
 				email: 'newuser@example.com',
@@ -152,7 +152,7 @@ describe('usersRouter', () => {
 			await caller.create({
 				email: 'newadmin@example.com',
 				name: 'New Admin',
-				password: 'secret123',
+				password: 'secret123456789',
 				role: 'admin',
 			});
 
@@ -166,7 +166,7 @@ describe('usersRouter', () => {
 				caller.create({
 					email: 'superuser@example.com',
 					name: 'Super User',
-					password: 'secret123',
+					password: 'secret123456789',
 					role: 'superadmin',
 				}),
 			).rejects.toMatchObject({ code: 'FORBIDDEN' });
@@ -181,11 +181,43 @@ describe('usersRouter', () => {
 			await caller.create({
 				email: 'super2@example.com',
 				name: 'Super 2',
-				password: 'secret123',
+				password: 'secret123456789',
 				role: 'superadmin',
 			});
 
 			expect(mockCreateUser).toHaveBeenCalledWith(expect.objectContaining({ role: 'superadmin' }));
+		});
+
+		it('rejects password shorter than 12 characters', async () => {
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await expect(
+				caller.create({ email: 'x@example.com', name: 'X', password: 'short' }),
+			).rejects.toThrow();
+
+			expect(mockCreateUser).not.toHaveBeenCalled();
+		});
+
+		it('accepts password of exactly 12 characters', async () => {
+			mockCreateUser.mockResolvedValue({ id: 'new-user-1' });
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await caller.create({ email: 'x@example.com', name: 'X', password: 'exactly12chr' });
+
+			expect(mockCreateUser).toHaveBeenCalled();
+		});
+
+		it('accepts password longer than 12 characters', async () => {
+			mockCreateUser.mockResolvedValue({ id: 'new-user-2' });
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await caller.create({
+				email: 'x@example.com',
+				name: 'X',
+				password: 'this-is-a-very-long-password-123',
+			});
+
+			expect(mockCreateUser).toHaveBeenCalled();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
@@ -233,9 +265,9 @@ describe('usersRouter', () => {
 			mockUpdateUser.mockResolvedValue(undefined);
 			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
 
-			await caller.update({ id: 'user-2', password: 'newpassword' });
+			await caller.update({ id: 'user-2', password: 'newpassword12' });
 
-			expect(mockBcryptHash).toHaveBeenCalledWith('newpassword', 10);
+			expect(mockBcryptHash).toHaveBeenCalledWith('newpassword12', 10);
 			expect(mockUpdateUser).toHaveBeenCalledWith('user-2', { passwordHash: 'hashed-password' });
 		});
 
@@ -335,6 +367,25 @@ describe('usersRouter', () => {
 			await caller.update({ id: 'user-2', role: 'admin' });
 
 			expect(mockUpdateUser).toHaveBeenCalledWith('user-2', { role: 'admin' });
+		});
+
+		it('rejects update password shorter than 12 characters', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'member' });
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await expect(caller.update({ id: 'user-2', password: 'tooshort' })).rejects.toThrow();
+
+			expect(mockUpdateUser).not.toHaveBeenCalled();
+		});
+
+		it('accepts update password of exactly 12 characters', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'member' });
+			mockUpdateUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await caller.update({ id: 'user-2', password: 'exactly12chr' });
+
+			expect(mockUpdateUser).toHaveBeenCalled();
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
