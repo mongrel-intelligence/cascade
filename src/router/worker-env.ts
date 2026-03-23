@@ -51,6 +51,30 @@ export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 }
 
 /**
+ * Append optional infrastructure env vars that are conditionally forwarded to workers.
+ * Extracted to keep buildWorkerEnvWithProjectId within complexity limits.
+ */
+function appendOptionalEnvVars(env: string[]): void {
+	// Forward DB SSL config so workers use the same TLS settings as the router.
+	if (process.env.DATABASE_SSL) env.push(`DATABASE_SSL=${process.env.DATABASE_SSL}`);
+	if (process.env.DATABASE_CA_CERT) env.push(`DATABASE_CA_CERT=${process.env.DATABASE_CA_CERT}`);
+
+	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
+	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
+		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
+
+	// Forward Sentry env vars so worker containers report to the same project.
+	if (process.env.SENTRY_DSN) env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
+	if (process.env.SENTRY_ENVIRONMENT)
+		env.push(`SENTRY_ENVIRONMENT=${process.env.SENTRY_ENVIRONMENT}`);
+	if (process.env.SENTRY_RELEASE) env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
+
+	// Forward dashboard URL so worker progress comments can include run links.
+	if (process.env.CASCADE_DASHBOARD_URL)
+		env.push(`CASCADE_DASHBOARD_URL=${process.env.CASCADE_DASHBOARD_URL}`);
+}
+
+/**
  * Build environment variables for a worker container with a pre-resolved projectId.
  * @internal Used by container-manager.ts to avoid resolving projectId twice.
  */
@@ -95,19 +119,7 @@ export async function buildWorkerEnvWithProjectId(
 		}
 	}
 
-	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
-	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
-		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
-
-	// Forward Sentry env vars so worker containers report to the same project.
-	if (process.env.SENTRY_DSN) env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
-	if (process.env.SENTRY_ENVIRONMENT)
-		env.push(`SENTRY_ENVIRONMENT=${process.env.SENTRY_ENVIRONMENT}`);
-	if (process.env.SENTRY_RELEASE) env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
-
-	// Forward dashboard URL so worker progress comments can include run links.
-	if (process.env.CASCADE_DASHBOARD_URL)
-		env.push(`CASCADE_DASHBOARD_URL=${process.env.CASCADE_DASHBOARD_URL}`);
+	appendOptionalEnvVars(env);
 
 	return env;
 }

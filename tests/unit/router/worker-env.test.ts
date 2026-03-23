@@ -168,6 +168,32 @@ describe('buildWorkerEnv', () => {
 		const env = await buildWorkerEnv(makeJob() as never);
 		expect(env).toContain('REDIS_URL=redis://localhost:6379');
 	});
+
+	it('forwards DATABASE_SSL when set', async () => {
+		process.env.DATABASE_SSL = 'false';
+		try {
+			const env = await buildWorkerEnv(makeJob() as never);
+			expect(env).toContain('DATABASE_SSL=false');
+		} finally {
+			Reflect.deleteProperty(process.env, 'DATABASE_SSL');
+		}
+	});
+
+	it('omits DATABASE_SSL when not set', async () => {
+		Reflect.deleteProperty(process.env, 'DATABASE_SSL');
+		const env = await buildWorkerEnv(makeJob() as never);
+		expect(env.some((e) => e.startsWith('DATABASE_SSL='))).toBe(false);
+	});
+
+	it('forwards DATABASE_CA_CERT when set', async () => {
+		process.env.DATABASE_CA_CERT = '/etc/ssl/certs/rds-ca.pem';
+		try {
+			const env = await buildWorkerEnv(makeJob() as never);
+			expect(env).toContain('DATABASE_CA_CERT=/etc/ssl/certs/rds-ca.pem');
+		} finally {
+			Reflect.deleteProperty(process.env, 'DATABASE_CA_CERT');
+		}
+	});
 });
 
 // ---------------------------------------------------------------------------
