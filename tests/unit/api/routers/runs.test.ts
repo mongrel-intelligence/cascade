@@ -1,36 +1,63 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import {
+	createCallerFor,
+	expectTRPCError,
+	setupOwnershipCheckMock,
+} from '../../../helpers/trpcTestHarness.js';
 
 // Mock repository functions
-const mockListRuns = vi.fn();
-const mockGetRunById = vi.fn();
-const mockGetRunLogs = vi.fn();
-const mockListLlmCallsMeta = vi.fn();
-const mockGetLlmCallByNumber = vi.fn();
-const mockGetDebugAnalysisByRunId = vi.fn();
-const mockDeleteDebugAnalysisByRunId = vi.fn();
-const mockHasActiveRunForWorkItem = vi.fn().mockResolvedValue(false);
-const mockCancelRunById = vi.fn().mockResolvedValue(true);
+const {
+	mockListRuns,
+	mockGetRunById,
+	mockGetRunLogs,
+	mockListLlmCallsMeta,
+	mockGetLlmCallByNumber,
+	mockGetDebugAnalysisByRunId,
+	mockDeleteDebugAnalysisByRunId,
+	mockHasActiveRunForWorkItem,
+	mockCancelRunById,
+	mockIsAnalysisRunning,
+	mockTriggerDebugAnalysis,
+	mockTriggerManualRun,
+	mockTriggerRetryRun,
+	mockLoadProjectConfigById,
+	mockPublishCancelCommand,
+	mockIsAgentEnabledForProject,
+} = vi.hoisted(() => ({
+	mockListRuns: vi.fn(),
+	mockGetRunById: vi.fn(),
+	mockGetRunLogs: vi.fn(),
+	mockListLlmCallsMeta: vi.fn(),
+	mockGetLlmCallByNumber: vi.fn(),
+	mockGetDebugAnalysisByRunId: vi.fn(),
+	mockDeleteDebugAnalysisByRunId: vi.fn(),
+	mockHasActiveRunForWorkItem: vi.fn().mockResolvedValue(false),
+	mockCancelRunById: vi.fn().mockResolvedValue(true),
+	mockIsAnalysisRunning: vi.fn(),
+	mockTriggerDebugAnalysis: vi.fn(),
+	mockTriggerManualRun: vi.fn(),
+	mockTriggerRetryRun: vi.fn(),
+	mockLoadProjectConfigById: vi.fn(),
+	mockPublishCancelCommand: vi.fn().mockResolvedValue(undefined),
+	mockIsAgentEnabledForProject: vi.fn().mockResolvedValue(true),
+}));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	DEFAULT_STALE_RUN_THRESHOLD_MS: 2 * 60 * 60 * 1000,
-	listRuns: (...args: unknown[]) => mockListRuns(...args),
-	getRunById: (...args: unknown[]) => mockGetRunById(...args),
-	getRunLogs: (...args: unknown[]) => mockGetRunLogs(...args),
-	listLlmCallsMeta: (...args: unknown[]) => mockListLlmCallsMeta(...args),
-	getLlmCallByNumber: (...args: unknown[]) => mockGetLlmCallByNumber(...args),
-	getDebugAnalysisByRunId: (...args: unknown[]) => mockGetDebugAnalysisByRunId(...args),
-	deleteDebugAnalysisByRunId: (...args: unknown[]) => mockDeleteDebugAnalysisByRunId(...args),
-	hasActiveRunForWorkItem: (...args: unknown[]) => mockHasActiveRunForWorkItem(...args),
-	cancelRunById: (...args: unknown[]) => mockCancelRunById(...args),
+	listRuns: mockListRuns,
+	getRunById: mockGetRunById,
+	getRunLogs: mockGetRunLogs,
+	listLlmCallsMeta: mockListLlmCallsMeta,
+	getLlmCallByNumber: mockGetLlmCallByNumber,
+	getDebugAnalysisByRunId: mockGetDebugAnalysisByRunId,
+	deleteDebugAnalysisByRunId: mockDeleteDebugAnalysisByRunId,
+	hasActiveRunForWorkItem: mockHasActiveRunForWorkItem,
+	cancelRunById: mockCancelRunById,
 }));
 
 // Mock getDb for the inline org-access check in getById
-const mockDbSelect = vi.fn();
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
+const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({
@@ -43,29 +70,24 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 }));
 
 // Mock debug-status tracker
-const mockIsAnalysisRunning = vi.fn();
 vi.mock('../../../../src/triggers/shared/debug-status.js', () => ({
-	isAnalysisRunning: (...args: unknown[]) => mockIsAnalysisRunning(...args),
+	isAnalysisRunning: mockIsAnalysisRunning,
 }));
 
 // Mock triggerDebugAnalysis (fire-and-forget)
-const mockTriggerDebugAnalysis = vi.fn();
 vi.mock('../../../../src/triggers/shared/debug-runner.js', () => ({
-	triggerDebugAnalysis: (...args: unknown[]) => mockTriggerDebugAnalysis(...args),
+	triggerDebugAnalysis: mockTriggerDebugAnalysis,
 }));
 
 // Mock triggerManualRun and triggerRetryRun (fire-and-forget)
-const mockTriggerManualRun = vi.fn();
-const mockTriggerRetryRun = vi.fn();
 vi.mock('../../../../src/triggers/shared/manual-runner.js', () => ({
-	triggerManualRun: (...args: unknown[]) => mockTriggerManualRun(...args),
-	triggerRetryRun: (...args: unknown[]) => mockTriggerRetryRun(...args),
+	triggerManualRun: mockTriggerManualRun,
+	triggerRetryRun: mockTriggerRetryRun,
 }));
 
 // Mock config provider
-const mockLoadProjectConfigById = vi.fn();
 vi.mock('../../../../src/config/provider.js', () => ({
-	loadProjectConfigById: (...args: unknown[]) => mockLoadProjectConfigById(...args),
+	loadProjectConfigById: mockLoadProjectConfigById,
 }));
 
 // Mock logger
@@ -74,22 +96,18 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 // Mock publishCancelCommand (fire-and-forget)
-const mockPublishCancelCommand = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../../../src/queue/cancel.js', () => ({
-	publishCancelCommand: (...args: unknown[]) => mockPublishCancelCommand(...args),
+	publishCancelCommand: mockPublishCancelCommand,
 }));
 
 // Mock isAgentEnabledForProject — default: agent is enabled
-const mockIsAgentEnabledForProject = vi.fn().mockResolvedValue(true);
 vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
-	isAgentEnabledForProject: (...args: unknown[]) => mockIsAgentEnabledForProject(...args),
+	isAgentEnabledForProject: mockIsAgentEnabledForProject,
 }));
 
 import { runsRouter } from '../../../../src/api/routers/runs.js';
 
-function createCaller(ctx: TRPCContext) {
-	return runsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(runsRouter);
 
 const mockUser = createMockUser();
 
@@ -176,7 +194,7 @@ describe('runsRouter', () => {
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list({})).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expectTRPCError(caller.list({}), 'UNAUTHORIZED');
 		});
 	});
 
@@ -207,7 +225,7 @@ describe('runsRouter', () => {
 
 		it('throws FORBIDDEN when not superadmin', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.listAll({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+			await expectTRPCError(caller.listAll({}), 'FORBIDDEN');
 		});
 	});
 
@@ -873,9 +891,10 @@ describe('runsRouter', () => {
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('throws CONFLICT when work item has an active run', async () => {

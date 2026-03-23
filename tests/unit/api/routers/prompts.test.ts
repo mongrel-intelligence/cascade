@@ -1,44 +1,55 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // Mock prompt functions
-const mockGetValidAgentTypes = vi.fn();
-const mockGetRawTemplate = vi.fn();
-const mockGetTemplateVariables = vi.fn();
-const mockValidateTemplate = vi.fn();
-const mockGetAvailablePartialNames = vi.fn();
-const mockGetRawPartial = vi.fn();
+const {
+	mockGetValidAgentTypes,
+	mockGetRawTemplate,
+	mockGetTemplateVariables,
+	mockValidateTemplate,
+	mockGetAvailablePartialNames,
+	mockGetRawPartial,
+	mockLoadPartials,
+	mockListPartials,
+	mockGetPartial,
+	mockUpsertPartial,
+	mockDeletePartial,
+} = vi.hoisted(() => ({
+	mockGetValidAgentTypes: vi.fn(),
+	mockGetRawTemplate: vi.fn(),
+	mockGetTemplateVariables: vi.fn(),
+	mockValidateTemplate: vi.fn(),
+	mockGetAvailablePartialNames: vi.fn(),
+	mockGetRawPartial: vi.fn(),
+	mockLoadPartials: vi.fn(),
+	mockListPartials: vi.fn(),
+	mockGetPartial: vi.fn(),
+	mockUpsertPartial: vi.fn(),
+	mockDeletePartial: vi.fn(),
+}));
 
 vi.mock('../../../../src/agents/prompts/index.js', () => ({
-	getValidAgentTypes: (...args: unknown[]) => mockGetValidAgentTypes(...args),
-	getRawTemplate: (...args: unknown[]) => mockGetRawTemplate(...args),
-	getTemplateVariables: (...args: unknown[]) => mockGetTemplateVariables(...args),
-	validateTemplate: (...args: unknown[]) => mockValidateTemplate(...args),
-	getAvailablePartialNames: (...args: unknown[]) => mockGetAvailablePartialNames(...args),
-	getRawPartial: (...args: unknown[]) => mockGetRawPartial(...args),
+	getValidAgentTypes: mockGetValidAgentTypes,
+	getRawTemplate: mockGetRawTemplate,
+	getTemplateVariables: mockGetTemplateVariables,
+	validateTemplate: mockValidateTemplate,
+	getAvailablePartialNames: mockGetAvailablePartialNames,
+	getRawPartial: mockGetRawPartial,
 }));
 
 // Mock partials repository
-const mockLoadPartials = vi.fn();
-const mockListPartials = vi.fn();
-const mockGetPartial = vi.fn();
-const mockUpsertPartial = vi.fn();
-const mockDeletePartial = vi.fn();
-
 vi.mock('../../../../src/db/repositories/partialsRepository.js', () => ({
-	loadPartials: (...args: unknown[]) => mockLoadPartials(...args),
-	listPartials: (...args: unknown[]) => mockListPartials(...args),
-	getPartial: (...args: unknown[]) => mockGetPartial(...args),
-	upsertPartial: (...args: unknown[]) => mockUpsertPartial(...args),
-	deletePartial: (...args: unknown[]) => mockDeletePartial(...args),
+	loadPartials: mockLoadPartials,
+	listPartials: mockListPartials,
+	getPartial: mockGetPartial,
+	upsertPartial: mockUpsertPartial,
+	deletePartial: mockDeletePartial,
 }));
 
 import { promptsRouter } from '../../../../src/api/routers/prompts.js';
 
-function createCaller(ctx: TRPCContext) {
-	return promptsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(promptsRouter);
 
 const mockUser = createMockSuperAdmin();
 const mockAdminUser = createMockUser({ role: 'admin' });
@@ -58,7 +69,7 @@ describe('promptsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.agentTypes()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expectTRPCError(caller.agentTypes(), 'UNAUTHORIZED');
 		});
 	});
 
@@ -86,9 +97,7 @@ describe('promptsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.getDefault({ agentType: 'splitting' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.getDefault({ agentType: 'splitting' }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -245,9 +254,7 @@ describe('promptsRouter', () => {
 
 		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
 			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
-			await expect(caller.upsertPartial({ name: 'git', content: 'content' })).rejects.toMatchObject(
-				{ code: 'FORBIDDEN' },
-			);
+			await expectTRPCError(caller.upsertPartial({ name: 'git', content: 'content' }), 'FORBIDDEN');
 		});
 	});
 
@@ -263,16 +270,12 @@ describe('promptsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.deletePartial({ id: 1 })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.deletePartial({ id: 1 }), 'UNAUTHORIZED');
 		});
 
 		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
 			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
-			await expect(caller.deletePartial({ id: 1 })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
+			await expectTRPCError(caller.deletePartial({ id: 1 }), 'FORBIDDEN');
 		});
 	});
 });

@@ -1,35 +1,40 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
-const mockListOrgUsers = vi.fn();
-const mockCreateUser = vi.fn();
-const mockUpdateUser = vi.fn();
-const mockDeleteUser = vi.fn();
-const mockGetUserById = vi.fn();
-
-vi.mock('../../../../src/db/repositories/usersRepository.js', () => ({
-	listOrgUsers: (...args: unknown[]) => mockListOrgUsers(...args),
-	createUser: (...args: unknown[]) => mockCreateUser(...args),
-	updateUser: (...args: unknown[]) => mockUpdateUser(...args),
-	deleteUser: (...args: unknown[]) => mockDeleteUser(...args),
-	getUserById: (...args: unknown[]) => mockGetUserById(...args),
+const {
+	mockListOrgUsers,
+	mockCreateUser,
+	mockUpdateUser,
+	mockDeleteUser,
+	mockGetUserById,
+	mockBcryptHash,
+} = vi.hoisted(() => ({
+	mockListOrgUsers: vi.fn(),
+	mockCreateUser: vi.fn(),
+	mockUpdateUser: vi.fn(),
+	mockDeleteUser: vi.fn(),
+	mockGetUserById: vi.fn(),
+	mockBcryptHash: vi.fn(),
 }));
 
-const mockBcryptHash = vi.fn();
+vi.mock('../../../../src/db/repositories/usersRepository.js', () => ({
+	listOrgUsers: mockListOrgUsers,
+	createUser: mockCreateUser,
+	updateUser: mockUpdateUser,
+	deleteUser: mockDeleteUser,
+	getUserById: mockGetUserById,
+}));
 
 vi.mock('bcrypt', () => ({
 	default: {
-		hash: (...args: unknown[]) => mockBcryptHash(...args),
+		hash: mockBcryptHash,
 	},
 }));
 
 import { usersRouter } from '../../../../src/api/routers/users.js';
 
-function createCaller(ctx: TRPCContext) {
-	return usersRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(usersRouter);
 
 const mockAdminUser = createMockUser({ role: 'admin' });
 const mockSuperAdmin = createMockSuperAdmin();
