@@ -43,21 +43,26 @@ export async function resolveGitHubTokenForAck(
  * is posted by the same persona that will run the agent (and can
  * later update it via ProgressMonitor). All other agents use the
  * implementer token.
+ *
+ * @param project — Optional pre-resolved project config. When provided, the
+ *   `findProjectByRepo()` DB lookup is skipped entirely (eliminating a
+ *   redundant query in callers that have already resolved the project).
  */
 export async function resolveGitHubTokenForAckByAgent(
 	repoFullName: string,
 	agentType: string,
+	project?: ProjectConfig,
 ): Promise<ResolvedGitHubToken | null> {
-	const project = await findProjectByRepo(repoFullName);
-	if (!project) return null;
+	const resolvedProject = project ?? (await findProjectByRepo(repoFullName));
+	if (!resolvedProject) return null;
 
 	try {
 		if (agentType === 'review') {
-			const token = await getIntegrationCredential(project.id, 'scm', 'reviewer_token');
-			return { token, project };
+			const token = await getIntegrationCredential(resolvedProject.id, 'scm', 'reviewer_token');
+			return { token, project: resolvedProject };
 		}
-		const token = await getProjectGitHubToken(project);
-		return { token, project };
+		const token = await getProjectGitHubToken(resolvedProject);
+		return { token, project: resolvedProject };
 	} catch {
 		logger.warn('[Ack] Missing GitHub token for repo:', repoFullName);
 		return null;

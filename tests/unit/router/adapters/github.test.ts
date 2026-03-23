@@ -477,4 +477,85 @@ describe('GitHubRouterAdapter', () => {
 			expect(addEyesReactionToPR).not.toHaveBeenCalled();
 		});
 	});
+
+	describe('per-request caching', () => {
+		it('calls findProjectByRepo only once across isSelfAuthored and sendReaction', async () => {
+			vi.mocked(findProjectByRepo).mockResolvedValue({ id: 'p1' } as never);
+			vi.mocked(resolvePersonaIdentities).mockResolvedValue({
+				implementer: 'impl-bot',
+				reviewer: 'review-bot',
+			} as never);
+			vi.mocked(isCascadeBot).mockReturnValue(false);
+			vi.mocked(sendAcknowledgeReaction).mockResolvedValue(undefined);
+
+			const commentEvent = {
+				projectIdentifier: 'owner/repo',
+				eventType: 'issue_comment',
+				isCommentEvent: true,
+				// @ts-expect-error extended field
+				repoFullName: 'owner/repo',
+			};
+
+			// Both calls share the same adapter instance
+			await adapter.isSelfAuthored(commentEvent, { comment: { user: { login: 'human' } } });
+			adapter.sendReaction(commentEvent, { comment: { body: 'hello' } });
+
+			// Give the async fire-and-forget in sendReaction time to execute
+			await vi.waitFor(() => expect(sendAcknowledgeReaction).toHaveBeenCalled());
+
+			// findProjectByRepo should have been called only once (cached for the second call)
+			expect(findProjectByRepo).toHaveBeenCalledTimes(1);
+			// resolvePersonaIdentities should have been called only once
+			expect(resolvePersonaIdentities).toHaveBeenCalledTimes(1);
+		});
+
+		it('calls resolvePersonaIdentities only once across isSelfAuthored and dispatchWithCredentials', async () => {
+			vi.mocked(findProjectByRepo).mockResolvedValue({ id: 'p1' } as never);
+			vi.mocked(resolvePersonaIdentities).mockResolvedValue({
+				implementer: 'impl-bot',
+				reviewer: 'review-bot',
+			} as never);
+			vi.mocked(isCascadeBot).mockReturnValue(false);
+
+			const commentEvent = {
+				projectIdentifier: 'owner/repo',
+				eventType: 'issue_comment',
+				isCommentEvent: true,
+				// @ts-expect-error extended field
+				repoFullName: 'owner/repo',
+			};
+
+			await adapter.isSelfAuthored(commentEvent, { comment: { user: { login: 'human' } } });
+			await adapter.dispatchWithCredentials(commentEvent, {}, mockProject, mockTriggerRegistry);
+
+			// resolvePersonaIdentities called only once (cached by dispatchWithCredentials for the same projectId)
+			expect(resolvePersonaIdentities).toHaveBeenCalledTimes(1);
+		});
+
+		it('does not call loadProjectConfig again in postAck when dispatchWithCredentials ran first', async () => {
+			vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
+			vi.mocked(resolveGitHubTokenForAckByAgent).mockResolvedValue({
+				token: 'ghp_test',
+				project: { id: 'p1' },
+			} as never);
+			vi.mocked(extractPRNumber).mockReturnValue(42);
+			vi.mocked(postGitHubAck).mockResolvedValue(999);
+
+			const event = {
+				projectIdentifier: 'owner/repo',
+				eventType: 'pull_request',
+				workItemId: '42',
+				isCommentEvent: false,
+				// @ts-expect-error extended field
+				repoFullName: 'owner/repo',
+			};
+
+			await adapter.dispatchWithCredentials(event, {}, mockProject, mockTriggerRegistry);
+			await adapter.postAck(event, {}, mockProject, 'review');
+
+			// loadProjectConfig should have been called once (by dispatchWithCredentials)
+			// postAck reuses cachedFullProject instead of calling loadProjectConfig again
+			expect(loadProjectConfig).toHaveBeenCalledTimes(1);
+		});
+	});
 });

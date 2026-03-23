@@ -53,13 +53,32 @@ export async function getPersonaToken(projectId: string, agentType: string): Pro
 // Identity Resolution
 // ============================================================================
 
+const PERSONA_CACHE_TTL_MS = 60_000; // 60 seconds — matches the Trello/JIRA BotIdentityCache TTL
+
+interface CacheEntry {
+	value: PersonaIdentities;
+	expiresAt: number;
+}
+
+// Per-project TTL cache for persona identities.
+// Unlike BotIdentityCache, errors are re-thrown so callers retain error semantics.
+const personaIdentityCache = new Map<string, CacheEntry>();
+
 /**
  * Resolve both persona GitHub usernames for a project.
- * Always queries the database and GitHub API for fresh data.
+ * Results are cached per-project with a 60s TTL to avoid redundant DB + API calls
+ * on rapid successive webhooks (e.g. multiple events within the same request batch).
+ * Errors are re-thrown so callers can handle credential failures.
  */
 export async function resolvePersonaIdentities(projectId: string): Promise<PersonaIdentities> {
-	const implementerToken = await getIntegrationCredential(projectId, 'scm', 'implementer_token');
-	const reviewerToken = await getIntegrationCredential(projectId, 'scm', 'reviewer_token');
+	const cached = personaIdentityCache.get(projectId);
+	if (cached && Date.now() < cached.expiresAt) return cached.value;
+
+	// Parallelize credential lookups to halve round-trip latency
+	const [implementerToken, reviewerToken] = await Promise.all([
+		getIntegrationCredential(projectId, 'scm', 'implementer_token'),
+		getIntegrationCredential(projectId, 'scm', 'reviewer_token'),
+	]);
 
 	const [implementerLogin, reviewerLogin] = await Promise.all([
 		getGitHubUserForToken(implementerToken),
@@ -88,7 +107,16 @@ export async function resolvePersonaIdentities(projectId: string): Promise<Perso
 		reviewer: reviewerLogin,
 	});
 
+	personaIdentityCache.set(projectId, {
+		value: identities,
+		expiresAt: Date.now() + PERSONA_CACHE_TTL_MS,
+	});
 	return identities;
+}
+
+/** @internal Visible for testing only */
+export function _resetPersonaIdentityCache(): void {
+	personaIdentityCache.clear();
 }
 
 // ============================================================================
