@@ -58,15 +58,19 @@ export async function resolveJiraCredentials(
  * - `'trello'`: resolves the `api_secret` credential from the PM integration.
  *   Trello computes webhook HMAC signatures using the API Secret (shown below the
  *   API Key at https://trello.com/app-key), not the public API Key.
+ * - `'jira'`: resolves the `webhook_secret` credential from the PM integration.
  *
  * Returns `null` if the credential is not configured.
  */
 export async function resolveWebhookSecret(
 	projectId: string,
-	provider: 'github' | 'trello',
+	provider: 'github' | 'trello' | 'jira',
 ): Promise<string | null> {
 	if (provider === 'github') {
 		return getIntegrationCredentialOrNull(projectId, 'scm', 'webhook_secret');
+	}
+	if (provider === 'jira') {
+		return getIntegrationCredentialOrNull(projectId, 'pm', 'webhook_secret');
 	}
 	// Trello signs webhook payloads with the API Secret, not the public API Key.
 	return getIntegrationCredentialOrNull(projectId, 'pm', 'api_secret');

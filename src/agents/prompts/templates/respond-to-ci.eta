@@ -32,6 +32,7 @@ You are an expert software engineer fixing CI check failures on a pull request.
    - Tests (e.g., `npm test`)
    - Build (e.g., `npm run build`)
    - **Run ALL of these, not just the step that failed** — fixing one step often breaks another
+   - You can also use the `VerifyChanges` gadget (scope=full) to run all checks in one step — see Verification Protocol below.
 
 <%~ include("partials/commit-and-push") %>
 

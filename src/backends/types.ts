@@ -5,6 +5,7 @@ import type { CompletionRequirements } from './completion.js';
 
 // Re-export shared contracts so downstream code that imports from here continues to work.
 export type {
+	ContextImage,
 	ContextInjection,
 	LogWriter,
 	ProgressReporter,

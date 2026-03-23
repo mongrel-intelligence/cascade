@@ -495,6 +495,45 @@ describe('projectsRouter', () => {
 					level: 'warning',
 				});
 			});
+
+			it('masks credential with exactly 11 chars (short — shows ****)', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				// 11 chars: 'abcdefghijk'
+				mockListProjectCredentials.mockResolvedValue([
+					{ envVarKey: 'KEY_11', name: null, value: 'abcdefghijk' },
+				]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.credentials.list({ projectId: 'p1' });
+
+				expect(result[0].maskedValue).toBe('****');
+			});
+
+			it('masks credential with exactly 12 chars (boundary — shows ****)', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				// 12 chars: 'abcdefghijkl'
+				mockListProjectCredentials.mockResolvedValue([
+					{ envVarKey: 'KEY_12', name: null, value: 'abcdefghijkl' },
+				]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.credentials.list({ projectId: 'p1' });
+
+				expect(result[0].maskedValue).toBe('****');
+			});
+
+			it('masks credential with exactly 13 chars (long — shows last 4 chars)', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				// 13 chars: 'abcdefghijklm'
+				mockListProjectCredentials.mockResolvedValue([
+					{ envVarKey: 'KEY_13', name: null, value: 'abcdefghijklm' },
+				]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				const result = await caller.credentials.list({ projectId: 'p1' });
+
+				expect(result[0].maskedValue).toBe('****jklm');
+			});
 		});
 
 		describe('set', () => {
@@ -615,7 +654,7 @@ describe('projectsRouter', () => {
 			expect(PROJECT_DEFAULTS.progressModel).toBe('openrouter:google/gemini-2.5-flash-lite');
 			expect(PROJECT_DEFAULTS.progressIntervalMinutes).toBe(5);
 			expect(PROJECT_DEFAULTS.workItemBudgetUsd).toBe(5);
-			expect(PROJECT_DEFAULTS.agentEngine).toBe('llmist');
+			expect(PROJECT_DEFAULTS.agentEngine).toBe('claude-code');
 		});
 
 		it('CLAUDE_CODE_SETTING_DEFAULTS match the resolver fallback values', () => {

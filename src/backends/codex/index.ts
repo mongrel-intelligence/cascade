@@ -1,18 +1,21 @@
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { writeProjectCredential } from '../../db/repositories/credentialsRepository.js';
-import { extractPRUrl } from '../../utils/prUrl.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
-import { cleanupContextFiles } from '../contextFiles.js';
-import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
+import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { appendEngineLog } from '../shared/engineLog.js';
+import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { buildEnv } from './env.js';
+import { extractUsage, parseCodexEvent } from './jsonlParser.js';
+import type { UsageSummary } from './jsonlParser.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
 import {
 	CodexSettingsSchema,
@@ -24,19 +27,6 @@ const CODEX_AUTH_DIR = join(homedir(), '.codex');
 const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
 
 type JsonRecord = Record<string, unknown>;
-type ToolCall = { name: string; input?: Record<string, unknown> };
-type ParsedCodexEvent = {
-	textParts: string[];
-	toolCall: ToolCall | null;
-	usage: UsageSummary | null;
-	error?: string;
-};
-type UsageSummary = {
-	inputTokens?: number;
-	outputTokens?: number;
-	cachedTokens?: number;
-	costUsd?: number;
-};
 /**
  * Accumulator for a single Codex turn (bounded by turn.started → turn.completed).
  * Collects text, tool summaries, and usage across multiple JSONL events so that
@@ -62,190 +52,8 @@ type CodexLineContext = {
 	currentTurn: CodexTurnAccumulator;
 };
 
-function appendEngineLog(path: string | undefined, chunk: string): void {
-	if (!path || chunk.length === 0) return;
-	appendFileSync(path, chunk, 'utf-8');
-}
-
 function tomlString(value: string): string {
 	return JSON.stringify(value);
-}
-
-function extractTextFromContentParts(candidate: unknown): string[] {
-	const parts: string[] = [];
-	if (!Array.isArray(candidate)) return parts;
-
-	for (const item of candidate) {
-		if (typeof item === 'string' && item.trim()) {
-			parts.push(item);
-			continue;
-		}
-		if (!item || typeof item !== 'object') continue;
-		if ('type' in item && item.type !== 'text') continue;
-		if ('text' in item && typeof item.text === 'string' && item.text.trim()) {
-			parts.push(item.text);
-		}
-	}
-
-	return parts;
-}
-
-/** Extracts text from an item.completed message item (Responses API). */
-function extractItemText(item: unknown): string[] {
-	if (!item || typeof item !== 'object') return [];
-	const rec = item as JsonRecord;
-	// agent_message items carry text directly
-	if (rec.type === 'agent_message' && typeof rec.text === 'string' && rec.text.trim()) {
-		return [rec.text];
-	}
-	return 'content' in rec ? extractTextFromContentParts(rec.content) : [];
-}
-
-/** Extracts text from a delta field (either a plain string or a text_delta object). */
-function extractDeltaText(delta: unknown): string[] {
-	if (typeof delta === 'string' && delta.trim()) return [delta];
-	if (delta && typeof delta === 'object' && !Array.isArray(delta)) {
-		const rec = delta as JsonRecord;
-		if (typeof rec.text === 'string' && rec.text.trim()) return [rec.text];
-	}
-	return [];
-}
-
-function extractTextParts(event: JsonRecord): string[] {
-	const parts: string[] = [];
-
-	if (typeof event.text === 'string' && event.text.trim()) {
-		parts.push(event.text);
-	}
-
-	parts.push(...extractTextFromContentParts(event.content));
-	parts.push(...extractTextFromContentParts(event.last_message));
-
-	const message = event.message;
-	if (message && typeof message === 'object' && 'content' in message) {
-		parts.push(...extractTextFromContentParts((message as JsonRecord).content));
-	}
-
-	// Case: item.completed → { item: { type: 'message', content: [...] } }
-	parts.push(...extractItemText(event.item));
-
-	// Case: item.delta → { delta: { type: 'text_delta', text: '...' } }
-	parts.push(...extractDeltaText(event.delta));
-
-	return parts;
-}
-
-/** Parses a Responses API function_call or command_execution item into a ToolCall. */
-function parseFunctionCallItem(item: unknown): ToolCall | null {
-	if (!item || typeof item !== 'object') return null;
-	const rec = item as JsonRecord;
-	// command_execution items are bash tool calls
-	if (rec.type === 'command_execution' && typeof rec.command === 'string') {
-		return { name: 'bash', input: { command: rec.command } };
-	}
-	if (rec.type !== 'function_call' || typeof rec.name !== 'string' || !rec.name) return null;
-	let input: Record<string, unknown> | undefined;
-	if (typeof rec.arguments === 'string') {
-		try {
-			input = JSON.parse(rec.arguments) as Record<string, unknown>;
-		} catch {
-			/* ignore malformed JSON arguments */
-		}
-	} else if (rec.arguments && typeof rec.arguments === 'object') {
-		input = rec.arguments as Record<string, unknown>;
-	}
-	return { name: rec.name, input };
-}
-
-function extractToolCall(event: JsonRecord): ToolCall | null {
-	if (typeof event.tool_name === 'string' && event.tool_name) {
-		return {
-			name: event.tool_name,
-			input: (event.tool_input as Record<string, unknown> | undefined) ?? undefined,
-		};
-	}
-
-	if (
-		(event.type === 'tool_call' || event.type === 'tool_use') &&
-		typeof event.name === 'string' &&
-		event.name &&
-		(event.input === undefined || (event.input && typeof event.input === 'object'))
-	) {
-		return {
-			name: event.name,
-			input: event.input as Record<string, unknown> | undefined,
-		};
-	}
-
-	// Case: item.completed → { item: { type: 'function_call', name: '...', arguments: '...' } }
-	return parseFunctionCallItem(event.item);
-}
-
-/** Resolves the usage record from flat event fields or nested response.usage (Responses API). */
-function resolveUsageRecord(event: JsonRecord): JsonRecord | undefined {
-	if (event.usage && typeof event.usage === 'object') return event.usage as JsonRecord;
-	if (event.token_usage && typeof event.token_usage === 'object')
-		return event.token_usage as JsonRecord;
-	const response = event.response;
-	if (response && typeof response === 'object') {
-		const r = response as JsonRecord;
-		if (r.usage && typeof r.usage === 'object') return r.usage as JsonRecord;
-	}
-	return undefined;
-}
-
-function extractUsage(event: JsonRecord): UsageSummary | null {
-	const usage = resolveUsageRecord(event);
-	const inputTokens =
-		typeof usage?.input_tokens === 'number'
-			? usage.input_tokens
-			: typeof usage?.inputTokens === 'number'
-				? usage.inputTokens
-				: undefined;
-	const outputTokens =
-		typeof usage?.output_tokens === 'number'
-			? usage.output_tokens
-			: typeof usage?.outputTokens === 'number'
-				? usage.outputTokens
-				: undefined;
-	const cachedTokens =
-		typeof usage?.cached_input_tokens === 'number' ? usage.cached_input_tokens : undefined;
-	const costUsd =
-		typeof event.total_cost_usd === 'number'
-			? event.total_cost_usd
-			: typeof event.cost_usd === 'number'
-				? event.cost_usd
-				: typeof usage?.cost_usd === 'number'
-					? usage.cost_usd
-					: undefined;
-
-	return inputTokens !== undefined || outputTokens !== undefined || costUsd !== undefined
-		? { inputTokens, outputTokens, cachedTokens, costUsd }
-		: null;
-}
-
-function extractErrorMessage(event: JsonRecord): string | undefined {
-	// Case 1: event.error is a string (existing shape)
-	if (typeof event.error === 'string' && event.error) return event.error;
-	// Case 2: event.error is an object {message:"..."} — turn.failed shape
-	if (event.error && typeof event.error === 'object') {
-		const msg = (event.error as JsonRecord).message;
-		if (typeof msg === 'string' && msg) return msg;
-	}
-	// Case 3: {type:"error", message:"Reconnecting…"} — top-level message field
-	if (event.type === 'error' && typeof event.message === 'string' && event.message) {
-		return event.message;
-	}
-	return undefined;
-}
-
-function parseCodexEvent(event: JsonRecord): ParsedCodexEvent {
-	return {
-		textParts: extractTextParts(event),
-		toolCall: extractToolCall(event),
-		usage: extractUsage(event),
-		error: extractErrorMessage(event),
-	};
 }
 
 function trackIteration(context: CodexLineContext): Promise<void> {
@@ -596,11 +404,8 @@ export class CodexEngine implements AgentEngine {
 			input.contextInjections,
 			input.repoDir,
 		);
-		// Resolve model again here for backward compatibility: execute() may be called
-		// directly (e.g. in tests) without going through the adapter, so we cannot rely
-		// solely on the adapter's engine.resolveModel() pre-resolution. Since
-		// resolveCodexModel() is idempotent, calling it twice via the normal adapter path
-		// is safe.
+		// resolveCodexModel() is idempotent; calling it here ensures execute() works when
+		// invoked directly (e.g. in tests) without going through the adapter.
 		const model = resolveCodexModel(input.model);
 		const settings = resolveCodexSettings(
 			input.project,
@@ -724,13 +529,10 @@ export class CodexEngine implements AgentEngine {
 					? readFileSync(lastMessagePath, 'utf-8').trim()
 					: rawTextParts.join('\n').trim();
 			const stderrOutput = stderrChunks.join('').trim();
-			const prUrl = extractPRUrl(finalOutput) ?? extractPRUrl(rawTextParts.join('\n'));
-			const prEvidence = prUrl
-				? {
-						source: 'text' as const,
-						authoritative: false,
-					}
-				: undefined;
+			let { prUrl, prEvidence } = extractAndBuildPrEvidence(finalOutput);
+			if (!prUrl) {
+				({ prUrl, prEvidence } = extractAndBuildPrEvidence(rawTextParts.join('\n')));
+			}
 
 			input.logWriter('DEBUG', 'Codex process exited', {
 				exitCode,
@@ -744,14 +546,14 @@ export class CodexEngine implements AgentEngine {
 			}
 
 			if (exitCode !== 0) {
-				return {
+				return buildEngineResult({
 					success: false,
 					output: finalOutput,
 					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
 					cost,
 					prUrl,
 					prEvidence,
-				};
+				});
 			}
 
 			input.logWriter('INFO', 'Codex execution completed', {
@@ -761,13 +563,13 @@ export class CodexEngine implements AgentEngine {
 				durationMs: Date.now() - startTime,
 			});
 
-			return {
+			return buildEngineResult({
 				success: true,
 				output: finalOutput,
 				cost,
 				prUrl,
 				prEvidence,
-			};
+			});
 		} finally {
 			CodexEngine._cleanupLastMessagePath(lastMessagePath);
 			// When called directly (not via adapter), afterExecute won't be invoked.
@@ -785,4 +587,10 @@ export class CodexEngine implements AgentEngine {
 	}
 }
 
-export { resolveCodexModel, extractErrorMessage, extractToolCall, extractTextParts, extractUsage };
+export { resolveCodexModel };
+export {
+	extractErrorMessage,
+	extractToolCall,
+	extractTextParts,
+	extractUsage,
+} from './jsonlParser.js';

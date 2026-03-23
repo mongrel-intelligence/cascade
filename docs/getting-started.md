@@ -1,6 +1,6 @@
-# Getting Started with CASCADE
+# Getting Started with Cascade
 
-This guide walks you through setting up CASCADE using Docker Compose — from zero to a working instance that turns PM cards into pull requests.
+This guide walks you through setting up Cascade using Docker Compose — from zero to a working instance that turns PM cards into pull requests.
 
 ---
 
@@ -8,7 +8,7 @@ This guide walks you through setting up CASCADE using Docker Compose — from ze
 
 - **Docker** and **Docker Compose** (v2+)
 - ~6 GB disk space (the worker image includes Claude Code CLI and other agent tools)
-- A GitHub repository you want CASCADE to work on
+- A GitHub repository you want Cascade to work on
 - At least one LLM API key (OpenRouter, Anthropic, or OpenAI) or a Claude Max subscription
 
 ---
@@ -16,7 +16,7 @@ This guide walks you through setting up CASCADE using Docker Compose — from ze
 ## 1. Installation
 
 ```bash
-git clone https://github.com/zbigniewsobiecki/cascade.git
+git clone https://github.com/mongrel-intelligence/cascade.git
 cd cascade
 cp .env.docker.example .env
 ```
@@ -104,7 +104,7 @@ node bin/cascade.js projects create \
 
 ## 6. Add Credentials
 
-CASCADE needs credentials to interact with GitHub, your PM tool, and LLM providers. All credentials are stored encrypted in the database, scoped to your project.
+Cascade needs credentials to interact with GitHub, your PM tool, and LLM providers. All credentials are stored encrypted in the database, scoped to your project.
 
 Via the dashboard: **Projects** > select project > **Credentials** to manage project credentials.
 
@@ -112,7 +112,7 @@ Or via CLI:
 
 ### GitHub bot tokens
 
-CASCADE uses two separate GitHub accounts to prevent feedback loops:
+Cascade uses two separate GitHub accounts to prevent feedback loops:
 
 - **Implementer** — writes code, creates PRs
 - **Reviewer** — reviews PRs, approves or requests changes
@@ -135,7 +135,7 @@ node bin/cascade.js projects credentials-set my-project \
 
 Which credentials you need depends on which agent engine you plan to use. You can always add more later.
 
-#### LLMist engine (default)
+#### LLMist engine
 
 LLMist supports OpenRouter, Anthropic, and OpenAI. Store the key for whichever provider you prefer:
 
@@ -159,7 +159,7 @@ node bin/cascade.js projects credentials-set my-project \
   --name "OpenAI"
 ```
 
-#### Claude Code engine
+#### Claude Code engine (default)
 
 Requires either an Anthropic API key or a Claude Max subscription token:
 
@@ -199,7 +199,7 @@ node bin/cascade.js projects credentials-set my-project \
   --name "Codex Subscription Auth"
 ```
 
-When using subscription auth, CASCADE automatically writes `~/.codex/auth.json` in the worker before each run and captures any token refreshes the Codex CLI performs back into the database — so the credential stays current across ephemeral worker environments.
+When using subscription auth, Cascade automatically writes `~/.codex/auth.json` in the worker before each run and captures any token refreshes the Codex CLI performs back into the database — so the credential stays current across ephemeral worker environments.
 
 You can also manage all of this through the dashboard UI: **Projects** > select project > **Credentials**.
 
@@ -207,12 +207,12 @@ You can also manage all of this through the dashboard UI: **Projects** > select 
 
 ## 7. Choose Agent Engine
 
-CASCADE supports multiple agent engines. The default is **LLMist** — change it if you want to use a different engine.
+Cascade supports multiple agent engines. The default is **Claude Code** — change it if you want to use a different engine.
 
 | Engine | Description |
 |--------|-------------|
-| `llmist` | LLMist SDK with CASCADE gadgets (default) |
-| `claude-code` | Anthropic Claude Code SDK |
+| `claude-code` | Anthropic Claude Code SDK (default) |
+| `llmist` | LLMist SDK with Cascade gadgets |
 | `codex` | OpenAI Codex CLI |
 | `opencode` | OpenCode headless agent |
 
@@ -251,12 +251,12 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"boardId":"BOARD_ID","lists":{"todo":"LIST_ID","inProgress":"LIST_ID","inReview":"LIST_ID"},"labels":{"readyToProcess":"LABEL_ID","processing":"LABEL_ID","processed":"LABEL_ID","error":"LABEL_ID"}}'
 ```
 
-### JIRA
+### Jira
 
 ```bash
-# Store JIRA credentials (project-scoped)
-node bin/cascade.js projects credentials-set my-project --key JIRA_EMAIL --value you@company.com --name "JIRA Email"
-node bin/cascade.js projects credentials-set my-project --key JIRA_API_TOKEN --value ... --name "JIRA API Token"
+# Store Jira credentials (project-scoped)
+node bin/cascade.js projects credentials-set my-project --key JIRA_EMAIL --value you@company.com --name "Jira Email"
+node bin/cascade.js projects credentials-set my-project --key JIRA_API_TOKEN --value ... --name "Jira API Token"
 
 # Configure the integration
 node bin/cascade.js projects integration-set my-project \
@@ -268,9 +268,9 @@ node bin/cascade.js projects integration-set my-project \
 
 ## 9. Set Up Webhooks
 
-CASCADE needs to receive webhooks from GitHub (and optionally your PM tool) to trigger agents.
+Cascade needs to receive webhooks from GitHub (and optionally your PM tool) to trigger agents.
 
-Your CASCADE instance must be reachable from the internet. For local development, use a tunnel like [ngrok](https://ngrok.com/) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
+Your Cascade instance must be reachable from the internet. For local development, use a tunnel like [ngrok](https://ngrok.com/) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
 
 Configure via the dashboard: **Projects** > select project > **Settings** > **Webhooks** tab.
 
@@ -302,7 +302,7 @@ Or via CLI:
 node bin/cascade.js projects trigger-set my-project \
   --agent implementation --event pm:status-changed --enable
 
-# Enable review after CI passes (for CASCADE's own PRs)
+# Enable review after CI passes (for Cascade's own PRs)
 node bin/cascade.js projects trigger-set my-project \
   --agent review --event scm:check-suite-success --enable \
   --params '{"authorMode":"own"}'
@@ -319,7 +319,7 @@ node bin/cascade.js projects trigger-discover --agent implementation
 
 ## 11. Test It
 
-1. Create a card in your PM tool (Trello/JIRA) with a clear description of what code change you want
+1. Create a card in your PM tool (Trello/Jira) with a clear description of what code change you want
 2. Move it to the status that triggers the implementation agent (or add the "Ready to Process" label)
 3. Watch the dashboard — a new run should appear within seconds
 4. The agent clones your repo, writes code, and opens a pull request
@@ -332,7 +332,7 @@ Check the dashboard for real-time logs, LLM call traces, and debug information.
 
 ### HTTPS with a Reverse Proxy
 
-For production, put CASCADE behind a reverse proxy (nginx, Caddy, Traefik) that terminates TLS:
+For production, put Cascade behind a reverse proxy (nginx, Caddy, Traefik) that terminates TLS:
 
 ```bash
 # .env

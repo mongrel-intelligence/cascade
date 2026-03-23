@@ -767,6 +767,308 @@ describe('trelloClient', () => {
 		});
 	});
 
+	// ===== getCardCustomFieldItems =====
+
+	describe('getCardCustomFieldItems', () => {
+		it('returns mapped custom field items with values', async () => {
+			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(
+					JSON.stringify([
+						{ id: 'cfi-1', idCustomField: 'cf-1', value: { number: '42' } },
+						{ id: 'cfi-2', idCustomField: 'cf-2', value: { text: 'hello' } },
+					]),
+					{ status: 200 },
+				),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getCardCustomFieldItems('card-1'),
+			);
+
+			expect(result).toHaveLength(2);
+			expect(result[0]).toEqual({ id: 'cfi-1', idCustomField: 'cf-1', value: { number: '42' } });
+			expect(result[1]).toEqual({ id: 'cfi-2', idCustomField: 'cf-2', value: { text: 'hello' } });
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/cards/card-1/customFieldItems');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+		});
+
+		it('handles missing fields with defaults (empty strings)', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+				new Response(JSON.stringify([{}, { id: 'cfi-2' }]), { status: 200 }),
+			);
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.getCardCustomFieldItems('card-1'),
+			);
+
+			expect(result[0]).toEqual({ id: '', idCustomField: '', value: undefined });
+			expect(result[1]).toEqual({ id: 'cfi-2', idCustomField: '', value: undefined });
+		});
+
+		it('throws Trello API error with status on non-OK response', async () => {
+			vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Not Found', { status: 404 }));
+
+			await expect(
+				withTrelloCredentials(creds, () => trelloClient.getCardCustomFieldItems('card-1')),
+			).rejects.toThrow('Trello API error 404');
+		});
+	});
+
+	// ===== updateCardCustomFieldNumber =====
+
+	describe('updateCardCustomFieldNumber', () => {
+		it('sends PUT with number as string in body', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateCardCustomFieldNumber('card-1', 'cf-99', 42),
+			);
+
+			expect(fetchSpy).toHaveBeenCalledOnce();
+			const [, options] = fetchSpy.mock.calls[0];
+			expect(options?.method).toBe('PUT');
+			expect(options?.headers).toEqual({ 'Content-Type': 'application/json' });
+			expect(options?.body).toBe(JSON.stringify({ value: { number: '42' } }));
+		});
+
+		it('constructs the correct URL path for the custom field item endpoint', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateCardCustomFieldNumber('card-abc', 'cf-xyz', 7),
+			);
+
+			const [url] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/cards/card-abc/customField/cf-xyz/item');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+		});
+	});
+
+	// ===== moveCardToList =====
+
+	describe('moveCardToList', () => {
+		it('calls updateCard with idList parameter', async () => {
+			mockCards.updateCard.mockResolvedValue({});
+
+			await withTrelloCredentials(creds, () => trelloClient.moveCardToList('card-1', 'list-done'));
+
+			expect(mockCards.updateCard).toHaveBeenCalledWith(
+				expect.objectContaining({ idList: 'list-done' }),
+			);
+		});
+
+		it('passes the correct card ID when moving', async () => {
+			mockCards.updateCard.mockResolvedValue({});
+
+			await withTrelloCredentials(creds, () => trelloClient.moveCardToList('card-abc', 'list-xyz'));
+
+			expect(mockCards.updateCard).toHaveBeenCalledWith(
+				expect.objectContaining({ id: 'card-abc', idList: 'list-xyz' }),
+			);
+		});
+	});
+
+	// ===== addLabelToCard / removeLabelFromCard =====
+
+	describe('addLabelToCard', () => {
+		it('calls addCardLabel with correct id and value (labelId)', async () => {
+			mockCards.addCardLabel.mockResolvedValue(undefined);
+
+			await withTrelloCredentials(creds, () => trelloClient.addLabelToCard('card-1', 'label-42'));
+
+			expect(mockCards.addCardLabel).toHaveBeenCalledWith({ id: 'card-1', value: 'label-42' });
+		});
+	});
+
+	describe('removeLabelFromCard', () => {
+		it('calls deleteCardLabel with correct id and idLabel', async () => {
+			mockCards.deleteCardLabel.mockResolvedValue(undefined);
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.removeLabelFromCard('card-1', 'label-42'),
+			);
+
+			expect(mockCards.deleteCardLabel).toHaveBeenCalledWith({
+				id: 'card-1',
+				idLabel: 'label-42',
+			});
+		});
+	});
+
+	// ===== addAttachment / addAttachmentFile =====
+
+	describe('addAttachment', () => {
+		it('calls createCardAttachment with URL and name', async () => {
+			mockCards.createCardAttachment.mockResolvedValue(undefined);
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.addAttachment('card-1', 'https://example.com/file.pdf', 'file.pdf'),
+			);
+
+			expect(mockCards.createCardAttachment).toHaveBeenCalledWith({
+				id: 'card-1',
+				url: 'https://example.com/file.pdf',
+				name: 'file.pdf',
+			});
+		});
+	});
+
+	describe('addAttachmentFile', () => {
+		it('calls createCardAttachment with buffer, name, and mimeType', async () => {
+			mockCards.createCardAttachment.mockResolvedValue(undefined);
+
+			const fileBuffer = Buffer.from('fake-archive-data');
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.addAttachmentFile('card-1', fileBuffer, 'archive.tar.gz', 'application/gzip'),
+			);
+
+			expect(mockCards.createCardAttachment).toHaveBeenCalledWith({
+				id: 'card-1',
+				file: fileBuffer,
+				name: 'archive.tar.gz',
+				mimeType: 'application/gzip',
+			});
+		});
+
+		it('uses application/gzip as default mimeType when not provided', async () => {
+			mockCards.createCardAttachment.mockResolvedValue(undefined);
+
+			const fileBuffer = Buffer.from('data');
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.addAttachmentFile('card-2', fileBuffer, 'output.gz'),
+			);
+
+			expect(mockCards.createCardAttachment).toHaveBeenCalledWith(
+				expect.objectContaining({ mimeType: 'application/gzip' }),
+			);
+		});
+	});
+
+	// ===== createChecklist / addChecklistItem / updateChecklistItem =====
+
+	describe('createChecklist', () => {
+		it('returns mapped checklist with empty checkItems', async () => {
+			mockCards.createCardChecklist.mockResolvedValue({
+				id: 'cl-new',
+				name: 'My Checklist',
+				idCard: 'card-1',
+			});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.createChecklist('card-1', 'My Checklist'),
+			);
+
+			expect(result).toEqual({
+				id: 'cl-new',
+				name: 'My Checklist',
+				idCard: 'card-1',
+				checkItems: [],
+			});
+			expect(mockCards.createCardChecklist).toHaveBeenCalledWith({
+				id: 'card-1',
+				name: 'My Checklist',
+			});
+		});
+
+		it('defaults missing response fields to empty strings', async () => {
+			mockCards.createCardChecklist.mockResolvedValue({});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.createChecklist('card-1', 'Steps'),
+			);
+
+			expect(result).toEqual({ id: '', name: '', idCard: '', checkItems: [] });
+		});
+	});
+
+	describe('addChecklistItem', () => {
+		it('returns mapped check item and defaults checked to false', async () => {
+			mockChecklists.createChecklistCheckItems.mockResolvedValue({
+				id: 'item-new',
+				name: 'Do the thing',
+				state: 'incomplete',
+			});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.addChecklistItem('cl-1', 'Do the thing'),
+			);
+
+			expect(result).toEqual({ id: 'item-new', name: 'Do the thing', state: 'incomplete' });
+			expect(mockChecklists.createChecklistCheckItems).toHaveBeenCalledWith({
+				id: 'cl-1',
+				name: 'Do the thing',
+				checked: false,
+			});
+		});
+
+		it('maps state "complete" correctly', async () => {
+			mockChecklists.createChecklistCheckItems.mockResolvedValue({
+				id: 'item-done',
+				name: 'Already done',
+				state: 'complete',
+			});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.addChecklistItem('cl-1', 'Already done', true),
+			);
+
+			expect(result.state).toBe('complete');
+		});
+
+		it('maps any non-"complete" state to "incomplete"', async () => {
+			mockChecklists.createChecklistCheckItems.mockResolvedValue({
+				id: 'item-1',
+				name: 'Pending',
+				state: 'unknown-state',
+			});
+
+			const result = await withTrelloCredentials(creds, () =>
+				trelloClient.addChecklistItem('cl-1', 'Pending'),
+			);
+
+			expect(result.state).toBe('incomplete');
+		});
+	});
+
+	describe('updateChecklistItem', () => {
+		it('calls updateCardCheckItem with correct cardId, checkItemId, and state', async () => {
+			mockCards.updateCardCheckItem.mockResolvedValue(undefined);
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateChecklistItem('card-1', 'item-5', 'complete'),
+			);
+
+			expect(mockCards.updateCardCheckItem).toHaveBeenCalledWith({
+				id: 'card-1',
+				idCheckItem: 'item-5',
+				state: 'complete',
+			});
+		});
+
+		it('passes "incomplete" state correctly', async () => {
+			mockCards.updateCardCheckItem.mockResolvedValue(undefined);
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateChecklistItem('card-2', 'item-9', 'incomplete'),
+			);
+
+			expect(mockCards.updateCardCheckItem).toHaveBeenCalledWith({
+				id: 'card-2',
+				idCheckItem: 'item-9',
+				state: 'incomplete',
+			});
+		});
+	});
+
 	// ===== downloadAttachment =====
 
 	describe('downloadAttachment', () => {
@@ -774,7 +1076,7 @@ describe('trelloClient', () => {
 			vi.restoreAllMocks();
 		});
 
-		it('appends key and token as query params and returns buffer + mimeType', async () => {
+		it('uses OAuth Authorization header (not query params) for auth', async () => {
 			const imageBytes = Buffer.from('image-data');
 			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 				new Response(imageBytes, {
@@ -785,7 +1087,7 @@ describe('trelloClient', () => {
 
 			const result = await withTrelloCredentials(creds, () =>
 				trelloClient.downloadAttachment(
-					'https://trello-attachments.s3.amazonaws.com/card/image.png',
+					'https://trello.com/1/cards/card123/attachments/att456/download/image.png',
 				),
 			);
 
@@ -795,12 +1097,15 @@ describe('trelloClient', () => {
 			// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
 			expect(result!.buffer).toBeInstanceOf(Buffer);
 
-			const [url] = fetchSpy.mock.calls[0];
-			expect(url).toContain('key=test-key');
-			expect(url).toContain('token=test-token');
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).not.toContain('key=');
+			expect(url).not.toContain('token=');
+			expect(options?.headers).toEqual({
+				Authorization: 'OAuth oauth_consumer_key="test-key", oauth_token="test-token"',
+			});
 		});
 
-		it('appends credentials with & when URL already has query params', async () => {
+		it('passes the URL to fetch unchanged (no query params added)', async () => {
 			const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
 				new Response(Buffer.from('data'), {
 					status: 200,
@@ -808,16 +1113,16 @@ describe('trelloClient', () => {
 				}),
 			);
 
-			await withTrelloCredentials(creds, () =>
-				trelloClient.downloadAttachment(
-					'https://trello-attachments.s3.amazonaws.com/card/image.jpg?version=2',
-				),
-			);
+			const inputUrl =
+				'https://trello.com/1/cards/card123/attachments/att456/download/image.jpg?version=2';
 
-			const [url] = fetchSpy.mock.calls[0];
-			expect(url).toContain('version=2');
-			expect(url).toContain('&key=test-key');
-			expect(url).toContain('&token=test-token');
+			await withTrelloCredentials(creds, () => trelloClient.downloadAttachment(inputUrl));
+
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).toBe(inputUrl);
+			expect(options?.headers).toEqual({
+				Authorization: 'OAuth oauth_consumer_key="test-key", oauth_token="test-token"',
+			});
 		});
 
 		it('returns null when download fails (non-OK response)', async () => {
@@ -826,7 +1131,9 @@ describe('trelloClient', () => {
 			);
 
 			const result = await withTrelloCredentials(creds, () =>
-				trelloClient.downloadAttachment('https://trello-attachments.s3.amazonaws.com/image.png'),
+				trelloClient.downloadAttachment(
+					'https://trello.com/1/cards/card123/attachments/att456/download/image.png',
+				),
 			);
 
 			expect(result).toBeNull();
@@ -834,7 +1141,9 @@ describe('trelloClient', () => {
 
 		it('throws when called outside withTrelloCredentials scope', async () => {
 			await expect(
-				trelloClient.downloadAttachment('https://trello-attachments.s3.amazonaws.com/image.png'),
+				trelloClient.downloadAttachment(
+					'https://trello.com/1/cards/card123/attachments/att456/download/image.png',
+				),
 			).rejects.toThrow('No Trello credentials in scope');
 		});
 	});

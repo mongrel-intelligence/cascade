@@ -1,3 +1,4 @@
+import fs, { existsSync } from 'node:fs';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from './schema/index.js';
@@ -28,13 +29,28 @@ function getDatabaseUrl(): string {
 	throw new Error('DATABASE_URL or CASCADE_POSTGRES_HOST must be set');
 }
 
+function getSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {
+	if (process.env.DATABASE_SSL === 'false') {
+		return false;
+	}
+	const sslConfig: { rejectUnauthorized: boolean; ca?: string } = { rejectUnauthorized: true };
+	if (process.env.DATABASE_CA_CERT) {
+		const certPath = process.env.DATABASE_CA_CERT;
+		if (!existsSync(certPath)) {
+			throw new Error(`DATABASE_CA_CERT file not found: ${certPath}`);
+		}
+		sslConfig.ca = fs.readFileSync(certPath, 'utf8');
+	}
+	return sslConfig;
+}
+
 export function getDb(): ReturnType<typeof drizzle<typeof schema>> {
 	if (_testDbOverride) return _testDbOverride;
 	if (!db) {
 		pool = new pg.Pool({
 			connectionString: getDatabaseUrl(),
 			max: 5,
-			ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false },
+			ssl: getSslConfig(),
 		});
 		db = drizzle(pool, { schema });
 	}

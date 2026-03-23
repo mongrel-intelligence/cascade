@@ -1,5 +1,5 @@
 import { filterImageMedia, getPMProvider } from '../../../pm/index.js';
-import type { MediaReference } from '../../../pm/index.js';
+import type { Attachment, MediaReference } from '../../../pm/index.js';
 
 interface Label {
 	name: string;
@@ -18,12 +18,6 @@ interface Checklist {
 	items: ChecklistItem[];
 }
 
-interface Attachment {
-	name: string;
-	url: string;
-	date?: string;
-}
-
 interface Comment {
 	author: { name: string };
 	date: string;
@@ -37,7 +31,7 @@ interface Comment {
 export interface WorkItemWithMedia {
 	/** Formatted text representation of the work item */
 	text: string;
-	/** All image media references discovered in the work item and its comments */
+	/** All image media references discovered in the work item description, card attachments, and comments (deduplicated by URL) */
 	media: MediaReference[];
 }
 
@@ -86,12 +80,12 @@ function formatComments(comments: Comment[]): string {
 }
 
 /**
- * Formats a list of image media references as an [Inline Media] section.
+ * Formats a list of pre-fetched image media references as a [Pre-fetched Images] section.
  * Each image is listed with its source and optional alt text.
  */
-function formatInlineMedia(images: MediaReference[]): string {
+function formatPreFetchedImages(images: MediaReference[]): string {
 	if (images.length === 0) return '';
-	let result = '## Inline Media\n\n';
+	let result = '## Pre-fetched Images\n\n';
 	for (const img of images) {
 		const label = img.altText ? img.altText : (img.url.split('?')[0].split('/').pop() ?? img.url);
 		result += `- [Image: ${label}] (${img.source})\n`;
@@ -105,6 +99,7 @@ function formatInlineMedia(images: MediaReference[]): string {
  *
  * Image references are collected from:
  * - Work item description (`item.inlineMedia`)
+ * - Card attachments with image MIME types
  * - Each comment (`comment.inlineMedia`)
  *
  * Only image MIME types are included (filtered via filterImageMedia).
@@ -126,6 +121,18 @@ export async function readWorkItemWithMedia(
 		allMedia.push(...filterImageMedia(item.inlineMedia));
 	}
 
+	// Add image-type card attachments as media references
+	allMedia.push(
+		...filterImageMedia(
+			attachments.map((att) => ({
+				url: att.url,
+				mimeType: att.mimeType,
+				altText: att.name,
+				source: 'attachment' as const,
+			})),
+		),
+	);
+
 	let text = `# ${item.title}\n\n**URL:** ${item.url}\n\n## Description\n\n${item.description || '(No description)'}\n\n`;
 	text += formatLabels(item.labels);
 	text += formatChecklists(checklists);
@@ -141,10 +148,20 @@ export async function readWorkItemWithMedia(
 		text += formatComments(comments);
 	}
 
-	// Append inline media section listing discovered images
-	text += formatInlineMedia(allMedia);
+	// Deduplicate by URL — JIRA description images are always backed by an attachment,
+	// so the same URL can appear via item.inlineMedia and via getAttachments(). Keep
+	// the first occurrence (description > attachment > comment priority).
+	const seen = new Set<string>();
+	const dedupedMedia = allMedia.filter((ref) => {
+		if (seen.has(ref.url)) return false;
+		seen.add(ref.url);
+		return true;
+	});
 
-	return { text, media: allMedia };
+	// Append pre-fetched images section listing discovered images
+	text += formatPreFetchedImages(dedupedMedia);
+
+	return { text, media: dedupedMedia };
 }
 
 export async function readWorkItem(workItemId: string, includeComments = true): Promise<string> {

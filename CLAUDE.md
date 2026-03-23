@@ -13,6 +13,37 @@ npm run dev          # Router (webhook receiver, requires Redis)
 npm run dev:web      # Dashboard frontend (separate terminal)
 ```
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Development](#development)
+  - [Testing](#testing)
+  - [Linting](#linting)
+  - [Git Hooks](#git-hooks)
+- [Key Directories](#key-directories)
+- [Environment Variables](#environment-variables)
+- [Database Configuration](#database-configuration)
+  - [Schema](#schema)
+  - [Database Scripts](#database-scripts)
+  - [Migration Workflow](#migration-workflow)
+  - [Credentials](#credentials)
+  - [Credential Encryption at Rest](#credential-encryption-at-rest)
+  - [GitHub Dual-Persona Model](#github-dual-persona-model)
+  - [Webhook Signature Verification](#webhook-signature-verification)
+  - [Integration Credential Resolution](#integration-credential-resolution)
+  - [Agent Trigger Configuration](#agent-trigger-configuration)
+  - [Review Agent Trigger Modes](#review-agent-trigger-modes)
+  - [PM Agent Trigger Modes](#pm-agent-trigger-modes)
+- [Claude Code Engine](#claude-code-engine)
+- [Codex Engine](#codex-engine)
+- [Dashboard](#dashboard)
+- [CLI (`cascade`)](#cli-cascade)
+- [Adding New Triggers](#adding-new-triggers)
+- [Adding New Agents](#adding-new-agents)
+- [Agent Resilience Features](#agent-resilience-features)
+- [Debugging Production Sessions](#debugging-production-sessions)
+
 ## Architecture
 
 CASCADE runs as three services (no monolithic server mode):
@@ -120,7 +151,8 @@ Required:
 Optional (infrastructure):
 - `PORT` - Server port (default: 3000)
 - `LOG_LEVEL` - Logging level (default: info)
-- `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled)
+- `DATABASE_SSL` - Set to `false` to disable SSL for local PostgreSQL (default: enabled with certificate validation)
+- `DATABASE_CA_CERT` - Path to a PEM-encoded CA certificate file for managed databases that use a private CA (e.g., AWS RDS, Azure Database, GCP Cloud SQL). When set, the certificate is read and passed as the `ca` option to `pg.Pool`, enabling TLS certificate validation against the specified CA. Example: `DATABASE_CA_CERT=/etc/ssl/certs/rds-ca.pem`
 - `CLAUDE_CODE_OAUTH_TOKEN` - For Claude Code engine (subscription auth)
 - `CREDENTIAL_MASTER_KEY` - 64-char hex string (32-byte AES-256 key) for encrypting credentials at rest. Generate with `npm run credentials:generate-key`. When set, all new/updated credentials are encrypted automatically; existing plaintext credentials continue to work.
 - `WEBHOOK_CALLBACK_BASE_URL` - Base URL for webhook callbacks (e.g., `https://cascade.example.com`). Used by `tools/setup-webhooks.ts` and the `cascade webhooks create` CLI command to construct the full webhook URL.
@@ -355,7 +387,7 @@ cascade projects trigger-set <project-id> --agent splitting --event pm:label-add
 
 ## Claude Code Engine
 
-CASCADE supports using Claude Code SDK as an alternative agent engine. Configure per-project via the CLI or dashboard:
+CASCADE uses the Claude Code SDK as the default agent engine. Configure per-project via the CLI or dashboard:
 
 ```bash
 # Set Claude Code as the default engine for a project

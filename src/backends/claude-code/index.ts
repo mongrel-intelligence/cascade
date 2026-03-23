@@ -3,35 +3,33 @@ import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type {
-	SDKAssistantMessage,
-	SDKResultMessage,
-	SDKResultSuccess,
-	SDKStatusMessage,
-	SDKSystemMessage,
-} from '@anthropic-ai/claude-agent-sdk';
+import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { getEngineSettings } from '../../config/engineSettings.js';
 import { logger } from '../../utils/logging.js';
-import { extractPRUrl } from '../../utils/prUrl.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
 import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
-import {
-	type CompletionRequirements,
-	applyCompletionEvidence,
-	getCompletionFailure,
-	readCompletionEvidence,
-} from '../completion.js';
-import { cleanupContextFiles } from '../contextFiles.js';
-import { buildSystemPrompt, buildTaskPrompt } from '../nativeTools.js';
-import { logLlmCall } from '../shared/llmCallLogger.js';
+import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { runContinuationLoop } from '../shared/continuationLoop.js';
+import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
+import {
+	buildPromptWithImages,
+	buildResult,
+	consumeStream,
+	filterContextImages,
+} from './messageProcessing.js';
 import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 import { ClaudeCodeSettingsSchema, resolveClaudeCodeSettings } from './settings.js';
 
-export { buildToolGuidance, buildTaskPrompt, buildSystemPrompt } from '../nativeTools.js';
+export {
+	buildToolGuidance,
+	buildTaskPrompt,
+	buildSystemPrompt,
+} from '../shared/nativeToolPrompts.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
+export { buildPromptWithImages, formatErrorMessage } from './messageProcessing.js';
 
 /**
  * Resolve a CASCADE model string to a Claude model ID.
@@ -62,197 +60,6 @@ export function ensureOnboardingFlag(): void {
 			mode: 0o600,
 		});
 	}
-}
-
-/**
- * Extract a GitHub PR URL from assistant messages (tool results containing create-pr output).
- */
-function extractPRUrlFromMessages(assistantMessages: SDKAssistantMessage[]): string | undefined {
-	for (const msg of assistantMessages) {
-		if (!msg.message?.content) continue;
-		for (const block of msg.message.content) {
-			if (block.type === 'text') {
-				const url = extractPRUrl(block.text);
-				if (url) return url;
-			}
-		}
-	}
-	return undefined;
-}
-
-/**
- * Try to extract a finish comment from a single content block.
- */
-function extractCommentFromBlock(block: { type: string; name?: string; input?: unknown }):
-	| string
-	| undefined {
-	if (block.type !== 'tool_use' || block.name !== 'Bash') return undefined;
-	const { command } = block.input as { command?: string };
-	if (!command?.includes('cascade-tools') || !command?.includes('session finish')) return undefined;
-	const match = command.match(/--comment\s+(?:"([^"]+)"|'([^']+)'|(\S+))/);
-	return match ? (match[1] ?? match[2] ?? match[3]) : undefined;
-}
-
-/**
- * Extract finish comment from assistant messages that invoked cascade-tools session finish.
- */
-function extractFinishComment(assistantMessages: SDKAssistantMessage[]): string | undefined {
-	for (const msg of assistantMessages) {
-		if (!msg.message?.content) continue;
-		for (const block of msg.message.content) {
-			const comment = extractCommentFromBlock(block);
-			if (comment) return comment;
-		}
-	}
-	return undefined;
-}
-
-/**
- * Process an assistant message: report progress, log text/errors/usage.
- */
-function processAssistantMessage(
-	assistantMsg: SDKAssistantMessage,
-	turnCount: number,
-	input: AgentExecutionPlan,
-): void {
-	if (assistantMsg.message?.content) {
-		for (const block of assistantMsg.message.content) {
-			if (block.type === 'tool_use') {
-				input.progressReporter.onToolCall(block.name, block.input as Record<string, unknown>);
-			}
-			if (block.type === 'text') {
-				const truncated = block.text.length > 300 ? `${block.text.slice(0, 300)}...` : block.text;
-				input.logWriter('INFO', 'Agent text', { text: truncated });
-				input.progressReporter.onText(block.text);
-			}
-		}
-	}
-
-	if (assistantMsg.error) {
-		input.logWriter('ERROR', 'Assistant message error', {
-			error: assistantMsg.error,
-			turn: turnCount,
-		});
-	}
-
-	const usage = assistantMsg.message?.usage;
-	if (usage) {
-		input.logWriter('DEBUG', 'Token usage', {
-			turn: turnCount,
-			inputTokens: usage.input_tokens,
-			outputTokens: usage.output_tokens,
-		});
-	}
-}
-
-/**
- * Process a system message: log init and status events.
- */
-function processSystemMessage(
-	message: { subtype: string; [key: string]: unknown },
-	logWriter: AgentExecutionPlan['logWriter'],
-): void {
-	if (message.subtype === 'init') {
-		const initMsg = message as unknown as SDKSystemMessage;
-		logWriter('INFO', 'Claude Code session initialized', {
-			model: initMsg.model,
-			claudeCodeVersion: initMsg.claude_code_version,
-			tools: initMsg.tools,
-		});
-	} else if (message.subtype === 'status') {
-		const statusMsg = message as unknown as SDKStatusMessage;
-		logWriter('INFO', 'Session status change', { status: statusMsg.status });
-	}
-}
-
-/**
- * Format a human-readable error message from a non-success SDK result.
- */
-export function formatErrorMessage(
-	errorResult: Exclude<SDKResultMessage, SDKResultSuccess>,
-	budgetUsd?: number,
-): string {
-	if (errorResult.subtype === 'error_max_budget_usd') {
-		const spent = errorResult.total_cost_usd?.toFixed(2) ?? '?';
-		const limit = budgetUsd?.toFixed(2) ?? '?';
-		return `Budget limit reached: spent $${spent} of $${limit} allowed for this run. Increase the project work-item budget or retry with a higher limit.`;
-	}
-	return errorResult.errors?.join('; ') ?? errorResult.subtype;
-}
-
-/**
- * Build the result from collected stream data.
- */
-function buildResult(
-	assistantMessages: SDKAssistantMessage[],
-	resultMessage: SDKResultMessage | undefined,
-	stderrChunks: string[],
-	input: AgentExecutionPlan,
-	startTime: number,
-): AgentEngineResult {
-	const finishComment = extractFinishComment(assistantMessages);
-	const success = resultMessage?.subtype === 'success';
-	const cost = resultMessage?.total_cost_usd;
-
-	let output = finishComment ?? '';
-	if (!output && resultMessage?.subtype === 'success') {
-		output = (resultMessage as SDKResultSuccess).result ?? '';
-	}
-
-	let error: string | undefined;
-	if (resultMessage && resultMessage.subtype !== 'success') {
-		const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
-		error = formatErrorMessage(errorResult, input.budgetUsd);
-	}
-
-	const stderrOutput = stderrChunks.join('').trim();
-	if (stderrOutput) {
-		input.logWriter('WARN', 'Claude Code stderr output', { stderr: stderrOutput });
-		if (error) {
-			error += ` | stderr: ${stderrOutput}`;
-		}
-	}
-
-	const prUrl = extractPRUrl(output) ?? extractPRUrlFromMessages(assistantMessages);
-	const prEvidence = prUrl
-		? {
-				source: 'text' as const,
-				authoritative: false,
-			}
-		: undefined;
-
-	input.logWriter('INFO', 'Claude Code SDK turn completed', {
-		success,
-		subtype: resultMessage?.subtype,
-		turns: resultMessage?.num_turns,
-		cost,
-		prUrl: prUrl ?? null,
-		durationMs: Date.now() - startTime,
-	});
-
-	return { success, output, cost, error, prUrl, prEvidence };
-}
-
-/**
- * Process a task_notification system message: log and report completed tasks.
- */
-function processTaskNotification(
-	sysMsg: { [key: string]: unknown },
-	input: AgentExecutionPlan,
-): void {
-	const taskMsg = sysMsg as unknown as {
-		task_id: string;
-		status: string;
-		summary: string;
-	};
-	if (taskMsg.status === 'completed' && input.progressReporter.onTaskCompleted) {
-		input.progressReporter.onTaskCompleted(taskMsg.task_id, '', taskMsg.summary);
-	}
-	input.logWriter('INFO', 'Task notification', {
-		taskId: taskMsg.task_id,
-		status: taskMsg.status,
-		summary: taskMsg.summary,
-	});
 }
 
 function debugRepoDirectory(repoDir: string): void {
@@ -350,83 +157,6 @@ function buildSettingsOptions(rawSettings: {
 	return result;
 }
 
-function logClaudeCodeLlmCall(
-	input: AgentExecutionPlan,
-	assistantMsg: SDKAssistantMessage,
-	turnCount: number,
-	model: string,
-): void {
-	if (!assistantMsg.message?.usage) return;
-
-	const usage = assistantMsg.message.usage;
-	let response: string | undefined;
-	try {
-		response = JSON.stringify(assistantMsg.message.content ?? []);
-	} catch {
-		// Ignore serialization errors
-	}
-
-	logLlmCall({
-		runId: input.runId,
-		callNumber: turnCount,
-		model,
-		inputTokens: usage.input_tokens,
-		outputTokens: usage.output_tokens,
-		cachedTokens: undefined,
-		costUsd: undefined,
-		response,
-		engineLabel: 'Claude Code',
-	});
-}
-
-function countToolCalls(assistantMsg: SDKAssistantMessage): number {
-	return (assistantMsg.message?.content ?? []).filter((b) => b.type === 'tool_use').length;
-}
-
-/**
- * Consume the Claude Code SDK stream and collect assistant messages, result, and counters.
- * Returns the updated turn count and tool call count accumulated during this stream.
- */
-async function consumeStream(
-	stream: ReturnType<typeof query>,
-	input: AgentExecutionPlan,
-	model: string,
-	startTurnCount: number,
-): Promise<{
-	assistantMessages: SDKAssistantMessage[];
-	resultMessage: SDKResultMessage | undefined;
-	turnCount: number;
-	toolCallCount: number;
-}> {
-	const assistantMessages: SDKAssistantMessage[] = [];
-	let resultMessage: SDKResultMessage | undefined;
-	let turnCount = startTurnCount;
-	let toolCallCount = 0;
-
-	for await (const message of stream) {
-		if (message.type === 'assistant') {
-			const assistantMsg = message as SDKAssistantMessage;
-			assistantMessages.push(assistantMsg);
-			turnCount++;
-			await input.progressReporter.onIteration(turnCount, input.maxIterations);
-			processAssistantMessage(assistantMsg, turnCount, input);
-			toolCallCount += countToolCalls(assistantMsg);
-			logClaudeCodeLlmCall(input, assistantMsg, turnCount, model);
-		} else if (message.type === 'system') {
-			const sysMsg = message as { subtype: string; [key: string]: unknown };
-			if (sysMsg.subtype === 'task_notification') {
-				processTaskNotification(sysMsg, input);
-			} else {
-				processSystemMessage(sysMsg, input.logWriter);
-			}
-		} else if (message.type === 'result') {
-			resultMessage = message as SDKResultMessage;
-		}
-	}
-
-	return { assistantMessages, resultMessage, turnCount, toolCallCount };
-}
-
 /**
  * Clean up the Claude Code persisted session directory.
  * Since workers are ephemeral, there's no need to keep session data after execution.
@@ -444,45 +174,6 @@ async function cleanupPersistedSession(repoDir: string): Promise<void> {
 	} catch {
 		// Best-effort cleanup
 	}
-}
-
-type ContinuationDecision =
-	| { done: true; result: AgentEngineResult }
-	| { done: false; promptText: string };
-
-/**
- * Check completion requirements and decide whether to continue or return a final result.
- * Logs the continuation warning when a new turn is needed.
- */
-function decideContinuation(
-	result: AgentEngineResult,
-	completionRequirements: CompletionRequirements | undefined,
-	continuationTurns: number,
-	maxContinuationTurns: number,
-	totalCost: number | undefined,
-	logWriter: AgentExecutionPlan['logWriter'],
-	toolCallCount: number,
-): ContinuationDecision {
-	const completionFailure = getCompletionFailure(
-		completionRequirements,
-		readCompletionEvidence(completionRequirements),
-	);
-	if (!completionFailure) {
-		return { done: true, result: { ...result, cost: totalCost } };
-	}
-	if (continuationTurns >= maxContinuationTurns) {
-		return {
-			done: true,
-			result: { ...result, success: false, error: completionFailure.error, cost: totalCost },
-		};
-	}
-	logWriter('WARN', 'Claude Code completion check failed; continuing session', {
-		reason: completionFailure.error,
-		continuationTurn: continuationTurns + 1,
-		maxContinuationTurns,
-		toolCallCount,
-	});
-	return { done: false, promptText: completionFailure.continuationPrompt };
 }
 
 /**
@@ -525,16 +216,19 @@ export class ClaudeCodeEngine implements AgentEngine {
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
 		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
+
+		// Collect supported images for native SDK delivery; strip from injections so
+		// offloadLargeContext does not also write them to disk (redundant for this engine).
+		const supportedImages = filterContextImages(input.contextInjections, input.logWriter);
+		const injectionsForPrompt = input.contextInjections.map(({ images: _images, ...rest }) => rest);
+
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
 			input.taskPrompt,
-			input.contextInjections,
+			injectionsForPrompt,
 			input.repoDir,
 		);
-		// Resolve model again here for backward compatibility: execute() may be called
-		// directly (e.g. in tests) without going through the adapter, so we cannot rely
-		// solely on the adapter's engine.resolveModel() pre-resolution. Since
-		// resolveClaudeModel() is idempotent, calling it twice via the normal adapter path
-		// is safe.
+		// resolveClaudeModel() is idempotent; calling it here ensures execute() works when
+		// invoked directly (e.g. in tests) without going through the adapter.
 		const model = resolveClaudeModel(input.model);
 		const resolvedSettings = resolveClaudeCodeSettings(input.project, input.engineSettings);
 		// Only the explicitly-configured fields (raw, pre-default) are passed to the SDK.
@@ -567,82 +261,66 @@ export class ClaudeCodeEngine implements AgentEngine {
 		const sdkTools = resolveNativeTools(input.nativeToolCapabilities);
 		const sdkSettingsOptions = buildSettingsOptions(rawEngineSettings);
 
-		const maxContinuationTurns = input.completionRequirements?.maxContinuationTurns ?? 0;
-		let continuationTurns = 0;
-		let promptText = taskPrompt;
-		let isContinuation = false;
+		// Use AsyncIterable prompt for the first turn when images are present; string otherwise.
+		// Continuation turns always use a plain string prompt.
+		const initialPromptInput: string | AsyncIterable<SDKUserMessage> =
+			supportedImages.length > 0 ? buildPromptWithImages(taskPrompt, supportedImages) : taskPrompt;
 		let turnCount = 0;
-		let totalCost: number | undefined;
 
-		for (;;) {
-			const stderrChunks: string[] = [];
-			const stream = query({
-				prompt: promptText,
-				options: {
-					model,
-					systemPrompt,
-					cwd: input.repoDir,
-					additionalDirectories: [getWorkspaceDir()],
-					maxBudgetUsd: input.budgetUsd,
-					permissionMode: 'bypassPermissions',
-					allowDangerouslySkipPermissions: true,
-					tools: sdkTools,
-					allowedTools: sdkTools,
-					persistSession: true,
-					hooks,
-					env,
-					debug: true,
-					stderr: (data: string) => {
-						stderrChunks.push(data);
-						input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+		return runContinuationLoop({
+			initialPrompt: taskPrompt,
+			completionRequirements: input.completionRequirements,
+			logWriter: input.logWriter,
+			engineLabel: 'Claude Code',
+			executeTurn: async ({ promptText, isContinuation }) => {
+				// Use the AsyncIterable prompt for the first turn when images are present,
+				// fall back to string for continuation turns (which always use plain text).
+				const promptInput: string | AsyncIterable<SDKUserMessage> =
+					!isContinuation && supportedImages.length > 0 ? initialPromptInput : promptText;
+				const stderrChunks: string[] = [];
+				const stream = query({
+					prompt: promptInput,
+					options: {
+						model,
+						systemPrompt,
+						cwd: input.repoDir,
+						additionalDirectories: [getWorkspaceDir()],
+						maxBudgetUsd: input.budgetUsd,
+						permissionMode: 'bypassPermissions',
+						allowDangerouslySkipPermissions: true,
+						tools: sdkTools,
+						allowedTools: sdkTools,
+						persistSession: true,
+						hooks,
+						env,
+						debug: true,
+						stderr: (data: string) => {
+							stderrChunks.push(data);
+							input.logWriter('INFO', 'Claude Code stderr', { data: data.trim() });
+						},
+						...(isContinuation ? { continue: true } : {}),
+						...sdkSettingsOptions,
 					},
-					...(isContinuation ? { continue: true } : {}),
-					...sdkSettingsOptions,
-				},
-			});
+				});
 
-			const {
-				assistantMessages,
-				resultMessage,
-				turnCount: newTurnCount,
-				toolCallCount,
-			} = await consumeStream(stream, input, model, turnCount);
-			turnCount = newTurnCount;
+				const {
+					assistantMessages,
+					resultMessage,
+					turnCount: newTurnCount,
+					toolCallCount,
+				} = await consumeStream(stream, input, model, turnCount);
+				turnCount = newTurnCount;
 
-			const turnResult = buildResult(
-				assistantMessages,
-				resultMessage,
-				stderrChunks,
-				input,
-				startTime,
-			);
+				const turnResult = buildResult(
+					assistantMessages,
+					resultMessage,
+					stderrChunks,
+					input,
+					startTime,
+				);
 
-			// Accumulate cost across continuation turns
-			if (turnResult.cost !== undefined) {
-				totalCost = (totalCost ?? 0) + turnResult.cost;
-			}
-
-			const result = applyCompletionEvidence(turnResult, input.completionRequirements);
-
-			// Don't continue on non-success results
-			if (!result.success) {
-				return { ...result, cost: totalCost };
-			}
-
-			const decision = decideContinuation(
-				result,
-				input.completionRequirements,
-				continuationTurns,
-				maxContinuationTurns,
-				totalCost,
-				input.logWriter,
-				toolCallCount,
-			);
-			if (decision.done) return decision.result;
-
-			continuationTurns++;
-			promptText = decision.promptText;
-			isContinuation = true;
-		}
+				return { result: turnResult, toolCallCount };
+			},
+		});
 	}
 }

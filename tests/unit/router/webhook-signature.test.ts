@@ -14,7 +14,7 @@
 
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mock all heavy side-effecting dependencies BEFORE module import
@@ -121,14 +121,17 @@ vi.mock('../../../src/router/platformClients/credentials.js', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { loadProjectConfig } from '../../../src/router/config.js';
+import { loadProjectConfig, routerConfig } from '../../../src/router/config.js';
 import { resolveWebhookSecret } from '../../../src/router/platformClients/credentials.js';
 import {
 	buildTrelloCallbackUrl,
+	extractJiraProjectKey,
 	extractTrelloBoardId,
 	verifyGitHubWebhookSignature,
+	verifyJiraWebhookSignature,
 	verifyTrelloWebhookSignature,
 } from '../../../src/router/webhookVerification.js';
+import { logger } from '../../../src/utils/logging.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -143,6 +146,11 @@ function trelloSignature(body: string, callbackUrl: string, secret: string): str
 	return createHmac('sha1', secret)
 		.update(body + callbackUrl, 'utf8')
 		.digest('base64');
+}
+
+function jiraSignature(body: string, secret: string): string {
+	const hex = createHmac('sha256', secret).update(body, 'utf8').digest('hex');
+	return `sha256=${hex}`;
 }
 
 const GITHUB_PROJECT = {
@@ -162,8 +170,20 @@ const TRELLO_PROJECT = {
 	},
 };
 
+const JIRA_PROJECT = {
+	id: 'proj-jira',
+	repo: 'owner/repo',
+	pmType: 'jira' as const,
+	jira: {
+		projectKey: 'PROJ',
+		baseUrl: 'https://example.atlassian.net',
+		statuses: {},
+	},
+};
+
 const GITHUB_SECRET = 'my-github-webhook-secret';
 const TRELLO_SECRET = 'my-trello-api-secret';
+const JIRA_SECRET = 'my-jira-webhook-secret';
 const TRELLO_CALLBACK_URL = 'https://example.com/trello/webhook';
 
 // ---------------------------------------------------------------------------
@@ -202,6 +222,45 @@ describe('buildTrelloCallbackUrl', () => {
 		// routerConfig is mocked with webhookCallbackBaseUrl: 'https://example.com'
 		const url = buildTrelloCallbackUrl('other-host.com', 'http');
 		expect(url).toBe('https://example.com/trello/webhook');
+	});
+
+	describe('when webhookCallbackBaseUrl is not set', () => {
+		beforeEach(() => {
+			// Temporarily clear the base URL to test fallback behaviour
+			(routerConfig as { webhookCallbackBaseUrl: string | undefined }).webhookCallbackBaseUrl =
+				undefined;
+		});
+
+		afterEach(() => {
+			// Restore the mocked base URL so other tests are unaffected
+			(routerConfig as { webhookCallbackBaseUrl: string | undefined }).webhookCallbackBaseUrl =
+				'https://example.com';
+		});
+
+		it('falls back to proto and host headers to construct the URL', () => {
+			const url = buildTrelloCallbackUrl('myhost.example.com', 'https');
+			expect(url).toBe('https://myhost.example.com/trello/webhook');
+		});
+
+		it('uses http proto from header when provided', () => {
+			const url = buildTrelloCallbackUrl('myhost.example.com', 'http');
+			expect(url).toBe('http://myhost.example.com/trello/webhook');
+		});
+
+		it('defaults proto to https when proto header is missing', () => {
+			const url = buildTrelloCallbackUrl('myhost.example.com', undefined);
+			expect(url).toBe('https://myhost.example.com/trello/webhook');
+		});
+
+		it('warns when host header is missing and no base URL is configured', () => {
+			buildTrelloCallbackUrl(undefined, undefined);
+			expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('Host header is missing'));
+		});
+
+		it('still returns a URL (with undefined host) even when host is missing', () => {
+			const url = buildTrelloCallbackUrl(undefined, 'https');
+			expect(url).toBe('https://undefined/trello/webhook');
+		});
 	});
 });
 
@@ -611,6 +670,223 @@ describe('router — Trello webhook signature verification (end-to-end)', () => 
 	it('logs Missing signature header reason when header absent but secret configured', async () => {
 		const { logWebhookCall } = await import('../../../src/utils/webhookLogger.js');
 		const body = buildTrelloPayload();
+		await post(body);
+		expect(logWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				statusCode: 401,
+				decisionReason: 'Missing signature header',
+			}),
+		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: extractJiraProjectKey
+// ---------------------------------------------------------------------------
+
+describe('extractJiraProjectKey', () => {
+	it('extracts project key from issue.fields.project.key', () => {
+		const body = JSON.stringify({
+			webhookEvent: 'jira:issue_updated',
+			issue: { key: 'PROJ-1', fields: { project: { key: 'PROJ' } } },
+		});
+		expect(extractJiraProjectKey(body)).toBe('PROJ');
+	});
+
+	it('returns undefined when project key is absent', () => {
+		const body = JSON.stringify({ webhookEvent: 'jira:issue_updated', issue: { key: 'PROJ-1' } });
+		expect(extractJiraProjectKey(body)).toBeUndefined();
+	});
+
+	it('returns undefined for invalid JSON', () => {
+		expect(extractJiraProjectKey('not json')).toBeUndefined();
+	});
+
+	it('returns undefined when issue field is missing', () => {
+		const body = JSON.stringify({ webhookEvent: 'jira:issue_updated' });
+		expect(extractJiraProjectKey(body)).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: verifyJiraWebhookSignature (function directly)
+// ---------------------------------------------------------------------------
+
+describe('verifyJiraWebhookSignature — direct function tests', () => {
+	beforeEach(() => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [JIRA_PROJECT] });
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(JIRA_SECRET);
+	});
+
+	function makeContext(headers: Record<string, string> = {}) {
+		return {
+			req: {
+				header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
+			},
+		} as unknown as import('hono').Context;
+	}
+
+	function buildJiraBody(projectKey = 'PROJ') {
+		return JSON.stringify({
+			webhookEvent: 'jira:issue_updated',
+			issue: { key: `${projectKey}-1`, fields: { project: { key: projectKey } } },
+		});
+	}
+
+	it('returns { valid: true } when signature is correct', async () => {
+		const body = buildJiraBody();
+		const sig = jiraSignature(body, JIRA_SECRET);
+		const result = await verifyJiraWebhookSignature(makeContext({ 'X-Hub-Signature': sig }), body);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } when signature is wrong', async () => {
+		const body = buildJiraBody();
+		const badSig = jiraSignature(body, 'wrong-secret');
+		const result = await verifyJiraWebhookSignature(
+			makeContext({ 'X-Hub-Signature': badSig }),
+			body,
+		);
+		expect(result).toEqual({ valid: false, reason: 'JIRA signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } when header absent but secret configured', async () => {
+		const body = buildJiraBody();
+		const result = await verifyJiraWebhookSignature(makeContext({}), body);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
+
+	it('returns null (skip) when no secret configured', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const body = buildJiraBody();
+		const result = await verifyJiraWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project not found', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [] });
+		const body = buildJiraBody('UNKNOWN');
+		const result = await verifyJiraWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project key is missing from payload', async () => {
+		const body = JSON.stringify({ webhookEvent: 'jira:issue_updated' });
+		const result = await verifyJiraWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Integration tests: end-to-end via Hono app — JIRA
+// ---------------------------------------------------------------------------
+
+describe('router — JIRA webhook signature verification (end-to-end)', () => {
+	let app: Hono;
+
+	beforeEach(async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({
+			projects: [JIRA_PROJECT],
+		});
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(JIRA_SECRET);
+
+		const { createWebhookHandler, parseJiraPayload } = await import(
+			'../../../src/webhook/webhookHandlers.js'
+		);
+
+		app = new Hono();
+		app.post(
+			'/jira/webhook',
+			createWebhookHandler({
+				source: 'jira',
+				parsePayload: parseJiraPayload,
+				verifySignature: verifyJiraWebhookSignature,
+				processWebhook: vi.fn().mockResolvedValue({
+					processed: true,
+					projectId: 'proj-jira',
+					decisionReason: 'matched',
+				}),
+			}),
+		);
+	});
+
+	function buildJiraPayload(projectKey = 'PROJ') {
+		return JSON.stringify({
+			webhookEvent: 'jira:issue_updated',
+			issue: { key: `${projectKey}-1`, fields: { project: { key: projectKey } } },
+		});
+	}
+
+	async function post(body: string, headers: Record<string, string> = {}): Promise<Response> {
+		return app.fetch(
+			new Request('http://localhost/jira/webhook', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...headers,
+				},
+				body,
+			}),
+		);
+	}
+
+	it('returns 200 when signature is valid', async () => {
+		const body = buildJiraPayload();
+		const sig = jiraSignature(body, JIRA_SECRET);
+		const res = await post(body, { 'X-Hub-Signature': sig });
+		expect(res.status).toBe(200);
+	});
+
+	it('returns 401 when signature is invalid (wrong secret)', async () => {
+		const body = buildJiraPayload();
+		const badSig = jiraSignature(body, 'wrong-secret');
+		const res = await post(body, { 'X-Hub-Signature': badSig });
+		expect(res.status).toBe(401);
+	});
+
+	it('returns 401 when signature header is missing but secret IS configured', async () => {
+		const body = buildJiraPayload();
+		const res = await post(body);
+		expect(res.status).toBe(401);
+	});
+
+	it('returns 200 (skip verification) when no webhook secret is configured', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const body = buildJiraPayload();
+		const res = await post(body);
+		expect(res.status).toBe(200);
+	});
+
+	it('returns 200 (skip verification) when project is not found', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [] });
+		const body = buildJiraPayload('UNKNOWN');
+		const res = await post(body);
+		expect(res.status).toBe(200);
+	});
+
+	it('returns 200 (skip verification) when project key is missing from payload', async () => {
+		const body = JSON.stringify({ webhookEvent: 'jira:issue_updated' });
+		const res = await post(body);
+		expect(res.status).toBe(200);
+	});
+
+	it('logs decision reason to webhook_logs on 401', async () => {
+		const { logWebhookCall } = await import('../../../src/utils/webhookLogger.js');
+		const body = buildJiraPayload();
+		const badSig = jiraSignature(body, 'wrong-secret');
+		await post(body, { 'X-Hub-Signature': badSig });
+		expect(logWebhookCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				statusCode: 401,
+				processed: false,
+				decisionReason: 'JIRA signature mismatch',
+			}),
+		);
+	});
+
+	it('logs Missing signature header reason when header absent but secret configured', async () => {
+		const { logWebhookCall } = await import('../../../src/utils/webhookLogger.js');
+		const body = buildJiraPayload();
 		await post(body);
 		expect(logWebhookCall).toHaveBeenCalledWith(
 			expect.objectContaining({

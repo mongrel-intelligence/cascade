@@ -8,9 +8,9 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  ROUTER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-router
-  WORKER_IMAGE: ghcr.io/zbigniewsobiecki/cascade-worker
-  DASHBOARD_IMAGE: ghcr.io/zbigniewsobiecki/cascade-dashboard
+  ROUTER_IMAGE: ghcr.io/mongrel-intelligence/cascade-router
+  WORKER_IMAGE: ghcr.io/mongrel-intelligence/cascade-worker
+  DASHBOARD_IMAGE: ghcr.io/mongrel-intelligence/cascade-dashboard
 
 jobs:
   build-and-deploy:
@@ -81,6 +81,7 @@ jobs:
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:dev .
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             ./node_modules/.bin/drizzle-kit migrate
 
@@ -88,6 +89,7 @@ jobs:
         run: |
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             npx tsx tools/migrate-triggers.ts
 
@@ -95,6 +97,7 @@ jobs:
         run: |
           docker run --rm \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             npx tsx tools/migrate-hooks.ts --apply
 
@@ -103,8 +106,22 @@ jobs:
           docker run --rm \
             --env-file /opt/services/cascade-dev.env \
             -e DATABASE_URL="${{ secrets.DEV_DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:dev \
             npx tsx tools/migrate-project-credentials-reencrypt.ts
+
+      - name: Configure DATABASE_SSL for dev (self-signed certificate)
+        run: |
+          # /opt/services/ is read-only for the runner process (sed -i fails).
+          # Run a container via the host Docker socket — it mounts the host path
+          # as a writable bind mount and can modify the file directly.
+          docker run --rm \
+            -v /opt/services:/mnt/services \
+            alpine:3 sh -c '
+              grep -v "^DATABASE_SSL=" /mnt/services/cascade-dev.env > /tmp/new.env 2>/dev/null || true
+              echo "DATABASE_SSL=false" >> /tmp/new.env
+              cp /tmp/new.env /mnt/services/cascade-dev.env
+            '
 
       - name: Pull and restart cascade-router-dev
         run: |

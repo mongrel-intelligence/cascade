@@ -230,7 +230,7 @@ export const projectsRouter = router({
 						envVarKey: row.envVarKey,
 						name: row.name,
 						isConfigured: true,
-						maskedValue: row.value.length <= 4 ? '****' : `****${row.value.slice(-4)}`,
+						maskedValue: row.value.length <= 12 ? '****' : `****${row.value.slice(-4)}`,
 					}));
 				} catch (err) {
 					// Decryption key missing/wrong — return metadata without value preview

@@ -136,4 +136,52 @@ describe('resolveGitHubTokenForAckByAgent', () => {
 
 		expect(result).toBeNull();
 	});
+
+	it('skips findProjectByRepo when pre-resolved project is provided', async () => {
+		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
+			if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
+			throw new Error(`Credential '${category}/${role}' not found`);
+		});
+
+		const preResolvedProject = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			branchPrefix: 'feature/',
+		} as never;
+
+		const result = await resolveGitHubTokenForAckByAgent(
+			'owner/repo',
+			'review',
+			preResolvedProject,
+		);
+
+		expect(result).not.toBeNull();
+		expect(result?.token).toBe('test-reviewer-token');
+		expect(result?.project.id).toBe('test');
+		// findProjectByRepo should NOT have been called since we passed the project directly
+		expect(mockFindProjectByRepo).not.toHaveBeenCalled();
+	});
+
+	it('uses pre-resolved project for implementer token when provided', async () => {
+		const preResolvedProject = {
+			id: 'test',
+			name: 'Test',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			branchPrefix: 'feature/',
+		} as never;
+
+		const result = await resolveGitHubTokenForAckByAgent(
+			'owner/repo',
+			'implementation',
+			preResolvedProject,
+		);
+
+		expect(result).not.toBeNull();
+		expect(result?.token).toBe('test-github-token');
+		expect(mockFindProjectByRepo).not.toHaveBeenCalled();
+		expect(mockGetProjectGitHubToken).toHaveBeenCalledWith(preResolvedProject);
+	});
 });

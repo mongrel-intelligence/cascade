@@ -34,13 +34,19 @@ import {
 } from '@/components/ui/table.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from '@/components/ui/tooltip.js';
+import {
 	AGENT_LABELS,
 	CATEGORY_LABELS,
 	type TriggerParameterValue,
 } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, ChevronRight, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { AgentPromptOverrides } from './agent-prompt-overrides.js';
@@ -192,7 +198,7 @@ function DefinitionAgentSection({
 	const effectiveEngine = engines.find((engine) => engine.id === effectiveEngineId);
 
 	// Resolved inherited engine — project override or system default
-	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? 'llmist';
+	const inheritedEngine = projectEngine ?? systemDefaults?.agentEngine ?? 'claude-code';
 	// Per-field engine defaults for the EngineSettingsFields component
 	const engineDefaults =
 		systemDefaults && effectiveEngineId
@@ -536,7 +542,14 @@ function AgentRow({
 		<TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(type)}>
 			<TableCell className="font-medium">{label}</TableCell>
 			<TableCell>
-				{config ? (
+				{activeTriggerCount === 0 ? (
+					<Badge
+						variant="outline"
+						className="text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800"
+					>
+						Inactive
+					</Badge>
+				) : config ? (
 					<Badge variant="default" className="text-xs">
 						Configured
 					</Badge>
@@ -563,7 +576,24 @@ function AgentRow({
 				)}
 			</TableCell>
 			<TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
-				{activeTriggerCount > 0 ? <span>{activeTriggerCount} active</span> : <span>None</span>}
+				{activeTriggerCount > 0 ? (
+					<span>{activeTriggerCount} active</span>
+				) : (
+					<Tooltip>
+						<TooltipTrigger asChild>
+							<span className="inline-flex items-center gap-1">
+								<AlertTriangle
+									className="h-3.5 w-3.5 text-amber-500 dark:text-amber-400"
+									aria-label="Warning: no active triggers"
+								/>
+								<span className="text-amber-600 dark:text-amber-400 font-medium">None</span>
+							</span>
+						</TooltipTrigger>
+						<TooltipContent>
+							No triggers configured — this agent won't process any events
+						</TooltipContent>
+					</Tooltip>
+				)}
 			</TableCell>
 			<TableCell>
 				<div className="flex items-center justify-end gap-1">
@@ -628,33 +658,35 @@ function AgentListView({
 				</div>
 			) : (
 				<div className="overflow-x-auto rounded-lg border border-border">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Agent</TableHead>
-								<TableHead>Status</TableHead>
-								<TableHead className="hidden sm:table-cell">Engine / Model</TableHead>
-								<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
-								<TableHead className="w-20" />
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{enabledAgentTypes.map((type) => (
-								<AgentRow
-									key={type}
-									type={type}
-									config={configByAgent.get(type) ?? null}
-									triggers={triggersByAgent.get(type) ?? []}
-									integrations={integrations}
-									onSelect={onSelect}
-									onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
-									projectModel={projectModel}
-									projectEngine={projectEngine}
-									systemDefaults={systemDefaults}
-								/>
-							))}
-						</TableBody>
-					</Table>
+					<TooltipProvider delayDuration={200}>
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>Agent</TableHead>
+									<TableHead>Status</TableHead>
+									<TableHead className="hidden sm:table-cell">Engine / Model</TableHead>
+									<TableHead className="hidden sm:table-cell">Active Triggers</TableHead>
+									<TableHead className="w-20" />
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{enabledAgentTypes.map((type) => (
+									<AgentRow
+										key={type}
+										type={type}
+										config={configByAgent.get(type) ?? null}
+										triggers={triggersByAgent.get(type) ?? []}
+										integrations={integrations}
+										onSelect={onSelect}
+										onDeleteRequest={(id, label) => setDeleteTarget({ id, label })}
+										projectModel={projectModel}
+										projectEngine={projectEngine}
+										systemDefaults={systemDefaults}
+									/>
+								))}
+							</TableBody>
+						</Table>
+					</TooltipProvider>
 				</div>
 			)}
 

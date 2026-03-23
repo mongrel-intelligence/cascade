@@ -895,6 +895,65 @@ describe('execute', () => {
 		await Promise.resolve();
 		expect(mockStoreLlmCall).not.toHaveBeenCalled();
 	});
+
+	it('passes AsyncIterable prompt to query() when contextInjections has images', async () => {
+		mockStream([
+			{ type: 'result', subtype: 'success', result: 'Done', total_cost_usd: 0, num_turns: 1 },
+		]);
+
+		const input = makeInput({
+			contextInjections: [
+				{
+					toolName: 'ReadWorkItem',
+					params: {},
+					result: 'card content',
+					description: 'Work item',
+					images: [{ base64Data: 'abc', mimeType: 'image/png' }],
+				},
+			],
+		});
+
+		await new ClaudeCodeEngine().execute(input);
+
+		const promptArg = mockQuery.mock.calls[0][0].prompt;
+		expect(typeof promptArg).not.toBe('string');
+		expect(promptArg[Symbol.asyncIterator]).toBeDefined();
+	});
+
+	it('logs image injection and strips images before buildTaskPrompt', async () => {
+		mockStream([
+			{ type: 'result', subtype: 'success', result: 'Done', total_cost_usd: 0, num_turns: 1 },
+		]);
+
+		const input = makeInput({
+			contextInjections: [
+				{
+					toolName: 'ReadWorkItem',
+					params: {},
+					result: 'card content',
+					description: 'Work item',
+					images: [{ base64Data: 'imagedata123', mimeType: 'image/png' }],
+				},
+			],
+		});
+
+		await new ClaudeCodeEngine().execute(input);
+
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Injecting work item images as SDK content blocks',
+			{ count: 1 },
+		);
+
+		// Collect text from the AsyncIterable prompt
+		const promptArg = mockQuery.mock.calls[0][0].prompt as AsyncIterable<{
+			message: { content: { type: string; text?: string }[] };
+		}>;
+		const msgs: { message: { content: { type: string; text?: string }[] } }[] = [];
+		for await (const m of promptArg) msgs.push(m);
+		const textBlock = msgs[0].message.content.find((b) => b.type === 'text');
+		expect(textBlock?.text).not.toContain('imagedata123');
+	});
 });
 
 describe('continuation loop', () => {

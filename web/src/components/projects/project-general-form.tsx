@@ -35,7 +35,6 @@ interface Project {
 	maxIterations: number | null;
 	watchdogTimeoutMs: number | null;
 	progressModel: string | null;
-	progressIntervalMinutes: string | null;
 	workItemBudgetUsd: string | null;
 	agentEngine: string | null;
 	engineSettings: Record<string, Record<string, unknown>> | null;
@@ -58,13 +57,6 @@ function minutesToMs(minutes: string): number | null {
 	if (!minutes) return null;
 	const parsed = Number.parseInt(minutes, 10);
 	return Number.isNaN(parsed) ? null : parsed * 60000;
-}
-
-/** Convert a DB interval value (may be "5.0") to integer string for display */
-function intervalToInteger(value: string | null | undefined): string {
-	if (!value) return '';
-	const n = Math.round(Number(value));
-	return Number.isNaN(n) ? '' : String(n);
 }
 
 export function ProjectGeneralForm({ project }: { project: Project }) {
@@ -96,9 +88,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [name, setName] = useState(project.name);
 	const [watchdogMinutes, setWatchdogMinutes] = useState(msToMinutes(project.watchdogTimeoutMs));
 	const [progressModel, setProgressModel] = useState(project.progressModel ?? '');
-	const [progressIntervalMinutes, setProgressIntervalMinutes] = useState(
-		intervalToInteger(project.progressIntervalMinutes),
-	);
 	const [workItemBudgetUsd, setWorkItemBudgetUsd] = useState(project.workItemBudgetUsd ?? '');
 	const [maxInFlightItems, setMaxInFlightItems] = useState(
 		numericFieldDefault(project.maxInFlightItems),
@@ -111,7 +100,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			name !== project.name ||
 			watchdogMinutes !== msToMinutes(project.watchdogTimeoutMs) ||
 			progressModel !== (project.progressModel ?? '') ||
-			progressIntervalMinutes !== intervalToInteger(project.progressIntervalMinutes) ||
 			workItemBudgetUsd !== (project.workItemBudgetUsd ?? '') ||
 			maxInFlightItems !== numericFieldDefault(project.maxInFlightItems) ||
 			runLinksEnabled !== (project.runLinksEnabled ?? false)
@@ -120,7 +108,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		name,
 		watchdogMinutes,
 		progressModel,
-		progressIntervalMinutes,
 		workItemBudgetUsd,
 		maxInFlightItems,
 		runLinksEnabled,
@@ -131,7 +118,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		setName(project.name);
 		setWatchdogMinutes(msToMinutes(project.watchdogTimeoutMs));
 		setProgressModel(project.progressModel ?? '');
-		setProgressIntervalMinutes(intervalToInteger(project.progressIntervalMinutes));
 		setWorkItemBudgetUsd(project.workItemBudgetUsd ?? '');
 		setMaxInFlightItems(numericFieldDefault(project.maxInFlightItems));
 		setRunLinksEnabled(project.runLinksEnabled ?? false);
@@ -144,7 +130,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 				name,
 				watchdogTimeoutMs: minutesToMs(watchdogMinutes),
 				progressModel: progressModel || null,
-				progressIntervalMinutes: progressIntervalMinutes || null,
 				workItemBudgetUsd: workItemBudgetUsd || null,
 				maxInFlightItems: maxInFlightItems ? Number.parseInt(maxInFlightItems, 10) : null,
 				runLinksEnabled,
@@ -173,9 +158,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const watchdogDescription =
 		watchdogDefaultMinutes != null ? `Default: ${watchdogDefaultMinutes} min` : '…';
 	const progressModelPlaceholder = defaults ? defaults.progressModel : 'e.g. gemini-flash';
-	const progressIntervalPlaceholder = defaults
-		? `${defaults.progressIntervalMinutes} (default)`
-		: 'e.g. 5';
 
 	return (
 		<TooltipProvider>
@@ -288,34 +270,16 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 							</div>
 						</CardHeader>
 						<CardContent className="space-y-4">
-							<div className="grid grid-cols-2 gap-4">
-								<div className="space-y-2">
-									<Label htmlFor="progressModel">Progress Model</Label>
-									<OpenRouterModelCombobox
-										id="progressModel"
-										projectId={project.id}
-										value={progressModel}
-										onChange={setProgressModel}
-										placeholder={progressModelPlaceholder}
-									/>
-									<p className="text-xs text-muted-foreground">LLM model for progress summaries.</p>
-								</div>
-								<div className="space-y-2">
-									<Label htmlFor="progressIntervalMinutes">Progress Interval (min)</Label>
-									<Input
-										id="progressIntervalMinutes"
-										type="number"
-										min="1"
-										step="1"
-										className="w-32"
-										value={progressIntervalMinutes}
-										onChange={(e) => setProgressIntervalMinutes(e.target.value)}
-										placeholder={progressIntervalPlaceholder}
-									/>
-									<p className="text-xs text-muted-foreground">
-										How often the agent posts a progress update.
-									</p>
-								</div>
+							<div className="space-y-2">
+								<Label htmlFor="progressModel">Progress Model</Label>
+								<OpenRouterModelCombobox
+									id="progressModel"
+									projectId={project.id}
+									value={progressModel}
+									onChange={setProgressModel}
+									placeholder={progressModelPlaceholder}
+								/>
+								<p className="text-xs text-muted-foreground">LLM model for progress summaries.</p>
 							</div>
 							<div className="flex items-center gap-3">
 								<input
@@ -356,6 +320,34 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						</button>
 					</div>
 				</form>
+
+				{/* API Keys */}
+				<Card>
+					<CardHeader>
+						<div className="flex items-center gap-1.5">
+							<CardTitle>API Keys</CardTitle>
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+								</TooltipTrigger>
+								<TooltipContent>
+									Project-scoped API keys for LLM providers. Values are stored encrypted and never
+									returned to the browser. Engine-specific keys are on the Engine tab.
+								</TooltipContent>
+							</Tooltip>
+						</div>
+					</CardHeader>
+					<CardContent>
+						<ProjectSecretField
+							projectId={project.id}
+							envVarKey="OPENROUTER_API_KEY"
+							label="OpenRouter API Key"
+							description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
+							placeholder="sk-or-..."
+							credential={openrouterCred}
+						/>
+					</CardContent>
+				</Card>
 
 				{/* Danger Zone */}
 				<Card className="border-destructive/50">
@@ -402,34 +394,6 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						</AlertDialogFooter>
 					</AlertDialogContent>
 				</AlertDialog>
-
-				{/* API Keys */}
-				<Card>
-					<CardHeader>
-						<div className="flex items-center gap-1.5">
-							<CardTitle>API Keys</CardTitle>
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-								</TooltipTrigger>
-								<TooltipContent>
-									Project-scoped API keys for LLM providers. Values are stored encrypted and never
-									returned to the browser. Engine-specific keys are on the Engine tab.
-								</TooltipContent>
-							</Tooltip>
-						</div>
-					</CardHeader>
-					<CardContent>
-						<ProjectSecretField
-							projectId={project.id}
-							envVarKey="OPENROUTER_API_KEY"
-							label="OpenRouter API Key"
-							description="API key for OpenRouter LLM routing (progress model). Also used as the engine API key when the OpenCode engine is selected — configure it here or on the Engine tab."
-							placeholder="sk-or-..."
-							credential={openrouterCred}
-						/>
-					</CardContent>
-				</Card>
 			</div>
 		</TooltipProvider>
 	);

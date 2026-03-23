@@ -1,7 +1,8 @@
 /**
  * HMAC signature verification for webhook payloads.
  *
- * Provides timing-safe verification for GitHub (SHA-256) and Trello (SHA-1) webhooks.
+ * Provides timing-safe verification for GitHub (SHA-256), Trello (SHA-1), and
+ * JIRA (SHA-256) webhooks.
  */
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
@@ -60,6 +61,33 @@ export function verifyTrelloSignature(
 		.digest('base64');
 
 	const expected = Buffer.from(expectedBase64, 'utf8');
+	const actual = Buffer.from(signature, 'utf8');
+
+	if (expected.length !== actual.length) {
+		return false;
+	}
+
+	return timingSafeEqual(expected, actual);
+}
+
+/**
+ * Verify a JIRA webhook signature.
+ *
+ * JIRA Cloud signs payloads with HMAC-SHA256 and sends the result as
+ * `sha256=<hex>` in the `X-Hub-Signature` header.
+ *
+ * @param rawBody - The raw request body string.
+ * @param signature - The value of the `X-Hub-Signature` header.
+ * @param secret - The webhook secret configured in JIRA.
+ * @returns `true` if the signature is valid, `false` otherwise.
+ */
+export function verifyJiraSignature(rawBody: string, signature: string, secret: string): boolean {
+	if (!signature || !signature.startsWith('sha256=')) {
+		return false;
+	}
+
+	const expectedHex = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
+	const expected = Buffer.from(`sha256=${expectedHex}`, 'utf8');
 	const actual = Buffer.from(signature, 'utf8');
 
 	if (expected.length !== actual.length) {

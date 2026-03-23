@@ -1,6 +1,6 @@
-# Contributing to CASCADE
+# Contributing to Cascade
 
-Thank you for your interest in contributing to CASCADE! This guide will help you get started.
+Thank you for your interest in contributing to Cascade! This guide will help you get started.
 
 ## Prerequisites
 
@@ -30,7 +30,12 @@ Thank you for your interest in contributing to CASCADE! This guide will help you
    npm run db:migrate
    ```
 
-5. **Start Redis** (required for the router):
+5. **Build the project**:
+   ```bash
+   npm run build
+   ```
+
+6. **Start Redis** (required for the router):
    ```bash
    # macOS
    brew install redis && brew services start redis
@@ -38,11 +43,21 @@ Thank you for your interest in contributing to CASCADE! This guide will help you
    .cascade/setup.sh
    ```
 
-6. **Run the development servers**:
+7. **Run the development servers**:
+
+   Start all services in one terminal:
    ```bash
-   npm run dev          # Router (webhook receiver)
-   npm run dev:web      # Dashboard frontend (separate terminal)
+   npm run dev:all      # Router + Dashboard API + Frontend (color-coded output)
    ```
+
+   Or start each service in a separate terminal:
+   ```bash
+   npm run dev                                           # Router (:3000)
+   node --env-file=.env dist/dashboard.js               # Dashboard API (:3001)
+   npm run dev:web                                       # Frontend (Vite, :5173)
+   ```
+
+   > **Note:** The Dashboard API must be running for the frontend to show data. The Vite dev server proxies `/trpc` and `/api` to `localhost:3001`.
 
 ## Running Tests
 
@@ -93,9 +108,7 @@ This is enforced by commitlint via lefthook pre-commit hooks.
 
 3. **Ensure all checks pass**:
    ```bash
-   npm run lint
-   npm run typecheck
-   npm test
+   npm run verify   # runs lint + typecheck + unit tests in one command
    ```
 
 4. **Open a PR** targeting the `dev` branch. PRs to `main` must come from `dev` (enforced by CI).
@@ -121,17 +134,47 @@ See [CLAUDE.md](./CLAUDE.md) for a detailed architecture overview. Key directori
 
 ## Adding New Agents
 
-1. Create the agent in `src/agents/`
-2. Define its system prompt in `src/agents/prompts/`
-3. Register it in the agent registry
+Agents are defined using YAML definition files. Built-in definitions live in `src/agents/definitions/`.
+
+1. **Write a YAML definition** — model your file on an existing one in `src/agents/definitions/` (e.g. `implementation.yaml`)
+2. **Import the definition**:
+   ```bash
+   cascade definitions import --file my-agent.yaml
+   ```
+   Or use the **Agent Definitions** tab in the dashboard.
+3. **Create an `agent_configs` row** to enable the agent for a project:
+   ```bash
+   cascade agents create --agent-type my-agent --project-id <project-id>
+   ```
+4. **Discover available triggers** for the new agent type:
+   ```bash
+   cascade projects trigger-discover --agent my-agent   # see available events
+   ```
+
+5. **Configure triggers** — enable the events that should activate the agent:
+   ```bash
+   cascade projects trigger-set <project-id> --agent my-agent --event pm:status-changed --enable
+   ```
 
 ## The `.cascade/` Directory
 
-When CASCADE works on a repository, it looks for a `.cascade/` directory at the root of that repo. This directory lets you customize agent behavior — setup scripts, post-edit hooks, test runners, and environment variables.
+When Cascade works on a repository, it looks for a `.cascade/` directory at the root of that repo. This directory lets you customize agent behavior — setup scripts, post-edit hooks, test runners, and environment variables.
 
 See **[`.cascade/` Directory Guide](./docs/cascade-directory.md)** for the full reference.
 
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---------|-------|-----|
+| `Cannot connect to Redis` | Redis not running | `redis-server` or `brew services start redis` |
+| `ECONNREFUSED 5432` | PostgreSQL not running | `pg_ctl start` or start Docker |
+| `dist/ not found` when running CLI | Build needed | `npm run build` |
+| Frontend shows no data | Dashboard API not running | `node --env-file=.env dist/dashboard.js` |
+| Node version error | Node < 22 | Install Node 22+ (`nvm use 22`) |
+| Integration tests silently skip | No test database | `npm run test:db:up` first |
+| `commitlint` hook fails | Non-conventional commit message | Use format `feat(scope): description` |
+
 ## Getting Help
 
-- Open an [issue](https://github.com/zbigniewsobiecki/cascade/issues) for bugs or feature requests
+- Open an [issue](https://github.com/mongrel-intelligence/cascade/issues) for bugs or feature requests
 - Check existing issues and discussions before creating new ones

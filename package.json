@@ -7,6 +7,7 @@
 	"scripts": {
 		"dev": "node --env-file=.env --import tsx/esm --watch src/router/index.ts",
 		"dev:web": "cd web && npx vite",
+		"dev:all": "concurrently --kill-others-on-fail --names 'router,dashboard,web' --prefix-colors 'blue,green,cyan' \"npm run dev\" \"node --env-file=.env dist/dashboard.js\" \"npm run dev:web\"",
 		"build": "tsc && npm run build:copy-yaml && npm run build:copy-system-prompts",
 		"build:copy-yaml": "mkdir -p dist/agents/definitions && cp src/agents/definitions/*.yaml dist/agents/definitions/",
 		"build:copy-system-prompts": "mkdir -p dist/agents/prompts && cp -r src/agents/prompts/templates dist/agents/prompts/",
@@ -24,6 +25,7 @@
 		"lint": "biome check .",
 		"lint:fix": "biome check --write .",
 		"typecheck": "tsc --noEmit",
+		"verify": "npm run lint && npm run typecheck && npm test",
 		"prepare": "lefthook install",
 		"tool:download-session": "node --env-file=.env --import tsx tools/download-session.ts",
 		"tool:run-local": "node --env-file=.env --import tsx tools/run-local.ts",
@@ -100,6 +102,7 @@
 		"@types/react-dom": "^19.2.3",
 		"@vitest/coverage-v8": "^3.2.4",
 		"commander": "^14.0.2",
+		"concurrently": "^9.2.1",
 		"drizzle-kit": "^0.31.9",
 		"jsdom": "^28.1.0",
 		"lefthook": "^1.10.10",

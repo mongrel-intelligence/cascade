@@ -1,19 +1,28 @@
-# CASCADE
+# Cascade
 
-> **CASCADE turns PM cards into pull requests using AI agents.**
+[![CI](https://github.com/mongrel-intelligence/cascade/actions/workflows/ci.yml/badge.svg)](https://github.com/mongrel-intelligence/cascade/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/mongrel-intelligence/cascade/graph/badge.svg)](https://codecov.io/gh/mongrel-intelligence/cascade)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
-CASCADE is an open-source automation platform that bridges your project management tool (Trello or JIRA) with your GitHub repository. Move a card to the right list — or add a label — and CASCADE picks it up, runs an AI agent, and delivers a pull request.
+> **Cascade orchestrates AI agents (Claude Code, Codex, opencode, LLMist) across your workflows in GitHub, Trello, and Jira.**
+
+Cascade is an open-source platform that automates the full software development lifecycle. Connect your PM tool and GitHub repository, and Cascade drives work items from plan to merge:
 
 ```
-PM Card → Webhook → Router → Redis/BullMQ → Worker → Agent → PR
+PM Card → Split → Plan → Implement → PR → Review → Iterate → Merge
 ```
+
+[![What is Cascade?](https://img.youtube.com/vi/gcDLVZw6HS8/maxresdefault.jpg)](https://youtu.be/gcDLVZw6HS8)
+
+[![Watch the demo](docs/assets/demo-thumbnail.jpg)](https://youtu.be/HMfFtj2i_Mw)
 
 ---
 
 ## 🚀 Quick Start
 
 ```bash
-git clone https://github.com/zbigniewsobiecki/cascade.git
+git clone https://github.com/mongrel-intelligence/cascade.git
 cd cascade
 cp .env.docker.example .env    # Edit if needed
 bash setup.sh                  # Build, migrate, and start all services
@@ -34,7 +43,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
 - **Extensible trigger system** — Add new events without touching core logic
-- **Pluggable agent engines** — `llmist` (default), `claude-code`, `codex`, and `opencode` built-in; easy to extend
+- **Pluggable agent engines** — `claude-code` (default), `llmist`, `codex`, and `opencode` built-in; easy to extend
 - **Credential encryption** — AES-256-GCM encryption for all stored secrets
 - **Agent resilience** — Built-in rate limiting, exponential-backoff retry, and context compaction
 
@@ -42,7 +51,11 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 
 ## 🏗️ Architecture
 
-CASCADE runs as three independent services:
+<p align="center">
+  <img src="docs/architecture.jpg" alt="CASCADE architecture diagram" />
+</p>
+
+Cascade runs as three independent services:
 
 | Service | Entry Point | Role |
 |---------|-------------|------|
@@ -78,15 +91,22 @@ cp .env.example .env    # Set DATABASE_URL and REDIS_URL
 npm run db:migrate
 ```
 
-Start each service in a separate terminal:
+Start all three services with one command (requires a build first):
 
 ```bash
-npm run dev                                           # Router (webhook receiver, :3000)
-npm run build && node --env-file=.env dist/dashboard.js  # Dashboard API (:3001)
-npm run dev:web                                       # Dashboard frontend (Vite, :5173)
+npm run build
+npm run dev:all   # Router + Dashboard API + Frontend, color-coded output
 ```
 
-> **Note:** The Vite dev server proxies `/trpc` and `/api` to `localhost:3001`, so the Dashboard API must be running for the frontend to work. See [CLAUDE.md](./CLAUDE.md#running-the-dashboard) for more details.
+Or start each service in a separate terminal:
+
+```bash
+npm run dev                                        # Router (:3000)
+node --env-file=.env dist/dashboard.js             # Dashboard API (:3001)
+npm run dev:web                                    # Frontend (Vite, :5173)
+```
+
+> **Note:** The Vite dev server proxies `/trpc` and `/api` to `localhost:3001`, so the Dashboard API must be running for the frontend to work.
 
 ### Commands
 
@@ -100,6 +120,8 @@ npm run dev:web                                       # Dashboard frontend (Vite
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:studio` | Open Drizzle Studio |
+| `npm run dev:all` | Start all services (router + dashboard + frontend) |
+| `npm run verify` | Lint + typecheck + unit tests (pre-PR check) |
 
 ---
 
@@ -127,11 +149,11 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 ## 🔑 Key Concepts
 
-**Dual-persona GitHub model** — CASCADE uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them.
+**Dual-persona GitHub model** — Cascade uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them.
 
 **Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database.
 
-**Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `llmist` (supports OpenRouter, Anthropic, OpenAI). Alternatives: `claude-code` (Claude Code SDK), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
+**Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `claude-code` (Anthropic Claude Code SDK). Alternatives: `llmist` (supports OpenRouter, Anthropic, OpenAI), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
 
 **Credential management** — All secrets are stored in the `project_credentials` table, scoped to a project. Optional AES-256-GCM encryption via `CREDENTIAL_MASTER_KEY`.
 
@@ -145,8 +167,8 @@ For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 
 1. Fork the repository and create a feature branch from `dev`
 2. Make your changes with tests (`npm test`)
-3. Ensure lint and typecheck pass (`npm run lint && npm run typecheck`)
-4. Open a pull request — CASCADE will review its own PRs if configured to do so
+3. Ensure all checks pass (`npm run verify`)
+4. Open a pull request — Cascade will review its own PRs if configured to do so
 
 Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
 

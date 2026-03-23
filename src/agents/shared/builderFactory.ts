@@ -144,7 +144,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			builder = builder.withBudget(remainingBudgetUsd);
 		} catch (err) {
 			if (err instanceof BudgetPricingUnavailableError) {
-				logWriter('warn', 'Budget enforcement unavailable for model', { model });
+				logWriter('WARN', 'Budget enforcement unavailable for model', { model });
 			} else {
 				throw err;
 			}

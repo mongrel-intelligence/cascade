@@ -6,11 +6,11 @@ You are on an EXISTING branch for an open pull request. Do NOT create a new PR.
 
 Use standard git commands via Tmux for all version control.
 
-**CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
+**CRITICAL: Pass command as a shell string.**
 
 **Git command examples:**
-- Status: `command=["git", "status"]`
-- Diff: `command=["git", "diff"]`
+- Status: `command="git status"`
+- Diff: `command="git diff"`
 
 **DO NOT use CreatePR.** The PR already exists. Just commit and push your fixes to the current branch.
 

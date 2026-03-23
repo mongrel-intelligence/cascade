@@ -1,11 +1,14 @@
 import { z } from 'zod';
 
-// Re-export schemas from engine directories for backward compatibility.
-export { ClaudeCodeSettingsSchema } from '../backends/claude-code/settings.js';
+// Import and re-export schemas from engine directories.
+import { ClaudeCodeSettingsSchema } from '../backends/claude-code/settings.js';
+export { ClaudeCodeSettingsSchema };
 export type { ClaudeCodeSettings } from '../backends/claude-code/settings.js';
-export { CodexSettingsSchema } from '../backends/codex/settings.js';
+import { CodexSettingsSchema } from '../backends/codex/settings.js';
+export { CodexSettingsSchema };
 export type { CodexSettings } from '../backends/codex/settings.js';
-export { OpenCodeSettingsSchema } from '../backends/opencode/settings.js';
+import { OpenCodeSettingsSchema } from '../backends/opencode/settings.js';
+export { OpenCodeSettingsSchema };
 export type { OpenCodeSettings } from '../backends/opencode/settings.js';
 
 /**
@@ -13,6 +16,14 @@ export type { OpenCodeSettings } from '../backends/opencode/settings.js';
  * Engines register their schema during bootstrap via registerEngineSettingsSchema().
  */
 const ENGINE_SETTINGS_SCHEMAS: Map<string, z.ZodType<Record<string, unknown>>> = new Map();
+
+// Pre-register built-in engine settings schemas at module initialization.
+// Any process that imports EngineSettingsSchema (via config/schema.ts) will
+// have these registered automatically — no explicit registerBuiltInEngines()
+// call required for schema validation.
+ENGINE_SETTINGS_SCHEMAS.set('claude-code', ClaudeCodeSettingsSchema);
+ENGINE_SETTINGS_SCHEMAS.set('codex', CodexSettingsSchema);
+ENGINE_SETTINGS_SCHEMAS.set('opencode', OpenCodeSettingsSchema);
 
 /**
  * Register a settings schema for an engine. Called during bootstrap when an engine

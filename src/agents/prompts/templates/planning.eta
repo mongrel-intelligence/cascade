@@ -17,15 +17,13 @@ CRITICAL:
 You are running in a cloned copy of the project repository. Before creating your plan:
 
 1. **Read the <%= it.workItemNoun || 'card' %>** to identify scope signals (file names, components, features, domain terms)
-2. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the <%= it.workItemNoun || 'card' %>
-3. **MANDATORY: Drill into features, flows, and modules before reading any files:**
-   - `squint features show <slug> --json` for each relevant feature — returns flows, modules involved, interactions
-   - `squint flows show <slug> --json` for key flows — returns ordered interaction steps and the definition-level call trace showing which function calls which across module boundaries
-   - `squint modules show <path> --json` for each module area — returns members, outgoing/incoming interactions, flows
-   - DO NOT SKIP — plans that miss cross-cutting dependencies (e.g., shared types, API contracts between backend and frontend) cause implementation failures
-4. **THEN read specific files** — only files Squint identified as relevant. Use `squint symbols list --file <path> --json` to understand a file's architectural role before reading source.
+<% if (it.squintEnabled) { %>2. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the <%= it.workItemNoun || 'card' %>
+3. **Use the Squint Codebase Intelligence Protocol (below)** to explore features, flows, and modules before reading any files
+4. **THEN read specific files** — only files Squint identified as relevant
 5. **Understand existing patterns** — how does the codebase already solve similar problems?
-6. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than code
+6. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than code<% } else { %>2. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to identify relevant files and patterns.
+3. **Understand existing patterns** — how does the codebase already solve similar problems?
+4. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than code<% } %>
 
 <%~ include("partials/squint-exploration") %>
 

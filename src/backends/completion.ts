@@ -2,6 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 
 import type { AgentEngineResult } from './types.js';
 
+export const COMPLETION_ERROR_NO_PR =
+	'Agent completed but no authoritative PR creation was recorded';
+export const COMPLETION_ERROR_NO_REVIEW =
+	'Agent completed but no authoritative PR review submission was recorded';
+export const COMPLETION_ERROR_NO_PUSH =
+	'Agent completed but no authoritative pushed changes were recorded';
+export const COMPLETION_ERROR_NO_PM_WRITE =
+	'Agent completed but no PM write (checklist creation) was recorded';
+
 export interface CompletionRequirements {
 	requiresPR?: boolean;
 	requiresReview?: boolean;
@@ -95,7 +104,7 @@ export function getCompletionFailure(
 ): CompletionFailure | undefined {
 	if (requirements?.requiresPR && !evidence.hasAuthoritativePR) {
 		return {
-			error: 'Agent completed but no authoritative PR creation was recorded',
+			error: COMPLETION_ERROR_NO_PR,
 			continuationPrompt:
 				'CASCADE completion check failed: no authoritative PR creation was recorded for this task. Continue from the current session, create the PR using the required CASCADE tool flow, confirm the real PR URL from the successful tool result, and only then finish.',
 		};
@@ -103,7 +112,7 @@ export function getCompletionFailure(
 
 	if (requirements?.requiresReview && !evidence.hasAuthoritativeReview) {
 		return {
-			error: 'Agent completed but no authoritative PR review submission was recorded',
+			error: COMPLETION_ERROR_NO_REVIEW,
 			continuationPrompt:
 				'CASCADE completion check failed: no authoritative PR review submission was recorded for this task. Continue from the current session, submit the review using the required CASCADE tool flow, confirm the review was submitted successfully, and only then finish.',
 		};
@@ -111,7 +120,7 @@ export function getCompletionFailure(
 
 	if (requirements?.requiresPushedChanges && !evidence.hasAuthoritativePushedChanges) {
 		return {
-			error: 'Agent completed but no authoritative pushed changes were recorded',
+			error: COMPLETION_ERROR_NO_PUSH,
 			continuationPrompt:
 				'CASCADE completion check failed: no authoritative pushed changes were recorded for this task. Continue from the current session, commit and push the required changes, confirm the push succeeded, and only then finish.',
 		};
@@ -119,7 +128,7 @@ export function getCompletionFailure(
 
 	if (requirements?.requiresPMWrite && !evidence.hasPMWrite) {
 		return {
-			error: 'Agent completed but no PM write (checklist creation) was recorded',
+			error: COMPLETION_ERROR_NO_PM_WRITE,
 			continuationPrompt:
 				'CASCADE completion check failed: no PM write was recorded. Create the implementation plan checklist using `cascade-tools pm add-checklist`, then finish.',
 		};

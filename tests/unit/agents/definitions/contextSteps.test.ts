@@ -275,12 +275,16 @@ describe('fetchWorkItemStep', () => {
 		expect(mockTrelloDownload).not.toHaveBeenCalled();
 	});
 
-	it('skips failed downloads gracefully and logs warning', async () => {
+	it('logs WARN and skips when download returns null, stripping query params from URL', async () => {
 		mockReadWorkItemWithMedia.mockResolvedValue({
 			text: '# Card',
 			media: [
 				{ url: 'https://trello.com/ok.png', mimeType: 'image/png', source: 'description' },
-				{ url: 'https://trello.com/fail.png', mimeType: 'image/png', source: 'description' },
+				{
+					url: 'https://trello.com/fail.png?key=secret&token=abc',
+					mimeType: 'image/png',
+					source: 'description',
+				},
 			],
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
@@ -294,12 +298,25 @@ describe('fetchWorkItemStep', () => {
 		// Only 1 successful image
 		expect(result[0].images).toHaveLength(1);
 		expect(result[0].images?.[0].base64Data).toBe(Buffer.from('ok').toString('base64'));
+
+		// WARN for the null return, URL sanitized (no query params)
+		expect(params.logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'fetchWorkItemStep: image download returned null',
+			{ url: 'https://trello.com/fail.png' },
+		);
 	});
 
-	it('logs warning when download throws an exception', async () => {
+	it('logs warning when download throws an exception, stripping query params from URL', async () => {
 		mockReadWorkItemWithMedia.mockResolvedValue({
 			text: '# Card',
-			media: [{ url: 'https://trello.com/err.png', mimeType: 'image/png', source: 'description' }],
+			media: [
+				{
+					url: 'https://trello.com/err.png?key=secret&token=abc',
+					mimeType: 'image/png',
+					source: 'description',
+				},
+			],
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
 		mockTrelloDownload.mockRejectedValue(new Error('network failure'));
@@ -311,7 +328,37 @@ describe('fetchWorkItemStep', () => {
 		expect(params.logWriter).toHaveBeenCalledWith(
 			'WARN',
 			'fetchWorkItemStep: failed to download image',
-			expect.objectContaining({ error: 'network failure' }),
+			{ url: 'https://trello.com/err.png', error: 'network failure' },
+		);
+	});
+
+	it('emits INFO logs before and after download with correct counts', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Card',
+			media: [
+				{ url: 'https://trello.com/a.png', mimeType: 'image/png', source: 'description' },
+				{ url: 'https://trello.com/b.png', mimeType: 'image/png', source: 'description' },
+				{ url: 'https://trello.com/c.png', mimeType: 'image/png', source: 'description' },
+			],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
+		mockTrelloDownload
+			.mockResolvedValueOnce({ buffer: Buffer.from('data'), mimeType: 'image/png' })
+			.mockResolvedValueOnce(null) // returns null
+			.mockRejectedValueOnce(new Error('timeout')); // throws
+
+		const params = makeParams({ workItemId: 'card-1' });
+		await fetchWorkItemStep(params);
+
+		expect(params.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'fetchWorkItemStep: downloading work item images',
+			{ workItemId: 'card-1', count: 3 },
+		);
+		expect(params.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'fetchWorkItemStep: image download complete',
+			{ workItemId: 'card-1', attempted: 3, downloaded: 1, skipped: 2 },
 		);
 	});
 
