@@ -72,7 +72,7 @@ export interface SentryJobData {
 	source: 'sentry';
 	payload: unknown;
 	projectId: string;
-	/** Sentry resource type: 'event_alert' | 'metric_alert' */
+	/** Sentry resource type: 'event_alert' | 'metric_alert' | 'issue' */
 	eventType: string;
 	receivedAt: string;
 	triggerResult?: TriggerResult;
