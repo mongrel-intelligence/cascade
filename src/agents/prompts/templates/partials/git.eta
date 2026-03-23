@@ -2,10 +2,10 @@
 
 Use standard git commands via Tmux for all version control.
 
-**CRITICAL: Pass commands as argv arrays to Tmux, NOT shell strings!**
+**CRITICAL: Pass command as a shell string.**
 
 **Git command examples:**
-- Branch: `command=["git", "checkout", "-b", "feature/name"]`
+- Branch: `command="git checkout -b feature/name"`
 
 **Creating Pull Requests:**
 Use the CreatePR gadget to finalize your work. It handles the full workflow automatically:
