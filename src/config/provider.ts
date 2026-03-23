@@ -15,7 +15,7 @@ import {
 } from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
-import { PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
+import { PROVIDER_CATEGORY, PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
 
 export async function loadConfig(): Promise<CascadeConfig> {
 	const cached = configCache.getConfig();
@@ -210,15 +210,8 @@ export function invalidateConfigCache(): void {
 function roleToEnvVarKey(category: string, role: string): string | undefined {
 	// Look through all providers in the category to find the role
 	for (const [provider, roles] of Object.entries(PROVIDER_CREDENTIAL_ROLES)) {
-		let providerCategory: string;
-		if (provider === 'trello' || provider === 'jira') {
-			providerCategory = 'pm';
-		} else if (provider === 'github') {
-			providerCategory = 'scm';
-		} else {
-			continue;
-		}
-		if (providerCategory !== category) continue;
+		const providerCategory = PROVIDER_CATEGORY[provider as keyof typeof PROVIDER_CATEGORY];
+		if (!providerCategory || providerCategory !== category) continue;
 		const roleDef = roles.find((r) => r.role === role);
 		if (roleDef) return roleDef.envVarKey;
 	}

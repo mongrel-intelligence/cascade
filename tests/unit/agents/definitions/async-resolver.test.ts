@@ -9,6 +9,7 @@ import {
 } from '../../../../src/agents/definitions/loader.js';
 
 const ALL_AGENT_TYPES = [
+	'alerting',
 	'backlog-manager',
 	'debug',
 	'implementation',

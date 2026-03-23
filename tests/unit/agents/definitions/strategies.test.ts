@@ -13,6 +13,7 @@ describe.concurrent('CONTEXT_STEP_REGISTRY', () => {
 			'prContext',
 			'prConversation',
 			'pipelineSnapshot',
+			'alertingIssue',
 		];
 
 		for (const key of expectedKeys) {
@@ -36,6 +37,7 @@ describe.concurrent('CONTEXT_STEP_REGISTRY', () => {
 			'prContext',
 			'prConversation',
 			'pipelineSnapshot',
+			'alertingIssue',
 		];
 
 		const actualKeys = Object.keys(CONTEXT_STEP_REGISTRY);

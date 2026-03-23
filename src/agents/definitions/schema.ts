@@ -6,18 +6,18 @@ import { CAPABILITIES } from '../capabilities/registry.js';
 // ============================================================================
 
 // Integration categories (aligned with integrationRoles.ts)
-export const IntegrationCategorySchema = z.enum(['pm', 'scm']);
+export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'alerting']);
 
 // Known providers for validation
-export const KnownProviderSchema = z.enum(['trello', 'jira', 'github']);
+export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'sentry']);
 
 // Trigger event format validation: {category}:{event-name}
-// Categories: pm, scm (integration-bound), internal (orchestration chaining)
+// Categories: pm, scm (integration-bound), alerting (monitoring), internal (orchestration chaining)
 const TriggerEventSchema = z
 	.string()
 	.regex(
-		/^(pm|scm|internal):[a-z][a-z0-9-]*$/,
-		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
+		/^(pm|scm|alerting|internal):[a-z][a-z0-9-]*$/,
+		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success, alerting:issue-alert)',
 	);
 
 // ============================================================================
@@ -81,6 +81,7 @@ export const CONTEXT_STEP_NAMES = [
 	'prContext',
 	'prConversation',
 	'pipelineSnapshot',
+	'alertingIssue',
 ] as const;
 
 /** Context step name schema for use in triggers */

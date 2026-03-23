@@ -1,10 +1,11 @@
-export type IntegrationCategory = 'pm' | 'scm';
-export type IntegrationProvider = 'trello' | 'jira' | 'github';
+export type IntegrationCategory = 'pm' | 'scm' | 'alerting';
+export type IntegrationProvider = 'trello' | 'jira' | 'github' | 'sentry';
 
 export const PROVIDER_CATEGORY: Record<IntegrationProvider, IntegrationCategory> = {
 	trello: 'pm',
 	jira: 'pm',
 	github: 'scm',
+	sentry: 'alerting',
 };
 
 export interface CredentialRoleDef {
@@ -42,6 +43,15 @@ export const PROVIDER_CREDENTIAL_ROLES: Record<IntegrationProvider, CredentialRo
 			role: 'webhook_secret',
 			label: 'Webhook Secret',
 			envVarKey: 'GITHUB_WEBHOOK_SECRET',
+			optional: true,
+		},
+	],
+	sentry: [
+		{ role: 'api_token', label: 'API Token', envVarKey: 'SENTRY_API_TOKEN' },
+		{
+			role: 'webhook_secret',
+			label: 'Webhook Secret',
+			envVarKey: 'SENTRY_WEBHOOK_SECRET',
 			optional: true,
 		},
 	],

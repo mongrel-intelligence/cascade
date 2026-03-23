@@ -58,6 +58,43 @@ export async function parseGitHubPayload(c: Context): Promise<ParseResult> {
 }
 
 /**
+ * Parse a Sentry webhook request.
+ * Event type comes from the `Sentry-Hook-Resource` header.
+ * The cascadeProjectId (from the URL path param) must be passed explicitly
+ * since Hono path params are not available in this generic parser.
+ *
+ * Returns an augmented payload that the SentryRouterAdapter understands.
+ */
+export async function parseSentryPayload(
+	c: Context,
+	cascadeProjectId: string,
+): Promise<ParseResult> {
+	try {
+		const rawBody = await c.req.text();
+		const innerPayload = JSON.parse(rawBody);
+		const resource = c.req.header('Sentry-Hook-Resource') ?? 'unknown';
+		const action = (innerPayload as Record<string, unknown>)?.action as string | undefined;
+
+		logger.info('Received Sentry webhook', {
+			resource,
+			action,
+			projectId: cascadeProjectId,
+		});
+
+		// Build the augmented payload that SentryRouterAdapter expects
+		const payload = {
+			resource,
+			payload: innerPayload,
+			cascadeProjectId,
+		};
+
+		return { ok: true, payload, eventType: resource, rawBody };
+	} catch (err) {
+		return { ok: false, error: String(err) };
+	}
+}
+
+/**
  * Parse a JIRA webhook request (plain JSON).
  * Extracts `webhookEvent` as the event type.
  */

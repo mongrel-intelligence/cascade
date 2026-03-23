@@ -10,6 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { readWorkItem, readWorkItemWithMedia } from '../../gadgets/pm/core/readWorkItem.js';
+import { formatSentryEvent } from '../../gadgets/sentry/core/format.js';
 import {
 	formatTodoList,
 	getNextId,
@@ -20,6 +21,7 @@ import type { Todo } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { MAX_IMAGES_PER_WORK_ITEM, getPMProviderOrNull } from '../../pm/index.js';
+import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
@@ -553,4 +555,59 @@ export async function fetchPipelineSnapshotStep(
 			description: `Pre-fetched pipeline snapshot (${lists.length} lists, ${itemsNeedingFullDetails.length} items with full details)`,
 		},
 	];
+}
+
+// ============================================================================
+// Sentry Issue Step
+// ============================================================================
+
+/**
+ * Pre-fetch the latest alerting event (with full stacktrace and breadcrumbs)
+ * so the agent starts with the error context already loaded.
+ *
+ * Reads alertIssueId and alertOrgId from AgentInput.
+ * Silently skips if credentials or config are missing.
+ */
+export async function fetchAlertingIssueStep(
+	params: FetchContextParams,
+): Promise<ContextInjection[]> {
+	const { alertIssueId, alertOrgId } = params.input;
+	if (!alertIssueId || typeof alertIssueId !== 'string') return [];
+	if (!alertOrgId || typeof alertOrgId !== 'string') return [];
+
+	try {
+		params.logWriter('INFO', 'fetchAlertingIssueStep: fetching latest alerting event', {
+			issueId: alertIssueId,
+			orgId: alertOrgId,
+		});
+
+		const client = getSentryClient();
+		const event = await client.getIssueEvent(alertOrgId, alertIssueId, 'latest');
+		const result = formatSentryEvent(event);
+
+		params.logWriter('INFO', 'fetchAlertingIssueStep: fetched alerting event successfully', {
+			issueId: alertIssueId,
+			eventId: event.event_id,
+		});
+
+		return [
+			{
+				toolName: 'GetAlertingEventDetail',
+				params: {
+					organizationId: alertOrgId,
+					issueId: alertIssueId,
+					eventId: 'latest',
+				},
+				result,
+				description: 'Pre-fetched alerting event with stacktrace and breadcrumbs',
+			},
+		];
+	} catch (error) {
+		params.logWriter('WARN', 'fetchAlertingIssueStep: failed to fetch alerting event', {
+			issueId: alertIssueId,
+			orgId: alertOrgId,
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return [];
+	}
 }

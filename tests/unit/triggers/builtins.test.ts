@@ -54,6 +54,13 @@ vi.mock('../../../src/triggers/trello/label-added.js', () => ({
 		.mockImplementation(() => ({ name: 'ready-to-process-label' })),
 }));
 
+vi.mock('../../../src/triggers/sentry/alerting-issue.js', () => ({
+	SentryIssueAlertTrigger: vi.fn().mockImplementation(() => ({ name: 'sentry-issue-alert' })),
+}));
+vi.mock('../../../src/triggers/sentry/alerting-metric.js', () => ({
+	SentryMetricAlertTrigger: vi.fn().mockImplementation(() => ({ name: 'sentry-metric-alert' })),
+}));
+
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
 		debug: vi.fn(),
@@ -80,8 +87,8 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 18 built-in triggers (17 + pr-conflict-detected)
-		expect(registry.register).toHaveBeenCalledTimes(18);
+		// Should have registered all 20 built-in triggers (18 + 2 Sentry alerting triggers)
+		expect(registry.register).toHaveBeenCalledTimes(20);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {
@@ -131,6 +138,16 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('jira-comment-mention');
 		expect(registeredNames).toContain('jira-status-changed');
 		expect(registeredNames).toContain('jira-label-added');
+	});
+
+	it('registers Sentry alerting triggers', () => {
+		const registry = createMockRegistry();
+
+		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
+
+		const registeredNames = registry.handlers.map((h: object) => (h as { name: string }).name);
+		expect(registeredNames).toContain('sentry-issue-alert');
+		expect(registeredNames).toContain('sentry-metric-alert');
 	});
 
 	it('registers TrelloCommentMentionTrigger before status-changed triggers', () => {

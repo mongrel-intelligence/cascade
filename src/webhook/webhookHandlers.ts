@@ -21,7 +21,12 @@ import { handleProcessingError, logSuccessfulWebhook } from './webhookLogging.js
 // ---------------------------------------------------------------------------
 
 export type { ParseResult, WebhookHandlerConfig, WebhookLogOverrides } from './webhookTypes.js';
-export { parseGitHubPayload, parseJiraPayload, parseTrelloPayload } from './webhookParsers.js';
+export {
+	parseGitHubPayload,
+	parseJiraPayload,
+	parseSentryPayload,
+	parseTrelloPayload,
+} from './webhookParsers.js';
 
 // ---------------------------------------------------------------------------
 // Types (local import for factory use)

@@ -53,6 +53,12 @@ export interface AgentInput {
 	// Router/webhook-handler-posted ack message text — reused as initial comment header
 	ackMessage?: string;
 
+	// Alerting fields
+	alertIssueId?: string;
+	alertOrgId?: string;
+	alertTitle?: string;
+	alertIssueUrl?: string;
+
 	[key: string]: unknown;
 }
 
