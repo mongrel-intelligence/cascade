@@ -323,7 +323,7 @@ describe('runsRepository (integration)', () => {
 	});
 
 	describe('listLlmCallsMeta', () => {
-		it('returns calls metadata without request/response bodies', async () => {
+		it('returns calls metadata with response but without request body', async () => {
 			const id = await createRun({
 				projectId: 'test-project',
 				agentType: 'implementation',
@@ -343,9 +343,10 @@ describe('runsRepository (integration)', () => {
 			const meta = await listLlmCallsMeta(id);
 			expect(meta).toHaveLength(1);
 			expect(meta[0].inputTokens).toBe(100);
-			// listLlmCallsMeta does not return request/response
+			// listLlmCallsMeta excludes the large request body but includes
+			// the response so the router can extract toolNames/textPreview
 			expect('request' in meta[0]).toBe(false);
-			expect('response' in meta[0]).toBe(false);
+			expect(meta[0].response).toBe('big response body');
 		});
 	});
 
