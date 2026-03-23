@@ -1,4 +1,5 @@
 import { vi } from 'vitest';
+import { mockGetDb } from './sharedMocks.js';
 
 export type MockDbChain = Record<string, ReturnType<typeof vi.fn>>;
 
@@ -86,4 +87,25 @@ export function createMockDb(
 	};
 
 	return { db, chain };
+}
+
+/**
+ * Convenience wrapper that creates a mock DB and immediately wires it into
+ * `mockGetDb` (from sharedMocks.ts) so callers don't need the two-liner:
+ *
+ * ```ts
+ * // Before:
+ * const { db, chain } = createMockDb();
+ * mockGetDb.mockReturnValue(db);
+ *
+ * // After:
+ * const { db, chain } = createMockDbWithGetDb();
+ * ```
+ *
+ * The `opts` parameter is forwarded to `createMockDb()` unchanged.
+ */
+export function createMockDbWithGetDb(opts: Parameters<typeof createMockDb>[0] = {}): MockDbResult {
+	const result = createMockDb(opts);
+	mockGetDb.mockReturnValue(result.db as never);
+	return result;
 }

@@ -1,13 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockDb } from '../../../helpers/mockDb.js';
+import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
+import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
-// Mock the DB client
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
 import type { AgentDefinition } from '../../../../src/agents/definitions/schema.js';
-import { getDb } from '../../../../src/db/client.js';
 import {
 	deleteAgentDefinition,
 	getAgentDefinition,
@@ -42,11 +39,10 @@ const mockDefinition: AgentDefinition = {
 };
 
 describe('agentDefinitionsRepository', () => {
-	let mockDb: ReturnType<typeof createMockDb>;
+	let mockDb: ReturnType<typeof createMockDbWithGetDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb({ withUpsert: true });
-		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
+		mockDb = createMockDbWithGetDb({ withUpsert: true });
 	});
 
 	describe('getAgentDefinition', () => {

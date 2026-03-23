@@ -1,13 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockDb } from '../../../helpers/mockDb.js';
+import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
+import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
-// Mock the DB client
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
-import { getDb } from '../../../../src/db/client.js';
 import {
 	getIntegrationProvider,
 	listProjectCredentialsMeta,
@@ -16,11 +13,10 @@ import {
 } from '../../../../src/db/repositories/credentialsRepository.js';
 
 describe('credentialsRepository', () => {
-	let mockDb: ReturnType<typeof createMockDb>;
+	let mockDb: ReturnType<typeof createMockDbWithGetDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb({ withDoubleJoin: true });
-		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
+		mockDb = createMockDbWithGetDb({ withDoubleJoin: true });
 	});
 
 	describe('resolveProjectCredential', () => {
