@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
+import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
 	promptPartials: {
@@ -15,7 +15,6 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	},
 }));
 
-import { getDb } from '../../../../src/db/client.js';
 import {
 	deletePartial,
 	getPartial,
@@ -23,36 +22,6 @@ import {
 	loadPartials,
 	upsertPartial,
 } from '../../../../src/db/repositories/partialsRepository.js';
-
-// ---------------------------------------------------------------------------
-// Mock DB factory
-// ---------------------------------------------------------------------------
-
-/**
- * Creates a minimal mock Drizzle chain supporting:
- * - select().from().where()  — both plain-resolve and thenable variants
- * - insert().values().returning()
- * - update().set().where().returning()
- * - delete().where()
- */
-function createMockDb() {
-	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
-
-	chain.returning = vi.fn().mockResolvedValue([]);
-	chain.where = vi.fn().mockResolvedValue([]);
-	chain.set = vi.fn().mockReturnValue({ where: chain.where });
-	chain.from = vi.fn().mockReturnValue({ where: chain.where });
-	chain.values = vi.fn().mockReturnValue({ returning: chain.returning });
-
-	const db = {
-		select: vi.fn().mockReturnValue({ from: chain.from }),
-		insert: vi.fn().mockReturnValue({ values: chain.values }),
-		update: vi.fn().mockReturnValue({ set: chain.set }),
-		delete: vi.fn().mockReturnValue({ where: chain.where }),
-	};
-
-	return { db, chain };
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -84,11 +53,10 @@ function makePartialRow(
 // ---------------------------------------------------------------------------
 
 describe('partialsRepository', () => {
-	let mockDb: ReturnType<typeof createMockDb>;
+	let mockDb: ReturnType<typeof createMockDbWithGetDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb();
-		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
+		mockDb = createMockDbWithGetDb();
 	});
 
 	// ==========================================================================

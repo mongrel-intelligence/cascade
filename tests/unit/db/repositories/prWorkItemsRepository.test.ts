@@ -1,8 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockDbClientModule, mockGetDb } from '../../../helpers/sharedMocks.js';
 
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
 	prWorkItems: {
@@ -34,7 +33,6 @@ vi.mock('../../../../src/db/repositories/joinHelpers.js', () => ({
 	buildAgentRunWorkItemJoin: vi.fn().mockReturnValue('mock-join-condition'),
 }));
 
-import { getDb } from '../../../../src/db/client.js';
 import {
 	createWorkItem,
 	linkPRToWorkItem,
@@ -140,7 +138,7 @@ describe('prWorkItemsRepository', () => {
 			update: vi.fn().mockReturnValue({ set: chain.set }),
 			delete: vi.fn(),
 		};
-		vi.mocked(getDb).mockReturnValue(mockDb as never);
+		mockGetDb.mockReturnValue(mockDb as never);
 	});
 
 	// ==========================================================================

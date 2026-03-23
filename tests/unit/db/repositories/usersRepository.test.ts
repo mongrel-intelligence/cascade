@@ -1,9 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockDb } from '../../../helpers/mockDb.js';
+import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
+import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
 	users: {
@@ -24,7 +23,6 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	},
 }));
 
-import { getDb } from '../../../../src/db/client.js';
 import {
 	createSession,
 	createUser,
@@ -39,11 +37,10 @@ import {
 } from '../../../../src/db/repositories/usersRepository.js';
 
 describe('usersRepository', () => {
-	let mockDb: ReturnType<typeof createMockDb>;
+	let mockDb: ReturnType<typeof createMockDbWithGetDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb();
-		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
+		mockDb = createMockDbWithGetDb();
 	});
 
 	describe('getUserByEmail', () => {
