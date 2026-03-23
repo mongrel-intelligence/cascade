@@ -1,41 +1,25 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import {
+	mockAcknowledgmentsModule,
+	mockConfigProvider,
+	mockConfigResolverModule,
+	mockJiraClientModule,
+	mockReactionsModule,
+	mockTrelloClientModule,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
+
+import type { TriggerContext } from '../../../src/triggers/types.js';
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
-vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredential: vi.fn(),
-	loadProjectConfigByBoardId: vi.fn(),
-	loadProjectConfigByJiraProjectKey: vi.fn(),
-	findProjectById: vi.fn(),
-}));
-vi.mock('../../../src/trello/client.js', () => ({
-	withTrelloCredentials: vi.fn(),
-	trelloClient: { getCard: vi.fn() },
-}));
-vi.mock('../../../src/jira/client.js', () => ({
-	withJiraCredentials: vi.fn(),
-	jiraClient: {},
-}));
-vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn(),
-	deleteTrelloAck: vi.fn(),
-	resolveTrelloBotMemberId: vi.fn(),
-	postJiraAck: vi.fn(),
-	deleteJiraAck: vi.fn(),
-	resolveJiraBotAccountId: vi.fn(),
-}));
-vi.mock('../../../src/router/reactions.js', () => ({
-	sendAcknowledgeReaction: vi.fn(),
-}));
+vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
+vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
+vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
@@ -43,6 +27,11 @@ import '../../../src/pm/index.js';
 import { trelloClient } from '../../../src/trello/client.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import { ReadyToProcessLabelTrigger } from '../../../src/triggers/trello/label-added.js';
+import {
+	createMockProject,
+	createTrelloActionPayload,
+	createTrelloCard,
+} from '../../helpers/factories.js';
 
 describe('ReadyToProcessLabelTrigger', () => {
 	const trigger = new ReadyToProcessLabelTrigger();
@@ -67,8 +56,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -79,7 +67,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(true);
@@ -89,8 +77,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -101,7 +88,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'other-label-id', name: 'Other', color: 'red' },
 						},
 					},
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
@@ -111,8 +98,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -122,7 +108,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
 						},
 					},
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
@@ -142,21 +128,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 	describe('handle', () => {
 		it('should return null when trigger is disabled for the resolved agent', async () => {
 			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
-			mockGetCard.mockResolvedValue({
-				id: 'card123',
-				name: 'Test Card',
-				desc: '',
-				url: 'https://trello.com/c/abc',
-				shortUrl: 'https://trello.com/c/abc',
-				idList: 'splitting-list-id',
-				labels: [],
-			});
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({ id: 'card123', idList: 'splitting-list-id' }),
+			);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -167,7 +146,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -181,21 +160,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 		});
 
 		it('returns splitting agent when card is in splitting list', async () => {
-			mockGetCard.mockResolvedValue({
-				id: 'card123',
-				name: 'Test Card',
-				desc: '',
-				url: 'https://trello.com/c/abc',
-				shortUrl: 'https://trello.com/c/abc',
-				idList: 'splitting-list-id',
-				labels: [],
-			});
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({ id: 'card123', idList: 'splitting-list-id' }),
+			);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -206,7 +178,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -218,21 +190,20 @@ describe('ReadyToProcessLabelTrigger', () => {
 		});
 
 		it('populates workItemUrl and workItemTitle from fetched card data', async () => {
-			mockGetCard.mockResolvedValue({
-				id: 'card123',
-				name: 'My Feature Card',
-				desc: '',
-				url: 'https://trello.com/c/xyz123/my-feature-card',
-				shortUrl: 'https://trello.com/c/xyz123',
-				idList: 'splitting-list-id',
-				labels: [],
-			});
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({
+					id: 'card123',
+					name: 'My Feature Card',
+					url: 'https://trello.com/c/xyz123/my-feature-card',
+					shortUrl: 'https://trello.com/c/xyz123',
+					idList: 'splitting-list-id',
+				}),
+			);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -243,7 +214,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -255,21 +226,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 		});
 
 		it('returns planning agent when card is in planning list', async () => {
-			mockGetCard.mockResolvedValue({
-				id: 'card456',
-				name: 'Planning Card',
-				desc: '',
-				url: 'https://trello.com/c/def',
-				shortUrl: 'https://trello.com/c/def',
-				idList: 'planning-list-id',
-				labels: [],
-			});
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({ id: 'card456', name: 'Planning Card', idList: 'planning-list-id' }),
+			);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -280,7 +244,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -290,21 +254,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 		});
 
 		it('returns implementation agent when card is in todo list', async () => {
-			mockGetCard.mockResolvedValue({
-				id: 'card789',
-				name: 'Todo Card',
-				desc: '',
-				url: 'https://trello.com/c/ghi',
-				shortUrl: 'https://trello.com/c/ghi',
-				idList: 'todo-list-id',
-				labels: [],
-			});
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({ id: 'card789', name: 'Todo Card', idList: 'todo-list-id' }),
+			);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -315,7 +272,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -325,21 +282,14 @@ describe('ReadyToProcessLabelTrigger', () => {
 		});
 
 		it('returns null when card is in an unrecognized list (e.g. IN PROGRESS)', async () => {
-			mockGetCard.mockResolvedValue({
-				id: 'card999',
-				name: 'Unknown List Card',
-				desc: '',
-				url: 'https://trello.com/c/xyz',
-				shortUrl: 'https://trello.com/c/xyz',
-				idList: 'in-progress-list-id',
-				labels: [],
-			});
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({ id: 'card999', idList: 'in-progress-list-id' }),
+			);
 
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -350,7 +300,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -362,8 +312,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'trello',
-				payload: {
-					model: { id: 'board123', name: 'Board' },
+				payload: createTrelloActionPayload({
 					action: {
 						id: 'action1',
 						idMemberCreator: 'member1',
@@ -373,7 +322,7 @@ describe('ReadyToProcessLabelTrigger', () => {
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);

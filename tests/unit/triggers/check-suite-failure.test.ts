@@ -1,28 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+	mockConfigResolverModule,
+	mockGitHubClientModule,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
+
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
+
+vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
+
+import {
 	CheckSuiteFailureTrigger,
 	resetFixAttempts,
 } from '../../../src/triggers/github/check-suite-failure.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createCheckSuitePayload, createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
-
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
-
-vi.mock('../../../src/github/client.js', () => ({
-	githubClient: {
-		getPR: vi.fn(),
-		getCheckSuiteStatus: vi.fn(),
-		createPRComment: vi.fn(),
-	},
-}));
 
 import { githubClient } from '../../../src/github/client.js';
 
@@ -37,19 +32,17 @@ describe('CheckSuiteFailureTrigger', () => {
 
 	const mockProject = createMockProject();
 
-	const makeFailurePayload = (overrides: Record<string, unknown> = {}) => ({
-		action: 'completed',
-		check_suite: {
-			id: 1,
-			status: 'completed',
-			conclusion: 'failure',
-			head_sha: 'sha123',
-			pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-		},
-		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: 'github-actions' },
-		...overrides,
-	});
+	const makeFailurePayload = (overrides: Record<string, unknown> = {}) =>
+		createCheckSuitePayload({
+			check_suite: {
+				id: 1,
+				status: 'completed',
+				conclusion: 'failure',
+				head_sha: 'sha123',
+				pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
+			},
+			...overrides,
+		} as Parameters<typeof createCheckSuitePayload>[0]);
 
 	beforeEach(() => {
 		resetFixAttempts(42);

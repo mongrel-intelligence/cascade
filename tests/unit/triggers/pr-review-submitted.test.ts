@@ -1,17 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockConfigResolverModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
+
 import { PRReviewSubmittedTrigger } from '../../../src/triggers/github/pr-review-submitted.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createMockProject, createReviewPayload } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
-
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
@@ -28,27 +25,8 @@ describe('PRReviewSubmittedTrigger', () => {
 
 	const mockProject = createMockProject();
 
-	const makeReviewPayload = (overrides: Record<string, unknown> = {}) => ({
-		action: 'submitted',
-		review: {
-			id: 100,
-			state: 'changes_requested',
-			body: 'Please fix the bug',
-			html_url: 'https://github.com/owner/repo/pull/42#pullrequestreview-100',
-			user: { login: 'cascade-reviewer' },
-		},
-		pull_request: {
-			number: 42,
-			title: 'Test PR',
-			body: 'https://trello.com/c/abc123/card-name',
-			html_url: 'https://github.com/owner/repo/pull/42',
-			head: { ref: 'feature/test', sha: 'abc' },
-			base: { ref: 'main' },
-		},
-		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: 'cascade-reviewer' },
-		...overrides,
-	});
+	const makeReviewPayload = (overrides: Record<string, unknown> = {}) =>
+		createReviewPayload(overrides as Parameters<typeof createReviewPayload>[0]);
 
 	describe('matches', () => {
 		it('matches submitted review with changes_requested', () => {

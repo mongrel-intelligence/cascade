@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mockGitHubClientModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+import {
+	mockConfigResolverModule,
+	mockGitHubClientModule,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
@@ -17,7 +18,7 @@ import {
 } from '../../../src/triggers/github/check-suite-success.js';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createCheckSuitePayload, createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 import { githubClient } from '../../../src/github/client.js';
@@ -35,19 +36,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	const mockProject = createMockProject();
 
-	const makeCheckSuitePayload = (overrides: Record<string, unknown> = {}) => ({
-		action: 'completed',
-		check_suite: {
-			id: 1,
-			status: 'completed',
-			conclusion: 'success',
-			head_sha: 'sha123',
-			pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-		},
-		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: 'github-actions' },
-		...overrides,
-	});
+	const makeCheckSuitePayload = (overrides: Record<string, unknown> = {}) =>
+		createCheckSuitePayload(overrides as Parameters<typeof createCheckSuitePayload>[0]);
 
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');

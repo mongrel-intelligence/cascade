@@ -6,14 +6,15 @@ const { mockGetPR, mockIsCascadeBot } = vi.hoisted(() => ({
 	mockIsCascadeBot: vi.fn(),
 }));
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
+import {
+	mockConfigResolverModule,
+	mockLogger,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 vi.mock('../../../src/github/client.js', () => ({
 	githubClient: {
@@ -25,14 +26,7 @@ vi.mock('../../../src/github/personas.js', () => ({
 	isCascadeBot: mockIsCascadeBot,
 }));
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		warn: vi.fn(),
-		debug: vi.fn(),
-		info: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
