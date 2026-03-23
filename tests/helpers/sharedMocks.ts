@@ -170,3 +170,143 @@ export const mockDbClientModule = {
 	getDb: mockGetDb,
 	closeDb: vi.fn(),
 };
+
+// ---------------------------------------------------------------------------
+// src/trello/client.js — mocked in 8+ trigger test files
+// ---------------------------------------------------------------------------
+
+/**
+ * Full mock for `src/trello/client.js`.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/trello/client.js', () => mockTrelloClientModule);
+ * ```
+ *
+ * Override specific functions per test:
+ * ```ts
+ * vi.mocked(mockTrelloClientModule.trelloClient.getCard).mockResolvedValue({ ... });
+ * ```
+ */
+export const mockTrelloClientModule = {
+	withTrelloCredentials: vi.fn(),
+	trelloClient: {
+		getCard: vi.fn(),
+	},
+};
+
+// ---------------------------------------------------------------------------
+// src/jira/client.js — mocked in 6+ trigger test files
+// ---------------------------------------------------------------------------
+
+/**
+ * Full mock for `src/jira/client.js`.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/jira/client.js', () => mockJiraClientModule);
+ * ```
+ */
+export const mockJiraClientModule = {
+	withJiraCredentials: vi.fn(),
+	jiraClient: {},
+};
+
+// ---------------------------------------------------------------------------
+// src/triggers/config-resolver.js — mocked in 15+ trigger test files
+// ---------------------------------------------------------------------------
+
+/**
+ * Mock for `src/triggers/config-resolver.js`.
+ * Defaults to `isTriggerEnabled` returning `true` and `getTriggerParameters` returning `{}`.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+ * ```
+ *
+ * Override per test:
+ * ```ts
+ * vi.mocked(mockConfigResolverModule.isTriggerEnabled).mockResolvedValue(false);
+ * ```
+ */
+export const mockConfigResolverModule = {
+	isTriggerEnabled: vi.fn().mockResolvedValue(true),
+	getTriggerParameters: vi.fn().mockResolvedValue({}),
+};
+
+// ---------------------------------------------------------------------------
+// src/router/acknowledgments.js — mocked in 6+ test files
+// ---------------------------------------------------------------------------
+
+/**
+ * Full mock for `src/router/acknowledgments.js`.
+ * Covers all Trello and JIRA acknowledgment functions.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
+ * ```
+ */
+export const mockAcknowledgmentsModule = {
+	postTrelloAck: vi.fn(),
+	deleteTrelloAck: vi.fn(),
+	resolveTrelloBotMemberId: vi.fn(),
+	postJiraAck: vi.fn(),
+	deleteJiraAck: vi.fn(),
+	resolveJiraBotAccountId: vi.fn(),
+};
+
+// ---------------------------------------------------------------------------
+// src/router/reactions.js — mocked alongside acknowledgments
+// ---------------------------------------------------------------------------
+
+/**
+ * Mock for `src/router/reactions.js`.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/router/reactions.js', () => mockReactionsModule);
+ * ```
+ */
+export const mockReactionsModule = {
+	sendAcknowledgeReaction: vi.fn(),
+};
+
+// ---------------------------------------------------------------------------
+// src/sentry.js — mocked in 5+ test files
+// ---------------------------------------------------------------------------
+
+/**
+ * Mock for `src/sentry.js`.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/sentry.js', () => mockSentryModule);
+ * ```
+ *
+ * Assert on errors reported:
+ * ```ts
+ * expect(mockSentryModule.captureException).toHaveBeenCalledWith(expect.any(Error));
+ * ```
+ */
+export const mockSentryModule = {
+	captureException: vi.fn(),
+};
+
+// ---------------------------------------------------------------------------
+// src/utils/lifecycle.js — mocked in backend tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Mock for `src/utils/lifecycle.js`.
+ *
+ * Use in vi.mock():
+ * ```ts
+ * vi.mock('../../src/utils/lifecycle.js', () => mockLifecycleModule);
+ * ```
+ */
+export const mockLifecycleModule = {
+	setWatchdogCleanup: vi.fn(),
+	clearWatchdogCleanup: vi.fn(),
+};
