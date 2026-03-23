@@ -375,19 +375,22 @@ describe('runsRouter', () => {
 	});
 
 	describe('listLlmCalls', () => {
-		it('returns LLM call metadata list', async () => {
+		it('returns LLM call metadata list with engine and enriched calls', async () => {
 			const mockMeta = [
-				{ callNumber: 1, inputTokens: 100 },
-				{ callNumber: 2, inputTokens: 200 },
+				{ callNumber: 1, inputTokens: 100, response: null },
+				{ callNumber: 2, inputTokens: 200, response: null },
 			];
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'claude-code' });
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result).toEqual(mockMeta);
+			expect(result.engine).toBe('claude-code');
+			expect(result.calls).toHaveLength(2);
+			expect(result.calls[0]).toMatchObject({ callNumber: 1, inputTokens: 100 });
+			expect(result.calls[1]).toMatchObject({ callNumber: 2, inputTokens: 200 });
 		});
 
 		it('includes model and createdAt in returned metadata', async () => {
@@ -399,19 +402,38 @@ describe('runsRouter', () => {
 					outputTokens: 50,
 					model: 'claude-sonnet-4-5',
 					createdAt,
+					response: null,
 				},
 			];
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'llmist' });
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result[0]).toMatchObject({
+			expect(result.calls[0]).toMatchObject({
 				model: 'claude-sonnet-4-5',
 				createdAt,
 			});
+		});
+
+		it('extracts toolNames and textPreview from a Claude Code response payload', async () => {
+			const claudeCodeResponse = JSON.stringify([
+				{ type: 'text', text: 'Let me read the file.' },
+				{ type: 'tool_use', name: 'Read', input: { file_path: '/src/index.ts' } },
+				{ type: 'tool_use', name: 'Read', input: { file_path: '/src/utils.ts' } },
+				{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } },
+			]);
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'claude-code' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1, response: claudeCodeResponse }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.listLlmCalls({ runId: RUN_UUID });
+
+			expect(result.calls[0].toolNames).toEqual(['Read', 'Read', 'Bash']);
+			expect(result.calls[0].textPreview).toBe('Let me read the file.');
 		});
 
 		it('throws NOT_FOUND when run does not exist', async () => {
@@ -434,14 +456,15 @@ describe('runsRouter', () => {
 		});
 
 		it('allows superadmin to list LLM calls from any org', async () => {
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
-			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1 }]);
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'codex' });
+			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1, response: null }]);
 
 			const superAdmin = createMockSuperAdmin();
 			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result).toEqual([{ callNumber: 1 }]);
+			expect(result.engine).toBe('codex');
+			expect(result.calls[0]).toMatchObject({ callNumber: 1 });
 			expect(mockDbSelect).not.toHaveBeenCalled();
 		});
 	});
