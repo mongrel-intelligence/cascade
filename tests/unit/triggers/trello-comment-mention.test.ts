@@ -13,22 +13,16 @@ vi.mock('../../../src/trello/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		warn: vi.fn(),
-		debug: vi.fn(),
-		info: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+import {
+	mockConfigResolverModule,
+	mockLogger,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
+
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 // We need to reset the module-level cache between tests.
 // The module uses a module-level variable `cachedMemberInfo`.

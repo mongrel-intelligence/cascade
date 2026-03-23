@@ -1,17 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockConfigResolverModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
+
 import { PROpenedTrigger } from '../../../src/triggers/github/pr-opened.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
-
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-	checkTriggerEnabledWithParams: vi.fn().mockResolvedValue({ enabled: true, parameters: {} }),
-}));
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),

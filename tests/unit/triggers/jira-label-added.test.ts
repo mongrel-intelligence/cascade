@@ -1,39 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+	mockAcknowledgmentsModule,
+	mockConfigProvider,
+	mockConfigResolverModule,
+	mockJiraClientModule,
+	mockReactionsModule,
+	mockTrelloClientModule,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
-vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredential: vi.fn(),
-	loadProjectConfigByBoardId: vi.fn(),
-	loadProjectConfigByJiraProjectKey: vi.fn(),
-	findProjectById: vi.fn(),
-}));
-vi.mock('../../../src/trello/client.js', () => ({
-	withTrelloCredentials: vi.fn(),
-	trelloClient: { getCard: vi.fn() },
-}));
-vi.mock('../../../src/jira/client.js', () => ({
-	withJiraCredentials: vi.fn(),
-	jiraClient: {},
-}));
-vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn(),
-	deleteTrelloAck: vi.fn(),
-	resolveTrelloBotMemberId: vi.fn(),
-	postJiraAck: vi.fn(),
-	deleteJiraAck: vi.fn(),
-	resolveJiraBotAccountId: vi.fn(),
-}));
-vi.mock('../../../src/router/reactions.js', () => ({
-	sendAcknowledgeReaction: vi.fn(),
-}));
+vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
+vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
+vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
