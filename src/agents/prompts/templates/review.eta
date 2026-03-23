@@ -21,7 +21,7 @@ CRITICAL:
 
 1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY. An initial comment has already been posted on the PR acknowledging the review is in progress.
 
-<% if (it.squintEnabled) { %>2. **Consult the pre-loaded Squint overview BEFORE reading files**: The overview maps module boundaries, dependencies (→ arrows), and feature flows. Use `squint modules show <path> --json` via Tmux to drill into modules touched by the PR. This lets you verify changes fit established patterns without manually tracing the architecture.
+<% if (it.squintEnabled) { %>2. **Use the Squint Codebase Intelligence Protocol (below)** to understand the codebase structure before reading files. Focus on modules touched by the PR to verify changes fit established patterns.
 
 <%~ include("partials/squint-exploration") %>
 
