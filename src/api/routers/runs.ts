@@ -126,9 +126,17 @@ export const runsRouter = router({
 							b.kind === 'tool_use',
 					)
 					.map((b) => ({ name: b.name, inputSummary: b.inputSummary }));
-				const thinkingChars = blocks
-					.filter((b): b is { kind: 'thinking'; text: string } => b.kind === 'thinking')
-					.reduce((sum, b) => sum + b.text.length, 0);
+				const thinkingBlocks = blocks.filter(
+					(b): b is { kind: 'thinking'; text: string } => b.kind === 'thinking',
+				);
+				const thinkingChars = thinkingBlocks.reduce((sum, b) => sum + b.text.length, 0);
+				const thinkingPreview =
+					thinkingChars > 0
+						? thinkingBlocks
+								.map((b) => b.text)
+								.join(' ')
+								.slice(0, 200)
+						: null;
 				return {
 					id: c.id,
 					runId: c.runId,
@@ -143,6 +151,7 @@ export const runsRouter = router({
 					toolCalls,
 					textPreview,
 					thinkingChars: thinkingChars > 0 ? thinkingChars : null,
+					thinkingPreview,
 				};
 			});
 			return { engine: run.engine ?? 'unknown', calls };

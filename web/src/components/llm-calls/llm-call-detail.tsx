@@ -1,18 +1,12 @@
 import { type ParsedBlock, parseLlmResponse } from '@/lib/llm-response-parser.js';
 import { getToolStyle } from '@/lib/tool-style.js';
 import { trpc } from '@/lib/trpc.js';
-import { formatCost } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 interface LlmCallDetailProps {
 	runId: string;
 	callNumber: number;
-}
-
-interface MetaItem {
-	label: string;
-	mono?: boolean;
 }
 
 function TextBlock({ text }: { text: string }) {
@@ -76,38 +70,8 @@ function formatRawContent(response: string | null | undefined): string {
 	}
 }
 
-function buildMetaItems(call: {
-	model?: string | null;
-	createdAt?: Date | string | null;
-	inputTokens?: number | null;
-	outputTokens?: number | null;
-	cachedTokens?: number | null;
-	costUsd?: string | null;
-}): MetaItem[] {
-	const items: MetaItem[] = [];
-	if (call.model) items.push({ label: call.model, mono: true });
-	if (call.createdAt) {
-		const timeStr = new Date(call.createdAt).toLocaleTimeString(undefined, {
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit',
-			hour12: false,
-		});
-		items.push({ label: timeStr });
-	}
-	const tokenParts: string[] = [];
-	if (call.inputTokens != null) tokenParts.push(`${call.inputTokens.toLocaleString()} in`);
-	if (call.outputTokens != null) tokenParts.push(`${call.outputTokens.toLocaleString()} out`);
-	if (tokenParts.length > 0) items.push({ label: tokenParts.join(' / ') });
-	if (call.cachedTokens && call.cachedTokens > 0)
-		items.push({ label: `+${call.cachedTokens.toLocaleString()} cached` });
-	const costStr = formatCost(call.costUsd);
-	if (costStr !== '—') items.push({ label: costStr });
-	return items;
-}
-
 export function LlmCallDetail({ runId, callNumber }: LlmCallDetailProps) {
-	const [showRaw, setShowRaw] = useState(false);
+	const [showRaw, setShowRaw] = useState(true);
 
 	const callQuery = useQuery(trpc.runs.getLlmCall.queryOptions({ runId, callNumber }));
 
@@ -122,24 +86,11 @@ export function LlmCallDetail({ runId, callNumber }: LlmCallDetailProps) {
 	const call = callQuery.data;
 	const parsed = parseLlmResponse(call.response);
 	const hasContent = parsed.blocks.length > 0;
-	const metaItems = buildMetaItems(call);
 
 	return (
 		<div className="border-t border-border bg-muted/10 p-4 space-y-3">
-			{/* Metadata bar */}
-			{metaItems.length > 0 && (
-				<div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-					{metaItems.map((item) => (
-						<span key={item.label} className={item.mono ? 'font-mono' : undefined}>
-							{item.label}
-						</span>
-					))}
-				</div>
-			)}
-
-			{/* Raw toggle */}
-			<div className="flex items-center justify-between">
-				<span className="text-xs font-medium text-muted-foreground">Content</span>
+			{/* Raw / Structured toggle */}
+			<div className="flex items-center justify-end">
 				<button
 					type="button"
 					onClick={() => setShowRaw((v) => !v)}
