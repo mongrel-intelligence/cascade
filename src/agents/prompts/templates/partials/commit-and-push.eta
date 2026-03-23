@@ -2,7 +2,7 @@
 
 1. **Run tests and linting** to verify your changes don't break anything
 2. **Commit and push** your changes:
-   - Stage ONLY the files you modified (see Git section above for staging safety rules)
+   - Stage ONLY the files you modified (see Git section below for staging safety rules)
    - `git commit -m "fix: address feedback"`
    - `git push`
    - **Verify push succeeded** before proceeding
