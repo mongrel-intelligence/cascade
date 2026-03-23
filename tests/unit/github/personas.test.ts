@@ -21,6 +21,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import { getIntegrationCredential } from '../../../src/config/provider.js';
 import { getGitHubUserForToken } from '../../../src/github/client.js';
 import {
+	_resetPersonaIdentityCache,
 	getPersonaForAgentType,
 	getPersonaForLogin,
 	getPersonaToken,
@@ -30,6 +31,15 @@ import {
 import type { PersonaIdentities } from '../../../src/github/personas.js';
 
 describe('personas', () => {
+	beforeEach(() => {
+		// Reset the module-level TTL cache so tests don't bleed into each other
+		_resetPersonaIdentityCache();
+	});
+
+	afterEach(() => {
+		_resetPersonaIdentityCache();
+	});
+
 	// ========================================================================
 	// getPersonaForAgentType
 	// ========================================================================
@@ -130,15 +140,11 @@ describe('personas', () => {
 			});
 		});
 
-		it('fetches fresh data on each call', async () => {
+		it('returns cached result on second call for same project', async () => {
 			vi.mocked(getIntegrationCredential)
-				.mockResolvedValueOnce('ghp_impl')
-				.mockResolvedValueOnce('ghp_review')
 				.mockResolvedValueOnce('ghp_impl')
 				.mockResolvedValueOnce('ghp_review');
 			vi.mocked(getGitHubUserForToken)
-				.mockResolvedValueOnce('cascade-impl-bot')
-				.mockResolvedValueOnce('cascade-review-bot')
 				.mockResolvedValueOnce('cascade-impl-bot')
 				.mockResolvedValueOnce('cascade-review-bot');
 
@@ -146,7 +152,9 @@ describe('personas', () => {
 			const second = await resolvePersonaIdentities('project1');
 
 			expect(first).toEqual(second);
-			expect(getIntegrationCredential).toHaveBeenCalledTimes(4);
+			// Only 2 credential lookups total (not 4) because the second call is served from cache
+			expect(getIntegrationCredential).toHaveBeenCalledTimes(2);
+			expect(getGitHubUserForToken).toHaveBeenCalledTimes(2);
 		});
 
 		it('resolves separately for different projects', async () => {
@@ -216,6 +224,102 @@ describe('personas', () => {
 			await expect(resolvePersonaIdentities('project1')).rejects.toThrow(
 				'Failed to resolve GitHub identity for reviewer token',
 			);
+		});
+
+		it('fetches fresh data after TTL expires', async () => {
+			vi.useFakeTimers();
+			const now = Date.now();
+
+			try {
+				// First call — populate the cache
+				vi.mocked(getIntegrationCredential)
+					.mockResolvedValueOnce('ghp_impl')
+					.mockResolvedValueOnce('ghp_review');
+				vi.mocked(getGitHubUserForToken)
+					.mockResolvedValueOnce('cascade-impl-bot')
+					.mockResolvedValueOnce('cascade-review-bot');
+
+				await resolvePersonaIdentities('project1');
+				expect(getIntegrationCredential).toHaveBeenCalledTimes(2);
+
+				// Advance time past the 60s TTL
+				vi.setSystemTime(now + 61_000);
+
+				// Second call after TTL — should re-fetch
+				vi.mocked(getIntegrationCredential)
+					.mockResolvedValueOnce('ghp_impl_new')
+					.mockResolvedValueOnce('ghp_review_new');
+				vi.mocked(getGitHubUserForToken)
+					.mockResolvedValueOnce('cascade-impl-bot-new')
+					.mockResolvedValueOnce('cascade-review-bot-new');
+
+				const result = await resolvePersonaIdentities('project1');
+				// 4 total calls (2 original + 2 re-fetch)
+				expect(getIntegrationCredential).toHaveBeenCalledTimes(4);
+				expect(result.implementer).toBe('cascade-impl-bot-new');
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('isolates cache per project ID', async () => {
+			// Set up project1 in cache
+			vi.mocked(getIntegrationCredential)
+				.mockResolvedValueOnce('ghp_impl_1')
+				.mockResolvedValueOnce('ghp_review_1');
+			vi.mocked(getGitHubUserForToken)
+				.mockResolvedValueOnce('bot-impl-1')
+				.mockResolvedValueOnce('bot-review-1');
+
+			const result1a = await resolvePersonaIdentities('project1');
+
+			// Populate project2
+			vi.mocked(getIntegrationCredential)
+				.mockResolvedValueOnce('ghp_impl_2')
+				.mockResolvedValueOnce('ghp_review_2');
+			vi.mocked(getGitHubUserForToken)
+				.mockResolvedValueOnce('bot-impl-2')
+				.mockResolvedValueOnce('bot-review-2');
+
+			const result2 = await resolvePersonaIdentities('project2');
+
+			// project1 second call — served from cache (no additional mock calls needed)
+			const result1b = await resolvePersonaIdentities('project1');
+
+			// project1 identity is preserved across project2 population
+			expect(result1a.implementer).toBe('bot-impl-1');
+			expect(result1b.implementer).toBe('bot-impl-1');
+			expect(result1b).toStrictEqual(result1a);
+			// project2 has its own separate cached identity
+			expect(result2.implementer).toBe('bot-impl-2');
+			// Only 4 credential lookups total (project1 once + project2 once)
+			expect(getIntegrationCredential).toHaveBeenCalledTimes(4);
+		});
+
+		it('re-fetches after cache is manually reset', async () => {
+			vi.mocked(getIntegrationCredential)
+				.mockResolvedValueOnce('ghp_impl')
+				.mockResolvedValueOnce('ghp_review');
+			vi.mocked(getGitHubUserForToken)
+				.mockResolvedValueOnce('cascade-impl-bot')
+				.mockResolvedValueOnce('cascade-review-bot');
+
+			await resolvePersonaIdentities('project1');
+			expect(getIntegrationCredential).toHaveBeenCalledTimes(2);
+
+			// Reset the cache
+			_resetPersonaIdentityCache();
+
+			vi.mocked(getIntegrationCredential)
+				.mockResolvedValueOnce('ghp_impl')
+				.mockResolvedValueOnce('ghp_review');
+			vi.mocked(getGitHubUserForToken)
+				.mockResolvedValueOnce('cascade-impl-bot')
+				.mockResolvedValueOnce('cascade-review-bot');
+
+			await resolvePersonaIdentities('project1');
+			// 4 total calls (2 original + 2 after reset)
+			expect(getIntegrationCredential).toHaveBeenCalledTimes(4);
 		});
 	});
 

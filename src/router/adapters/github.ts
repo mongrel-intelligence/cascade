@@ -20,7 +20,7 @@ import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { pmRegistry } from '../../pm/registry.js';
 import { captureException } from '../../sentry.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
-import type { TriggerContext, TriggerResult } from '../../types/index.js';
+import type { ProjectConfig, TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractGitHubContext, generateAckMessage } from '../ackMessageGenerator.js';
@@ -70,6 +70,7 @@ async function postPMAck(
  * Returns an AckResult, or undefined if not applicable.
  *
  * @param messageOverride — when provided, skips internal message generation and posts this text instead.
+ * @param project — Optional pre-resolved project config to skip findProjectByRepo lookup.
  */
 async function postGitHubPRAck(
 	repoFullName: string,
@@ -78,8 +79,9 @@ async function postGitHubPRAck(
 	agentType: string,
 	projectId: string,
 	messageOverride?: string,
+	project?: ProjectConfig,
 ): Promise<AckResult | undefined> {
-	const resolved = await resolveGitHubTokenForAckByAgent(repoFullName, agentType);
+	const resolved = await resolveGitHubTokenForAckByAgent(repoFullName, agentType, project);
 	if (!resolved) return undefined;
 
 	const context = extractGitHubContext(payload, eventType);
@@ -116,6 +118,45 @@ function getGitHubDeliveryId(payload: Record<string, unknown>): string | undefin
 
 export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	readonly type = 'github' as const;
+
+	// -------------------------------------------------------------------------
+	// Per-request caches
+	//
+	// GitHubRouterAdapter is instantiated once per webhook request, so instance
+	// fields are naturally request-scoped.  Caching here avoids redundant DB and
+	// GitHub API calls across the pipeline steps (isSelfAuthored, sendReaction,
+	// dispatchWithCredentials, postAck) that all need the same project / persona
+	// data for a single event.
+	// -------------------------------------------------------------------------
+
+	private cachedProject: ProjectConfig | null | undefined = undefined; // undefined = not yet fetched
+	private cachedPersonas: PersonaIdentities | undefined;
+	private cachedFullProject: ProjectConfig | undefined;
+
+	/**
+	 * Resolve the ProjectConfig for the given repo, caching the result for the
+	 * lifetime of this request adapter instance.
+	 */
+	private async findProjectCached(repoFullName: string): Promise<ProjectConfig | null> {
+		if (this.cachedProject !== undefined) return this.cachedProject;
+		const project = (await findProjectByRepo(repoFullName)) ?? null;
+		this.cachedProject = project;
+		return project;
+	}
+
+	/**
+	 * Resolve persona identities for the given project, caching the result for
+	 * the lifetime of this request adapter instance.
+	 */
+	private async resolvePersonaCached(projectId: string): Promise<PersonaIdentities | undefined> {
+		if (this.cachedPersonas !== undefined) return this.cachedPersonas;
+		try {
+			this.cachedPersonas = await resolvePersonaIdentities(projectId);
+		} catch {
+			// Resolution may fail — leave cachedPersonas undefined so callers can decide
+		}
+		return this.cachedPersonas;
+	}
 
 	async parseWebhook(payload: unknown): Promise<GitHubParsedEvent | null> {
 		const p = payload as Record<string, unknown>;
@@ -161,9 +202,10 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		const login = commentUser?.login as string | undefined;
 		if (!login) return false;
 		try {
-			const project = await findProjectByRepo((event as GitHubParsedEvent).repoFullName);
+			const project = await this.findProjectCached((event as GitHubParsedEvent).repoFullName);
 			if (!project) return false;
-			const personas = await resolvePersonaIdentities(project.id);
+			const personas = await this.resolvePersonaCached(project.id);
+			if (!personas) return false;
 			return isCascadeBot(login, personas);
 		} catch {
 			return false;
@@ -175,12 +217,16 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		const repoFullName = (event as GitHubParsedEvent).repoFullName;
 		void (async () => {
 			try {
-				const project = await findProjectByRepo(repoFullName);
+				const project = await this.findProjectCached(repoFullName);
 				if (!project) {
 					logger.warn('No project found for repo, skipping GitHub reaction', { repoFullName });
 					return;
 				}
-				const personaIdentities = await resolvePersonaIdentities(project.id);
+				const personaIdentities = await this.resolvePersonaCached(project.id);
+				if (!personaIdentities) {
+					logger.warn('No persona identities resolved, skipping GitHub reaction', { repoFullName });
+					return;
+				}
 				await sendAcknowledgeReaction('github', repoFullName, payload, personaIdentities, project);
 			} catch (err) {
 				logger.warn('GitHub reaction error', { error: String(err), repoFullName });
@@ -215,12 +261,11 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			return null;
 		}
 
-		let personaIdentities: PersonaIdentities | undefined;
-		try {
-			personaIdentities = await resolvePersonaIdentities(fullProject.id);
-		} catch {
-			// Persona resolution may fail — proceed without
-		}
+		// Cache fullProject for reuse in postAck (Step 4)
+		this.cachedFullProject = fullProject;
+
+		// Reuse cached personas to avoid a second resolvePersonaIdentities call (Step 4)
+		const personaIdentities = await this.resolvePersonaCached(fullProject.id);
 
 		const githubToken = await getProjectGitHubToken(fullProject);
 		const pmProvider = pmRegistry.createProvider(fullProject);
@@ -251,9 +296,13 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		triggerResult?: TriggerResult,
 	): Promise<AckResult | undefined> {
 		try {
-			// Load full project config to check run link settings
-			const config = await loadProjectConfig();
-			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+			// Reuse the fullProject already resolved in dispatchWithCredentials when available
+			// (Step 4: avoids a second loadProjectConfig() call per webhook pipeline)
+			let fullProject = this.cachedFullProject;
+			if (!fullProject) {
+				const config = await loadProjectConfig();
+				fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+			}
 			const runLinksEnabled = fullProject?.runLinksEnabled ?? false;
 
 			// Helper to append run link footer to a message when enabled
@@ -296,6 +345,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 				}
 			}
 
+			// Pass cached project to avoid a redundant findProjectByRepo() in the token resolver
 			return postGitHubPRAck(
 				(event as GitHubParsedEvent).repoFullName,
 				event.eventType,
@@ -303,6 +353,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 				agentType,
 				project.id,
 				githubAckMessage,
+				fullProject,
 			);
 		} catch (err) {
 			logger.warn('GitHub ack comment failed (non-fatal)', { error: String(err) });
