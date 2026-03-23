@@ -169,6 +169,8 @@ export const mockGetDb = vi.fn();
 export const mockDbClientModule = {
 	getDb: mockGetDb,
 	closeDb: vi.fn(),
+	setDefaultDatabaseContext: vi.fn(),
+	_setTestDb: vi.fn(),
 };
 
 // ---------------------------------------------------------------------------

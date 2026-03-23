@@ -31,23 +31,88 @@ vi.mock('node:fs', () => ({
 
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
-import { _setTestDb, closeDb, getDb } from '../../../src/db/client.js';
+import {
+	DatabaseContext,
+	_setTestDb,
+	closeDb,
+	createDatabaseContext,
+	getDb,
+	setDefaultDatabaseContext,
+} from '../../../src/db/client.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Reset module-level pool/db singletons between tests. */
+/** Reset module-level context singleton between tests. */
 async function resetDbState() {
-	// closeDb() resets pool + db to null; if pool is null it's a no-op so safe.
+	// closeDb() resets _defaultContext to null; safe to call when already null.
 	await closeDb();
-	// Also clear the test override.
-	_setTestDb(null);
+	// Also clear any test override.
+	setDefaultDatabaseContext(null);
 }
+
+// ── Tests: setDefaultDatabaseContext ─────────────────────────────────────────
+
+describe('setDefaultDatabaseContext', () => {
+	afterEach(async () => {
+		await resetDbState();
+	});
+
+	it('getDb() returns the db from the injected context', () => {
+		const fakeDb = { __isFakeDb: true } as unknown as ReturnType<typeof getDb>;
+		const fakeContext = {
+			getDb: () => fakeDb,
+			close: vi.fn().mockResolvedValue(undefined),
+		} as unknown as DatabaseContext;
+
+		setDefaultDatabaseContext(fakeContext);
+		expect(getDb()).toBe(fakeDb);
+	});
+
+	it('getDb() returns the latest injected context', () => {
+		const fakeDb1 = { id: 1 } as unknown as ReturnType<typeof getDb>;
+		const fakeDb2 = { id: 2 } as unknown as ReturnType<typeof getDb>;
+
+		const fakeCtx1 = {
+			getDb: () => fakeDb1,
+			close: vi.fn().mockResolvedValue(undefined),
+		} as unknown as DatabaseContext;
+		const fakeCtx2 = {
+			getDb: () => fakeDb2,
+			close: vi.fn().mockResolvedValue(undefined),
+		} as unknown as DatabaseContext;
+
+		setDefaultDatabaseContext(fakeCtx1);
+		expect(getDb()).toBe(fakeDb1);
+
+		setDefaultDatabaseContext(fakeCtx2);
+		expect(getDb()).toBe(fakeDb2);
+	});
+
+	it('setting null causes getDb() to create a new real context', () => {
+		vi.stubEnv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb');
+
+		const fakeDb = { __isFakeDb: true } as unknown as ReturnType<typeof getDb>;
+		const fakeContext = {
+			getDb: () => fakeDb,
+			close: vi.fn().mockResolvedValue(undefined),
+		} as unknown as DatabaseContext;
+
+		setDefaultDatabaseContext(fakeContext);
+		expect(getDb()).toBe(fakeDb);
+
+		setDefaultDatabaseContext(null);
+		// Now getDb() should create a new pool and return the drizzle mock
+		const db = getDb();
+		expect(db).toEqual({ __isMockDrizzle: true });
+		expect(mockPoolConstructor).toHaveBeenCalled();
+	});
+});
 
 // ── Tests: _setTestDb (pre-existing coverage, kept for regression) ────────────
 
 describe('_setTestDb', () => {
-	afterEach(() => {
-		_setTestDb(null);
+	afterEach(async () => {
+		await resetDbState();
 	});
 
 	it('getDb() returns the override when set', () => {
@@ -76,6 +141,41 @@ describe('_setTestDb', () => {
 
 		// Assert: new override wins
 		expect(getDb()).toBe(newDb);
+	});
+
+	it('_setTestDb(null) clears the override', async () => {
+		vi.stubEnv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb');
+
+		const fakeDb = { __isFakeDb: true } as unknown as ReturnType<typeof getDb>;
+		_setTestDb(fakeDb);
+		expect(getDb()).toBe(fakeDb);
+
+		_setTestDb(null);
+		// After clearing, getDb() should create a real context
+		const db = getDb();
+		expect(db).toEqual({ __isMockDrizzle: true });
+	});
+});
+
+// ── Tests: createDatabaseContext ──────────────────────────────────────────────
+
+describe('createDatabaseContext', () => {
+	beforeEach(async () => {
+		await resetDbState();
+		vi.stubEnv('DATABASE_URL', 'postgresql://user:pass@localhost:5432/testdb');
+	});
+
+	afterEach(async () => {
+		await resetDbState();
+	});
+
+	it('creates a DatabaseContext with a pool and drizzle db', () => {
+		vi.stubEnv('DATABASE_SSL', 'false');
+
+		const ctx = createDatabaseContext();
+		expect(ctx).toBeInstanceOf(DatabaseContext);
+		expect(ctx.getDb()).toEqual({ __isMockDrizzle: true });
+		expect(mockPoolConstructor).toHaveBeenCalled();
 	});
 });
 
@@ -232,7 +332,7 @@ describe('closeDb', () => {
 	});
 
 	it('calls pool.end() and resets state', async () => {
-		getDb(); // creates pool
+		getDb(); // creates pool via DatabaseContext
 		expect(mockPoolConstructor).toHaveBeenCalledTimes(1);
 
 		await closeDb();
@@ -243,10 +343,19 @@ describe('closeDb', () => {
 		expect(mockPoolConstructor).toHaveBeenCalledTimes(2);
 	});
 
-	it('is a no-op when pool is already null', async () => {
-		// No getDb() call — pool is null
+	it('is a no-op when context is null (pool never initialized)', async () => {
+		// No getDb() call — _defaultContext is null
 		await closeDb();
 
+		expect(mockPoolEnd).not.toHaveBeenCalled();
+	});
+
+	it('does not throw when close() is called on a mock context', async () => {
+		// When _setTestDb is used, close() is a no-op and should not throw
+		const fakeDb = { __isFakeDb: true } as unknown as ReturnType<typeof getDb>;
+		_setTestDb(fakeDb);
+
+		await expect(closeDb()).resolves.toBeUndefined();
 		expect(mockPoolEnd).not.toHaveBeenCalled();
 	});
 });
