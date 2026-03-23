@@ -137,6 +137,23 @@ describe.concurrent('ProjectConfigSchema', () => {
 		expect(result.engineSettings?.opencode?.webSearch).toBe(true);
 	});
 
+	it('accepts claude-code engine settings on project config', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			trello: { boardId: 'b1', lists: {}, labels: {} },
+			engineSettings: {
+				'claude-code': { effort: 'high', thinking: 'adaptive' },
+			},
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.engineSettings?.['claude-code']?.effort).toBe('high');
+		expect(result.engineSettings?.['claude-code']?.thinking).toBe('adaptive');
+	});
+
 	it('rejects unsupported engine settings on project config', () => {
 		const config = {
 			id: 'test',
@@ -339,6 +356,26 @@ describe.concurrent('validateConfig', () => {
 		});
 
 		expect(result.projects[0].engineSettings?.opencode?.webSearch).toBe(true);
+	});
+
+	it('accepts project engineSettings for claude-code', () => {
+		const result = validateConfig({
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					trello: { boardId: 'b1', lists: {}, labels: {} },
+					engineSettings: {
+						'claude-code': { effort: 'high', thinking: 'adaptive' },
+					},
+				},
+			],
+		});
+
+		expect(result.projects[0].engineSettings?.['claude-code']?.effort).toBe('high');
+		expect(result.projects[0].engineSettings?.['claude-code']?.thinking).toBe('adaptive');
 	});
 
 	it('rejects unsupported project engineSettings entries', () => {
