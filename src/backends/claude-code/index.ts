@@ -8,11 +8,11 @@ import { getEngineSettings } from '../../config/engineSettings.js';
 import { logger } from '../../utils/logging.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
 import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
-import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
-import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
-import { buildClaudeEnv } from './env.js';
+import type { AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import { ALLOWED_ENV_EXACT, buildClaudeEnv } from './env.js';
 import { buildHooks } from './hooks.js';
 import {
 	buildPromptWithImages,
@@ -184,14 +184,18 @@ async function cleanupPersistedSession(repoDir: string): Promise<void> {
  * are invoked via the built-in Bash tool through the cascade-tools CLI, with usage
  * guidance injected into the system prompt.
  */
-export class ClaudeCodeEngine implements AgentEngine {
+export class ClaudeCodeEngine extends NativeToolEngine {
 	readonly definition = CLAUDE_CODE_ENGINE_DEFINITION;
 
-	supportsAgentType(_agentType: string): boolean {
-		return true;
+	getAllowedEnvExact(): Set<string> {
+		return ALLOWED_ENV_EXACT;
 	}
 
-	resolveModel(cascadeModel: string): string {
+	getExtraEnvVars(): Record<string, string> {
+		return { CLAUDE_AGENT_SDK_CLIENT_APP: 'cascade/1.0.0' };
+	}
+
+	resolveEngineModel(cascadeModel: string): string {
 		return resolveClaudeModel(cascadeModel);
 	}
 
@@ -206,9 +210,9 @@ export class ClaudeCodeEngine implements AgentEngine {
 		debugRepoDirectory(plan.repoDir);
 	}
 
-	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
-		// Clean up offloaded context files after execution
-		await cleanupContextFiles(plan.repoDir);
+	async afterExecute(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void> {
+		// Clean up offloaded context files after execution (via base class)
+		await super.afterExecute(plan, result);
 		// Clean up persisted session directory — workers are ephemeral
 		await cleanupPersistedSession(plan.repoDir);
 	}
