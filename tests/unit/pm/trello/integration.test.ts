@@ -5,11 +5,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 
 const mockGetIntegrationCredential = vi.fn();
+const mockGetIntegrationCredentialOrNull = vi.fn();
 const mockLoadProjectConfigByBoardId = vi.fn();
 
 vi.mock('../../../../src/config/provider.js', () => ({
 	getIntegrationCredential: (...args: unknown[]) => mockGetIntegrationCredential(...args),
+	getIntegrationCredentialOrNull: (...args: unknown[]) =>
+		mockGetIntegrationCredentialOrNull(...args),
 	loadProjectConfigByBoardId: (...args: unknown[]) => mockLoadProjectConfigByBoardId(...args),
+}));
+
+const mockGetIntegrationProvider = vi.fn();
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: (...args: unknown[]) => mockGetIntegrationProvider(...args),
 }));
 
 const mockWithTrelloCredentials = vi.fn().mockImplementation((_creds, fn) => fn());
@@ -88,6 +96,81 @@ describe('TrelloIntegration', () => {
 
 	it('has type "trello"', () => {
 		expect(integration.type).toBe('trello');
+	});
+
+	it('has category "pm"', () => {
+		expect(integration.category).toBe('pm');
+	});
+
+	// =========================================================================
+	// hasIntegration
+	// =========================================================================
+	describe('hasIntegration', () => {
+		it('returns false when PM provider is not trello', async () => {
+			mockGetIntegrationProvider.mockResolvedValue(null);
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+			expect(mockGetIntegrationCredentialOrNull).not.toHaveBeenCalled();
+		});
+
+		it('returns false when PM provider is jira (not trello)', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('jira');
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+		});
+
+		it('returns true when provider is trello and all required credentials are present', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('trello');
+			// Trello required roles: api_key, token (api_secret is optional)
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('my-api-key') // api_key
+				.mockResolvedValueOnce('my-token'); // token
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(true);
+		});
+
+		it('returns false when api_key is missing', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('trello');
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce(null) // api_key missing
+				.mockResolvedValueOnce('my-token'); // token present
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+		});
+
+		it('returns false when token is missing', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('trello');
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('my-api-key') // api_key present
+				.mockResolvedValueOnce(null); // token missing
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+		});
+
+		it('checks for pm category credentials (api_key, token) — not optional api_secret', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('trello');
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('my-api-key')
+				.mockResolvedValueOnce('my-token');
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(true);
+			// Only 2 required credentials checked (api_key, token), not api_secret
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledTimes(2);
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'api_key');
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'token');
+		});
 	});
 
 	// =========================================================================

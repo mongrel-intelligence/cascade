@@ -14,9 +14,18 @@
  *   2. Registering it here.
  */
 
+import { integrationRegistry } from '../integrations/registry.js';
 import { JiraIntegration } from './jira/integration.js';
 import { pmRegistry } from './registry.js';
 import { TrelloIntegration } from './trello/integration.js';
 
-if (!pmRegistry.getOrNull('trello')) pmRegistry.register(new TrelloIntegration());
-if (!pmRegistry.getOrNull('jira')) pmRegistry.register(new JiraIntegration());
+if (!pmRegistry.getOrNull('trello')) {
+	const trello = new TrelloIntegration();
+	pmRegistry.register(trello);
+	if (!integrationRegistry.getOrNull('trello')) integrationRegistry.register(trello);
+}
+if (!pmRegistry.getOrNull('jira')) {
+	const jira = new JiraIntegration();
+	pmRegistry.register(jira);
+	if (!integrationRegistry.getOrNull('jira')) integrationRegistry.register(jira);
+}
