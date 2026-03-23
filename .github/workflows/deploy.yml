@@ -74,6 +74,7 @@ jobs:
         run: |
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:latest .
           docker run --rm \
+            --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
             cascade-migrator:latest \
             ./node_modules/.bin/drizzle-kit migrate
@@ -81,6 +82,7 @@ jobs:
       - name: Run trigger config migration
         run: |
           docker run --rm \
+            --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
             cascade-migrator:latest \
             npx tsx tools/migrate-triggers.ts
@@ -88,6 +90,7 @@ jobs:
       - name: Run hooks migration
         run: |
           docker run --rm \
+            --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
             cascade-migrator:latest \
             npx tsx tools/migrate-hooks.ts --apply
