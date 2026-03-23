@@ -19,6 +19,7 @@ function makeEngine(id = 'test-engine'): AgentEngine {
 			id,
 			label: id,
 			description: `${id} description`,
+			archetype: 'sdk',
 			capabilities: [],
 			modelSelection: { type: 'free-text' },
 			logLabel: 'Engine Log',

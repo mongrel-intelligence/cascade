@@ -171,11 +171,13 @@ function makeInput(
 }
 
 function makeMockBackend(id = 'test-engine'): AgentEngine {
+	const nativeToolIds = ['claude-code', 'codex', 'opencode'];
 	return {
 		definition: {
 			id,
 			label: 'Test Engine',
 			description: 'Test engine',
+			archetype: nativeToolIds.includes(id) ? 'native-tool' : 'sdk',
 			capabilities: [],
 			modelSelection: { type: 'free-text' },
 			logLabel: 'Engine Log',

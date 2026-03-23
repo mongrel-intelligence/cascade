@@ -13,6 +13,7 @@ import type { AgentInput, CascadeConfig, ProjectConfig } from '../types/index.js
 import { getDashboardUrl } from '../utils/runLink.js';
 import { createNativeToolRuntimeArtifacts } from './nativeToolRuntime.js';
 import { isGitHubAckComment } from './progressLifecycle.js';
+import { isNativeToolEngineDefinition } from './registry.js';
 import {
 	augmentProjectSecrets,
 	injectGitHubAckCommentId,
@@ -34,7 +35,7 @@ export async function buildExecutionPlan(
 	_log: ReturnType<typeof createAgentLogger>,
 	gitHubToken: string | undefined,
 	isGitHubAck: boolean,
-	engineId: string,
+	_engineId: string,
 	engine: AgentEngine,
 ): Promise<
 	Omit<AgentExecutionPlan, 'progressReporter'> & {
@@ -106,7 +107,7 @@ export async function buildExecutionPlan(
 	});
 
 	const cliToolsDir = new URL('../../bin', import.meta.url).pathname;
-	const needsNativeToolRuntime = ['claude-code', 'codex', 'opencode'].includes(engineId);
+	const needsNativeToolRuntime = isNativeToolEngineDefinition(engine.definition);
 	const nativeToolRuntime = needsNativeToolRuntime ? createNativeToolRuntimeArtifacts() : undefined;
 
 	// Build per-project secrets with CASCADE env var injections

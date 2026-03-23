@@ -15,6 +15,8 @@ export {
 	getEngine,
 	getEngineCatalog,
 	getRegisteredEngines,
+	isNativeToolEngine,
+	isNativeToolEngineDefinition,
 	registerEngine,
 } from './registry.js';
 export { registerBuiltInEngines } from './bootstrap.js';

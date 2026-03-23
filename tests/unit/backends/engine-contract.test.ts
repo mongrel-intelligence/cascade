@@ -51,6 +51,8 @@ describe.each(EXPECTED_ENGINE_IDS)('engine: %s', (engineId) => {
 		expect(typeof definition.description).toBe('string');
 		expect(definition.description.length).toBeGreaterThan(0);
 
+		expect(['sdk', 'native-tool']).toContain(definition.archetype);
+
 		expect(Array.isArray(definition.capabilities)).toBe(true);
 
 		expect(definition.modelSelection).toBeDefined();
@@ -58,6 +60,13 @@ describe.each(EXPECTED_ENGINE_IDS)('engine: %s', (engineId) => {
 
 		expect(typeof definition.logLabel).toBe('string');
 		expect(definition.logLabel.length).toBeGreaterThan(0);
+	});
+
+	it('has archetype set to sdk or native-tool', () => {
+		const engine = getEngine(engineId);
+		expect(engine).toBeDefined();
+		if (!engine) return;
+		expect(['sdk', 'native-tool']).toContain(engine.definition.archetype);
 	});
 
 	it("definition.id matches the engine's registry key", () => {

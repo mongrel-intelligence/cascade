@@ -93,6 +93,7 @@ describe('agentConfigsRouter', () => {
 				id: 'llmist',
 				label: 'LLMist',
 				description: 'LLMist',
+				archetype: 'sdk',
 				capabilities: [],
 				modelSelection: { type: 'free-text' },
 				logLabel: 'LLMist Log',
@@ -101,6 +102,7 @@ describe('agentConfigsRouter', () => {
 				id: 'claude-code',
 				label: 'Claude Code',
 				description: 'Claude Code',
+				archetype: 'native-tool',
 				capabilities: [],
 				modelSelection: {
 					type: 'select',
