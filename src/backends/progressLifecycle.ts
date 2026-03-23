@@ -24,6 +24,7 @@ export function buildProgressMonitorConfig(
 	isGitHubAck: boolean,
 	engineId: string,
 	model: string,
+	syncChecklist = false,
 ) {
 	const { workItemId } = input;
 
@@ -49,6 +50,7 @@ export function buildProgressMonitorConfig(
 		trello: workItemId ? { workItemId } : undefined,
 		preSeededCommentId: isGitHubAck ? undefined : (input.ackCommentId as string | undefined),
 		runLink,
+		syncChecklist,
 		...(input.prNumber && input.repoFullName
 			? {
 					github: {

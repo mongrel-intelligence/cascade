@@ -43,6 +43,12 @@ export interface ProgressMonitorConfig {
 	/** Pre-seeded comment ID from router ack — skip initial comment posting */
 	preSeededCommentId?: string;
 	/**
+	 * Whether to sync completed todos to the PM checklist on each progress tick.
+	 * Replaces the hard-coded agentType === 'implementation' check.
+	 * Defaults to false (no-op for agents without lifecycle.syncChecklist in their definition).
+	 */
+	syncChecklist?: boolean;
+	/**
 	 * Progressive schedule of delays (in minutes) before falling back to
 	 * `intervalMinutes` for steady-state ticks.
 	 * Example: [1, 3, 5] means first tick at 1min, second at 3min, third at 5min,
@@ -264,8 +270,8 @@ export class ProgressMonitor implements ProgressReporter {
 				}
 			}
 
-			// Sync checklist items for implementation agents
-			if (this.config.agentType === 'implementation' && this.config.trello) {
+			// Sync checklist items when lifecycle hooks enable it
+			if (this.config.syncChecklist && this.config.trello) {
 				await syncCompletedTodosToChecklist(this.config.trello.workItemId);
 			}
 		} catch (err) {

@@ -243,10 +243,28 @@ const FinishHooksSchema = z.object({
 	pm: PmFinishSchema.optional(),
 });
 
+// --- Lifecycle hook schema ---
+/**
+ * Lifecycle hooks drive PM lifecycle behavior for agents.
+ * These replace hard-coded agentType === 'implementation' checks.
+ *
+ * - `moveOnPrepare`: PM status to move the work item to when prepareForAgent() is called
+ * - `moveOnSuccess`: PM status to move the work item to when handleSuccess() is called
+ * - `linkPR`: Whether to link the PR to the work item on success
+ * - `syncChecklist`: Whether to sync completed todos to the PM checklist on progress ticks
+ */
+export const LifecycleHooksSchema = z.object({
+	moveOnPrepare: z.string().optional(),
+	moveOnSuccess: z.string().optional(),
+	linkPR: z.boolean().optional(),
+	syncChecklist: z.boolean().optional(),
+});
+
 // --- Top-level integration hooks ---
 export const IntegrationHooksSchema = z.object({
 	trailing: TrailingHooksSchema.optional(),
 	finish: FinishHooksSchema.optional(),
+	lifecycle: LifecycleHooksSchema.optional(),
 });
 
 const PromptsSchema = z.object({
@@ -325,8 +343,11 @@ export type IntegrationRequirements = z.infer<typeof IntegrationRequirementsSche
 /** Known provider (trello, jira, github, etc.) */
 export type KnownProvider = z.infer<typeof KnownProviderSchema>;
 
-/** Integration hooks (trailing + finish) */
+/** Integration hooks (trailing + finish + lifecycle) */
 export type IntegrationHooks = z.infer<typeof IntegrationHooksSchema>;
+
+/** Lifecycle hook configuration for PM lifecycle behavior */
+export type LifecycleHooks = z.infer<typeof LifecycleHooksSchema>;
 
 /** Flattened trailing hook flags for consumers */
 export type TrailingHookFlags = z.infer<typeof ScmTrailingSchema> &

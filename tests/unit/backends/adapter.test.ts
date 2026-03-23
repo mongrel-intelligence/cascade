@@ -195,12 +195,14 @@ function makeMockProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 		allCapabilities: ['fs:read', 'fs:write', 'shell:exec'],
 		needsGitHubToken: false,
 		finishHooks: {},
+		lifecycleHooks: {},
 		fetchContext: vi.fn().mockResolvedValue([]),
 		buildTaskPrompt: () => 'Process the work item',
 		capabilities: {
 			required: ['fs:read'],
 			optional: ['fs:write', 'shell:exec'],
 		},
+		getLlmistGadgets: vi.fn().mockReturnValue([]),
 		...overrides,
 	};
 }

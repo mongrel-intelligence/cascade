@@ -66,6 +66,11 @@ hooks:
   finish:
     scm:
       requiresPR: true
+  lifecycle:
+    moveOnPrepare: inProgress
+    moveOnSuccess: inReview
+    linkPR: true
+    syncChecklist: true
 
 hint: >-
   Complete the current todo in as few iterations as possible. Batch related

@@ -352,14 +352,20 @@ describe('ProgressMonitor - tick (via scheduler callback)', () => {
 		expect(mockPMPosterUpdate).toHaveBeenCalledTimes(1);
 	});
 
-	it('syncs todos to checklist for implementation agent with trello', async () => {
-		await runTick(makeConfig({ trello: { workItemId: 'card-1' } }));
+	it('syncs todos to checklist when syncChecklist is true and trello is configured', async () => {
+		await runTick(makeConfig({ syncChecklist: true, trello: { workItemId: 'card-1' } }));
 
 		expect(mockSyncCompletedTodosToChecklist).toHaveBeenCalledWith('card-1');
 	});
 
-	it('does not sync todos for non-implementation agents', async () => {
-		await runTick(makeConfig({ agentType: 'review', trello: { workItemId: 'card-1' } }));
+	it('does not sync todos when syncChecklist is false', async () => {
+		await runTick(makeConfig({ syncChecklist: false, trello: { workItemId: 'card-1' } }));
+
+		expect(mockSyncCompletedTodosToChecklist).not.toHaveBeenCalled();
+	});
+
+	it('does not sync todos when syncChecklist is not set (default)', async () => {
+		await runTick(makeConfig({ trello: { workItemId: 'card-1' } }));
 
 		expect(mockSyncCompletedTodosToChecklist).not.toHaveBeenCalled();
 	});
