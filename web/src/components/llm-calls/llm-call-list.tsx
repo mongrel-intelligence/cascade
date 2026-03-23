@@ -10,6 +10,8 @@ interface LlmCallListProps {
 	runId: string;
 }
 
+type ToolCall = { name: string; inputSummary: string };
+
 type CallMeta = {
 	callNumber: number;
 	inputTokens?: number | null;
@@ -19,32 +21,27 @@ type CallMeta = {
 	durationMs?: number | null;
 	model?: string | null;
 	createdAt?: Date | string | null;
-	toolNames?: string[] | null;
+	toolCalls?: ToolCall[] | null;
 	textPreview?: string | null;
+	thinkingChars?: number | null;
 };
 
-function ToolBadges({ toolNames }: { toolNames: string[] }) {
-	if (toolNames.length === 0) return null;
-
-	// Count occurrences
-	const counts = new Map<string, number>();
-	for (const name of toolNames) {
-		counts.set(name, (counts.get(name) ?? 0) + 1);
-	}
-	const unique = [...new Set(toolNames)];
-
+function ToolCallList({ toolCalls }: { toolCalls: ToolCall[] }) {
+	if (toolCalls.length === 0) return null;
 	return (
-		<span className="flex flex-wrap gap-1">
-			{unique.map((name) => {
-				const { bg, text } = getToolStyle(name);
-				const count = counts.get(name) ?? 1;
+		<span className="flex flex-col gap-0.5 min-w-0">
+			{toolCalls.map((tc, i) => {
+				const { bg, text } = getToolStyle(tc.name);
 				return (
-					<span
-						key={name}
-						className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${bg} ${text}`}
-					>
-						{name}
-						{count > 1 && <span className="ml-0.5 opacity-70">×{count}</span>}
+					<span key={`${i}-${tc.name}`} className="flex items-baseline gap-1.5 min-w-0">
+						<span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${bg} ${text}`}>
+							{tc.name}
+						</span>
+						{tc.inputSummary && (
+							<code className="min-w-0 truncate font-mono text-xs text-muted-foreground">
+								{tc.inputSummary}
+							</code>
+						)}
 					</span>
 				);
 			})}
@@ -83,14 +80,19 @@ function CallRow({ runId, call, delta, isExpanded, onToggle }: CallRowProps) {
 					{call.callNumber}
 				</td>
 				<td className="px-3 py-2 min-w-0">
-					<div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-						<ToolBadges toolNames={call.toolNames ?? []} />
+					<div className="flex flex-col gap-0.5 min-w-0">
+						<ToolCallList toolCalls={call.toolCalls ?? []} />
 						{call.textPreview && (
 							<span className="text-xs text-muted-foreground truncate max-w-xs">
 								{call.textPreview}
 							</span>
 						)}
-						{!call.toolNames?.length && !call.textPreview && (
+						{call.thinkingChars != null && (
+							<span className="text-xs text-muted-foreground/60 italic">
+								thinking ({call.thinkingChars.toLocaleString()} chars)
+							</span>
+						)}
+						{!call.toolCalls?.length && !call.textPreview && !call.thinkingChars && (
 							<span className="text-muted-foreground">—</span>
 						)}
 					</div>

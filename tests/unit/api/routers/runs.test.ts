@@ -418,7 +418,7 @@ describe('runsRouter', () => {
 			});
 		});
 
-		it('extracts toolNames and textPreview from a Claude Code response payload', async () => {
+		it('extracts toolCalls and textPreview from a Claude Code response payload', async () => {
 			const claudeCodeResponse = JSON.stringify([
 				{ type: 'text', text: 'Let me read the file.' },
 				{ type: 'tool_use', name: 'Read', input: { file_path: '/src/index.ts' } },
@@ -432,7 +432,11 @@ describe('runsRouter', () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result.calls[0].toolNames).toEqual(['Read', 'Read', 'Bash']);
+			expect(result.calls[0].toolCalls).toEqual([
+				{ name: 'Read', inputSummary: '/src/index.ts' },
+				{ name: 'Read', inputSummary: '/src/utils.ts' },
+				{ name: 'Bash', inputSummary: 'npm test' },
+			]);
 			expect(result.calls[0].textPreview).toBe('Let me read the file.');
 		});
 

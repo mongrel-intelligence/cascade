@@ -119,7 +119,16 @@ export const runsRouter = router({
 			}
 			const raw = await listLlmCallsMeta(input.runId);
 			const calls = raw.map((c) => {
-				const { toolNames, textPreview } = parseLlmResponse(c.response);
+				const { blocks, textPreview } = parseLlmResponse(c.response);
+				const toolCalls = blocks
+					.filter(
+						(b): b is { kind: 'tool_use'; name: string; inputSummary: string } =>
+							b.kind === 'tool_use',
+					)
+					.map((b) => ({ name: b.name, inputSummary: b.inputSummary }));
+				const thinkingChars = blocks
+					.filter((b): b is { kind: 'thinking'; text: string } => b.kind === 'thinking')
+					.reduce((sum, b) => sum + b.text.length, 0);
 				return {
 					id: c.id,
 					runId: c.runId,
@@ -131,8 +140,9 @@ export const runsRouter = router({
 					durationMs: c.durationMs,
 					model: c.model,
 					createdAt: c.createdAt,
-					toolNames,
+					toolCalls,
 					textPreview,
+					thinkingChars: thinkingChars > 0 ? thinkingChars : null,
 				};
 			});
 			return { engine: run.engine ?? 'unknown', calls };
