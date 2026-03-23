@@ -13,6 +13,37 @@ npm run dev          # Router (webhook receiver, requires Redis)
 npm run dev:web      # Dashboard frontend (separate terminal)
 ```
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Architecture](#architecture)
+- [Development](#development)
+  - [Testing](#testing)
+  - [Linting](#linting)
+  - [Git Hooks](#git-hooks)
+- [Key Directories](#key-directories)
+- [Environment Variables](#environment-variables)
+- [Database Configuration](#database-configuration)
+  - [Schema](#schema)
+  - [Database Scripts](#database-scripts)
+  - [Migration Workflow](#migration-workflow)
+  - [Credentials](#credentials)
+  - [Credential Encryption at Rest](#credential-encryption-at-rest)
+  - [GitHub Dual-Persona Model](#github-dual-persona-model)
+  - [Webhook Signature Verification](#webhook-signature-verification)
+  - [Integration Credential Resolution](#integration-credential-resolution)
+  - [Agent Trigger Configuration](#agent-trigger-configuration)
+  - [Review Agent Trigger Modes](#review-agent-trigger-modes)
+  - [PM Agent Trigger Modes](#pm-agent-trigger-modes)
+- [Claude Code Engine](#claude-code-engine)
+- [Codex Engine](#codex-engine)
+- [Dashboard](#dashboard)
+- [CLI (`cascade`)](#cli-cascade)
+- [Adding New Triggers](#adding-new-triggers)
+- [Adding New Agents](#adding-new-agents)
+- [Agent Resilience Features](#agent-resilience-features)
+- [Debugging Production Sessions](#debugging-production-sessions)
+
 ## Architecture
 
 CASCADE runs as three services (no monolithic server mode):

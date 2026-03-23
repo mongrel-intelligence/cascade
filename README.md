@@ -2,6 +2,8 @@
 
 [![CI](https://github.com/mongrel-intelligence/cascade/actions/workflows/ci.yml/badge.svg)](https://github.com/mongrel-intelligence/cascade/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/mongrel-intelligence/cascade/graph/badge.svg)](https://codecov.io/gh/mongrel-intelligence/cascade)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
 > **Cascade orchestrates AI agents (Claude Code, Codex, opencode, LLMist) across your workflows in GitHub, Trello, and Jira.**
 
@@ -89,15 +91,22 @@ cp .env.example .env    # Set DATABASE_URL and REDIS_URL
 npm run db:migrate
 ```
 
-Start each service in a separate terminal:
+Start all three services with one command (requires a build first):
 
 ```bash
-npm run dev                                           # Router (webhook receiver, :3000)
-npm run build && node --env-file=.env dist/dashboard.js  # Dashboard API (:3001)
-npm run dev:web                                       # Dashboard frontend (Vite, :5173)
+npm run build
+npm run dev:all   # Router + Dashboard API + Frontend, color-coded output
 ```
 
-> **Note:** The Vite dev server proxies `/trpc` and `/api` to `localhost:3001`, so the Dashboard API must be running for the frontend to work. See [CLAUDE.md](./CLAUDE.md#running-the-dashboard) for more details.
+Or start each service in a separate terminal:
+
+```bash
+npm run dev                                        # Router (:3000)
+node --env-file=.env dist/dashboard.js             # Dashboard API (:3001)
+npm run dev:web                                    # Frontend (Vite, :5173)
+```
+
+> **Note:** The Vite dev server proxies `/trpc` and `/api` to `localhost:3001`, so the Dashboard API must be running for the frontend to work.
 
 ### Commands
 
@@ -111,6 +120,8 @@ npm run dev:web                                       # Dashboard frontend (Vite
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm run db:migrate` | Apply pending migrations |
 | `npm run db:studio` | Open Drizzle Studio |
+| `npm run dev:all` | Start all services (router + dashboard + frontend) |
+| `npm run verify` | Lint + typecheck + unit tests (pre-PR check) |
 
 ---
 
@@ -156,7 +167,7 @@ For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 
 1. Fork the repository and create a feature branch from `dev`
 2. Make your changes with tests (`npm test`)
-3. Ensure lint and typecheck pass (`npm run lint && npm run typecheck`)
+3. Ensure all checks pass (`npm run verify`)
 4. Open a pull request — Cascade will review its own PRs if configured to do so
 
 Please follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide.
