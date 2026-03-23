@@ -21,6 +21,14 @@ import { deleteProgressCommentOnSuccess, updateInitialCommentWithError } from '.
 
 export class GitHubWebhookIntegration implements PMIntegration {
 	readonly type = 'github';
+	readonly category = 'pm' as const;
+
+	async hasIntegration(_projectId: string): Promise<boolean> {
+		// GitHubWebhookIntegration is a PM-pipeline adapter for GitHub webhooks,
+		// not a real PM provider. It is not registered in the integration registry
+		// and does not have PM credentials to check.
+		return false;
+	}
 
 	createProvider(_project: ProjectConfig): PMProvider {
 		// GitHub doesn't use a PM provider — returning a minimal no-op.

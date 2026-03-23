@@ -5,14 +5,22 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 
 const mockGetIntegrationCredential = vi.fn();
+const mockGetIntegrationCredentialOrNull = vi.fn();
 const mockFindProjectById = vi.fn();
 const mockLoadProjectConfigByJiraProjectKey = vi.fn();
 
 vi.mock('../../../../src/config/provider.js', () => ({
 	getIntegrationCredential: (...args: unknown[]) => mockGetIntegrationCredential(...args),
+	getIntegrationCredentialOrNull: (...args: unknown[]) =>
+		mockGetIntegrationCredentialOrNull(...args),
 	findProjectById: (...args: unknown[]) => mockFindProjectById(...args),
 	loadProjectConfigByJiraProjectKey: (...args: unknown[]) =>
 		mockLoadProjectConfigByJiraProjectKey(...args),
+}));
+
+const mockGetIntegrationProvider = vi.fn();
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: (...args: unknown[]) => mockGetIntegrationProvider(...args),
 }));
 
 const mockWithJiraCredentials = vi.fn().mockImplementation((_creds, fn) => fn());
@@ -101,6 +109,81 @@ describe('JiraIntegration', () => {
 
 	it('has type "jira"', () => {
 		expect(integration.type).toBe('jira');
+	});
+
+	it('has category "pm"', () => {
+		expect(integration.category).toBe('pm');
+	});
+
+	// =========================================================================
+	// hasIntegration
+	// =========================================================================
+	describe('hasIntegration', () => {
+		it('returns false when PM provider is not jira', async () => {
+			mockGetIntegrationProvider.mockResolvedValue(null);
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+			expect(mockGetIntegrationCredentialOrNull).not.toHaveBeenCalled();
+		});
+
+		it('returns false when PM provider is trello (not jira)', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('trello');
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+		});
+
+		it('returns true when provider is jira and all required credentials are present', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('jira');
+			// JIRA required roles: email, api_token (webhook_secret is optional)
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('bot@example.com') // email
+				.mockResolvedValueOnce('api-token-xxx'); // api_token
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(true);
+		});
+
+		it('returns false when email is missing', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('jira');
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce(null) // email missing
+				.mockResolvedValueOnce('api-token-xxx'); // api_token present
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+		});
+
+		it('returns false when api_token is missing', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('jira');
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('bot@example.com') // email present
+				.mockResolvedValueOnce(null); // api_token missing
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(false);
+		});
+
+		it('checks for pm category credentials (email, api_token) — not optional webhook_secret', async () => {
+			mockGetIntegrationProvider.mockResolvedValue('jira');
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('bot@example.com')
+				.mockResolvedValueOnce('api-token-xxx');
+
+			const result = await integration.hasIntegration('proj-1');
+
+			expect(result).toBe(true);
+			// Only 2 required credentials checked (email, api_token), not webhook_secret
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledTimes(2);
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'email');
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'api_token');
+		});
 	});
 
 	// =========================================================================
