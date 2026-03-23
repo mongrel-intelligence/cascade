@@ -1,24 +1,23 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // Mock repository functions
-const mockListWebhookLogs = vi.fn();
-const mockGetWebhookLogById = vi.fn();
-const mockGetWebhookLogStats = vi.fn();
+const { mockListWebhookLogs, mockGetWebhookLogById, mockGetWebhookLogStats } = vi.hoisted(() => ({
+	mockListWebhookLogs: vi.fn(),
+	mockGetWebhookLogById: vi.fn(),
+	mockGetWebhookLogStats: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/webhookLogsRepository.js', () => ({
-	listWebhookLogs: (...args: unknown[]) => mockListWebhookLogs(...args),
-	getWebhookLogById: (...args: unknown[]) => mockGetWebhookLogById(...args),
-	getWebhookLogStats: (...args: unknown[]) => mockGetWebhookLogStats(...args),
+	listWebhookLogs: mockListWebhookLogs,
+	getWebhookLogById: mockGetWebhookLogById,
+	getWebhookLogStats: mockGetWebhookLogStats,
 }));
 
 import { webhookLogsRouter } from '../../../../src/api/routers/webhookLogs.js';
 
-function createCaller(ctx: TRPCContext) {
-	return webhookLogsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(webhookLogsRouter);
 
 const mockUser = createMockSuperAdmin();
 
@@ -55,15 +54,13 @@ describe('webhookLogsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list({ limit: 50, offset: 0 })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.list({ limit: 50, offset: 0 }), 'UNAUTHORIZED');
 		});
 
 		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
 			const adminUser = createMockUser({ role: 'admin' });
 			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
-			await expect(caller.list({ limit: 50, offset: 0 })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
+			await expectTRPCError(caller.list({ limit: 50, offset: 0 }), 'FORBIDDEN');
 		});
 	});
 
@@ -83,20 +80,18 @@ describe('webhookLogsRouter', () => {
 			mockGetWebhookLogById.mockResolvedValue(null);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
-			await expect(caller.getById({ id: LOG_UUID })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.getById({ id: LOG_UUID }), 'NOT_FOUND');
 		});
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.getById({ id: LOG_UUID })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.getById({ id: LOG_UUID }), 'UNAUTHORIZED');
 		});
 
 		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
 			const adminUser = createMockUser({ role: 'admin' });
 			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
-			await expect(caller.getById({ id: LOG_UUID })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
+			await expectTRPCError(caller.getById({ id: LOG_UUID }), 'FORBIDDEN');
 		});
 	});
 
@@ -116,15 +111,13 @@ describe('webhookLogsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.getStats()).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.getStats(), 'UNAUTHORIZED');
 		});
 
 		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
 			const adminUser = createMockUser({ role: 'admin' });
 			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
-			await expect(caller.getStats()).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
+			await expectTRPCError(caller.getStats(), 'FORBIDDEN');
 		});
 	});
 });

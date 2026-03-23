@@ -1,13 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
-const mockTrelloGetMe = vi.fn();
-const mockTrelloGetBoards = vi.fn();
-const mockTrelloGetBoardLists = vi.fn();
-const mockTrelloGetBoardLabels = vi.fn();
-const mockTrelloGetBoardCustomFields = vi.fn();
-const mockTrelloCreateBoardCustomField = vi.fn();
+const {
+	mockTrelloGetMe,
+	mockTrelloGetBoards,
+	mockTrelloGetBoardLists,
+	mockTrelloGetBoardLabels,
+	mockTrelloGetBoardCustomFields,
+	mockTrelloCreateBoardCustomField,
+	mockJiraGetMyself,
+	mockJiraSearchProjects,
+	mockJiraGetProjectStatuses,
+	mockJiraGetIssueTypesForProject,
+	mockJiraGetFields,
+	mockJiraCreateCustomField,
+	mockGetAuthenticated,
+	mockVerifyProjectOrgAccess,
+	mockGetIntegrationCredentialOrNull,
+	mockGetIntegrationByProjectAndCategory,
+} = vi.hoisted(() => ({
+	mockTrelloGetMe: vi.fn(),
+	mockTrelloGetBoards: vi.fn(),
+	mockTrelloGetBoardLists: vi.fn(),
+	mockTrelloGetBoardLabels: vi.fn(),
+	mockTrelloGetBoardCustomFields: vi.fn(),
+	mockTrelloCreateBoardCustomField: vi.fn(),
+	mockJiraGetMyself: vi.fn(),
+	mockJiraSearchProjects: vi.fn(),
+	mockJiraGetProjectStatuses: vi.fn(),
+	mockJiraGetIssueTypesForProject: vi.fn(),
+	mockJiraGetFields: vi.fn(),
+	mockJiraCreateCustomField: vi.fn(),
+	mockGetAuthenticated: vi.fn(),
+	mockVerifyProjectOrgAccess: vi.fn(),
+	mockGetIntegrationCredentialOrNull: vi.fn(),
+	mockGetIntegrationByProjectAndCategory: vi.fn(),
+}));
 
 vi.mock('../../../../src/trello/client.js', () => ({
 	withTrelloCredentials: (...args: unknown[]) => {
@@ -15,21 +44,14 @@ vi.mock('../../../../src/trello/client.js', () => ({
 		return cb();
 	},
 	trelloClient: {
-		getMe: (...args: unknown[]) => mockTrelloGetMe(...args),
-		getBoards: (...args: unknown[]) => mockTrelloGetBoards(...args),
-		getBoardLists: (...args: unknown[]) => mockTrelloGetBoardLists(...args),
-		getBoardLabels: (...args: unknown[]) => mockTrelloGetBoardLabels(...args),
-		getBoardCustomFields: (...args: unknown[]) => mockTrelloGetBoardCustomFields(...args),
-		createBoardCustomField: (...args: unknown[]) => mockTrelloCreateBoardCustomField(...args),
+		getMe: mockTrelloGetMe,
+		getBoards: mockTrelloGetBoards,
+		getBoardLists: mockTrelloGetBoardLists,
+		getBoardLabels: mockTrelloGetBoardLabels,
+		getBoardCustomFields: mockTrelloGetBoardCustomFields,
+		createBoardCustomField: mockTrelloCreateBoardCustomField,
 	},
 }));
-
-const mockJiraGetMyself = vi.fn();
-const mockJiraSearchProjects = vi.fn();
-const mockJiraGetProjectStatuses = vi.fn();
-const mockJiraGetIssueTypesForProject = vi.fn();
-const mockJiraGetFields = vi.fn();
-const mockJiraCreateCustomField = vi.fn();
 
 vi.mock('../../../../src/jira/client.js', () => ({
 	withJiraCredentials: (...args: unknown[]) => {
@@ -37,12 +59,12 @@ vi.mock('../../../../src/jira/client.js', () => ({
 		return cb();
 	},
 	jiraClient: {
-		getMyself: (...args: unknown[]) => mockJiraGetMyself(...args),
-		searchProjects: (...args: unknown[]) => mockJiraSearchProjects(...args),
-		getProjectStatuses: (...args: unknown[]) => mockJiraGetProjectStatuses(...args),
-		getIssueTypesForProject: (...args: unknown[]) => mockJiraGetIssueTypesForProject(...args),
-		getFields: (...args: unknown[]) => mockJiraGetFields(...args),
-		createCustomField: (...args: unknown[]) => mockJiraCreateCustomField(...args),
+		getMyself: mockJiraGetMyself,
+		searchProjects: mockJiraSearchProjects,
+		getProjectStatuses: mockJiraGetProjectStatuses,
+		getIssueTypesForProject: mockJiraGetIssueTypesForProject,
+		getFields: mockJiraGetFields,
+		createCustomField: mockJiraCreateCustomField,
 	},
 }));
 
@@ -50,41 +72,29 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-const mockGetAuthenticated = vi.fn();
-
 vi.mock('@octokit/rest', () => ({
 	Octokit: vi.fn().mockImplementation(() => ({
 		users: { getAuthenticated: mockGetAuthenticated },
 	})),
 }));
 
-const mockVerifyProjectOrgAccess = vi.fn();
-
 vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
-	verifyProjectOrgAccess: (...args: unknown[]) => mockVerifyProjectOrgAccess(...args),
+	verifyProjectOrgAccess: mockVerifyProjectOrgAccess,
 }));
-
-const mockGetIntegrationCredentialOrNull = vi.fn();
 
 vi.mock('../../../../src/config/provider.js', () => ({
-	getIntegrationCredentialOrNull: (...args: unknown[]) =>
-		mockGetIntegrationCredentialOrNull(...args),
+	getIntegrationCredentialOrNull: mockGetIntegrationCredentialOrNull,
 }));
 
-const mockGetIntegrationByProjectAndCategory = vi.fn();
-
 vi.mock('../../../../src/db/repositories/integrationsRepository.js', () => ({
-	getIntegrationByProjectAndCategory: (...args: unknown[]) =>
-		mockGetIntegrationByProjectAndCategory(...args),
+	getIntegrationByProjectAndCategory: mockGetIntegrationByProjectAndCategory,
 }));
 
 import { Octokit } from '@octokit/rest';
 
 import { integrationsDiscoveryRouter } from '../../../../src/api/routers/integrationsDiscovery.js';
 
-function createCaller(ctx: TRPCContext) {
-	return integrationsDiscoveryRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(integrationsDiscoveryRouter);
 
 const mockUser = createMockUser();
 
@@ -107,72 +117,64 @@ describe('integrationsDiscoveryRouter', () => {
 	describe('auth', () => {
 		it('verifyTrello throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.verifyTrello(trelloCredsInput)).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.verifyTrello(trelloCredsInput), 'UNAUTHORIZED');
 		});
 
 		it('verifyJira throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.verifyJira(jiraCredsInput)).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.verifyJira(jiraCredsInput), 'UNAUTHORIZED');
 		});
 
 		it('trelloBoards throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.trelloBoards(trelloCredsInput)).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.trelloBoards(trelloCredsInput), 'UNAUTHORIZED');
 		});
 
 		it('trelloBoardDetails throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.trelloBoardDetails({ ...trelloCredsInput, boardId: 'abc123' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('jiraProjects throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.jiraProjects(jiraCredsInput)).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.jiraProjects(jiraCredsInput), 'UNAUTHORIZED');
 		});
 
 		it('jiraProjectDetails throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('trelloBoardsByProject throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.trelloBoardsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.trelloBoardsByProject({ projectId: 'proj-1' }), 'UNAUTHORIZED');
 		});
 
 		it('trelloBoardDetailsByProject throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.trelloBoardDetailsByProject({ projectId: 'proj-1', boardId: 'abc123' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('jiraProjectsByProject throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.jiraProjectsByProject({ projectId: 'proj-1' }), 'UNAUTHORIZED');
 		});
 
 		it('jiraProjectDetailsByProject throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 	});
 
@@ -758,14 +760,15 @@ describe('integrationsDiscoveryRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.createTrelloCustomField({
 					...trelloCredsInput,
 					boardId: 'boardabc',
 					name: 'Cost',
 					type: 'number',
 				}),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('validates boardId with alphanumeric regex', async () => {
@@ -871,12 +874,13 @@ describe('integrationsDiscoveryRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.createJiraCustomField({
 					...jiraCredsInput,
 					name: 'Cost',
 				}),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('validates name min length of 1', async () => {
@@ -941,9 +945,7 @@ describe('integrationsDiscoveryRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.verifyGithubToken({ token: 'ghp_test' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.verifyGithubToken({ token: 'ghp_test' }), 'UNAUTHORIZED');
 		});
 
 		it('rejects empty token', async () => {

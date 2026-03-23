@@ -1,26 +1,37 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockListAgentDefinitions = vi.fn();
-const mockGetTriggerConfigsByProject = vi.fn();
-const mockListProjectIntegrations = vi.fn();
-const mockGetKnownAgentTypes = vi.fn();
-const mockLoadAgentDefinition = vi.fn();
-const mockListAgentConfigs = vi.fn();
+const {
+	mockListAgentDefinitions,
+	mockGetTriggerConfigsByProject,
+	mockListProjectIntegrations,
+	mockGetKnownAgentTypes,
+	mockLoadAgentDefinition,
+	mockListAgentConfigs,
+	mockVerifyProjectOrgAccess,
+} = vi.hoisted(() => ({
+	mockListAgentDefinitions: vi.fn(),
+	mockGetTriggerConfigsByProject: vi.fn(),
+	mockListProjectIntegrations: vi.fn(),
+	mockGetKnownAgentTypes: vi.fn(),
+	mockLoadAgentDefinition: vi.fn(),
+	mockListAgentConfigs: vi.fn(),
+	mockVerifyProjectOrgAccess: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/agentDefinitionsRepository.js', () => ({
-	listAgentDefinitions: (...args: unknown[]) => mockListAgentDefinitions(...args),
+	listAgentDefinitions: mockListAgentDefinitions,
 }));
 
 vi.mock('../../../../src/db/repositories/agentTriggerConfigsRepository.js', () => ({
 	getTriggerConfigById: vi.fn(),
 	getTriggerConfig: vi.fn(),
-	getTriggerConfigsByProject: (...args: unknown[]) => mockGetTriggerConfigsByProject(...args),
+	getTriggerConfigsByProject: mockGetTriggerConfigsByProject,
 	getTriggerConfigsByProjectAndAgent: vi.fn(),
 	upsertTriggerConfig: vi.fn(),
 	updateTriggerConfig: vi.fn(),
@@ -28,23 +39,21 @@ vi.mock('../../../../src/db/repositories/agentTriggerConfigsRepository.js', () =
 }));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
-	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
+	listProjectIntegrations: mockListProjectIntegrations,
 }));
 
 vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
-	listAgentConfigs: (...args: unknown[]) => mockListAgentConfigs(...args),
+	listAgentConfigs: mockListAgentConfigs,
 	isAgentEnabledForProject: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
-	getKnownAgentTypes: (...args: unknown[]) => mockGetKnownAgentTypes(...args),
-	loadAgentDefinition: (...args: unknown[]) => mockLoadAgentDefinition(...args),
+	getKnownAgentTypes: mockGetKnownAgentTypes,
+	loadAgentDefinition: mockLoadAgentDefinition,
 }));
 
-const mockVerifyProjectOrgAccess = vi.fn();
-
 vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
-	verifyProjectOrgAccess: (...args: unknown[]) => mockVerifyProjectOrgAccess(...args),
+	verifyProjectOrgAccess: mockVerifyProjectOrgAccess,
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -57,12 +66,10 @@ import { agentTriggerConfigsRouter } from '../../../../src/api/routers/agentTrig
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createCaller(ctx: TRPCContext) {
-	return agentTriggerConfigsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(agentTriggerConfigsRouter);
 
 const mockUser = createMockUser();
-const mockCtx: TRPCContext = { user: mockUser, effectiveOrgId: mockUser.orgId };
+const mockCtx = { user: mockUser, effectiveOrgId: mockUser.orgId };
 
 function makeAgentDefinition(overrides: Record<string, unknown> = {}) {
 	return {
@@ -98,9 +105,10 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 
 	it('throws UNAUTHORIZED when not authenticated', async () => {
 		const caller = createCaller({ user: null, effectiveOrgId: null });
-		await expect(
+		await expectTRPCError(
 			caller.getProjectTriggersView({ projectId: 'test-project' }),
-		).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			'UNAUTHORIZED',
+		);
 	});
 
 	it('returns empty enabledAgents and null integrations when nothing is configured', async () => {

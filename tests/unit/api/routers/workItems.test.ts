@@ -1,27 +1,28 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockListWorkItems = vi.fn();
-const mockGetRunsByWorkItem = vi.fn();
+const { mockListWorkItems, mockGetRunsByWorkItem, mockVerifyProjectOrgAccess } = vi.hoisted(() => ({
+	mockListWorkItems: vi.fn(),
+	mockGetRunsByWorkItem: vi.fn(),
+	mockVerifyProjectOrgAccess: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
-	listWorkItems: (...args: unknown[]) => mockListWorkItems(...args),
+	listWorkItems: mockListWorkItems,
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
-	getRunsByWorkItem: (...args: unknown[]) => mockGetRunsByWorkItem(...args),
+	getRunsByWorkItem: mockGetRunsByWorkItem,
 }));
 
-const mockVerifyProjectOrgAccess = vi.fn();
-
 vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
-	verifyProjectOrgAccess: (...args: unknown[]) => mockVerifyProjectOrgAccess(...args),
+	verifyProjectOrgAccess: mockVerifyProjectOrgAccess,
 }));
 
 import { workItemsRouter } from '../../../../src/api/routers/workItems.js';
@@ -30,9 +31,7 @@ import { workItemsRouter } from '../../../../src/api/routers/workItems.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createCaller(ctx: TRPCContext) {
-	return workItemsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(workItemsRouter);
 
 const mockUser = createMockUser();
 
@@ -95,7 +94,7 @@ describe('workItemsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list({ projectId: 'test-project' })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.list({ projectId: 'test-project' }), 'UNAUTHORIZED');
 		});
 
 		it('throws when project does not belong to org', async () => {
@@ -138,8 +137,9 @@ describe('workItemsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.runs({ projectId: 'test-project', workItemId: 'wi-1' })).rejects.toThrow(
-				TRPCError,
+			await expectTRPCError(
+				caller.runs({ projectId: 'test-project', workItemId: 'wi-1' }),
+				'UNAUTHORIZED',
 			);
 		});
 
