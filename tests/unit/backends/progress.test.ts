@@ -459,7 +459,7 @@ describe('ProgressMonitor — tick behavior', () => {
 		);
 	});
 
-	it('syncs checklist for implementation agents', async () => {
+	it('syncs checklist when syncChecklist is true', async () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'implementation',
 			taskDescription: 'Test task',
@@ -468,6 +468,7 @@ describe('ProgressMonitor — tick behavior', () => {
 			customModels: [],
 			logWriter: vi.fn(),
 			trello: { workItemId: 'card1' },
+			syncChecklist: true,
 		});
 
 		mockGetPMProvider.mockReturnValue(mockPMProvider as unknown as PMProvider);
@@ -483,7 +484,7 @@ describe('ProgressMonitor — tick behavior', () => {
 		expect(mockSyncChecklist).toHaveBeenCalledWith('card1');
 	});
 
-	it('does not sync checklist for non-implementation agents', async () => {
+	it('does not sync checklist when syncChecklist is not set', async () => {
 		const monitor = new ProgressMonitor({
 			agentType: 'planning',
 			taskDescription: 'Test task',

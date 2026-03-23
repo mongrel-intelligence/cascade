@@ -6,6 +6,7 @@
  * manipulating labels, statuses, and comments.
  */
 
+import type { LifecycleHooks } from '../agents/definitions/schema.js';
 import type { ProjectConfig } from '../types/index.js';
 import { safeOperation, silentOperation } from '../utils/safeOperation.js';
 import { pmRegistry } from './registry.js';
@@ -67,43 +68,48 @@ export class PMLifecycleManager {
 		private pmConfig: ProjectPMConfig,
 	) {}
 
-	async prepareForAgent(workItemId: string, agentType: string): Promise<void> {
+	async prepareForAgent(workItemId: string, hooks: LifecycleHooks): Promise<void> {
 		await this.safeAddLabel(workItemId, this.pmConfig.labels.processing);
 		await this.safeRemoveLabel(workItemId, this.pmConfig.labels.readyToProcess);
 		await this.safeRemoveLabel(workItemId, this.pmConfig.labels.processed);
 
-		if (agentType === 'implementation') {
-			await this.safeMove(workItemId, this.pmConfig.statuses.inProgress);
+		if (hooks.moveOnPrepare) {
+			const destination =
+				this.pmConfig.statuses[hooks.moveOnPrepare as keyof typeof this.pmConfig.statuses];
+			await this.safeMove(workItemId, destination);
 		}
 	}
 
 	async handleSuccess(
 		workItemId: string,
-		agentType: string,
+		hooks: LifecycleHooks,
 		prUrl?: string,
 		progressCommentId?: string,
 	): Promise<void> {
 		await this.safeAddLabel(workItemId, this.pmConfig.labels.processed);
 
-		if (agentType === 'implementation') {
-			await this.safeMove(workItemId, this.pmConfig.statuses.inReview);
-			if (prUrl) {
-				const prTitle = extractPRTitle(prUrl);
-				let linked = false;
-				try {
-					await this.provider.linkPR(workItemId, prUrl, prTitle);
-					linked = true;
-				} catch {
-					// linkPR failed — fall through to comment fallback
-				}
-				if (!linked) {
-					const message = `PR created: ${prUrl}`;
-					if (progressCommentId) {
-						// Replace the progress comment with the "PR created" message
-						await this.safeUpdateOrAddComment(workItemId, progressCommentId, message);
-					} else {
-						await this.safeAddComment(workItemId, message);
-					}
+		if (hooks.moveOnSuccess) {
+			const destination =
+				this.pmConfig.statuses[hooks.moveOnSuccess as keyof typeof this.pmConfig.statuses];
+			await this.safeMove(workItemId, destination);
+		}
+
+		if (hooks.linkPR && prUrl) {
+			const prTitle = extractPRTitle(prUrl);
+			let linked = false;
+			try {
+				await this.provider.linkPR(workItemId, prUrl, prTitle);
+				linked = true;
+			} catch {
+				// linkPR failed — fall through to comment fallback
+			}
+			if (!linked) {
+				const message = `PR created: ${prUrl}`;
+				if (progressCommentId) {
+					// Replace the progress comment with the "PR created" message
+					await this.safeUpdateOrAddComment(workItemId, progressCommentId, message);
+				} else {
+					await this.safeAddComment(workItemId, message);
 				}
 			}
 		}

@@ -108,6 +108,7 @@ export async function executeWithEngine(
 					isGitHubAck,
 					engine.definition.id,
 					partialInput.model ?? '',
+					profile.lifecycleHooks.syncChecklist ?? false,
 				),
 			);
 

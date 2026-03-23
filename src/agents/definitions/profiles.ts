@@ -26,6 +26,7 @@ import type {
 	AgentDefinition,
 	ContextStepName,
 	FinishHookFlags,
+	LifecycleHooks,
 	SupportedTrigger,
 } from './schema.js';
 import { CONTEXT_STEP_REGISTRY } from './strategies.js';
@@ -46,6 +47,8 @@ export interface AgentProfile {
 	needsGitHubToken: boolean;
 	/** Finish hook flags (SCM requirements: requiresPR, requiresReview, etc.) */
 	finishHooks: FinishHookFlags;
+	/** Lifecycle hooks — drives PM lifecycle behavior (moveOnPrepare, moveOnSuccess, linkPR, syncChecklist) */
+	lifecycleHooks: LifecycleHooks;
 	/** Fetch context injections for this agent type */
 	fetchContext(params: FetchContextParams): Promise<ContextInjection[]>;
 	/** Build the task prompt for this agent type */
@@ -66,6 +69,14 @@ export interface AgentProfile {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+/**
+ * Resolve lifecycle hooks from an agent definition.
+ * Returns an empty object (no-op) when no lifecycle block is defined.
+ */
+function resolveLifecycleHooks(def: AgentDefinition): LifecycleHooks {
+	return def.hooks?.lifecycle ?? {};
+}
 
 /**
  * Resolve finish hooks from an agent definition.
@@ -175,6 +186,9 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 	// Resolve finish hooks
 	const finish = resolveFinishHooks(def);
 
+	// Resolve lifecycle hooks
+	const lifecycle = resolveLifecycleHooks(def);
+
 	const profile: AgentProfile = {
 		filterTools: (allTools: ToolManifest[]) => {
 			// Filter tools by the gadget names derived from capabilities
@@ -184,6 +198,7 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 		allCapabilities,
 		needsGitHubToken: requiresScmIntegration(def),
 		finishHooks: finish,
+		lifecycleHooks: lifecycle,
 		fetchContext: async (params) => {
 			// Resolve context pipeline from the trigger (empty array if no trigger or trigger has no pipeline)
 			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerEvent);
