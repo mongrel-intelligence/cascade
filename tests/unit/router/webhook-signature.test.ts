@@ -125,6 +125,7 @@ import { loadProjectConfig, routerConfig } from '../../../src/router/config.js';
 import { resolveWebhookSecret } from '../../../src/router/platformClients/credentials.js';
 import {
 	buildTrelloCallbackUrl,
+	createWebhookVerifier,
 	extractJiraProjectKey,
 	extractTrelloBoardId,
 	verifyGitHubWebhookSignature,
@@ -894,5 +895,103 @@ describe('router — JIRA webhook signature verification (end-to-end)', () => {
 				decisionReason: 'Missing signature header',
 			}),
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: createWebhookVerifier factory
+// ---------------------------------------------------------------------------
+
+describe('createWebhookVerifier factory', () => {
+	const PROJECT = { id: 'proj-factory', repo: 'owner/factory-repo' };
+	const SECRET = 'factory-test-secret';
+	const IDENTIFIER = 'factory-id';
+	const HEADER_NAME = 'X-Test-Signature';
+
+	function makeContext(headers: Record<string, string> = {}, params: Record<string, string> = {}) {
+		return {
+			req: {
+				header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
+				param: (name: string) => params[name],
+			},
+		} as unknown as import('hono').Context;
+	}
+
+	const mockVerify = vi.fn<[string, string, string], boolean>();
+	const mockExtract = vi.fn<[import('hono').Context, string], string | undefined>();
+	const mockFind = vi.fn<[string, Array<Record<string, unknown>>], { id: string } | undefined>();
+
+	const verifier = createWebhookVerifier({
+		headerName: HEADER_NAME,
+		platform: 'test-platform',
+		platformLabel: 'TestPlatform',
+		extractIdentifier: mockExtract,
+		findProject: mockFind,
+		verify: mockVerify,
+	});
+
+	beforeEach(() => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [PROJECT] });
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(SECRET);
+		mockExtract.mockReturnValue(IDENTIFIER);
+		mockFind.mockReturnValue(PROJECT);
+		mockVerify.mockReturnValue(true);
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('returns { valid: true } when all conditions are met and verify returns true', async () => {
+		const result = await verifier(makeContext({ [HEADER_NAME]: 'valid-sig' }), 'body');
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+		expect(mockVerify).toHaveBeenCalledWith('body', 'valid-sig', SECRET, expect.anything());
+	});
+
+	it('returns { valid: false, reason: "TestPlatform signature mismatch" } when verify returns false', async () => {
+		mockVerify.mockReturnValue(false);
+		const result = await verifier(makeContext({ [HEADER_NAME]: 'bad-sig' }), 'body');
+		expect(result).toEqual({ valid: false, reason: 'TestPlatform signature mismatch' });
+	});
+
+	it('returns null when extractIdentifier returns undefined', async () => {
+		mockExtract.mockReturnValue(undefined);
+		const result = await verifier(makeContext({ [HEADER_NAME]: 'sig' }), 'body');
+		expect(result).toBeNull();
+	});
+
+	it('returns null when findProject returns undefined (no matching project)', async () => {
+		mockFind.mockReturnValue(undefined);
+		const result = await verifier(makeContext({ [HEADER_NAME]: 'sig' }), 'body');
+		expect(result).toBeNull();
+	});
+
+	it('returns null when resolveWebhookSecret returns null (no secret configured)', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const result = await verifier(makeContext({ [HEADER_NAME]: 'sig' }), 'body');
+		expect(result).toBeNull();
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } when header is absent but secret is set', async () => {
+		const result = await verifier(makeContext({}), 'body');
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
+
+	it('passes the Hono context to the verify function (needed for Trello callback URL)', async () => {
+		const ctx = makeContext({ [HEADER_NAME]: 'sig' });
+		await verifier(ctx, 'body');
+		// The 4th argument to verify should be the Hono context object
+		expect(mockVerify).toHaveBeenCalledWith('body', 'sig', SECRET, ctx);
+	});
+
+	it('passes the Hono context to extractIdentifier', async () => {
+		const ctx = makeContext({ [HEADER_NAME]: 'sig' });
+		await verifier(ctx, 'body');
+		expect(mockExtract).toHaveBeenCalledWith(ctx, 'body');
+	});
+
+	it('passes the extracted identifier and projects array to findProject', async () => {
+		await verifier(makeContext({ [HEADER_NAME]: 'sig' }), 'body');
+		expect(mockFind).toHaveBeenCalledWith(IDENTIFIER, expect.any(Array));
 	});
 });
