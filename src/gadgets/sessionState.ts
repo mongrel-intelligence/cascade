@@ -22,46 +22,40 @@ export interface InitSessionStateOptions {
 	initialHeadSha?: string;
 }
 
-// Session-level state accessible to all gadgets
-let sessionState = {
-	agentType: null as string | null,
-	baseBranch: 'main' as string,
-	projectId: null as string | null,
-	workItemId: null as string | null,
-	workItemUrl: null as string | null,
-	workItemTitle: null as string | null,
-	initialHeadSha: null as string | null,
-	hooks: {} as SessionHooks,
-	readOnlyFs: false,
-	prCreated: false,
-	prUrl: null as string | null,
-	reviewSubmitted: false,
-	reviewUrl: null as string | null,
-	reviewBody: null as string | null,
-	reviewEvent: null as string | null,
-	initialCommentId: null as number | null,
-};
+interface SessionStateData {
+	agentType: string | null;
+	baseBranch: string;
+	projectId: string | null;
+	workItemId: string | null;
+	workItemUrl: string | null;
+	workItemTitle: string | null;
+	initialHeadSha: string | null;
+	hooks: SessionHooks;
+	readOnlyFs: boolean;
+	prCreated: boolean;
+	prUrl: string | null;
+	reviewSubmitted: boolean;
+	reviewUrl: string | null;
+	reviewBody: string | null;
+	reviewEvent: string | null;
+	initialCommentId: number | null;
+}
 
-export function initSessionState(options: InitSessionStateOptions): void {
-	const {
-		agentType,
-		baseBranch,
-		projectId,
-		workItemId,
-		hooks,
-		workItemUrl,
-		workItemTitle,
-		initialHeadSha,
-	} = options;
-	sessionState = {
-		agentType,
-		baseBranch: baseBranch ?? 'main',
-		projectId: projectId ?? null,
-		workItemId: workItemId ?? null,
-		workItemUrl: workItemUrl ?? null,
-		workItemTitle: workItemTitle ?? null,
-		initialHeadSha: initialHeadSha ?? null,
-		hooks: hooks ?? {},
+/**
+ * Injectable SessionState class. Encapsulates all mutable session-level state
+ * accessible to gadgets. Use `createSessionState()` to create isolated instances
+ * in tests, or `setDefaultSessionState()` to inject a custom instance.
+ */
+export class SessionState {
+	private state: SessionStateData = {
+		agentType: null,
+		baseBranch: 'main',
+		projectId: null,
+		workItemId: null,
+		workItemUrl: null,
+		workItemTitle: null,
+		initialHeadSha: null,
+		hooks: {},
 		readOnlyFs: false,
 		prCreated: false,
 		prUrl: null,
@@ -71,35 +65,171 @@ export function initSessionState(options: InitSessionStateOptions): void {
 		reviewEvent: null,
 		initialCommentId: null,
 	};
+
+	init(options: InitSessionStateOptions): void {
+		const {
+			agentType,
+			baseBranch,
+			projectId,
+			workItemId,
+			hooks,
+			workItemUrl,
+			workItemTitle,
+			initialHeadSha,
+		} = options;
+		this.state = {
+			agentType,
+			baseBranch: baseBranch ?? 'main',
+			projectId: projectId ?? null,
+			workItemId: workItemId ?? null,
+			workItemUrl: workItemUrl ?? null,
+			workItemTitle: workItemTitle ?? null,
+			initialHeadSha: initialHeadSha ?? null,
+			hooks: hooks ?? {},
+			readOnlyFs: false,
+			prCreated: false,
+			prUrl: null,
+			reviewSubmitted: false,
+			reviewUrl: null,
+			reviewBody: null,
+			reviewEvent: null,
+			initialCommentId: null,
+		};
+	}
+
+	getBaseBranch(): string {
+		return this.state.baseBranch;
+	}
+
+	getProjectId(): string | null {
+		return this.state.projectId;
+	}
+
+	getWorkItemId(): string | null {
+		return this.state.workItemId;
+	}
+
+	setReadOnlyFs(readOnly: boolean): void {
+		this.state.readOnlyFs = readOnly;
+	}
+
+	getWorkItemUrl(): string | null {
+		return this.state.workItemUrl;
+	}
+
+	getWorkItemTitle(): string | null {
+		return this.state.workItemTitle;
+	}
+
+	recordPRCreation(prUrl: string): void {
+		this.state.prCreated = true;
+		this.state.prUrl = prUrl;
+	}
+
+	recordReviewSubmission(reviewUrl: string, body?: string | null, event?: string | null): void {
+		this.state.reviewSubmitted = true;
+		this.state.reviewUrl = reviewUrl;
+		this.state.reviewBody = body ?? null;
+		this.state.reviewEvent = event ?? null;
+	}
+
+	recordInitialComment(commentId: number): void {
+		this.state.initialCommentId = commentId;
+	}
+
+	/**
+	 * Clear the initial comment ID from session state without performing a deletion.
+	 *
+	 * Called by the backend adapter when the sidecar signals that the subprocess
+	 * already deleted the comment (ackCommentDeleted: true), so that the
+	 * GitHubProgressPoster post-agent callback does not attempt a redundant delete.
+	 */
+	clearInitialComment(): void {
+		this.state.initialCommentId = null;
+	}
+
+	/**
+	 * Delete the initial ack comment from the PR and clear it from session state.
+	 *
+	 * Called by gadgets (e.g. CreatePRReview) immediately after a significant event
+	 * to clean up the stale ack/progress comment as soon as possible.
+	 * Wrapped in a try-catch so failures don't propagate to the caller.
+	 */
+	async deleteInitialComment(owner: string, repo: string): Promise<void> {
+		const commentId = this.state.initialCommentId;
+		if (!commentId) return;
+
+		// Clear state first so the post-agent callback sees null and short-circuits
+		this.state.initialCommentId = null;
+
+		try {
+			const { githubClient } = await import('../github/client.js');
+			await githubClient.deletePRComment(owner, repo, commentId);
+		} catch {
+			// Best-effort: restore the id so post-agent callback can retry
+			this.state.initialCommentId = commentId;
+		}
+	}
+
+	getSessionState(): SessionStateData {
+		return { ...this.state };
+	}
+}
+
+/**
+ * Create an isolated SessionState instance. Use this in tests to avoid
+ * state bleeding between parallel test cases.
+ */
+export function createSessionState(): SessionState {
+	return new SessionState();
+}
+
+// Module-level default instance — shared by all module-level wrapper functions
+let _defaultInstance: SessionState = new SessionState();
+
+/**
+ * Replace the module-level default instance. Useful in tests or DI scenarios
+ * where a custom SessionState should be injected for all wrapper functions.
+ */
+export function setDefaultSessionState(instance: SessionState): void {
+	_defaultInstance = instance;
+}
+
+// ---------------------------------------------------------------------------
+// Backward-compatible module-level wrapper functions
+// All 17 consumers continue to work without import changes.
+// ---------------------------------------------------------------------------
+
+export function initSessionState(options: InitSessionStateOptions): void {
+	_defaultInstance.init(options);
 }
 
 export function getBaseBranch(): string {
-	return sessionState.baseBranch;
+	return _defaultInstance.getBaseBranch();
 }
 
 export function getProjectId(): string | null {
-	return sessionState.projectId;
+	return _defaultInstance.getProjectId();
 }
 
 export function getWorkItemId(): string | null {
-	return sessionState.workItemId;
+	return _defaultInstance.getWorkItemId();
 }
 
 export function setReadOnlyFs(readOnly: boolean): void {
-	sessionState.readOnlyFs = readOnly;
+	_defaultInstance.setReadOnlyFs(readOnly);
 }
 
 export function getWorkItemUrl(): string | null {
-	return sessionState.workItemUrl;
+	return _defaultInstance.getWorkItemUrl();
 }
 
 export function getWorkItemTitle(): string | null {
-	return sessionState.workItemTitle;
+	return _defaultInstance.getWorkItemTitle();
 }
 
 export function recordPRCreation(prUrl: string): void {
-	sessionState.prCreated = true;
-	sessionState.prUrl = prUrl;
+	_defaultInstance.recordPRCreation(prUrl);
 }
 
 export function recordReviewSubmission(
@@ -107,14 +237,11 @@ export function recordReviewSubmission(
 	body?: string | null,
 	event?: string | null,
 ): void {
-	sessionState.reviewSubmitted = true;
-	sessionState.reviewUrl = reviewUrl;
-	sessionState.reviewBody = body ?? null;
-	sessionState.reviewEvent = event ?? null;
+	_defaultInstance.recordReviewSubmission(reviewUrl, body, event);
 }
 
 export function recordInitialComment(commentId: number): void {
-	sessionState.initialCommentId = commentId;
+	_defaultInstance.recordInitialComment(commentId);
 }
 
 /**
@@ -125,7 +252,7 @@ export function recordInitialComment(commentId: number): void {
  * GitHubProgressPoster post-agent callback does not attempt a redundant delete.
  */
 export function clearInitialComment(): void {
-	sessionState.initialCommentId = null;
+	_defaultInstance.clearInitialComment();
 }
 
 /**
@@ -136,21 +263,9 @@ export function clearInitialComment(): void {
  * Wrapped in a try-catch so failures don't propagate to the caller.
  */
 export async function deleteInitialComment(owner: string, repo: string): Promise<void> {
-	const commentId = sessionState.initialCommentId;
-	if (!commentId) return;
-
-	// Clear state first so the post-agent callback sees null and short-circuits
-	sessionState.initialCommentId = null;
-
-	try {
-		const { githubClient } = await import('../github/client.js');
-		await githubClient.deletePRComment(owner, repo, commentId);
-	} catch {
-		// Best-effort: restore the id so post-agent callback can retry
-		sessionState.initialCommentId = commentId;
-	}
+	return _defaultInstance.deleteInitialComment(owner, repo);
 }
 
 export function getSessionState() {
-	return { ...sessionState };
+	return _defaultInstance.getSessionState();
 }
