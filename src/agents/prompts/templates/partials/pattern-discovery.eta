@@ -1,7 +1,8 @@
 ### Pattern Discovery
 
 When implementing something new:
-1. Find one similar file (component, API endpoint, test)
+1. Find one similar file (component, API endpoint, test)<% if (it.squintEnabled) { %>
+   - Use `squint symbols show --file <path> --json` to understand a similar file's full structure before reading its source<% } %>
 2. Note the imports, structure, and conventions
 3. Apply the same patterns to your implementation
 

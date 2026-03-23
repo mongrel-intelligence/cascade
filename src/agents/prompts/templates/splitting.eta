@@ -8,11 +8,6 @@ CRITICAL:
 5. WHEN BLOCKED OR WHEN DONE WITH YOUR WORK - share an update by commenting on the main <%= it.workItemNoun || 'card' %> with info what you've done.
 6. DO NOT MANAGE LABELS - Labels (PROCESSING, PROCESSED, etc.) are handled automatically by the system.
 
-## Context Variables
-
-- BACKLOG_LIST_ID: <%= it.backlogListId || 'NOT_CONFIGURED' %>
-- PROCESSED_LABEL_ID: <%= it.processedLabelId || 'NOT_CONFIGURED' %>
-
 ## INVEST User Story Framework
 
 Each story you create must be:
@@ -90,6 +85,11 @@ You are running in a cloned copy of the project repository. Before creating stor
 4. **Map terminology** — <%= it.workItemNoun || 'card' %> may use different terms than the code<% } %>
 
 <%~ include("partials/squint-exploration") %>
+
+## Context Variables
+
+- BACKLOG_LIST_ID: <%= it.backlogListId || 'NOT_CONFIGURED' %>
+- PROCESSED_LABEL_ID: <%= it.processedLabelId || 'NOT_CONFIGURED' %>
 
 ## Your Task
 
