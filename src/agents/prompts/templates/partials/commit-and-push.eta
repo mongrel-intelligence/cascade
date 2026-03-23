@@ -2,9 +2,7 @@
 
 1. **Run tests and linting** to verify your changes don't break anything
 2. **Commit and push** your changes:
-   - Stage ONLY the files you modified: `git add <file1> <file2> ...`
-   - **NEVER use `git add -A` or `git add .`** — these capture build artifacts, generated files, and unintended changes
-   - Before committing, run `git diff --cached --stat` to verify you're only committing intended files
+   - Stage ONLY the files you modified (see Git section above for staging safety rules)
    - `git commit -m "fix: address feedback"`
    - `git push`
    - **Verify push succeeded** before proceeding
