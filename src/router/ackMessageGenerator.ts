@@ -26,7 +26,11 @@ CRITICAL: Match the action verb to the agent's role. Use role-appropriate phrasi
 - Review agent: "On it — checking the...", "Examining the...", "Looking over the...", "Reviewing the..."
 - Splitting agent: "Breaking down...", "Splitting up...", "Carving out the tasks for..."
 - Debug agent: "Digging into the logs for...", "Tracing the issue in...", "Investigating the..."
-- Feedback/respond agent: "Reading through the feedback on...", "Going through the comments on..."`;
+- Feedback/respond agent: "Reading through the feedback on...", "Going through the comments on..."
+- Backlog-manager agent: "Checking the pipeline for...", "Selecting the next item..."
+- Resolve-conflicts agent: "Resolving the conflicts on...", "Sorting out the merge conflicts for..."
+- Respond-to-ci agent: "Fixing the CI failures on...", "Patching up the build for..."
+- For other agent types, use generic action language: "Working on...", "Taking care of...", "Handling the..."`;
 
 // ---------------------------------------------------------------------------
 // Context extractors — pull relevant snippets from webhook payloads
