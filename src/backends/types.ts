@@ -146,6 +146,7 @@ export interface AgentEngineDefinition {
 	readonly id: string;
 	readonly label: string;
 	readonly description: string;
+	readonly archetype: 'sdk' | 'native-tool';
 	readonly capabilities: string[];
 	readonly modelSelection:
 		| { type: 'free-text' }
