@@ -110,6 +110,11 @@ jobs:
             cascade-migrator:dev \
             npx tsx tools/migrate-project-credentials-reencrypt.ts
 
+      - name: Configure DATABASE_SSL for dev (self-signed certificate)
+        run: |
+          sed -i '/^DATABASE_SSL=/d' /opt/services/cascade-dev.env
+          echo 'DATABASE_SSL=false' >> /opt/services/cascade-dev.env
+
       - name: Pull and restart cascade-router-dev
         run: |
           cd /opt/services
