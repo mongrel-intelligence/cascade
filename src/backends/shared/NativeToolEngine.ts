@@ -2,7 +2,6 @@
  * NativeToolEngine — abstract base class for subprocess-based agent engines.
  *
  * Extracts shared patterns common to Claude Code, Codex, and OpenCode engines:
- * - System/task prompt building via buildSystemPrompt / buildTaskPrompt
  * - Environment building via buildEngineEnv with engine-specific allowlists
  * - Context file cleanup in afterExecute
  * - supportsAgentType returning true (all native-tool engines support every agent type)
@@ -12,7 +11,7 @@
  *   - getAllowedEnvExact() — engine-specific env var allowlist
  *   - getExtraEnvVars() — unconditionally injected env vars (e.g. CI=true)
  *   - resolveEngineModel() — cascade model string → engine-specific model identifier
- *   - executeTurn() — the actual subprocess invocation for a single turn
+ *   - execute() — the actual subprocess execution logic
  *
  * LLMist stays separate — it is an in-process SDK, fundamentally different from
  * the subprocess pattern captured here.
