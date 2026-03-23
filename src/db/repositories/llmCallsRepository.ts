@@ -90,6 +90,7 @@ export async function listLlmCallsMeta(runId: string) {
 			durationMs: agentRunLlmCalls.durationMs,
 			model: agentRunLlmCalls.model,
 			createdAt: agentRunLlmCalls.createdAt,
+			response: agentRunLlmCalls.response,
 		})
 		.from(agentRunLlmCalls)
 		.where(eq(agentRunLlmCalls.runId, runId))
