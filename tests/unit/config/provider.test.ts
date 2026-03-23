@@ -33,6 +33,8 @@ vi.mock('../../../src/config/configCache.js', () => ({
 
 import { configCache } from '../../../src/config/configCache.js';
 import {
+	DbCredentialResolver,
+	EnvCredentialResolver,
 	findProjectByBoardId,
 	findProjectById,
 	findProjectByJiraProjectKey,
@@ -43,6 +45,7 @@ import {
 	getOrgCredential,
 	invalidateConfigCache,
 	loadConfig,
+	setCredentialResolver,
 } from '../../../src/config/provider.js';
 import {
 	findProjectByBoardIdFromDb,
@@ -108,6 +111,8 @@ describe('config/provider', () => {
 			delete process.env[key];
 		}
 		envKeysToClean.length = 0;
+		// Reset injected resolver so tests don't leak state
+		setCredentialResolver(null);
 	});
 
 	describe('loadConfig', () => {
@@ -433,6 +438,171 @@ describe('config/provider', () => {
 			invalidateConfigCache();
 
 			expect(configCache.invalidate).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// CredentialResolver DI
+	// ---------------------------------------------------------------------------
+
+	describe('setCredentialResolver / getIntegrationCredential (DI)', () => {
+		it('uses injected resolver instead of DB for getIntegrationCredential', async () => {
+			const mockResolver = {
+				resolve: vi.fn().mockResolvedValue('injected-value'),
+				resolveAll: vi.fn().mockResolvedValue({}),
+			};
+			setCredentialResolver(mockResolver);
+
+			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
+
+			expect(result).toBe('injected-value');
+			expect(mockResolver.resolve).toHaveBeenCalledWith('proj1', 'TRELLO_API_KEY');
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
+		});
+
+		it('uses injected resolver for getOrgCredential', async () => {
+			const mockResolver = {
+				resolve: vi.fn().mockResolvedValue('org-cred'),
+				resolveAll: vi.fn().mockResolvedValue({}),
+			};
+			setCredentialResolver(mockResolver);
+
+			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
+
+			expect(result).toBe('org-cred');
+			expect(mockResolver.resolve).toHaveBeenCalledWith('proj1', 'OPENROUTER_API_KEY');
+			expect(resolveProjectCredential).not.toHaveBeenCalled();
+		});
+
+		it('uses injected resolver for getAllProjectCredentials', async () => {
+			const creds = { TRELLO_API_KEY: 'tk', OPENROUTER_API_KEY: 'ork' };
+			const mockResolver = {
+				resolve: vi.fn().mockResolvedValue(null),
+				resolveAll: vi.fn().mockResolvedValue(creds),
+			};
+			setCredentialResolver(mockResolver);
+
+			const result = await getAllProjectCredentials('proj1');
+
+			expect(result).toEqual(creds);
+			expect(mockResolver.resolveAll).toHaveBeenCalledWith('proj1');
+			expect(resolveAllProjectCredentials).not.toHaveBeenCalled();
+		});
+
+		it('reverts to auto-selection when setCredentialResolver(null) is called', async () => {
+			const mockResolver = {
+				resolve: vi.fn().mockResolvedValue('injected'),
+				resolveAll: vi.fn().mockResolvedValue({}),
+			};
+			setCredentialResolver(mockResolver);
+			setCredentialResolver(null);
+
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-value');
+
+			const result = await getOrgCredential('proj1', 'OPENROUTER_API_KEY');
+
+			expect(result).toBe('db-value');
+			expect(mockResolver.resolve).not.toHaveBeenCalled();
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// DbCredentialResolver
+	// ---------------------------------------------------------------------------
+
+	describe('DbCredentialResolver', () => {
+		it('resolve() delegates to resolveProjectCredential', async () => {
+			vi.mocked(resolveProjectCredential).mockResolvedValue('db-result');
+			const resolver = new DbCredentialResolver();
+
+			const result = await resolver.resolve('proj1', 'MY_KEY');
+
+			expect(result).toBe('db-result');
+			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'MY_KEY');
+		});
+
+		it('resolve() returns null when credential not found', async () => {
+			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
+			const resolver = new DbCredentialResolver();
+
+			const result = await resolver.resolve('proj1', 'MISSING_KEY');
+
+			expect(result).toBeNull();
+		});
+
+		it('resolveAll() delegates to resolveAllProjectCredentials', async () => {
+			const creds = { A: '1', B: '2' };
+			vi.mocked(resolveAllProjectCredentials).mockResolvedValue(creds);
+			const resolver = new DbCredentialResolver();
+
+			const result = await resolver.resolveAll('proj1');
+
+			expect(result).toEqual(creds);
+			expect(resolveAllProjectCredentials).toHaveBeenCalledWith('proj1');
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// EnvCredentialResolver
+	// ---------------------------------------------------------------------------
+
+	describe('EnvCredentialResolver', () => {
+		it('resolve() returns value from process.env when present', async () => {
+			setEnvCredential('MY_SECRET', 'env-secret');
+			const resolver = new EnvCredentialResolver();
+
+			const result = await resolver.resolve('proj1', 'MY_SECRET');
+
+			expect(result).toBe('env-secret');
+		});
+
+		it('resolve() returns null when key is absent from process.env', async () => {
+			const resolver = new EnvCredentialResolver();
+
+			const result = await resolver.resolve('proj1', 'NONEXISTENT_KEY');
+
+			expect(result).toBeNull();
+		});
+
+		it('resolve() ignores projectId (env is global)', async () => {
+			setEnvCredential('GLOBAL_KEY', 'global-val');
+			const resolver = new EnvCredentialResolver();
+
+			// projectId is irrelevant for env-based resolution
+			const result = await resolver.resolve('any-project', 'GLOBAL_KEY');
+
+			expect(result).toBe('global-val');
+		});
+
+		it('resolveAll() reconstructs map from CASCADE_CREDENTIAL_KEYS list', async () => {
+			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'KEY_A,KEY_B,KEY_C');
+			setEnvCredential('KEY_A', 'val-a');
+			setEnvCredential('KEY_B', 'val-b');
+			// KEY_C intentionally absent
+			const resolver = new EnvCredentialResolver();
+
+			const result = await resolver.resolveAll('proj1');
+
+			expect(result).toEqual({ KEY_A: 'val-a', KEY_B: 'val-b' });
+		});
+
+		it('resolveAll() returns empty object when CASCADE_CREDENTIAL_KEYS is not set', async () => {
+			const resolver = new EnvCredentialResolver();
+
+			const result = await resolver.resolveAll('proj1');
+
+			expect(result).toEqual({});
+		});
+
+		it('resolveAll() skips empty key entries in CASCADE_CREDENTIAL_KEYS', async () => {
+			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'KEY_A,,KEY_B');
+			setEnvCredential('KEY_A', 'val-a');
+			setEnvCredential('KEY_B', 'val-b');
+			const resolver = new EnvCredentialResolver();
+
+			const result = await resolver.resolveAll('proj1');
+
+			expect(result).toEqual({ KEY_A: 'val-a', KEY_B: 'val-b' });
 		});
 	});
 });
