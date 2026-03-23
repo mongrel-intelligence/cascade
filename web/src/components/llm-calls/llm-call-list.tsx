@@ -24,6 +24,7 @@ type CallMeta = {
 	toolCalls?: ToolCall[] | null;
 	textPreview?: string | null;
 	thinkingChars?: number | null;
+	thinkingPreview?: string | null;
 };
 
 function ToolCallList({ toolCalls }: { toolCalls: ToolCall[] }) {
@@ -87,9 +88,12 @@ function CallRow({ runId, call, delta, isExpanded, onToggle }: CallRowProps) {
 								{call.textPreview}
 							</span>
 						)}
-						{call.thinkingChars != null && (
-							<span className="text-xs text-muted-foreground/60 italic">
-								thinking ({call.thinkingChars.toLocaleString()} chars)
+						{call.thinkingPreview && (
+							<span className="text-xs text-muted-foreground/60 italic truncate max-w-sm">
+								{call.thinkingPreview}
+								{call.thinkingChars != null && call.thinkingChars > 200 && (
+									<span className="not-italic"> ({call.thinkingChars.toLocaleString()} chars)</span>
+								)}
 							</span>
 						)}
 						{!call.toolCalls?.length && !call.textPreview && !call.thinkingChars && (
