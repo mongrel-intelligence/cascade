@@ -10,6 +10,7 @@ import { logger } from '../utils/logging.js';
 import {
 	verifyGitHubSignature,
 	verifyJiraSignature,
+	verifySentrySignature,
 	verifyTrelloSignature,
 } from '../webhook/signatureVerification.js';
 import { loadProjectConfig, routerConfig } from './config.js';
@@ -149,6 +150,38 @@ export async function verifyGitHubWebhookSignature(
 	return valid
 		? { valid: true, reason: 'Signature valid' }
 		: { valid: false, reason: 'GitHub signature mismatch' };
+}
+
+/**
+ * verifySignature callback for the Sentry webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ *
+ * Sentry sends the signature as a raw HMAC-SHA256 hex digest in the
+ * `Sentry-Hook-Signature` header (no `sha256=` prefix).
+ *
+ * The project ID is taken from the URL path param (`:projectId`),
+ * which is unambiguous since each Sentry integration gets its own webhook URL.
+ */
+export async function verifySentryWebhookSignature(
+	c: Context,
+	rawBody: string,
+): Promise<{ valid: boolean; reason: string } | null> {
+	const signatureHeader = c.req.header('Sentry-Hook-Signature');
+	const projectId = c.req.param('projectId');
+
+	if (!projectId) return null;
+
+	const secret = await resolveWebhookSecret(projectId, 'sentry');
+	if (!secret) return null; // No secret configured — skip verification
+
+	if (!signatureHeader) {
+		return { valid: false, reason: 'Missing Sentry-Hook-Signature header' };
+	}
+
+	const valid = verifySentrySignature(rawBody, signatureHeader, secret);
+	return valid
+		? { valid: true, reason: 'Signature valid' }
+		: { valid: false, reason: 'Sentry signature mismatch' };
 }
 
 /**

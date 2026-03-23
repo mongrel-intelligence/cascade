@@ -20,7 +20,7 @@ import type { IntegrationCategory } from '../definitions/schema.js';
  *
  * Format: {source}:{action}
  * - Built-in sources: fs (filesystem), shell, session
- * - Integration sources: pm, scm, email
+ * - Integration sources: pm, scm, alerting
  */
 export const CAPABILITIES = [
 	// Built-in capabilities (always available, no integration required)
@@ -40,6 +40,9 @@ export const CAPABILITIES = [
 	'scm:comment',
 	'scm:review',
 	'scm:pr',
+
+	// Alerting integration capabilities
+	'alerting:read',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -183,6 +186,18 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		sdkToolNames: [],
 		cliToolNames: [],
 	},
+
+	// -------------------------------------------------------------------------
+	// Alerting integration capabilities
+	// -------------------------------------------------------------------------
+
+	'alerting:read': {
+		integration: 'alerting',
+		description: 'Read issue and event data from alerting tools',
+		gadgetNames: ['GetAlertingIssue', 'GetAlertingEventDetail', 'ListAlertingEvents'],
+		sdkToolNames: [],
+		cliToolNames: [],
+	},
 };
 
 // ============================================================================
@@ -200,6 +215,7 @@ export function getCapabilitiesByIntegration(): Record<
 		builtin: [],
 		pm: [],
 		scm: [],
+		alerting: [],
 	};
 
 	for (const cap of CAPABILITIES) {

@@ -1,0 +1,71 @@
+identity:
+  emoji: "\U0001F6A8"
+  label: Alert Investigator
+  roleHint: Investigates alerts from configured alerting providers, identifies root cause, and creates bug fix work items
+  initialMessage: "**\U0001F6A8 Investigating alert** — Analyzing stacktrace and root cause..."
+
+# Alerting integration required; PM is optional for creating backlog work items.
+integrations:
+  required: [alerting]
+  optional: [pm]
+
+# Read source code and shell for log analysis. Alerting tools for event data.
+# Optional PM write to create backlog bug work item if PM integration is configured.
+capabilities:
+  required:
+    - fs:read
+    - shell:exec
+    - session:ctrl
+    - alerting:read
+  optional:
+    - pm:read
+    - pm:write
+
+# Supported triggers for this agent
+triggers:
+  - event: alerting:issue-alert
+    label: New Issue Alert
+    description: Trigger when an issue alert fires (exception, error rate, etc.)
+    defaultEnabled: true
+    providers: [sentry]
+    contextPipeline: [alertingIssue, directoryListing, contextFiles]
+  - event: alerting:metric-alert
+    label: Metric Alert (Critical/Warning)
+    description: Trigger when a metric alert enters critical or warning state
+    defaultEnabled: false
+    providers: [sentry]
+    parameters:
+      - name: severity
+        type: select
+        label: Minimum Severity
+        description: Only trigger for alerts at or above this severity
+        options: [critical, warning]
+        defaultValue: critical
+    contextPipeline: [directoryListing, contextFiles]
+
+strategies: {}
+
+prompts:
+  taskPrompt: |
+    An alert has been triggered: "<%= it.alertTitle %>"
+
+    <% if (it.alertIssueUrl) { %>Issue: <%= it.alertIssueUrl %><% } %>
+
+    The full event details (stacktrace, breadcrumbs, tags) have been pre-loaded above.
+
+    Your task:
+    1. Review the pre-loaded event data — identify the error type, failing function, and line number
+    2. Read the relevant source files to understand context and confirm the root cause
+    3. Summarize: what failed, why, and which code path is responsible
+    <% if (it.backlogListId) { %>
+    4. Create a bug fix work item in the backlog (list/status ID: <%= it.backlogListId %>) with:
+       - Title: short, actionable description (e.g. "Fix: NullPointerException in PaymentService.charge")
+       - Description: root cause, error details, affected file/function, link to the alert issue
+    <% } %>
+    5. Call Finish when done
+
+hint: |
+  Start with the stacktrace in the pre-loaded event and work backwards through the call chain.
+  Focus on frames from application code (not third-party library frames).
+  Check the event timeline/breadcrumbs for the action or request that preceded the failure.
+  Keep the bug work item description concise and actionable.

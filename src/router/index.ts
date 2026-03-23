@@ -14,10 +14,12 @@ import {
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
+	parseSentryPayload,
 	parseTrelloPayload,
 } from '../webhook/webhookHandlers.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
+import { SentryRouterAdapter } from './adapters/sentry.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
 import { startCancelListener, stopCancelListener } from './cancel-listener.js';
 import { getQueueStats } from './queue.js';
@@ -25,6 +27,7 @@ import { processRouterWebhook } from './webhook-processor.js';
 import {
 	verifyGitHubWebhookSignature,
 	verifyJiraWebhookSignature,
+	verifySentryWebhookSignature,
 	verifyTrelloWebhookSignature,
 } from './webhookVerification.js';
 import {
@@ -132,6 +135,27 @@ app.post(
 		verifySignature: verifyJiraWebhookSignature,
 		processWebhook: async (payload) => {
 			const adapter = new JiraRouterAdapter();
+			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
+			return {
+				processed: result.shouldProcess,
+				projectId: result.projectId,
+				decisionReason: result.decisionReason,
+			};
+		},
+	}),
+);
+
+// Sentry webhook handler (alerting integration)
+// Uses project-specific URLs: /sentry/webhook/:projectId
+// The projectId in the URL is the CASCADE project ID, making routing unambiguous.
+app.post(
+	'/sentry/webhook/:projectId',
+	createWebhookHandler({
+		source: 'sentry',
+		parsePayload: (c) => parseSentryPayload(c, c.req.param('projectId') ?? ''),
+		verifySignature: verifySentryWebhookSignature,
+		processWebhook: async (payload) => {
+			const adapter = new SentryRouterAdapter();
 			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
 			return {
 				processed: result.shouldProcess,

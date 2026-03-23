@@ -64,13 +64,16 @@ export async function resolveJiraCredentials(
  */
 export async function resolveWebhookSecret(
 	projectId: string,
-	provider: 'github' | 'trello' | 'jira',
+	provider: 'github' | 'trello' | 'jira' | 'sentry',
 ): Promise<string | null> {
 	if (provider === 'github') {
 		return getIntegrationCredentialOrNull(projectId, 'scm', 'webhook_secret');
 	}
 	if (provider === 'jira') {
 		return getIntegrationCredentialOrNull(projectId, 'pm', 'webhook_secret');
+	}
+	if (provider === 'sentry') {
+		return getIntegrationCredentialOrNull(projectId, 'alerting', 'webhook_secret');
 	}
 	// Trello signs webhook payloads with the API Secret, not the public API Key.
 	return getIntegrationCredentialOrNull(projectId, 'pm', 'api_secret');

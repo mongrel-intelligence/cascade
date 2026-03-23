@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	verifyGitHubSignature,
 	verifyJiraSignature,
+	verifySentrySignature,
 	verifyTrelloSignature,
 } from '../../../src/webhook/signatureVerification.js';
 
@@ -186,5 +187,60 @@ describe('verifyJiraSignature', () => {
 	it('is timing-safe: the comparison does not short-circuit on length mismatch within prefix', () => {
 		// Provide a correctly-prefixed but shorter hex to exercise the length branch
 		expect(verifyJiraSignature(body, 'sha256=abc', secret)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// verifySentrySignature
+// ---------------------------------------------------------------------------
+
+describe('verifySentrySignature', () => {
+	const secret = 'my-sentry-secret';
+	const body = '{"action":"triggered","data":{"event":{"title":"Error"}}}';
+
+	function sentrySignature(b: string, s: string): string {
+		return createHmac('sha256', s).update(b, 'utf8').digest('hex');
+	}
+
+	it('returns true for a valid signature', () => {
+		const sig = sentrySignature(body, secret);
+		expect(verifySentrySignature(body, sig, secret)).toBe(true);
+	});
+
+	it('returns false for an empty body with a signature for non-empty body', () => {
+		const sig = sentrySignature(body, secret);
+		expect(verifySentrySignature('', sig, secret)).toBe(false);
+	});
+
+	it('returns true for an empty body when the signature matches the empty body', () => {
+		const sig = sentrySignature('', secret);
+		expect(verifySentrySignature('', sig, secret)).toBe(true);
+	});
+
+	it('returns false when the signature is an empty string', () => {
+		expect(verifySentrySignature(body, '', secret)).toBe(false);
+	});
+
+	it('returns false when the signature has an unexpected sha256= prefix (unlike GitHub format)', () => {
+		const withPrefix = `sha256=${sentrySignature(body, secret)}`;
+		expect(verifySentrySignature(body, withPrefix, secret)).toBe(false);
+	});
+
+	it('returns false when signed with a different secret', () => {
+		const sig = sentrySignature(body, 'wrong-secret');
+		expect(verifySentrySignature(body, sig, secret)).toBe(false);
+	});
+
+	it('returns false when the body has been tampered with', () => {
+		const sig = sentrySignature(body, secret);
+		expect(verifySentrySignature(`${body}tampered`, sig, secret)).toBe(false);
+	});
+
+	it('returns false for a completely garbage signature string', () => {
+		expect(verifySentrySignature(body, 'not-a-real-signature', secret)).toBe(false);
+	});
+
+	it('is timing-safe: the comparison does not short-circuit on length mismatch', () => {
+		expect(verifySentrySignature(body, 'abc', secret)).toBe(false);
 	});
 });

@@ -11,6 +11,7 @@
 import type { ContextInjection } from '../contracts/index.js';
 import {
 	type FetchContextParams,
+	fetchAlertingIssueStep,
 	fetchContextFilesStep,
 	fetchDirectoryListingStep,
 	fetchPRContextStep,
@@ -37,4 +38,5 @@ export const CONTEXT_STEP_REGISTRY: Record<
 	prContext: fetchPRContextStep,
 	prConversation: fetchPRConversationStep,
 	pipelineSnapshot: fetchPipelineSnapshotStep,
+	alertingIssue: fetchAlertingIssueStep,
 };

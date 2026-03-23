@@ -71,6 +71,33 @@ export function verifyTrelloSignature(
 }
 
 /**
+ * Verify a Sentry webhook signature.
+ *
+ * Sentry signs payloads with HMAC-SHA256 and sends the result as a raw hex
+ * digest in the `Sentry-Hook-Signature` header (no `sha256=` prefix).
+ *
+ * @param rawBody - The raw request body string.
+ * @param signature - The value of the `Sentry-Hook-Signature` header.
+ * @param secret - The webhook secret configured in Sentry.
+ * @returns `true` if the signature is valid, `false` otherwise.
+ */
+export function verifySentrySignature(rawBody: string, signature: string, secret: string): boolean {
+	if (!signature) {
+		return false;
+	}
+
+	const expectedHex = createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
+	const expected = Buffer.from(expectedHex, 'utf8');
+	const actual = Buffer.from(signature, 'utf8');
+
+	if (expected.length !== actual.length) {
+		return false;
+	}
+
+	return timingSafeEqual(expected, actual);
+}
+
+/**
  * Verify a JIRA webhook signature.
  *
  * JIRA Cloud signs payloads with HMAC-SHA256 and sends the result as

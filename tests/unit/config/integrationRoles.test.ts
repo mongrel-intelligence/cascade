@@ -25,14 +25,14 @@ describe.concurrent('PROVIDER_CATEGORY', () => {
 	});
 
 	it('maps all known providers to valid categories', () => {
-		const validCategories: IntegrationCategory[] = ['pm', 'scm'];
+		const validCategories: IntegrationCategory[] = ['pm', 'scm', 'alerting'];
 		for (const [provider, category] of Object.entries(PROVIDER_CATEGORY)) {
 			expect(validCategories).toContain(category);
 		}
 	});
 
 	it('contains all expected providers', () => {
-		const expectedProviders: IntegrationProvider[] = ['trello', 'jira', 'github'];
+		const expectedProviders: IntegrationProvider[] = ['trello', 'jira', 'github', 'sentry'];
 		for (const provider of expectedProviders) {
 			expect(PROVIDER_CATEGORY).toHaveProperty(provider);
 		}
