@@ -709,6 +709,8 @@ describe('execute', () => {
 			turn: 1,
 			inputTokens: 1000,
 			outputTokens: 500,
+			cacheReadTokens: 0,
+			cacheWriteTokens: 0,
 		});
 	});
 

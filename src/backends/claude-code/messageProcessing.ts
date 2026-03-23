@@ -8,6 +8,7 @@ import type {
 	SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
 import type { query } from '@anthropic-ai/claude-agent-sdk';
+import { calculateCost } from '../../utils/llmMetrics.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { buildEngineResult } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
@@ -129,6 +130,21 @@ export function extractFinishComment(assistantMessages: SDKAssistantMessage[]): 
 	return undefined;
 }
 
+/** Report progress and log a single content block from an assistant message. */
+function processContentBlock(
+	block: { type: string; name?: string; input?: unknown; text?: string },
+	input: AgentExecutionPlan,
+): void {
+	if (block.type === 'tool_use' && block.name) {
+		input.progressReporter.onToolCall(block.name, block.input as Record<string, unknown>);
+	}
+	if (block.type === 'text' && block.text !== undefined) {
+		const truncated = block.text.length > 300 ? `${block.text.slice(0, 300)}...` : block.text;
+		input.logWriter('INFO', 'Agent text', { text: truncated });
+		input.progressReporter.onText(block.text);
+	}
+}
+
 /**
  * Process an assistant message: report progress, log text/errors/usage.
  */
@@ -137,17 +153,8 @@ export function processAssistantMessage(
 	turnCount: number,
 	input: AgentExecutionPlan,
 ): void {
-	if (assistantMsg.message?.content) {
-		for (const block of assistantMsg.message.content) {
-			if (block.type === 'tool_use') {
-				input.progressReporter.onToolCall(block.name, block.input as Record<string, unknown>);
-			}
-			if (block.type === 'text') {
-				const truncated = block.text.length > 300 ? `${block.text.slice(0, 300)}...` : block.text;
-				input.logWriter('INFO', 'Agent text', { text: truncated });
-				input.progressReporter.onText(block.text);
-			}
-		}
+	for (const block of assistantMsg.message?.content ?? []) {
+		processContentBlock(block, input);
 	}
 
 	if (assistantMsg.error) {
@@ -163,6 +170,8 @@ export function processAssistantMessage(
 			turn: turnCount,
 			inputTokens: usage.input_tokens,
 			outputTokens: usage.output_tokens,
+			cacheReadTokens: usage.cache_read_input_tokens ?? 0,
+			cacheWriteTokens: usage.cache_creation_input_tokens ?? 0,
 		});
 	}
 }
@@ -217,6 +226,14 @@ export function countToolCalls(assistantMsg: SDKAssistantMessage): number {
 }
 
 /**
+ * Convert a raw Anthropic model ID (e.g. 'claude-sonnet-4-5-20250929') to the
+ * pricing key format used by calculateCost() (e.g. 'anthropic:claude-sonnet-4-5').
+ */
+function toPricingKey(model: string): string {
+	return `anthropic:${model}`.replace(/-\d{8}$/, '');
+}
+
+/**
  * Log an LLM call for a single assistant message turn.
  */
 export function logClaudeCodeLlmCall(
@@ -228,6 +245,16 @@ export function logClaudeCodeLlmCall(
 	if (!assistantMsg.message?.usage) return;
 
 	const usage = assistantMsg.message.usage;
+	const cacheRead = usage.cache_read_input_tokens ?? 0;
+	const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+	const totalInput = usage.input_tokens + cacheRead + cacheWrite;
+	const cost = calculateCost(toPricingKey(model), {
+		inputTokens: totalInput,
+		outputTokens: usage.output_tokens,
+		totalTokens: totalInput + usage.output_tokens,
+		cachedInputTokens: cacheRead,
+	});
+
 	let response: string | undefined;
 	try {
 		response = JSON.stringify(assistantMsg.message.content ?? []);
@@ -239,10 +266,10 @@ export function logClaudeCodeLlmCall(
 		runId: input.runId,
 		callNumber: turnCount,
 		model,
-		inputTokens: usage.input_tokens,
+		inputTokens: totalInput,
 		outputTokens: usage.output_tokens,
-		cachedTokens: undefined,
-		costUsd: undefined,
+		cachedTokens: cacheRead,
+		costUsd: cost > 0 ? cost : undefined,
 		response,
 		engineLabel: 'Claude Code',
 	});
