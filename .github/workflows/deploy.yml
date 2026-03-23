@@ -74,24 +74,24 @@ jobs:
         run: |
           docker build --target=builder -f Dockerfile.dashboard -t cascade-migrator:latest .
           docker run --rm \
-            --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:latest \
             ./node_modules/.bin/drizzle-kit migrate
 
       - name: Run trigger config migration
         run: |
           docker run --rm \
-            --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:latest \
             npx tsx tools/migrate-triggers.ts
 
       - name: Run hooks migration
         run: |
           docker run --rm \
-            --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:latest \
             npx tsx tools/migrate-hooks.ts --apply
 
@@ -100,8 +100,19 @@ jobs:
           docker run --rm \
             --env-file /opt/services/cascade.env \
             -e DATABASE_URL="${{ secrets.DATABASE_URL }}" \
+            -e DATABASE_SSL=false \
             cascade-migrator:latest \
             npx tsx tools/migrate-project-credentials-reencrypt.ts
+
+      - name: Configure DATABASE_SSL for production (Supabase certificate)
+        run: |
+          docker run --rm \
+            -v /opt/services:/mnt/services \
+            alpine:3 sh -c '
+              grep -v "^DATABASE_SSL=" /mnt/services/cascade.env > /tmp/new.env 2>/dev/null || true
+              echo "DATABASE_SSL=false" >> /tmp/new.env
+              cp /tmp/new.env /mnt/services/cascade.env
+            '
 
       - name: Pull latest worker image
         run: docker pull ${{ env.WORKER_IMAGE }}:latest
