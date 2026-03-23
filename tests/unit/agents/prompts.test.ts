@@ -508,6 +508,196 @@ describe('getTemplateVariables', () => {
 	});
 });
 
+describe('PM terminology rendering', () => {
+	it('splitting prompt with pmType=jira renders "issue" instead of "card"', () => {
+		const prompt = getSystemPrompt('splitting', {
+			pmType: 'jira',
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+			workItemNounCap: 'Issue',
+			workItemNounPluralCap: 'Issues',
+			pmName: 'JIRA',
+		});
+		expect(prompt).toContain('issue');
+		expect(prompt).not.toContain(' card');
+	});
+
+	it('splitting prompt with pmType=jira renders JIRA URL examples', () => {
+		const prompt = getSystemPrompt('splitting', {
+			pmType: 'jira',
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+			workItemNounCap: 'Issue',
+			workItemNounPluralCap: 'Issues',
+			pmName: 'JIRA',
+		});
+		expect(prompt).toContain('atlassian.net/browse');
+	});
+
+	it('planning prompt with pmType=jira renders JIRA-specific wording', () => {
+		const prompt = getSystemPrompt('planning', {
+			pmType: 'jira',
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+			workItemNounCap: 'Issue',
+			workItemNounPluralCap: 'Issues',
+			pmName: 'JIRA',
+		});
+		expect(prompt).toContain('JIRA');
+		expect(prompt).toContain('issue');
+	});
+
+	it('planning prompt with pmType=jira includes JIRA subtask description note', () => {
+		const prompt = getSystemPrompt('planning', {
+			pmType: 'jira',
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+			workItemNounCap: 'Issue',
+			workItemNounPluralCap: 'Issues',
+			pmName: 'JIRA',
+		});
+		expect(prompt).toContain('JIRA subtask description');
+	});
+
+	it('planning prompt with pmType=jira includes atlassian URL template', () => {
+		const prompt = getSystemPrompt('planning', {
+			pmType: 'jira',
+			workItemNoun: 'issue',
+			workItemNounPlural: 'issues',
+			workItemNounCap: 'Issue',
+			workItemNounPluralCap: 'Issues',
+			pmName: 'JIRA',
+		});
+		expect(prompt).toContain('atlassian.net/browse');
+	});
+
+	it('splitting prompt default rendering (no pmType) falls back to Trello terminology', () => {
+		const prompt = getSystemPrompt('splitting');
+		expect(prompt).toContain('card');
+		expect(prompt).not.toContain('atlassian.net');
+		expect(prompt).toContain('trello.com/c');
+	});
+
+	it('planning prompt default rendering (no pmType) falls back to Trello terminology', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('Trello');
+		expect(prompt).toContain('card');
+		expect(prompt).toContain('trello.com/c');
+	});
+
+	it('planning prompt default rendering uses Trello URL examples not JIRA', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).not.toContain('atlassian.net/browse');
+	});
+});
+
+describe('duplicate content detection', () => {
+	/**
+	 * Detects if any block of 3+ consecutive non-trivial lines appears more than once.
+	 * "Trivial" lines are blank lines, "---", or single-word headings (e.g. "## Rules").
+	 * Lines inside fenced code blocks (``` ... ```) are excluded from duplicate detection
+	 * because code examples legitimately repeat patterns.
+	 */
+	function findDuplicateBlocks(promptText: string): string[] {
+		const lines = promptText.split('\n');
+
+		// Strip lines inside fenced code blocks
+		const nonCodeLines: string[] = [];
+		let inCodeBlock = false;
+		for (const line of lines) {
+			if (line.trim().startsWith('```')) {
+				inCodeBlock = !inCodeBlock;
+				continue; // skip fence markers themselves
+			}
+			if (!inCodeBlock) {
+				nonCodeLines.push(line);
+			}
+		}
+
+		// Filter to non-trivial lines
+		function isTrivial(line: string): boolean {
+			const trimmed = line.trim();
+			if (trimmed === '') return true;
+			if (trimmed === '---') return true;
+			// Single-word heading: "## Word" with no spaces after trimming heading marker
+			if (/^#{1,6}\s+\S+$/.test(trimmed)) return true;
+			return false;
+		}
+
+		const blockSize = 3;
+
+		// Collect all non-trivial lines outside code blocks
+		const nonTrivialLines = nonCodeLines.filter((l) => !isTrivial(l));
+
+		// Use a sliding window of blockSize consecutive non-trivial lines
+		const seen = new Set<string>();
+		const duplicates: string[] = [];
+		for (let i = 0; i <= nonTrivialLines.length - blockSize; i++) {
+			const block = nonTrivialLines.slice(i, i + blockSize).join('\n');
+			if (seen.has(block)) {
+				duplicates.push(block);
+			} else {
+				seen.add(block);
+			}
+		}
+
+		return duplicates;
+	}
+
+	const allAgentTypes = [
+		'splitting',
+		'planning',
+		'implementation',
+		'review',
+		'respond-to-review',
+		'respond-to-ci',
+		'respond-to-pr-comment',
+		'respond-to-planning-comment',
+		'debug',
+		'backlog-manager',
+	];
+
+	for (const agentType of allAgentTypes) {
+		it(`${agentType} prompt has no duplicate block of 3+ consecutive lines`, () => {
+			const prompt = getSystemPrompt(agentType);
+			const duplicates = findDuplicateBlocks(prompt);
+			expect(
+				duplicates,
+				`${agentType} prompt contains duplicate content blocks:\n${duplicates.map((b) => `---\n${b}\n---`).join('\n')}`,
+			).toHaveLength(0);
+		});
+	}
+});
+
+describe('VerifyChanges presence', () => {
+	it('respond-to-ci rendered prompt contains VerifyChanges', () => {
+		const prompt = getSystemPrompt('respond-to-ci');
+		expect(prompt).toContain('VerifyChanges');
+	});
+
+	it('respond-to-review rendered prompt contains VerifyChanges', () => {
+		const prompt = getSystemPrompt('respond-to-review');
+		expect(prompt).toContain('VerifyChanges');
+	});
+});
+
+describe('debug agent gadget naming', () => {
+	it('debug prompt contains ListDirectory (capitalized)', () => {
+		const prompt = getSystemPrompt('debug');
+		expect(prompt).toContain('ListDirectory');
+	});
+
+	it('debug prompt contains RipGrep', () => {
+		const prompt = getSystemPrompt('debug');
+		expect(prompt).toContain('RipGrep');
+	});
+
+	it('debug prompt contains Tmux', () => {
+		const prompt = getSystemPrompt('debug');
+		expect(prompt).toContain('Tmux');
+	});
+});
+
 describe('squintEnabled template gating', () => {
 	it('implementation prompt with squintEnabled=true includes squint instructions', () => {
 		const prompt = getSystemPrompt('implementation', { squintEnabled: true });
