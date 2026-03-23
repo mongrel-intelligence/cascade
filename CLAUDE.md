@@ -74,6 +74,8 @@ Projects are configured in the PostgreSQL database (`projects` table). Each proj
 
 ### Testing
 
+> **For a full catalog of test helpers, factory functions, and mock objects**, see [`tests/README.md`](tests/README.md).
+
 ```bash
 npm test                 # Run unit tests (all 4 unit projects)
 npm run test:unit        # Alias for npm test
