@@ -1,7 +1,20 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mockConfigProvider, mockLogger, mockWithGitHubToken } from '../../helpers/sharedMocks.js';
+import {
+	mockAgentLoggerModule,
+	mockCascadeEnvModule,
+	mockFileLoggerModule,
+	mockRepoModule,
+	mockSessionStateModule,
+} from '../../helpers/backendMocks.js';
+import {
+	mockConfigProvider,
+	mockLifecycleModule,
+	mockLogger,
+	mockSentryModule,
+	mockWithGitHubToken,
+} from '../../helpers/sharedMocks.js';
 
 // Mock all external dependencies
 vi.mock('../../../src/agents/shared/repository.js', () => ({
@@ -12,48 +25,21 @@ vi.mock('../../../src/agents/shared/modelResolution.js', () => ({
 	resolveModelConfig: vi.fn(),
 }));
 
-vi.mock('../../../src/utils/fileLogger.js', () => ({
-	createFileLogger: vi.fn(),
-	cleanupLogFile: vi.fn(),
-	cleanupLogDirectory: vi.fn(),
-}));
+vi.mock('../../../src/utils/fileLogger.js', () => mockFileLoggerModule);
 
-vi.mock('../../../src/agents/utils/logging.js', () => ({
-	createAgentLogger: vi.fn(),
-}));
+vi.mock('../../../src/agents/utils/logging.js', () => mockAgentLoggerModule);
 
-vi.mock('../../../src/utils/cascadeEnv.js', () => ({
-	loadCascadeEnv: vi.fn(),
-	unloadCascadeEnv: vi.fn(),
-}));
+vi.mock('../../../src/utils/cascadeEnv.js', () => mockCascadeEnvModule);
 
-vi.mock('../../../src/utils/repo.js', () => ({
-	cleanupTempDir: vi.fn(),
-	getWorkspaceDir: vi.fn(() => '/tmp/cascade-test'),
-	parseRepoFullName: vi.fn((fullName: string) => {
-		const [owner, repo] = fullName.split('/');
-		return { owner, repo };
-	}),
-}));
+vi.mock('../../../src/utils/repo.js', () => mockRepoModule);
 
-vi.mock('../../../src/utils/lifecycle.js', () => ({
-	setWatchdogCleanup: vi.fn(),
-	clearWatchdogCleanup: vi.fn(),
-}));
+vi.mock('../../../src/utils/lifecycle.js', () => mockLifecycleModule);
 
 vi.mock('../../../src/backends/progress.js', () => ({
 	createProgressMonitor: vi.fn(),
 }));
 
-vi.mock('../../../src/gadgets/sessionState.js', () => ({
-	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
-	PUSHED_CHANGES_SIDECAR_ENV_VAR: 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH',
-	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
-	recordInitialComment: vi.fn(),
-	recordPRCreation: vi.fn(),
-	recordReviewSubmission: vi.fn(),
-	clearInitialComment: vi.fn(),
-}));
+vi.mock('../../../src/gadgets/sessionState.js', () => mockSessionStateModule);
 
 vi.mock('../../../src/config/customModels.js', () => ({
 	CUSTOM_MODELS: [],
@@ -73,10 +59,7 @@ vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentCapabilities: vi.fn(),
 }));
 
-const mockCaptureException = vi.fn();
-vi.mock('../../../src/sentry.js', () => ({
-	captureException: (...args: unknown[]) => mockCaptureException(...args),
-}));
+vi.mock('../../../src/sentry.js', () => mockSentryModule);
 
 vi.mock('../../../src/agents/prompts/index.js', () => ({}));
 
@@ -302,7 +285,7 @@ describe('executeWithEngine', () => {
 
 		await executeWithEngine(engine, 'review', input);
 
-		expect(mockCaptureException).toHaveBeenCalledWith(error, {
+		expect(mockSentryModule.captureException).toHaveBeenCalledWith(error, {
 			tags: {
 				source: 'agent_execution',
 				agent: expect.stringContaining('review'),
