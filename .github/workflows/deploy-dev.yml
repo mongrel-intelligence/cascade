@@ -112,8 +112,16 @@ jobs:
 
       - name: Configure DATABASE_SSL for dev (self-signed certificate)
         run: |
-          sed -i '/^DATABASE_SSL=/d' /opt/services/cascade-dev.env
-          echo 'DATABASE_SSL=false' >> /opt/services/cascade-dev.env
+          # /opt/services/ is read-only for the runner process (sed -i fails).
+          # Run a container via the host Docker socket — it mounts the host path
+          # as a writable bind mount and can modify the file directly.
+          docker run --rm \
+            -v /opt/services:/mnt/services \
+            alpine:3 sh -c '
+              grep -v "^DATABASE_SSL=" /mnt/services/cascade-dev.env > /tmp/new.env 2>/dev/null || true
+              echo "DATABASE_SSL=false" >> /tmp/new.env
+              cp /tmp/new.env /mnt/services/cascade-dev.env
+            '
 
       - name: Pull and restart cascade-router-dev
         run: |
