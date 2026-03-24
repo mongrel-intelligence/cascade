@@ -13,6 +13,11 @@
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
+// Bootstrap the integration registry so validateIntegrations() can find registered modules.
+// The new registry-driven implementation requires integrations to be registered before
+// calling getByCategory() — without this import the registry is empty and all validations
+// report "none is registered" instead of checking actual project credentials.
+import '../../src/integrations/bootstrap.js';
 import { hasPmIntegration } from '../../src/pm/integration.js';
 import {
 	formatValidationErrors,
