@@ -13,6 +13,8 @@
  * - DATABASE_URL: PostgreSQL connection string for config
  */
 
+// Bootstrap all integrations before processing any jobs
+import './integrations/bootstrap.js';
 import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
