@@ -413,6 +413,8 @@ describe('GitHubRouterAdapter', () => {
 		});
 
 		it('uses triggerResult.workItemId over event.workItemId for GitHub PR run link', async () => {
+			// Ensure isPMFocusedAgent returns false so we take the GitHub PR ack path, not PM path
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(false);
 			vi.mocked(loadProjectConfig).mockResolvedValue({
 				projects: [mockProject],
 				fullProjects: [{ id: 'p1', repo: 'owner/repo', runLinksEnabled: true } as never],
@@ -421,6 +423,7 @@ describe('GitHubRouterAdapter', () => {
 				token: 'ghp_test',
 				project: { id: 'p1' },
 			} as never);
+			vi.mocked(extractPRNumber).mockReturnValue(42);
 			vi.mocked(postGitHubAck).mockResolvedValue(1);
 
 			await adapter.postAck(
