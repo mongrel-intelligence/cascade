@@ -8,11 +8,13 @@ import {
 	isRetryableNativeToolError,
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
+import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
+import { SHARED_ALLOWED_ENV_EXACT } from '../shared/envFilter.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
-import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import type { AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
 import { buildPermissionConfig } from './permissions.js';
 import {
@@ -406,30 +408,55 @@ async function runOpenCodeTurnLoop(
 /**
  * OpenCode backend for CASCADE.
  *
+ * Extends NativeToolEngine to share subprocess env-building, supportsAgentType(),
+ * resolveModel() delegation, and base afterExecute() context cleanup.
+ *
  * Uses the official OpenCode server protocol through the published SDK client,
  * while spawning the server process directly so CASCADE can scope credentials
  * per run without mutating global worker environment.
  */
-export class OpenCodeEngine implements AgentEngine {
+export class OpenCodeEngine extends NativeToolEngine {
 	readonly definition = OPENCODE_ENGINE_DEFINITION;
 
-	supportsAgentType(_agentType: string): boolean {
-		return true;
+	// -------------------------------------------------------------------------
+	// NativeToolEngine abstract method implementations
+	// -------------------------------------------------------------------------
+
+	getAllowedEnvExact(): Set<string> {
+		return new Set([
+			...SHARED_ALLOWED_ENV_EXACT,
+			// OpenCode auth
+			'OPENAI_API_KEY',
+			'ANTHROPIC_API_KEY',
+			'OPENROUTER_API_KEY',
+			// Squint
+			'SQUINT_DB_PATH',
+		]);
 	}
 
-	resolveModel(cascadeModel: string): string {
+	getExtraEnvVars(): Record<string, string> {
+		return { CI: 'true' };
+	}
+
+	resolveEngineModel(cascadeModel: string): string {
 		return resolveOpenCodeModel(cascadeModel);
 	}
+
+	// -------------------------------------------------------------------------
+	// Engine-specific methods
+	// -------------------------------------------------------------------------
 
 	getSettingsSchema() {
 		return OpenCodeSettingsSchema;
 	}
 
-	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
-		// Clean up offloaded context files — idempotent, safe to call from adapter hook.
-		// Server process and session cleanup happen inside execute()'s finally block
-		// since those resources are local to the execution.
-		await cleanupContextFiles(plan.repoDir);
+	/**
+	 * Calls super.afterExecute() for context file cleanup.
+	 * Server process and session cleanup happen inside execute()'s finally block
+	 * since those resources are local to the execution.
+	 */
+	async afterExecute(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void> {
+		await super.afterExecute(plan, result);
 	}
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
