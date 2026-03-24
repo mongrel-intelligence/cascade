@@ -102,6 +102,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration
 - `src/webhook/` - Shared webhook handler factory, parsers, and logging helpers
 - `src/config/` - Configuration provider, caching, Zod schemas
 - `src/db/` - Database client, Drizzle schema, repositories
+- `src/integrations/` - **Unified integration interfaces and registry** (see below)
 - `src/triggers/` - Extensible trigger system (Trello, JIRA, GitHub, Sentry)
 - `src/agents/` - AI agent implementations
 - `src/gadgets/` - Custom gadgets (PM, SCM, alerting, Tmux, Todo, file system)
@@ -115,6 +116,67 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
 - `web/` - Dashboard frontend (React 19, Vite, Tailwind v4, TanStack Router)
 - `tools/` - Developer scripts (session debugging, DB seeding, secrets management)
+
+## Integration Architecture
+
+CASCADE uses a unified integration abstraction layer in `src/integrations/`. Every PM, SCM,
+and alerting provider is a class implementing `IntegrationModule` (and optionally a
+category-specific sub-interface). Modules register into `IntegrationRegistry` at bootstrap time.
+Infrastructure (router, worker, webhook handler) looks up integrations by `type` string with no
+provider-specific branching.
+
+### Categories
+
+| Category | Interface | Example providers |
+|----------|-----------|-------------------|
+| `pm` | `PMIntegration` (extends `IntegrationModule`) | Trello, JIRA |
+| `scm` | `SCMIntegration` (extends `IntegrationModule`) | GitHub |
+| `alerting` | `AlertingIntegration` (extends `IntegrationModule`) | Sentry |
+
+### IntegrationModule (base contract)
+
+All integrations implement four required members:
+
+- `type` — unique provider string (e.g. `'trello'`, `'github'`, `'sentry'`)
+- `category` — which capability group (`'pm'`, `'scm'`, or `'alerting'`)
+- `withCredentials(projectId, fn)` — set env vars for the project, call `fn`, restore on exit
+- `hasIntegration(projectId)` — returns `true` if all required credentials are present
+
+Optional webhook methods (`parseWebhookPayload`, `isSelfAuthored`, `lookupProject`,
+`extractWorkItemId`) are implemented by providers that receive webhooks.
+
+### IntegrationRegistry
+
+`integrationRegistry` (singleton in `src/integrations/registry.ts`) is populated once at
+bootstrap (`src/integrations/bootstrap.ts`). Callers use:
+
+```typescript
+integrationRegistry.get('github')           // throws if missing
+integrationRegistry.getOrNull('sentry')     // null if missing
+integrationRegistry.getByCategory('pm')     // all PM integrations
+```
+
+PM integrations are also registered in `pmRegistry` (`src/pm/registry.ts`) for backward
+compatibility with existing PM-specific callers.
+
+### Credential roles
+
+Each provider declares its credential roles in `src/config/integrationRoles.ts` via
+`registerCredentialRoles(provider, category, roles)`. Roles map a logical `role` name to an
+env-var key (e.g. `api_key` → `TRELLO_API_KEY`). Roles without `optional: true` are required
+for `hasIntegration()` to return `true`.
+
+### Bootstrap
+
+`src/integrations/bootstrap.ts` is the single registration point for all four built-in
+integrations. It is safe to import from both the router and worker — it does not pull in the
+agent execution pipeline or template files.
+
+### Adding a new integration
+
+See [`src/integrations/README.md`](src/integrations/README.md) for the complete step-by-step
+guide covering all extension points: interface implementation, credential roles, bootstrap
+registration, webhook routes, router adapters, trigger handlers, and gadgets.
 
 ## Environment Variables
 
