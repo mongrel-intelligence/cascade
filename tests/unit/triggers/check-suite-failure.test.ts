@@ -101,7 +101,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(false);
 		});
 
-		it('does not match when no PRs associated and no PR ref in head_branch', () => {
+		it('matches when pull_requests is empty and head_branch is a plain branch name (e.g. CodeQL)', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -112,7 +112,7 @@ describe('CheckSuiteFailureTrigger', () => {
 						status: 'completed',
 						conclusion: 'failure',
 						head_sha: 'sha123',
-						head_branch: 'main',
+						head_branch: 'feature/adding-engines-guide',
 						pull_requests: [],
 					},
 					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
@@ -120,10 +120,11 @@ describe('CheckSuiteFailureTrigger', () => {
 				},
 			};
 
-			expect(trigger.matches(ctx)).toBe(false);
+			// matches() now accepts all failure events; PR resolution happens in handle()
+			expect(trigger.matches(ctx)).toBe(true);
 		});
 
-		it('does not match when pull_requests is empty and head_branch is absent', () => {
+		it('matches when pull_requests is empty and head_branch is absent', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -141,7 +142,8 @@ describe('CheckSuiteFailureTrigger', () => {
 				},
 			};
 
-			expect(trigger.matches(ctx)).toBe(false);
+			// matches() accepts all failure events; handle() will skip if no PR can be resolved
+			expect(trigger.matches(ctx)).toBe(true);
 		});
 
 		it('matches when pull_requests is empty but head_branch is refs/pull/{N}/head', () => {

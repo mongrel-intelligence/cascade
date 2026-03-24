@@ -88,6 +88,8 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		const reviewDispatchKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
+		// Human-initiated review requests override any prior automated dispatch claim.
+		releaseReviewDispatch(reviewDispatchKey);
 		if (!claimReviewDispatch(reviewDispatchKey, this.name, { prNumber, headSha })) {
 			return null;
 		}
