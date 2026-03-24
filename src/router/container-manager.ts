@@ -199,8 +199,6 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 
 	// Resolve projectId once — used for both credential env and work-item lock tracking
 	const projectId = await extractProjectIdFromJob(job.data);
-	const workerEnv = await buildWorkerEnvWithProjectId(job, projectId);
-	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
 
 	// Extract agentType early so it can be included in container labels
 	// (needed by orphan cleanup to narrow DB fallback queries to the right agent type)
@@ -213,6 +211,12 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		workItemId,
 		jobId,
 	);
+
+	// A snapshot is being reused when snapshotEnabled and the image differs from the base image.
+	const snapshotReuse = snapshotEnabled && workerImage !== routerConfig.workerImage;
+
+	const workerEnv = await buildWorkerEnvWithProjectId(job, projectId, snapshotReuse);
+	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
 
 	logger.info('[WorkerManager] Spawning worker:', {
 		jobId,

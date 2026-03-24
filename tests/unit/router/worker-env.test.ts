@@ -44,6 +44,7 @@ import { findProjectByRepo, getAllProjectCredentials } from '../../../src/config
 import type { CascadeJob } from '../../../src/router/queue.js';
 import {
 	buildWorkerEnv,
+	buildWorkerEnvWithProjectId,
 	extractAgentType,
 	extractProjectIdFromJob,
 	extractWorkItemId,
@@ -260,5 +261,41 @@ describe('extractAgentType', () => {
 			triggerResult: { agentType: 'nested' },
 		} as unknown as CascadeJob;
 		expect(extractAgentType(job)).toBe('nested');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// buildWorkerEnvWithProjectId — snapshotReuse flag
+// ---------------------------------------------------------------------------
+
+describe('buildWorkerEnvWithProjectId — snapshotReuse flag', () => {
+	beforeEach(() => {
+		mockGetAllProjectCredentials.mockResolvedValue({});
+	});
+
+	it('does NOT include CASCADE_SNAPSHOT_REUSE when snapshotReuse=false (default)', async () => {
+		const job = makeJob();
+		const env = await buildWorkerEnvWithProjectId(job as never, 'proj-1');
+		expect(env.some((e) => e.startsWith('CASCADE_SNAPSHOT_REUSE='))).toBe(false);
+	});
+
+	it('does NOT include CASCADE_SNAPSHOT_REUSE when snapshotReuse is omitted', async () => {
+		const job = makeJob();
+		const env = await buildWorkerEnvWithProjectId(job as never, 'proj-1');
+		expect(env.some((e) => e.startsWith('CASCADE_SNAPSHOT_REUSE='))).toBe(false);
+	});
+
+	it('includes CASCADE_SNAPSHOT_REUSE=true when snapshotReuse=true', async () => {
+		const job = makeJob();
+		const env = await buildWorkerEnvWithProjectId(job as never, 'proj-1', true);
+		expect(env).toContain('CASCADE_SNAPSHOT_REUSE=true');
+	});
+
+	it('still includes standard env vars alongside CASCADE_SNAPSHOT_REUSE', async () => {
+		const job = makeJob();
+		const env = await buildWorkerEnvWithProjectId(job as never, 'proj-1', true);
+		expect(env).toContain('CASCADE_SNAPSHOT_REUSE=true');
+		expect(env).toContain('JOB_ID=job-1');
+		expect(env).toContain('REDIS_URL=redis://localhost:6379');
 	});
 });
