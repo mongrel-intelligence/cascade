@@ -35,14 +35,14 @@ function ToolUseBlock({ name, inputSummary }: { name: string; inputSummary: stri
 
 function ThinkingBlock({ text }: { text: string }) {
 	return (
-		<details className="rounded-md border border-border/50">
-			<summary className="cursor-pointer select-none px-3 py-2 text-xs text-muted-foreground hover:bg-muted/30 transition-colors">
-				Thinking ({text.length.toLocaleString()} chars)
-			</summary>
+		<div className="rounded-md border border-border/50 overflow-hidden">
+			<div className="px-3 py-2 text-xs text-muted-foreground bg-muted/20">
+				💭 Thinking ({text.length.toLocaleString()} chars)
+			</div>
 			<pre className="px-3 pb-3 pt-1 text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">
 				{text}
 			</pre>
-		</details>
+		</div>
 	);
 }
 
@@ -101,6 +101,8 @@ export function LlmCallDetail({ runId, callNumber }: LlmCallDetailProps) {
 			</div>
 
 			{showRaw ? (
+				// Raw view keeps max-h-96 as a compact scrollable JSON representation.
+				// The structured view intentionally shows all content fully expanded (no truncation).
 				<pre className="max-h-96 overflow-auto rounded-md bg-background p-3 font-mono text-xs leading-5">
 					{formatRawContent(call.response)}
 				</pre>
