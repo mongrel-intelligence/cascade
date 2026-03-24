@@ -143,7 +143,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 				workItemBudgetUsd: workItemBudgetUsd || null,
 				maxInFlightItems: maxInFlightItems ? Number.parseInt(maxInFlightItems, 10) : null,
 				runLinksEnabled,
-				snapshotEnabled: snapshotEnabled || null,
+				snapshotEnabled,
 				snapshotTtlMs: snapshotTtlMs ? Number.parseInt(snapshotTtlMs, 10) : null,
 			},
 			{
