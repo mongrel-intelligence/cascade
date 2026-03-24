@@ -98,7 +98,29 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(false);
 		});
 
-		it('does not match when no PRs associated', () => {
+		it('does not match when no PRs associated and no PR ref in head_branch', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						head_branch: 'main',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('does not match when pull_requests is empty and head_branch is absent', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -117,6 +139,28 @@ describe('CheckSuiteSuccessTrigger', () => {
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('matches when pull_requests is empty but head_branch is refs/pull/{N}/head', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						head_branch: 'refs/pull/42/head',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			expect(trigger.matches(ctx)).toBe(true);
 		});
 	});
 
@@ -701,6 +745,52 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBe('db-work-item');
+			expect(result?.waitForChecks).toBe(true);
+		});
+
+		it('fires correctly when pull_requests is empty but head_branch has PR ref', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'success',
+						head_sha: 'sha123',
+						head_branch: 'refs/pull/42/head',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+			expect(result?.agentInput).toMatchObject({
+				prNumber: 42,
+				prBranch: 'feature/test',
+				headSha: 'sha123',
+			});
 			expect(result?.waitForChecks).toBe(true);
 		});
 	});

@@ -101,7 +101,29 @@ describe('CheckSuiteFailureTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(false);
 		});
 
-		it('does not match when no PRs associated', () => {
+		it('does not match when no PRs associated and no PR ref in head_branch', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						head_branch: 'main',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('does not match when pull_requests is empty and head_branch is absent', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -120,6 +142,28 @@ describe('CheckSuiteFailureTrigger', () => {
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
+		});
+
+		it('matches when pull_requests is empty but head_branch is refs/pull/{N}/head', () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						head_branch: 'refs/pull/42/head',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+			};
+
+			expect(trigger.matches(ctx)).toBe(true);
 		});
 	});
 
@@ -414,6 +458,64 @@ describe('CheckSuiteFailureTrigger', () => {
 				42,
 				expect.stringContaining('Unable to automatically fix'),
 			);
+		});
+
+		it('fires correctly when pull_requests is empty but head_branch has PR ref', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						head_branch: 'refs/pull/42/head',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toEqual({
+				agentType: 'respond-to-ci',
+				agentInput: {
+					prNumber: 42,
+					prBranch: 'feature/test',
+					repoFullName: 'owner/repo',
+					headSha: 'sha123',
+					triggerType: 'check-failure',
+					workItemId: 'abc123',
+					triggerEvent: 'scm:check-suite-failure',
+				},
+				prNumber: 42,
+				prUrl: 'https://github.com/owner/repo/pull/42',
+				prTitle: 'Test PR',
+				workItemId: 'abc123',
+			});
 		});
 
 		it('resetFixAttempts clears attempts for a PR', async () => {

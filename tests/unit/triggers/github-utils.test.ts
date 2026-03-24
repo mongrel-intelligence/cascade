@@ -9,6 +9,7 @@ import {
 	extractJiraIssueKey,
 	extractTrelloCardId,
 	extractWorkItemId,
+	parsePrNumberFromRef,
 	resolveWorkItemId,
 } from '../../../src/triggers/github/utils.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
@@ -159,5 +160,43 @@ describe('resolveWorkItemId', () => {
 		const result = await resolveWorkItemId('proj', 42);
 
 		expect(result).toBeUndefined();
+	});
+});
+
+describe('parsePrNumberFromRef', () => {
+	it('returns null for null input', () => {
+		expect(parsePrNumberFromRef(null)).toBeNull();
+	});
+
+	it('returns null for undefined input', () => {
+		expect(parsePrNumberFromRef(undefined)).toBeNull();
+	});
+
+	it('returns null for empty string', () => {
+		expect(parsePrNumberFromRef('')).toBeNull();
+	});
+
+	it('returns null for a plain branch name', () => {
+		expect(parsePrNumberFromRef('main')).toBeNull();
+	});
+
+	it('returns null for a feature branch', () => {
+		expect(parsePrNumberFromRef('feature/my-branch')).toBeNull();
+	});
+
+	it('returns null for refs/pull/{N}/merge (merge-commit ref not supported)', () => {
+		expect(parsePrNumberFromRef('refs/pull/42/merge')).toBeNull();
+	});
+
+	it('returns PR number for refs/pull/{N}/head', () => {
+		expect(parsePrNumberFromRef('refs/pull/42/head')).toBe(42);
+	});
+
+	it('returns PR number for large PR numbers', () => {
+		expect(parsePrNumberFromRef('refs/pull/1030/head')).toBe(1030);
+	});
+
+	it('returns null for partial match (no leading refs/pull/)', () => {
+		expect(parsePrNumberFromRef('pull/42/head')).toBeNull();
 	});
 });
