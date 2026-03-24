@@ -47,7 +47,18 @@ export interface JiraJob {
 	triggerResult?: TriggerResult;
 }
 
-export type CascadeJob = TrelloJob | GitHubJob | JiraJob;
+export interface SentryJob {
+	type: 'sentry';
+	source: 'sentry';
+	payload: unknown;
+	projectId: string;
+	/** Sentry resource type: 'event_alert' | 'metric_alert' | 'issue' */
+	eventType: string;
+	receivedAt: string;
+	triggerResult?: TriggerResult;
+}
+
+export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob;
 
 // Create the job queue
 export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {

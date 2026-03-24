@@ -27,6 +27,7 @@ const {
 	mockLookupWorkItemForPR,
 	mockGithubClient,
 	mockParseRepoFullName,
+	mockGetAgentProfile,
 } = vi.hoisted(() => ({
 	mockRunAgent: vi.fn(),
 	mockGetPMProvider: vi.fn(),
@@ -72,6 +73,7 @@ const {
 	mockLookupWorkItemForPR: vi.fn().mockResolvedValue(null),
 	mockGithubClient: { getPR: vi.fn().mockResolvedValue({ title: 'feat: test PR' }) },
 	mockParseRepoFullName: vi.fn().mockReturnValue({ owner: 'acme', repo: 'myapp' }),
+	mockGetAgentProfile: vi.fn().mockResolvedValue({ lifecycleHooks: {} }),
 }));
 
 vi.mock('../../../../src/agents/registry.js', () => ({
@@ -154,6 +156,10 @@ vi.mock('../../../../src/github/client.js', () => ({
 
 vi.mock('../../../../src/utils/repo.js', () => ({
 	parseRepoFullName: mockParseRepoFullName,
+}));
+
+vi.mock('../../../../src/agents/definitions/profiles.js', () => ({
+	getAgentProfile: mockGetAgentProfile,
 }));
 
 import { linkPRToWorkItem } from '../../../../src/db/repositories/prWorkItemsRepository.js';

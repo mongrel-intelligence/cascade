@@ -1,22 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+	mockAcknowledgmentsModule,
+	mockConfigProvider,
+	mockConfigResolverModule,
+	mockGitHubClientModule,
+	mockJiraClientModule,
+	mockReactionsModule,
+	mockTrelloClientModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 
 vi.mock('../../../src/triggers/shared/lifecycle-check.js', () => ({
 	isLifecycleTriggerEnabled: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../../../src/github/client.js', () => ({
-	githubClient: {
-		getPR: vi.fn(),
-		getCheckSuiteStatus: vi.fn(),
-		getPRReviews: vi.fn(),
-		mergePR: vi.fn(),
-	},
-}));
+vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
 // Mock the PM provider context
 const mockProvider = {
@@ -29,31 +28,11 @@ vi.mock('../../../src/pm/context.js', () => ({
 }));
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
-vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredential: vi.fn(),
-	loadProjectConfigByBoardId: vi.fn(),
-	loadProjectConfigByJiraProjectKey: vi.fn(),
-	findProjectById: vi.fn(),
-}));
-vi.mock('../../../src/trello/client.js', () => ({
-	withTrelloCredentials: vi.fn(),
-	trelloClient: { getCard: vi.fn() },
-}));
-vi.mock('../../../src/jira/client.js', () => ({
-	withJiraCredentials: vi.fn(),
-	jiraClient: {},
-}));
-vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn(),
-	deleteTrelloAck: vi.fn(),
-	resolveTrelloBotMemberId: vi.fn(),
-	postJiraAck: vi.fn(),
-	deleteJiraAck: vi.fn(),
-	resolveJiraBotAccountId: vi.fn(),
-}));
-vi.mock('../../../src/router/reactions.js', () => ({
-	sendAcknowledgeReaction: vi.fn(),
-}));
+vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
+vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
+vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
@@ -63,7 +42,11 @@ import '../../../src/pm/index.js';
 
 import { PRReadyToMergeTrigger } from '../../../src/triggers/github/pr-ready-to-merge.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import {
+	createCheckSuitePayload,
+	createMockProject,
+	createReviewPayload,
+} from '../../helpers/factories.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
@@ -94,18 +77,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			expect(trigger.matches(ctx)).toBe(true);
@@ -115,8 +87,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'submitted',
+				payload: createReviewPayload({
 					review: {
 						id: 100,
 						state: 'approved',
@@ -124,17 +95,8 @@ describe('PRReadyToMergeTrigger', () => {
 						html_url: 'https://github.com/...',
 						user: { login: 'reviewer' },
 					},
-					pull_request: {
-						number: 42,
-						title: 'PR',
-						body: 'desc',
-						html_url: 'https://github.com/...',
-						head: { ref: 'feat', sha: 'abc' },
-						base: { ref: 'main' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
 					sender: { login: 'reviewer' },
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(true);
@@ -154,8 +116,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
+				payload: createCheckSuitePayload({
 					check_suite: {
 						id: 1,
 						status: 'completed',
@@ -163,9 +124,7 @@ describe('PRReadyToMergeTrigger', () => {
 						head_sha: 'sha123',
 						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
 					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
@@ -175,8 +134,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
+				payload: createCheckSuitePayload({
 					check_suite: {
 						id: 1,
 						status: 'completed',
@@ -184,9 +142,7 @@ describe('PRReadyToMergeTrigger', () => {
 						head_sha: 'sha123',
 						pull_requests: [],
 					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
@@ -196,8 +152,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'submitted',
+				payload: createReviewPayload({
 					review: {
 						id: 100,
 						state: 'changes_requested',
@@ -205,17 +160,8 @@ describe('PRReadyToMergeTrigger', () => {
 						html_url: 'https://github.com/...',
 						user: { login: 'reviewer' },
 					},
-					pull_request: {
-						number: 42,
-						title: 'PR',
-						body: 'desc',
-						html_url: 'https://github.com/...',
-						head: { ref: 'feat', sha: 'abc' },
-						base: { ref: 'main' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
 					sender: { login: 'reviewer' },
-				},
+				}),
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
@@ -255,18 +201,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -319,18 +254,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -379,8 +303,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'submitted',
+				payload: createReviewPayload({
 					review: {
 						id: 100,
 						state: 'approved',
@@ -388,17 +311,8 @@ describe('PRReadyToMergeTrigger', () => {
 						html_url: 'https://github.com/...',
 						user: { login: 'reviewer' },
 					},
-					pull_request: {
-						number: 42,
-						title: 'Test PR',
-						body: 'https://trello.com/c/abc123/card-name',
-						html_url: 'https://github.com/...',
-						head: { ref: 'feature/test', sha: 'sha123' },
-						base: { ref: 'main' },
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
 					sender: { login: 'reviewer' },
-				},
+				}),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -423,18 +337,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -466,18 +369,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -516,18 +408,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -573,18 +454,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -633,18 +503,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -703,18 +562,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithoutDone,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feat', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -786,18 +634,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithAutoLabel,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -830,18 +667,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithAutoLabel,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -873,18 +699,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithAutoLabel,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -926,18 +741,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithoutDone,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -977,18 +781,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithoutMerged,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);
@@ -1032,18 +825,7 @@ describe('PRReadyToMergeTrigger', () => {
 			const ctx: TriggerContext = {
 				project: projectWithoutMergedOrDone,
 				source: 'github',
-				payload: {
-					action: 'completed',
-					check_suite: {
-						id: 1,
-						status: 'completed',
-						conclusion: 'success',
-						head_sha: 'sha123',
-						pull_requests: [{ number: 42, head: { ref: 'feature/test', sha: 'sha123' } }],
-					},
-					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-					sender: { login: 'github-actions' },
-				},
+				payload: createCheckSuitePayload(),
 			};
 
 			const result = await trigger.handle(ctx);

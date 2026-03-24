@@ -4,7 +4,7 @@ import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { resolveWorkItemId } from './utils.js';
+import { parsePrNumberFromRef, resolveWorkItemId } from './utils.js';
 
 // Track fix attempts per PR to prevent infinite loops
 const fixAttempts = new Map<number, number>();
@@ -30,8 +30,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		if (payload.action !== 'completed') return false;
 		if (payload.check_suite.conclusion !== 'failure') return false;
 
-		// Must have at least one associated PR
-		if (payload.check_suite.pull_requests.length === 0) return false;
+		// Must have at least one associated PR, or head_branch must be a refs/pull/{N}/head ref
+		const hasPrs = payload.check_suite.pull_requests.length > 0;
+		const hasPrRef = parsePrNumberFromRef(payload.check_suite.head_branch) !== null;
+		if (!hasPrs && !hasPrRef) return false;
 
 		return true;
 	}
@@ -52,9 +54,20 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
-		// Get the first associated PR (usually there's only one)
-		const prRef = payload.check_suite.pull_requests[0];
-		const prNumber = prRef.number;
+		// Resolve PR number — from payload directly, or by parsing refs/pull/{N}/head
+		let prNumber: number;
+		if (payload.check_suite.pull_requests.length > 0) {
+			prNumber = payload.check_suite.pull_requests[0].number;
+		} else {
+			const parsed = parsePrNumberFromRef(payload.check_suite.head_branch);
+			if (parsed === null) {
+				logger.info('Could not parse PR number from head_branch ref, skipping', {
+					handler: this.name,
+				});
+				return null;
+			}
+			prNumber = parsed;
+		}
 		const headSha = payload.check_suite.head_sha;
 
 		// Fetch PR details
@@ -153,11 +166,13 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				.map((cr) => cr.name),
 		});
 
+		const prBranch = prDetails.headRef;
+
 		return {
 			agentType: 'respond-to-ci',
 			agentInput: {
 				prNumber,
-				prBranch: prRef.head.ref,
+				prBranch,
 				repoFullName: payload.repository.full_name,
 				headSha,
 				triggerType: 'check-failure',

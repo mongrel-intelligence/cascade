@@ -47,6 +47,21 @@ export function evaluateAuthorMode(
 	return { shouldTrigger, authorMode, isImplementerPR };
 }
 
+/**
+ * Extract PR number from GitHub's refs/pull/{N}/head virtual ref.
+ * Returns null if the ref doesn't match the pattern.
+ *
+ * GitHub fires check_suite webhooks with pull_requests: [] when checks run on
+ * the refs/pull/{N}/head virtual ref rather than the named feature branch.
+ * Matching only "head" (not "merge") avoids acting on the synthetic merge-commit
+ * SHA that is not part of the PR branch history.
+ */
+export function parsePrNumberFromRef(headBranch: string | null | undefined): number | null {
+	if (!headBranch) return null;
+	const match = headBranch.match(/^refs\/pull\/(\d+)\/head$/);
+	return match ? Number.parseInt(match[1], 10) : null;
+}
+
 // Trello card URL pattern: https://trello.com/c/SHORT_ID/optional-slug
 const TRELLO_CARD_URL_REGEX = /https:\/\/trello\.com\/c\/([a-zA-Z0-9]+)/;
 

@@ -7,11 +7,14 @@
  * interface as a single self-contained class. Generic infrastructure (router,
  * webhook handler, lifecycle manager) consumes the interface without
  * provider-specific branching.
+ *
+ * Extends IntegrationModule so PM providers participate in the unified registry.
  */
 
 import { PROVIDER_CREDENTIAL_ROLES } from '../config/integrationRoles.js';
 import { getIntegrationCredentialOrNull } from '../config/provider.js';
 import { getIntegrationProvider } from '../db/repositories/credentialsRepository.js';
+import type { IntegrationModule } from '../integrations/types.js';
 import type { AgentExecutionConfig } from '../triggers/shared/agent-execution.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { ProjectPMConfig } from './lifecycle.js';
@@ -31,9 +34,18 @@ export interface PMWebhookEvent {
 	raw: unknown;
 }
 
-export interface PMIntegration {
+export interface PMIntegration extends IntegrationModule {
 	/** Provider identifier — matches the string stored in project_integrations.provider */
 	readonly type: string;
+
+	/** Integration category — always 'pm' for PM providers */
+	readonly category: 'pm';
+
+	/**
+	 * Check if this PM integration is configured for a project.
+	 * Returns true if all required credentials are present.
+	 */
+	hasIntegration(projectId: string): Promise<boolean>;
 
 	// --- Data operations ---
 	/** Create a PMProvider instance from the project config */
@@ -97,7 +109,7 @@ export async function hasPmIntegration(projectId: string): Promise<boolean> {
 	if (!provider) return false;
 
 	const roles = PROVIDER_CREDENTIAL_ROLES[provider as keyof typeof PROVIDER_CREDENTIAL_ROLES];
-	if (!roles) return false;
+	if (!roles || roles.length === 0) return false;
 
 	const requiredRoles = roles.filter((r) => !r.optional);
 	const values = await Promise.all(

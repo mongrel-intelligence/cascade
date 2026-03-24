@@ -1,21 +1,20 @@
-import { TRPCError } from '@trpc/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
-const mockListAllOrganizations = vi.fn();
-const mockGetOrganization = vi.fn();
+const { mockListAllOrganizations, mockGetOrganization } = vi.hoisted(() => ({
+	mockListAllOrganizations: vi.fn(),
+	mockGetOrganization: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
-	listAllOrganizations: (...args: unknown[]) => mockListAllOrganizations(...args),
-	getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
+	listAllOrganizations: mockListAllOrganizations,
+	getOrganization: mockGetOrganization,
 }));
 
 import { authRouter } from '../../../../src/api/routers/auth.js';
 
-function createCaller(ctx: TRPCContext) {
-	return authRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(authRouter);
 
 describe('authRouter', () => {
 	describe('me', () => {
@@ -64,11 +63,7 @@ describe('authRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-
-			await expect(caller.me()).rejects.toThrow(TRPCError);
-			await expect(caller.me()).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.me(), 'UNAUTHORIZED');
 		});
 	});
 });

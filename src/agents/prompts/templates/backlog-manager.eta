@@ -36,7 +36,7 @@ A **Pipeline Snapshot** has been pre-loaded into your context containing the cur
 
 3. **Only if the active pipeline count is below the capacity limit**, proceed to backlog selection. The number of <%= it.workItemNounPlural || 'cards' %> you may move = capacity limit (<%= it.maxInFlightItems ?? 1 %>) minus current active count.
 
-Note: DONE and MERGED <%= it.workItemNounPlural || 'cards' %> are completed work and do not block new work from being selected. The snapshot shows their titles for dependency checking.
+Note: DONE and MERGED <%= it.workItemNounPlural || 'cards' %> are completed work and do not block new work from being selected. The snapshot shows their titles and URLs for dependency checking.
 
 ## Backlog Selection Process
 
@@ -51,7 +51,8 @@ When the active pipeline has capacity:
    - References to other <%= it.workItemNounPlural || 'cards' %>: "blocked by", "depends on", "waiting for", "after"
    - Cross-references to <%= it.workItemNoun || 'card' %> IDs, URLs, or titles
    - Comments indicating external dependencies
-   - **IMPORTANT**: Before declaring a <%= it.workItemNoun || 'card' %> blocked, check whether the dependency exists in the MERGED list. A dependency in MERGED is **resolved** — it does NOT block. Check the pre-loaded Pipeline Snapshot MERGED section (titles are provided for dependency checking).
+   - **Stale annotations**: Text like "(not yet merged)" in a description was written when the <%= it.workItemNoun || 'card' %> was created and is **always stale**. Do NOT use it as evidence of blocked status — only the MERGED list itself is authoritative.
+   - **IMPORTANT — MERGED check**: Before declaring a <%= it.workItemNoun || 'card' %> blocked, scan the MERGED section of the Pipeline Snapshot. Use **substring matching**: if the dependency name (e.g., "SCMIntegration", "OpenCodeEngine", "integrationRoles") appears anywhere within a MERGED title, that dependency is **resolved** and does NOT block. Each MERGED entry also shows its URL in parentheses — if the description references a <%= it.pmName || 'PM' %> link, match it against the URL too. A module or class name found anywhere in a title counts as a match.
 4. **Select the best unblocked <%= it.workItemNoun || 'card' %>(s)** considering:
    - Smaller, self-contained <%= it.workItemNounPlural || 'cards' %> are preferred
    - <%= it.workItemNounPluralCap || 'Cards' %> with clear acceptance criteria
@@ -101,6 +102,7 @@ Manual intervention may be needed to unblock the backlog.
 - ALWAYS read <%= it.workItemNoun || 'card' %> contents before making a selection decision
 - <%= it.maxInFlightItems == null || it.maxInFlightItems === 1 ? 'ALWAYS move exactly ONE ' + (it.workItemNoun || 'card') + ' per run' : 'Move only as many ' + (it.workItemNounPlural || 'cards') + ' as needed to reach capacity (limit: ' + it.maxInFlightItems + ')' %>
 - ALWAYS post a comment BEFORE moving the <%= it.workItemNoun || 'card' %> — comment first, then move to TODO
-- BE CONSERVATIVE with dependency detection - when unsure, treat as blocked
+- CONSERVATIVE on detecting dependencies — when unsure if text implies a dependency, treat it as one. But GENEROUS on MERGED resolution — use substring matching and prefer resolved over blocked for ambiguous matches.
 - LOOK FOR dependency keywords: "blocked by", "depends on", "waiting for", "after", "requires"
+- IGNORE "(not yet merged)" and similar stale annotations in descriptions — they are written at card creation and never updated. The MERGED list is the only source of truth.
 - EXECUTE COMMANDS — DO NOT JUST DESCRIBE THEM: When you decide to post a comment or move a card, you MUST actually invoke the command as a tool call. Writing a command inside a code block without invoking it does NOT execute it — text output has no effect on the system. If you find yourself writing out a command without calling it, stop and call it instead.

@@ -1,7 +1,10 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import {
+	createCallerFor,
+	expectTRPCError,
+	setupOwnershipCheckMock,
+} from '../../../helpers/trpcTestHarness.js';
 
 const {
 	mockListAgentConfigs,
@@ -32,36 +35,34 @@ const {
 }));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
-	listAgentConfigs: (...args: unknown[]) => mockListAgentConfigs(...args),
-	createAgentConfig: (...args: unknown[]) => mockCreateAgentConfig(...args),
-	updateAgentConfig: (...args: unknown[]) => mockUpdateAgentConfig(...args),
-	deleteAgentConfig: (...args: unknown[]) => mockDeleteAgentConfig(...args),
-	getAgentConfigPrompts: (...args: unknown[]) => mockGetAgentConfigPrompts(...args),
+	listAgentConfigs: mockListAgentConfigs,
+	createAgentConfig: mockCreateAgentConfig,
+	updateAgentConfig: mockUpdateAgentConfig,
+	deleteAgentConfig: mockDeleteAgentConfig,
+	getAgentConfigPrompts: mockGetAgentConfigPrompts,
 }));
 
 vi.mock('../../../../src/backends/index.js', () => ({
-	getEngineCatalog: (...args: unknown[]) => mockGetEngineCatalog(...args),
-	registerBuiltInEngines: (...args: unknown[]) => mockRegisterBuiltInEngines(...args),
+	getEngineCatalog: mockGetEngineCatalog,
+	registerBuiltInEngines: mockRegisterBuiltInEngines,
 }));
 
 vi.mock('../../../../src/agents/prompts/index.js', () => ({
-	validateTemplate: (...args: unknown[]) => mockValidateTemplate(...args),
-	getRawTemplate: (...args: unknown[]) => mockGetRawTemplate(...args),
-	getDefaultTaskPrompt: (...args: unknown[]) => mockGetDefaultTaskPrompt(...args),
+	validateTemplate: mockValidateTemplate,
+	getRawTemplate: mockGetRawTemplate,
+	getDefaultTaskPrompt: mockGetDefaultTaskPrompt,
 }));
 
 vi.mock('../../../../src/db/repositories/partialsRepository.js', () => ({
-	loadPartials: (...args: unknown[]) => mockLoadPartials(...args),
+	loadPartials: mockLoadPartials,
 }));
 
 vi.mock('../../../../src/agents/definitions/index.js', () => ({
-	resolveAgentDefinition: (...args: unknown[]) => mockResolveAgentDefinition(...args),
+	resolveAgentDefinition: mockResolveAgentDefinition,
 }));
 
 // Mock getDb for ownership checks
-const mockDbSelect = vi.fn();
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
+const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({
@@ -76,9 +77,7 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 
 import { agentConfigsRouter } from '../../../../src/api/routers/agentConfigs.js';
 
-function createCaller(ctx: TRPCContext) {
-	return agentConfigsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(agentConfigsRouter);
 
 const mockUser = createMockUser();
 
@@ -94,6 +93,7 @@ describe('agentConfigsRouter', () => {
 				id: 'llmist',
 				label: 'LLMist',
 				description: 'LLMist',
+				archetype: 'sdk',
 				capabilities: [],
 				modelSelection: { type: 'free-text' },
 				logLabel: 'LLMist Log',
@@ -102,6 +102,7 @@ describe('agentConfigsRouter', () => {
 				id: 'claude-code',
 				label: 'Claude Code',
 				description: 'Claude Code',
+				archetype: 'native-tool',
 				capabilities: [],
 				modelSelection: {
 					type: 'select',
@@ -651,9 +652,10 @@ describe('agentConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.getPrompts({ projectId: 'proj-1', agentType: 'implementation' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 	});
 });

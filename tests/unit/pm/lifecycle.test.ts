@@ -388,22 +388,22 @@ describe('pm/lifecycle', () => {
 
 		describe('prepareForAgent', () => {
 			it('adds processing label and removes ready/processed labels', async () => {
-				await manager.prepareForAgent('work-item-1', 'splitting');
+				await manager.prepareForAgent('work-item-1', {});
 
 				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-proc');
 				expect(mockProvider.removeLabel).toHaveBeenCalledWith('work-item-1', 'label-ready');
 				expect(mockProvider.removeLabel).toHaveBeenCalledWith('work-item-1', 'label-done');
 			});
 
-			it('moves to inProgress status when agentType is implementation', async () => {
-				await manager.prepareForAgent('work-item-1', 'implementation');
+			it('moves to inProgress status when moveOnPrepare is set to inProgress', async () => {
+				await manager.prepareForAgent('work-item-1', { moveOnPrepare: 'inProgress' });
 
 				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-proc');
 				expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('work-item-1', 'list-progress');
 			});
 
-			it('does not move work item for non-implementation agents', async () => {
-				await manager.prepareForAgent('work-item-1', 'splitting');
+			it('does not move work item when moveOnPrepare is not set', async () => {
+				await manager.prepareForAgent('work-item-1', {});
 
 				expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 			});
@@ -414,7 +414,7 @@ describe('pm/lifecycle', () => {
 					statuses: {},
 				});
 
-				await managerNoLabels.prepareForAgent('work-item-1', 'splitting');
+				await managerNoLabels.prepareForAgent('work-item-1', {});
 
 				expect(mockProvider.addLabel).not.toHaveBeenCalled();
 				expect(mockProvider.removeLabel).not.toHaveBeenCalled();
@@ -423,22 +423,22 @@ describe('pm/lifecycle', () => {
 
 		describe('handleSuccess', () => {
 			it('adds processed label', async () => {
-				await manager.handleSuccess('work-item-1', 'splitting');
+				await manager.handleSuccess('work-item-1', {});
 
 				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-done');
 			});
 
-			it('moves to inReview status when agentType is implementation', async () => {
-				await manager.handleSuccess('work-item-1', 'implementation');
+			it('moves to inReview status when moveOnSuccess is set to inReview', async () => {
+				await manager.handleSuccess('work-item-1', { moveOnSuccess: 'inReview' });
 
 				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-done');
 				expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('work-item-1', 'list-review');
 			});
 
-			it('calls linkPR when prUrl is provided for implementation agent', async () => {
+			it('calls linkPR when prUrl is provided and linkPR hook is true', async () => {
 				await manager.handleSuccess(
 					'work-item-1',
-					'implementation',
+					{ linkPR: true },
 					'https://github.com/owner/repo/pull/123',
 				);
 
@@ -450,27 +450,27 @@ describe('pm/lifecycle', () => {
 			});
 
 			it('does not post comment when linkPR succeeds', async () => {
-				await manager.handleSuccess('work-item-1', 'implementation', 'https://github.com/pr/123');
+				await manager.handleSuccess('work-item-1', { linkPR: true }, 'https://github.com/pr/123');
 
 				expect(mockProvider.addComment).not.toHaveBeenCalled();
 				expect(mockProvider.updateComment).not.toHaveBeenCalled();
 			});
 
 			it('does not call linkPR when prUrl is not provided', async () => {
-				await manager.handleSuccess('work-item-1', 'implementation');
+				await manager.handleSuccess('work-item-1', { linkPR: true });
 
 				expect(mockProvider.linkPR).not.toHaveBeenCalled();
 				expect(mockProvider.addComment).not.toHaveBeenCalled();
 			});
 
-			it('does not move work item for non-implementation agents', async () => {
-				await manager.handleSuccess('work-item-1', 'splitting');
+			it('does not move work item when moveOnSuccess is not set', async () => {
+				await manager.handleSuccess('work-item-1', {});
 
 				expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 			});
 
-			it('does not call linkPR for non-implementation agents even with prUrl', async () => {
-				await manager.handleSuccess('work-item-1', 'splitting', 'https://github.com/pr/123');
+			it('does not call linkPR when linkPR hook is not set even with prUrl', async () => {
+				await manager.handleSuccess('work-item-1', {}, 'https://github.com/pr/123');
 
 				expect(mockProvider.linkPR).not.toHaveBeenCalled();
 			});
@@ -480,7 +480,7 @@ describe('pm/lifecycle', () => {
 
 				await manager.handleSuccess(
 					'work-item-1',
-					'implementation',
+					{ linkPR: true },
 					'https://github.com/owner/repo/pull/123',
 				);
 
@@ -500,7 +500,7 @@ describe('pm/lifecycle', () => {
 
 				await manager.handleSuccess(
 					'work-item-1',
-					'implementation',
+					{ linkPR: true },
 					'https://github.com/pr/123',
 					'comment-abc',
 				);
@@ -520,7 +520,7 @@ describe('pm/lifecycle', () => {
 
 				await manager.handleSuccess(
 					'work-item-1',
-					'implementation',
+					{ linkPR: true },
 					'https://github.com/pr/123',
 					'comment-abc',
 				);

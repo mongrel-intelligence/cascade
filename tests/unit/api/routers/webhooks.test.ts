@@ -1,15 +1,30 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import {
+	createCallerFor,
+	expectTRPCError,
+	setupOwnershipCheckMock,
+} from '../../../helpers/trpcTestHarness.js';
 
 // --- Mock dependencies ---
 
-const mockFindProjectByIdFromDb = vi.fn();
-const mockGetAllProjectCredentials = vi.fn();
+const {
+	mockFindProjectByIdFromDb,
+	mockGetAllProjectCredentials,
+	mockListWebhooks,
+	mockCreateWebhook,
+	mockDeleteWebhook,
+	mockFetch,
+} = vi.hoisted(() => ({
+	mockFindProjectByIdFromDb: vi.fn(),
+	mockGetAllProjectCredentials: vi.fn(),
+	mockListWebhooks: vi.fn(),
+	mockCreateWebhook: vi.fn(),
+	mockDeleteWebhook: vi.fn(),
+	mockFetch: vi.fn(),
+}));
 
-const mockDbSelect = vi.fn();
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
+const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({
@@ -22,11 +37,11 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 }));
 
 vi.mock('../../../../src/db/repositories/configRepository.js', () => ({
-	findProjectByIdFromDb: (...args: unknown[]) => mockFindProjectByIdFromDb(...args),
+	findProjectByIdFromDb: mockFindProjectByIdFromDb,
 }));
 
 vi.mock('../../../../src/config/provider.js', () => ({
-	getAllProjectCredentials: (...args: unknown[]) => mockGetAllProjectCredentials(...args),
+	getAllProjectCredentials: mockGetAllProjectCredentials,
 }));
 
 vi.mock('../../../../src/utils/repo.js', () => ({
@@ -37,14 +52,9 @@ vi.mock('../../../../src/utils/repo.js', () => ({
 }));
 
 // Mock global fetch for Trello API calls
-const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 // Mock Octokit for GitHub API calls
-const mockListWebhooks = vi.fn();
-const mockCreateWebhook = vi.fn();
-const mockDeleteWebhook = vi.fn();
-
 vi.mock('@octokit/rest', () => ({
 	Octokit: vi.fn(() => ({
 		repos: {
@@ -57,9 +67,7 @@ vi.mock('@octokit/rest', () => ({
 
 import { webhooksRouter } from '../../../../src/api/routers/webhooks.js';
 
-function createCaller(ctx: TRPCContext) {
-	return webhooksRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(webhooksRouter);
 
 const mockUser = createMockSuperAdmin();
 
@@ -201,17 +209,13 @@ describe('webhooksRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.list({ projectId: 'my-project' }), 'UNAUTHORIZED');
 		});
 
 		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
 			const adminUser = createMockUser({ role: 'admin' });
 			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
-			await expect(caller.list({ projectId: 'my-project' })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
+			await expectTRPCError(caller.list({ projectId: 'my-project' }), 'FORBIDDEN');
 		});
 
 		it('does not use legacy GITHUB_TOKEN org default for github operations', async () => {

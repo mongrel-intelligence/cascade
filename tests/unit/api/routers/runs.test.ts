@@ -1,36 +1,63 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import {
+	createCallerFor,
+	expectTRPCError,
+	setupOwnershipCheckMock,
+} from '../../../helpers/trpcTestHarness.js';
 
 // Mock repository functions
-const mockListRuns = vi.fn();
-const mockGetRunById = vi.fn();
-const mockGetRunLogs = vi.fn();
-const mockListLlmCallsMeta = vi.fn();
-const mockGetLlmCallByNumber = vi.fn();
-const mockGetDebugAnalysisByRunId = vi.fn();
-const mockDeleteDebugAnalysisByRunId = vi.fn();
-const mockHasActiveRunForWorkItem = vi.fn().mockResolvedValue(false);
-const mockCancelRunById = vi.fn().mockResolvedValue(true);
+const {
+	mockListRuns,
+	mockGetRunById,
+	mockGetRunLogs,
+	mockListLlmCallsMeta,
+	mockGetLlmCallByNumber,
+	mockGetDebugAnalysisByRunId,
+	mockDeleteDebugAnalysisByRunId,
+	mockHasActiveRunForWorkItem,
+	mockCancelRunById,
+	mockIsAnalysisRunning,
+	mockTriggerDebugAnalysis,
+	mockTriggerManualRun,
+	mockTriggerRetryRun,
+	mockLoadProjectConfigById,
+	mockPublishCancelCommand,
+	mockIsAgentEnabledForProject,
+} = vi.hoisted(() => ({
+	mockListRuns: vi.fn(),
+	mockGetRunById: vi.fn(),
+	mockGetRunLogs: vi.fn(),
+	mockListLlmCallsMeta: vi.fn(),
+	mockGetLlmCallByNumber: vi.fn(),
+	mockGetDebugAnalysisByRunId: vi.fn(),
+	mockDeleteDebugAnalysisByRunId: vi.fn(),
+	mockHasActiveRunForWorkItem: vi.fn().mockResolvedValue(false),
+	mockCancelRunById: vi.fn().mockResolvedValue(true),
+	mockIsAnalysisRunning: vi.fn(),
+	mockTriggerDebugAnalysis: vi.fn(),
+	mockTriggerManualRun: vi.fn(),
+	mockTriggerRetryRun: vi.fn(),
+	mockLoadProjectConfigById: vi.fn(),
+	mockPublishCancelCommand: vi.fn().mockResolvedValue(undefined),
+	mockIsAgentEnabledForProject: vi.fn().mockResolvedValue(true),
+}));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	DEFAULT_STALE_RUN_THRESHOLD_MS: 2 * 60 * 60 * 1000,
-	listRuns: (...args: unknown[]) => mockListRuns(...args),
-	getRunById: (...args: unknown[]) => mockGetRunById(...args),
-	getRunLogs: (...args: unknown[]) => mockGetRunLogs(...args),
-	listLlmCallsMeta: (...args: unknown[]) => mockListLlmCallsMeta(...args),
-	getLlmCallByNumber: (...args: unknown[]) => mockGetLlmCallByNumber(...args),
-	getDebugAnalysisByRunId: (...args: unknown[]) => mockGetDebugAnalysisByRunId(...args),
-	deleteDebugAnalysisByRunId: (...args: unknown[]) => mockDeleteDebugAnalysisByRunId(...args),
-	hasActiveRunForWorkItem: (...args: unknown[]) => mockHasActiveRunForWorkItem(...args),
-	cancelRunById: (...args: unknown[]) => mockCancelRunById(...args),
+	listRuns: mockListRuns,
+	getRunById: mockGetRunById,
+	getRunLogs: mockGetRunLogs,
+	listLlmCallsMeta: mockListLlmCallsMeta,
+	getLlmCallByNumber: mockGetLlmCallByNumber,
+	getDebugAnalysisByRunId: mockGetDebugAnalysisByRunId,
+	deleteDebugAnalysisByRunId: mockDeleteDebugAnalysisByRunId,
+	hasActiveRunForWorkItem: mockHasActiveRunForWorkItem,
+	cancelRunById: mockCancelRunById,
 }));
 
 // Mock getDb for the inline org-access check in getById
-const mockDbSelect = vi.fn();
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
+const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({
@@ -43,29 +70,24 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 }));
 
 // Mock debug-status tracker
-const mockIsAnalysisRunning = vi.fn();
 vi.mock('../../../../src/triggers/shared/debug-status.js', () => ({
-	isAnalysisRunning: (...args: unknown[]) => mockIsAnalysisRunning(...args),
+	isAnalysisRunning: mockIsAnalysisRunning,
 }));
 
 // Mock triggerDebugAnalysis (fire-and-forget)
-const mockTriggerDebugAnalysis = vi.fn();
 vi.mock('../../../../src/triggers/shared/debug-runner.js', () => ({
-	triggerDebugAnalysis: (...args: unknown[]) => mockTriggerDebugAnalysis(...args),
+	triggerDebugAnalysis: mockTriggerDebugAnalysis,
 }));
 
 // Mock triggerManualRun and triggerRetryRun (fire-and-forget)
-const mockTriggerManualRun = vi.fn();
-const mockTriggerRetryRun = vi.fn();
 vi.mock('../../../../src/triggers/shared/manual-runner.js', () => ({
-	triggerManualRun: (...args: unknown[]) => mockTriggerManualRun(...args),
-	triggerRetryRun: (...args: unknown[]) => mockTriggerRetryRun(...args),
+	triggerManualRun: mockTriggerManualRun,
+	triggerRetryRun: mockTriggerRetryRun,
 }));
 
 // Mock config provider
-const mockLoadProjectConfigById = vi.fn();
 vi.mock('../../../../src/config/provider.js', () => ({
-	loadProjectConfigById: (...args: unknown[]) => mockLoadProjectConfigById(...args),
+	loadProjectConfigById: mockLoadProjectConfigById,
 }));
 
 // Mock logger
@@ -74,22 +96,18 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 // Mock publishCancelCommand (fire-and-forget)
-const mockPublishCancelCommand = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../../../src/queue/cancel.js', () => ({
-	publishCancelCommand: (...args: unknown[]) => mockPublishCancelCommand(...args),
+	publishCancelCommand: mockPublishCancelCommand,
 }));
 
 // Mock isAgentEnabledForProject — default: agent is enabled
-const mockIsAgentEnabledForProject = vi.fn().mockResolvedValue(true);
 vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
-	isAgentEnabledForProject: (...args: unknown[]) => mockIsAgentEnabledForProject(...args),
+	isAgentEnabledForProject: mockIsAgentEnabledForProject,
 }));
 
 import { runsRouter } from '../../../../src/api/routers/runs.js';
 
-function createCaller(ctx: TRPCContext) {
-	return runsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(runsRouter);
 
 const mockUser = createMockUser();
 
@@ -176,7 +194,7 @@ describe('runsRouter', () => {
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list({})).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expectTRPCError(caller.list({}), 'UNAUTHORIZED');
 		});
 	});
 
@@ -207,7 +225,7 @@ describe('runsRouter', () => {
 
 		it('throws FORBIDDEN when not superadmin', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
-			await expect(caller.listAll({})).rejects.toMatchObject({ code: 'FORBIDDEN' });
+			await expectTRPCError(caller.listAll({}), 'FORBIDDEN');
 		});
 	});
 
@@ -357,19 +375,22 @@ describe('runsRouter', () => {
 	});
 
 	describe('listLlmCalls', () => {
-		it('returns LLM call metadata list', async () => {
+		it('returns LLM call metadata list with engine and enriched calls', async () => {
 			const mockMeta = [
-				{ callNumber: 1, inputTokens: 100 },
-				{ callNumber: 2, inputTokens: 200 },
+				{ callNumber: 1, inputTokens: 100, response: null },
+				{ callNumber: 2, inputTokens: 200, response: null },
 			];
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'claude-code' });
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result).toEqual(mockMeta);
+			expect(result.engine).toBe('claude-code');
+			expect(result.calls).toHaveLength(2);
+			expect(result.calls[0]).toMatchObject({ callNumber: 1, inputTokens: 100 });
+			expect(result.calls[1]).toMatchObject({ callNumber: 2, inputTokens: 200 });
 		});
 
 		it('includes model and createdAt in returned metadata', async () => {
@@ -381,19 +402,42 @@ describe('runsRouter', () => {
 					outputTokens: 50,
 					model: 'claude-sonnet-4-5',
 					createdAt,
+					response: null,
 				},
 			];
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'llmist' });
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 			mockListLlmCallsMeta.mockResolvedValue(mockMeta);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result[0]).toMatchObject({
+			expect(result.calls[0]).toMatchObject({
 				model: 'claude-sonnet-4-5',
 				createdAt,
 			});
+		});
+
+		it('extracts toolCalls and textPreview from a Claude Code response payload', async () => {
+			const claudeCodeResponse = JSON.stringify([
+				{ type: 'text', text: 'Let me read the file.' },
+				{ type: 'tool_use', name: 'Read', input: { file_path: '/src/index.ts' } },
+				{ type: 'tool_use', name: 'Read', input: { file_path: '/src/utils.ts' } },
+				{ type: 'tool_use', name: 'Bash', input: { command: 'npm test' } },
+			]);
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'claude-code' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1, response: claudeCodeResponse }]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.listLlmCalls({ runId: RUN_UUID });
+
+			expect(result.calls[0].toolCalls).toEqual([
+				{ name: 'Read', inputSummary: '/src/index.ts' },
+				{ name: 'Read', inputSummary: '/src/utils.ts' },
+				{ name: 'Bash', inputSummary: 'npm test' },
+			]);
+			expect(result.calls[0].textPreview).toBe('Let me read the file.');
 		});
 
 		it('throws NOT_FOUND when run does not exist', async () => {
@@ -416,14 +460,15 @@ describe('runsRouter', () => {
 		});
 
 		it('allows superadmin to list LLM calls from any org', async () => {
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
-			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1 }]);
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1', engine: 'codex' });
+			mockListLlmCallsMeta.mockResolvedValue([{ callNumber: 1, response: null }]);
 
 			const superAdmin = createMockSuperAdmin();
 			const caller = createCaller({ user: superAdmin, effectiveOrgId: 'other-org' });
 			const result = await caller.listLlmCalls({ runId: RUN_UUID });
 
-			expect(result).toEqual([{ callNumber: 1 }]);
+			expect(result.engine).toBe('codex');
+			expect(result.calls[0]).toMatchObject({ callNumber: 1 });
 			expect(mockDbSelect).not.toHaveBeenCalled();
 		});
 	});
@@ -873,9 +918,10 @@ describe('runsRouter', () => {
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.trigger({ projectId: 'p1', agentType: 'implementation' }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 
 		it('throws CONFLICT when work item has an active run', async () => {

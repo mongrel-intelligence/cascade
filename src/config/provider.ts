@@ -15,7 +15,7 @@ import {
 } from '../db/repositories/credentialsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
-import { PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
+import { PROVIDER_CATEGORY, PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
 
 export async function loadConfig(): Promise<CascadeConfig> {
 	const cached = configCache.getConfig();
@@ -87,28 +87,87 @@ export async function loadProjectConfigById(id: string): Promise<ProjectWithConf
 }
 
 // ============================================================================
-// Internal: 3-step env/worker/DB resolution helper
+// CredentialResolver interface and implementations
 // ============================================================================
 
 /**
- * Resolve a credential value using the standard 3-step pattern:
- * 1. Check process.env (populated at worker startup from router-supplied credentials)
- * 2. If in worker context (CASCADE_CREDENTIAL_KEYS set), credential is absent → return notFoundValue
- * 3. Otherwise resolve from DB via the provided async lookup
+ * Abstraction over credential resolution. Allows tests to inject a mock
+ * resolver instead of manipulating process.env or the DB.
  */
-async function resolveFromEnvOrDb<T>(
-	envKey: string | undefined,
-	notFoundValue: T,
-	dbLookup: () => Promise<T>,
-): Promise<T> {
-	// Worker context: credentials are pre-loaded into env vars by the router.
-	// Only use env vars here; never fall through to the DB.
-	if (process.env.CASCADE_CREDENTIAL_KEYS) {
-		return envKey && process.env[envKey] ? (process.env[envKey] as T) : notFoundValue;
+export interface CredentialResolver {
+	/**
+	 * Resolve a single credential by env var key for a given project.
+	 * Returns null if not found.
+	 */
+	resolve(projectId: string, key: string): Promise<string | null>;
+
+	/**
+	 * Resolve all credentials for a given project as a flat env-var-key → value map.
+	 */
+	resolveAll(projectId: string): Promise<Record<string, string>>;
+}
+
+/**
+ * Production resolver: reads from the project_credentials DB table.
+ */
+export class DbCredentialResolver implements CredentialResolver {
+	async resolve(projectId: string, key: string): Promise<string | null> {
+		return resolveProjectCredential(projectId, key);
 	}
 
-	// All other contexts (router, dashboard, tests): always resolve from DB.
-	return dbLookup();
+	async resolveAll(projectId: string): Promise<Record<string, string>> {
+		return resolveAllProjectCredentials(projectId);
+	}
+}
+
+/**
+ * Worker-context resolver: reads pre-loaded credentials from process.env.
+ * Credentials are populated at worker startup from router-supplied env vars listed
+ * in CASCADE_CREDENTIAL_KEYS. Never falls through to the DB.
+ */
+export class EnvCredentialResolver implements CredentialResolver {
+	async resolve(_projectId: string, key: string): Promise<string | null> {
+		return process.env[key] ?? null;
+	}
+
+	async resolveAll(_projectId: string): Promise<Record<string, string>> {
+		const keyList = process.env.CASCADE_CREDENTIAL_KEYS ?? '';
+		const result: Record<string, string> = {};
+		for (const key of keyList.split(',')) {
+			if (key && process.env[key]) {
+				result[key] = process.env[key];
+			}
+		}
+		return result;
+	}
+}
+
+// Module-level resolver instance — auto-selected based on context, injectable for tests.
+let _resolver: CredentialResolver | null = null;
+
+/**
+ * Get the active CredentialResolver instance.
+ * Auto-selects based on CASCADE_CREDENTIAL_KEYS presence:
+ *   - Set → EnvCredentialResolver (worker context)
+ *   - Unset → DbCredentialResolver (router/dashboard/test context)
+ *
+ * Call setCredentialResolver() before this to override for tests.
+ */
+function getResolver(): CredentialResolver {
+	if (_resolver) return _resolver;
+	return process.env.CASCADE_CREDENTIAL_KEYS
+		? new EnvCredentialResolver()
+		: new DbCredentialResolver();
+}
+
+/**
+ * Override the active CredentialResolver. Use in tests to inject a mock
+ * resolver instead of manipulating process.env.
+ *
+ * Pass null to revert to auto-selection.
+ */
+export function setCredentialResolver(resolver: CredentialResolver | null): void {
+	_resolver = resolver;
 }
 
 // ============================================================================
@@ -117,7 +176,7 @@ async function resolveFromEnvOrDb<T>(
 
 /**
  * Resolve an integration credential for a project by category and role.
- * Resolves via project_credentials using the envVarKey mapping.
+ * Resolves via the active CredentialResolver using the envVarKey mapping.
  * Throws if the credential is not found.
  */
 export async function getIntegrationCredential(
@@ -126,10 +185,12 @@ export async function getIntegrationCredential(
 	role: string,
 ): Promise<string> {
 	const envKey = roleToEnvVarKey(category, role);
-	const value = await resolveFromEnvOrDb<string | null>(envKey, null, () => {
-		if (!envKey) return Promise.resolve(null);
-		return resolveProjectCredential(projectId, envKey);
-	});
+	if (!envKey) {
+		throw new Error(
+			`Integration credential '${category}/${role}' not found for project '${projectId}'`,
+		);
+	}
+	const value = await getResolver().resolve(projectId, envKey);
 	if (value) return value;
 
 	throw new Error(
@@ -139,7 +200,7 @@ export async function getIntegrationCredential(
 
 /**
  * Resolve an integration credential for a project, returning null if not found.
- * Resolves via project_credentials using the envVarKey mapping.
+ * Resolves via the active CredentialResolver using the envVarKey mapping.
  */
 export async function getIntegrationCredentialOrNull(
 	projectId: string,
@@ -147,10 +208,8 @@ export async function getIntegrationCredentialOrNull(
 	role: string,
 ): Promise<string | null> {
 	const envKey = roleToEnvVarKey(category, role);
-	return resolveFromEnvOrDb<string | null>(envKey, null, () => {
-		if (!envKey) return Promise.resolve(null);
-		return resolveProjectCredential(projectId, envKey);
-	});
+	if (!envKey) return null;
+	return getResolver().resolve(projectId, envKey);
 }
 
 // ============================================================================
@@ -159,15 +218,13 @@ export async function getIntegrationCredentialOrNull(
 
 /**
  * Resolve a non-integration credential by env var key.
- * Reads from project_credentials table — no org_id lookup needed.
+ * Reads from the active CredentialResolver — no org_id lookup needed.
  */
 export async function getOrgCredential(
 	projectId: string,
 	envVarKey: string,
 ): Promise<string | null> {
-	return resolveFromEnvOrDb<string | null>(envVarKey, null, () =>
-		resolveProjectCredential(projectId, envVarKey),
-	);
+	return getResolver().resolve(projectId, envVarKey);
 }
 
 // ============================================================================
@@ -179,20 +236,7 @@ export async function getOrgCredential(
  * Single query against project_credentials filtered by project_id.
  */
 export async function getAllProjectCredentials(projectId: string): Promise<Record<string, string>> {
-	// Worker context: reconstruct from individual env vars set by the router
-	const keyList = process.env.CASCADE_CREDENTIAL_KEYS;
-	if (keyList) {
-		const result: Record<string, string> = {};
-		for (const key of keyList.split(',')) {
-			if (key && process.env[key]) {
-				result[key] = process.env[key];
-			}
-		}
-		return result;
-	}
-
-	// Router/dashboard context: single query against project_credentials
-	return resolveAllProjectCredentials(projectId);
+	return getResolver().resolveAll(projectId);
 }
 
 export function invalidateConfigCache(): void {
@@ -205,20 +249,13 @@ export function invalidateConfigCache(): void {
 
 /**
  * Map a category+role pair to the corresponding env var key.
- * Used for process.env lookups in worker environments.
+ * Used for env-var and DB lookups in resolver implementations.
  */
 function roleToEnvVarKey(category: string, role: string): string | undefined {
 	// Look through all providers in the category to find the role
 	for (const [provider, roles] of Object.entries(PROVIDER_CREDENTIAL_ROLES)) {
-		let providerCategory: string;
-		if (provider === 'trello' || provider === 'jira') {
-			providerCategory = 'pm';
-		} else if (provider === 'github') {
-			providerCategory = 'scm';
-		} else {
-			continue;
-		}
-		if (providerCategory !== category) continue;
+		const providerCategory = PROVIDER_CATEGORY[provider as keyof typeof PROVIDER_CATEGORY];
+		if (!providerCategory || providerCategory !== category) continue;
 		const roleDef = roles.find((r) => r.role === role);
 		if (roleDef) return roleDef.envVarKey;
 	}

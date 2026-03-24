@@ -1,51 +1,65 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AgentDefinition } from '../../../../src/agents/definitions/schema.js';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockGetKnownAgentTypes = vi.fn<() => string[]>();
-const mockIsBuiltinAgentType = vi.fn<(agentType: string) => boolean>();
-const mockInvalidateDefinitionCache = vi.fn();
-const mockLoadAgentDefinition = vi.fn<(agentType: string) => AgentDefinition>();
-const mockResolveAgentDefinition = vi.fn<(agentType: string) => Promise<AgentDefinition>>();
-const mockResolveKnownAgentTypes = vi.fn<() => Promise<string[]>>();
+const {
+	mockGetKnownAgentTypes,
+	mockIsBuiltinAgentType,
+	mockInvalidateDefinitionCache,
+	mockLoadAgentDefinition,
+	mockResolveAgentDefinition,
+	mockResolveKnownAgentTypes,
+	mockListAgentDefinitions,
+	mockGetAgentDefinition,
+	mockUpsertAgentDefinition,
+	mockDeleteAgentDefinition,
+	mockGetRawTemplate,
+	mockValidateTemplate,
+	mockLoadPartials,
+} = vi.hoisted(() => ({
+	mockGetKnownAgentTypes: vi.fn<() => string[]>(),
+	mockIsBuiltinAgentType: vi.fn<(agentType: string) => boolean>(),
+	mockInvalidateDefinitionCache: vi.fn(),
+	mockLoadAgentDefinition: vi.fn<(agentType: string) => AgentDefinition>(),
+	mockResolveAgentDefinition: vi.fn<(agentType: string) => Promise<AgentDefinition>>(),
+	mockResolveKnownAgentTypes: vi.fn<() => Promise<string[]>>(),
+	mockListAgentDefinitions: vi.fn(),
+	mockGetAgentDefinition: vi.fn(),
+	mockUpsertAgentDefinition: vi.fn(),
+	mockDeleteAgentDefinition: vi.fn(),
+	mockGetRawTemplate: vi.fn<(agentType: string) => string>(),
+	mockValidateTemplate: vi.fn(),
+	mockLoadPartials: vi.fn(),
+}));
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
-	getKnownAgentTypes: (...args: unknown[]) => mockGetKnownAgentTypes(...(args as [])),
-	isBuiltinAgentType: (...args: unknown[]) => mockIsBuiltinAgentType(...(args as [string])),
-	invalidateDefinitionCache: (...args: unknown[]) => mockInvalidateDefinitionCache(...(args as [])),
-	loadAgentDefinition: (...args: unknown[]) => mockLoadAgentDefinition(...(args as [string])),
-	resolveAgentDefinition: (...args: unknown[]) => mockResolveAgentDefinition(...(args as [string])),
-	resolveKnownAgentTypes: (...args: unknown[]) => mockResolveKnownAgentTypes(...(args as [])),
+	getKnownAgentTypes: mockGetKnownAgentTypes,
+	isBuiltinAgentType: mockIsBuiltinAgentType,
+	invalidateDefinitionCache: mockInvalidateDefinitionCache,
+	loadAgentDefinition: mockLoadAgentDefinition,
+	resolveAgentDefinition: mockResolveAgentDefinition,
+	resolveKnownAgentTypes: mockResolveKnownAgentTypes,
 }));
-
-const mockListAgentDefinitions = vi.fn();
-const mockGetAgentDefinition = vi.fn();
-const mockUpsertAgentDefinition = vi.fn();
-const mockDeleteAgentDefinition = vi.fn();
 
 vi.mock('../../../../src/db/repositories/agentDefinitionsRepository.js', () => ({
-	listAgentDefinitions: (...args: unknown[]) => mockListAgentDefinitions(...args),
-	getAgentDefinition: (...args: unknown[]) => mockGetAgentDefinition(...args),
-	upsertAgentDefinition: (...args: unknown[]) => mockUpsertAgentDefinition(...args),
-	deleteAgentDefinition: (...args: unknown[]) => mockDeleteAgentDefinition(...args),
+	listAgentDefinitions: mockListAgentDefinitions,
+	getAgentDefinition: mockGetAgentDefinition,
+	upsertAgentDefinition: mockUpsertAgentDefinition,
+	deleteAgentDefinition: mockDeleteAgentDefinition,
 }));
 
-const mockGetRawTemplate = vi.fn<(agentType: string) => string>();
-const mockValidateTemplate = vi.fn();
-const mockLoadPartials = vi.fn();
-
 vi.mock('../../../../src/agents/prompts/index.js', () => ({
-	getRawTemplate: (...args: unknown[]) => mockGetRawTemplate(...(args as [string])),
-	validateTemplate: (...args: unknown[]) => mockValidateTemplate(...args),
+	getRawTemplate: mockGetRawTemplate,
+	validateTemplate: mockValidateTemplate,
 }));
 
 vi.mock('../../../../src/db/repositories/partialsRepository.js', () => ({
-	loadPartials: (...args: unknown[]) => mockLoadPartials(...args),
+	loadPartials: mockLoadPartials,
 }));
 
 // Re-export schema values (these are pure constants, not functions to mock)
@@ -62,9 +76,7 @@ import { agentDefinitionsRouter } from '../../../../src/api/routers/agentDefinit
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createCaller(ctx: TRPCContext) {
-	return agentDefinitionsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(agentDefinitionsRouter);
 
 const mockUser = createMockUser();
 const mockSuperAdmin = createMockSuperAdmin();
@@ -182,7 +194,7 @@ describe('agentDefinitionsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expectTRPCError(caller.list(), 'UNAUTHORIZED');
 		});
 	});
 
@@ -225,9 +237,7 @@ describe('agentDefinitionsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.get({ agentType: 'implementation' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.get({ agentType: 'implementation' }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -280,9 +290,7 @@ describe('agentDefinitionsRouter', () => {
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const def = createMockDefinition();
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.create({ agentType: 'new', definition: def })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.create({ agentType: 'new', definition: def }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -328,9 +336,10 @@ describe('agentDefinitionsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.update({ agentType: 'implementation', patch: { hint: 'x' } }),
-			).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+				'UNAUTHORIZED',
+			);
 		});
 	});
 
@@ -378,9 +387,7 @@ describe('agentDefinitionsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.delete({ agentType: 'custom' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.delete({ agentType: 'custom' }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -419,9 +426,7 @@ describe('agentDefinitionsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.reset({ agentType: 'implementation' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.reset({ agentType: 'implementation' }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -655,9 +660,7 @@ describe('agentDefinitionsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.resetPrompt({ agentType: 'implementation' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.resetPrompt({ agentType: 'implementation' }), 'UNAUTHORIZED');
 		});
 
 		it('invalidates cache after reset', async () => {

@@ -10,11 +10,14 @@ export type {
 	ProgressReporter,
 	ToolManifest,
 } from './types.js';
+export { NativeToolEngine } from './shared/index.js';
 
 export {
 	getEngine,
 	getEngineCatalog,
 	getRegisteredEngines,
+	isNativeToolEngine,
+	isNativeToolEngineDefinition,
 	registerEngine,
 } from './registry.js';
 export { registerBuiltInEngines } from './bootstrap.js';

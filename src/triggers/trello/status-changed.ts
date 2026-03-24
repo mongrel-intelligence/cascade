@@ -11,7 +11,7 @@ import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
 interface StatusChangedConfig {
 	name: string;
 	description: string;
-	listKey: 'splitting' | 'planning' | 'todo' | 'backlog';
+	listKey: 'splitting' | 'planning' | 'todo' | 'backlog' | 'merged';
 	agentType: 'splitting' | 'planning' | 'implementation' | 'backlog-manager';
 }
 
@@ -113,5 +113,13 @@ export const TrelloStatusChangedBacklogTrigger = createStatusChangedTrigger({
 	name: 'trello-status-changed-backlog',
 	description: 'Triggers backlog-manager agent when card moved to backlog list',
 	listKey: 'backlog',
+	agentType: 'backlog-manager',
+});
+
+export const TrelloStatusChangedMergedTrigger = createStatusChangedTrigger({
+	name: 'trello-status-changed-merged',
+	description:
+		'Re-triggers backlog-manager when any card is moved to MERGED, so manually resolved dependencies unblock the backlog',
+	listKey: 'merged',
 	agentType: 'backlog-manager',
 });

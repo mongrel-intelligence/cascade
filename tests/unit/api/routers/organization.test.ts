@@ -1,23 +1,24 @@
-import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
-const mockGetOrganization = vi.fn();
-const mockUpdateOrganization = vi.fn();
-const mockListAllOrganizations = vi.fn();
+const { mockGetOrganization, mockUpdateOrganization, mockListAllOrganizations } = vi.hoisted(
+	() => ({
+		mockGetOrganization: vi.fn(),
+		mockUpdateOrganization: vi.fn(),
+		mockListAllOrganizations: vi.fn(),
+	}),
+);
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
-	getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
-	updateOrganization: (...args: unknown[]) => mockUpdateOrganization(...args),
-	listAllOrganizations: (...args: unknown[]) => mockListAllOrganizations(...args),
+	getOrganization: mockGetOrganization,
+	updateOrganization: mockUpdateOrganization,
+	listAllOrganizations: mockListAllOrganizations,
 }));
 
 import { organizationRouter } from '../../../../src/api/routers/organization.js';
 
-function createCaller(ctx: TRPCContext) {
-	return organizationRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(organizationRouter);
 
 const mockUser = createMockUser();
 const mockSuperAdmin = createMockSuperAdmin();
@@ -45,8 +46,7 @@ describe('organizationRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.get()).rejects.toThrow(TRPCError);
-			await expect(caller.get()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expectTRPCError(caller.get(), 'UNAUTHORIZED');
 		});
 	});
 
@@ -68,11 +68,7 @@ describe('organizationRouter', () => {
 		it('throws FORBIDDEN when user is a member (not admin)', async () => {
 			const memberUser = createMockUser({ role: 'member' });
 			const caller = createCaller({ user: memberUser, effectiveOrgId: memberUser.orgId });
-
-			await expect(caller.update({ name: 'New' })).rejects.toThrow(TRPCError);
-			await expect(caller.update({ name: 'New' })).rejects.toMatchObject({
-				code: 'FORBIDDEN',
-			});
+			await expectTRPCError(caller.update({ name: 'New' }), 'FORBIDDEN');
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
@@ -101,9 +97,7 @@ describe('organizationRouter', () => {
 		it('throws FORBIDDEN when user is admin (not superadmin)', async () => {
 			const adminUser = createMockUser({ role: 'admin' });
 			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
-
-			await expect(caller.list()).rejects.toThrow(TRPCError);
-			await expect(caller.list()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+			await expectTRPCError(caller.list(), 'FORBIDDEN');
 		});
 
 		it('throws FORBIDDEN when user is not admin', async () => {
@@ -115,9 +109,7 @@ describe('organizationRouter', () => {
 				role: 'member',
 			};
 			const caller = createCaller({ user: memberUser, effectiveOrgId: memberUser.orgId });
-
-			await expect(caller.list()).rejects.toThrow(TRPCError);
-			await expect(caller.list()).rejects.toMatchObject({ code: 'FORBIDDEN' });
+			await expectTRPCError(caller.list(), 'FORBIDDEN');
 		});
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {

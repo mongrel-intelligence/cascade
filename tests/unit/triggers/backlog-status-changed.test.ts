@@ -1,55 +1,33 @@
 import { describe, expect, it, vi } from 'vitest';
+import {
+	mockAcknowledgmentsModule,
+	mockConfigProvider,
+	mockConfigResolverModule,
+	mockJiraClientModule,
+	mockLogger,
+	mockReactionsModule,
+	mockTrelloClientModule,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		error: vi.fn(),
-		debug: vi.fn(),
-	},
-}));
+vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
-vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
+vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
-vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredential: vi.fn(),
-	loadProjectConfigByBoardId: vi.fn(),
-	loadProjectConfigByJiraProjectKey: vi.fn(),
-	findProjectById: vi.fn(),
-}));
-vi.mock('../../../src/trello/client.js', () => ({
-	withTrelloCredentials: vi.fn(),
-	trelloClient: { getCard: vi.fn() },
-}));
-vi.mock('../../../src/jira/client.js', () => ({
-	withJiraCredentials: vi.fn(),
-	jiraClient: {},
-}));
-vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn(),
-	deleteTrelloAck: vi.fn(),
-	resolveTrelloBotMemberId: vi.fn(),
-	postJiraAck: vi.fn(),
-	deleteJiraAck: vi.fn(),
-	resolveJiraBotAccountId: vi.fn(),
-}));
-vi.mock('../../../src/router/reactions.js', () => ({
-	sendAcknowledgeReaction: vi.fn(),
-}));
+vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
+vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
+vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
 import { TrelloStatusChangedBacklogTrigger } from '../../../src/triggers/trello/status-changed.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createMockProject, createTrelloActionPayload } from '../../helpers/factories.js';
 
 describe('TrelloStatusChangedBacklogTrigger', () => {
 	const trigger = TrelloStatusChangedBacklogTrigger;
@@ -71,8 +49,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -84,7 +61,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						listAfter: { id: 'backlog-list-id', name: 'Backlog' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(true);
@@ -94,8 +71,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -107,7 +83,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						listAfter: { id: 'backlog-list-id', name: 'Backlog' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(false);
@@ -117,8 +93,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -129,7 +104,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						list: { id: 'backlog-list-id', name: 'Backlog' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(true);
@@ -139,8 +114,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -152,7 +126,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						listAfter: { id: 'todo-list-id', name: 'TODO' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(false);
@@ -163,8 +137,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		const ctx: TriggerContext = {
 			project: projectWithoutBacklog,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -176,7 +149,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						listAfter: { id: 'backlog-list-id', name: 'Backlog' },
 					},
 				},
-			},
+			}),
 		};
 
 		// backlog list not configured, so targetListId is undefined — won't match
@@ -197,8 +170,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -210,7 +182,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						listAfter: { id: 'backlog-list-id', name: 'Backlog' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);
@@ -218,14 +190,14 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 		expect(result?.agentType).toBe('backlog-manager');
 		expect(result?.workItemId).toBe('card789');
 		expect(result?.agentInput.workItemId).toBe('card789');
+		expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
 	});
 
 	it('returns null when card ID is missing from payload', async () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -237,7 +209,7 @@ describe('TrelloStatusChangedBacklogTrigger', () => {
 						listAfter: { id: 'backlog-list-id', name: 'Backlog' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);

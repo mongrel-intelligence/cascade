@@ -37,6 +37,11 @@ import {
 	ReadWorkItem,
 	UpdateWorkItem,
 } from '../../gadgets/pm/index.js';
+import {
+	GetAlertingEventDetail,
+	GetAlertingIssue,
+	ListAlertingEvents,
+} from '../../gadgets/sentry/index.js';
 import { Tmux } from '../../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../../gadgets/todo/index.js';
 import type { ToolManifest } from '../contracts/index.js';
@@ -124,6 +129,11 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 
 	// scm:pr
 	CreatePR,
+
+	// alerting:read
+	GetAlertingIssue,
+	GetAlertingEventDetail,
+	ListAlertingEvents,
 };
 
 // ============================================================================
@@ -345,6 +355,7 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
 	const integrationLabels: Record<IntegrationCategory, string> = {
 		pm: 'PM integration (Trello/JIRA)',
 		scm: 'SCM integration (GitHub)',
+		alerting: 'Alerting integration',
 	};
 
 	for (const [integration, gadgetNames] of byIntegration) {
@@ -370,21 +381,25 @@ export function generateUnavailableCapabilitiesNote(unavailableCaps: Capability[
  */
 export async function createIntegrationChecker(projectId: string): Promise<IntegrationChecker> {
 	// Import integration checking functions dynamically to avoid circular deps
-	const [{ hasPmIntegration }, { hasScmIntegration }] = await Promise.all([
-		import('../../pm/integration.js'),
-		import('../../github/integration.js'),
-	]);
+	const [{ hasPmIntegration }, { hasScmIntegration }, { hasAlertingIntegration }] =
+		await Promise.all([
+			import('../../pm/integration.js'),
+			import('../../github/integration.js'),
+			import('../../sentry/integration.js'),
+		]);
 
 	// Pre-fetch all integration statuses in parallel
-	const [hasPm, hasScm] = await Promise.all([
+	const [hasPm, hasScm, hasAlerting] = await Promise.all([
 		hasPmIntegration(projectId),
 		hasScmIntegration(projectId),
+		hasAlertingIntegration(projectId),
 	]);
 
 	// Return synchronous checker
 	const availableIntegrations: Record<IntegrationCategory, boolean> = {
 		pm: hasPm,
 		scm: hasScm,
+		alerting: hasAlerting,
 	};
 
 	return (category: IntegrationCategory) => availableIntegrations[category] ?? false;

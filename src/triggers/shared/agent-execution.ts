@@ -1,3 +1,5 @@
+import { getAgentProfile } from '../../agents/definitions/profiles.js';
+import type { LifecycleHooks } from '../../agents/definitions/schema.js';
 import { runAgent } from '../../agents/registry.js';
 import { createWorkItem, linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
 import { updateRunPRNumber } from '../../db/repositories/runsRepository.js';
@@ -99,6 +101,7 @@ async function runPostAgentLifecycle(
 	agentResult: AgentResult,
 	project: ProjectConfig,
 	lifecycle: PMLifecycleManager,
+	lifecycleHooks: LifecycleHooks,
 	executionConfig: AgentExecutionConfig,
 ): Promise<void> {
 	const {
@@ -129,7 +132,7 @@ async function runPostAgentLifecycle(
 	if (shouldCallHandleSuccess) {
 		await lifecycle.handleSuccess(
 			workItemId,
-			agentType,
+			lifecycleHooks,
 			agentResult.prUrl,
 			agentResult.progressCommentId,
 		);
@@ -364,6 +367,18 @@ export async function runAgentExecutionPipeline(
 	const pmConfig = resolveProjectPMConfig(project);
 	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
 
+	// Load lifecycle hooks from agent profile (best-effort — defaults to no-op on failure)
+	let lifecycleHooks: LifecycleHooks = {};
+	try {
+		const agentProfile = await getAgentProfile(agentType);
+		lifecycleHooks = agentProfile.lifecycleHooks;
+	} catch (err) {
+		logger.warn('Failed to load agent profile for lifecycle hooks, using defaults', {
+			agentType,
+			error: String(err),
+		});
+	}
+
 	// Pre-flight integration validation
 	const validation = await validateIntegrations(project.id, agentType);
 	if (!validation.valid) {
@@ -429,7 +444,7 @@ export async function runAgentExecutionPipeline(
 	}
 
 	if (workItemId && !skipPrepareForAgent) {
-		await lifecycle.prepareForAgent(workItemId, agentType);
+		await lifecycle.prepareForAgent(workItemId, lifecycleHooks);
 	}
 
 	const agentResult = await runAgent(agentType, {
@@ -459,6 +474,7 @@ export async function runAgentExecutionPipeline(
 			agentResult,
 			project,
 			lifecycle,
+			lifecycleHooks,
 			executionConfig,
 		);
 	}

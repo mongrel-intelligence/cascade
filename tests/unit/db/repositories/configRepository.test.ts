@@ -1,10 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mockDbClientModule, mockGetDb } from '../../../helpers/sharedMocks.js';
 
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
-import { getDb } from '../../../../src/db/client.js';
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
@@ -128,7 +126,7 @@ describe('configRepository', () => {
 				[], // agentConfigs (loadAgentConfigs)
 				[trelloIntegration], // projectIntegrations
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
@@ -143,7 +141,7 @@ describe('configRepository', () => {
 
 		it('loads config with JIRA integration including labels', async () => {
 			const mockDb = createSequentialMockDb([[projectRow], [], [jiraIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
@@ -171,7 +169,7 @@ describe('configRepository', () => {
 				},
 			};
 			const mockDb = createSequentialMockDb([[projectRow], [], [jiraNoLabels]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
@@ -180,7 +178,7 @@ describe('configRepository', () => {
 
 		it('uses Zod schema defaults for project fields when not set in DB', async () => {
 			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
@@ -200,7 +198,7 @@ describe('configRepository', () => {
 				[],
 				[{ ...trelloIntegration, projectId: 'proj2' }],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
@@ -215,7 +213,7 @@ describe('configRepository', () => {
 				[{ ...projectAgentConfig, projectId: 'proj2' }],
 				[{ ...trelloIntegration, projectId: 'proj2' }],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
@@ -243,7 +241,7 @@ describe('configRepository', () => {
 				[],
 				[trelloIntegration, proj2Integration],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
@@ -254,7 +252,7 @@ describe('configRepository', () => {
 
 		it('queries 3 tables via Promise.all', async () => {
 			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			await loadConfigFromDb();
 
@@ -268,7 +266,7 @@ describe('configRepository', () => {
 				[],
 				[trelloIntegration],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 
@@ -281,7 +279,7 @@ describe('configRepository', () => {
 				[projectAgentConfig], // has agentEngine: 'claude-code' for implementation
 				[trelloIntegration],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const config = await loadConfigFromDb();
 			const proj = config.projects[0];
@@ -303,7 +301,7 @@ describe('configRepository', () => {
 				[projectAgentConfig], // project agent configs
 				[trelloIntegration], // integrations
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
 
@@ -318,7 +316,7 @@ describe('configRepository', () => {
 			const mockDb = createSequentialMockDb([
 				[], // no project found
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('nonexistent');
 
@@ -331,7 +329,7 @@ describe('configRepository', () => {
 				[projectAgentConfig], // has agentEngine: 'claude-code'
 				[{ ...trelloIntegration, projectId: 'proj2' }],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj2');
 
@@ -348,7 +346,7 @@ describe('configRepository', () => {
 				[projectAgentConfig], // has agentEngine: 'claude-code'
 				[trelloIntegration],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
 
@@ -360,7 +358,7 @@ describe('configRepository', () => {
 
 		it('runs 2 sub-queries in parallel after initial project lookup', async () => {
 			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			await findProjectByIdFromDb('proj1');
 
@@ -372,7 +370,7 @@ describe('configRepository', () => {
 			const projWithBudget = { ...projectRow, workItemBudgetUsd: '10.50' };
 
 			const mockDb = createSequentialMockDb([[projWithBudget], [], [trelloIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
 
@@ -387,7 +385,7 @@ describe('configRepository', () => {
 				[],
 				[trelloIntegration], // has customFields: { cost: 'cf-cost' }
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
 
@@ -405,7 +403,7 @@ describe('configRepository', () => {
 			};
 
 			const mockDb = createSequentialMockDb([[projectRow], [], [noCustomFields]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByIdFromDb('proj1');
 
@@ -416,7 +414,7 @@ describe('configRepository', () => {
 	describe('findProjectByRepoFromDb', () => {
 		it('returns project found by repo', async () => {
 			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByRepoFromDb('owner/repo1');
 
@@ -427,7 +425,7 @@ describe('configRepository', () => {
 
 		it('returns undefined for unknown repo', async () => {
 			const mockDb = createSequentialMockDb([[]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByRepoFromDb('owner/unknown');
 
@@ -442,7 +440,7 @@ describe('configRepository', () => {
 				[],
 				[trelloIntegration],
 			]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByBoardIdFromDb('board123');
 
@@ -453,7 +451,7 @@ describe('configRepository', () => {
 
 		it('returns undefined when no project has matching board ID', async () => {
 			const mockDb = createSequentialMockDb([[]]);
-			vi.mocked(getDb).mockReturnValue(mockDb as never);
+			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByBoardIdFromDb('nonexistent-board');
 

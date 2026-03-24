@@ -9,7 +9,13 @@
  * and router/reactions.ts.
  */
 
-import { getIntegrationCredential, loadProjectConfigByBoardId } from '../../config/provider.js';
+import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
+import {
+	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
+	loadProjectConfigByBoardId,
+} from '../../config/provider.js';
+import { getIntegrationProvider } from '../../db/repositories/credentialsRepository.js';
 import {
 	deleteTrelloAck,
 	postTrelloAck,
@@ -26,6 +32,19 @@ import { TrelloPMProvider } from './adapter.js';
 
 export class TrelloIntegration implements PMIntegration {
 	readonly type = 'trello';
+	readonly category = 'pm' as const;
+
+	async hasIntegration(projectId: string): Promise<boolean> {
+		const provider = await getIntegrationProvider(projectId, 'pm');
+		if (provider !== 'trello') return false;
+
+		const roles = PROVIDER_CREDENTIAL_ROLES.trello;
+		const requiredRoles = roles.filter((r) => !r.optional);
+		const values = await Promise.all(
+			requiredRoles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+		);
+		return values.every((v) => v !== null);
+	}
 
 	createProvider(_project: ProjectConfig): PMProvider {
 		return new TrelloPMProvider();

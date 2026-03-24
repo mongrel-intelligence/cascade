@@ -62,6 +62,7 @@ function makeMockEngine(id: string, supportsAll = true): AgentEngine {
 			id,
 			label: id,
 			description: `${id} description`,
+			archetype: 'sdk',
 			capabilities: [],
 			modelSelection: { type: 'free-text' },
 			logLabel: 'Engine Log',

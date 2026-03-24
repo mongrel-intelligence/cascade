@@ -2,7 +2,9 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
 	verifyGitHubSignature,
+	verifyHmac,
 	verifyJiraSignature,
+	verifySentrySignature,
 	verifyTrelloSignature,
 } from '../../../src/webhook/signatureVerification.js';
 
@@ -186,5 +188,182 @@ describe('verifyJiraSignature', () => {
 	it('is timing-safe: the comparison does not short-circuit on length mismatch within prefix', () => {
 		// Provide a correctly-prefixed but shorter hex to exercise the length branch
 		expect(verifyJiraSignature(body, 'sha256=abc', secret)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// verifySentrySignature
+// ---------------------------------------------------------------------------
+
+describe('verifySentrySignature', () => {
+	const secret = 'my-sentry-secret';
+	const body = '{"action":"triggered","data":{"event":{"title":"Error"}}}';
+
+	function sentrySignature(b: string, s: string): string {
+		return createHmac('sha256', s).update(b, 'utf8').digest('hex');
+	}
+
+	it('returns true for a valid signature', () => {
+		const sig = sentrySignature(body, secret);
+		expect(verifySentrySignature(body, sig, secret)).toBe(true);
+	});
+
+	it('returns false for an empty body with a signature for non-empty body', () => {
+		const sig = sentrySignature(body, secret);
+		expect(verifySentrySignature('', sig, secret)).toBe(false);
+	});
+
+	it('returns true for an empty body when the signature matches the empty body', () => {
+		const sig = sentrySignature('', secret);
+		expect(verifySentrySignature('', sig, secret)).toBe(true);
+	});
+
+	it('returns false when the signature is an empty string', () => {
+		expect(verifySentrySignature(body, '', secret)).toBe(false);
+	});
+
+	it('returns false when the signature has an unexpected sha256= prefix (unlike GitHub format)', () => {
+		const withPrefix = `sha256=${sentrySignature(body, secret)}`;
+		expect(verifySentrySignature(body, withPrefix, secret)).toBe(false);
+	});
+
+	it('returns false when signed with a different secret', () => {
+		const sig = sentrySignature(body, 'wrong-secret');
+		expect(verifySentrySignature(body, sig, secret)).toBe(false);
+	});
+
+	it('returns false when the body has been tampered with', () => {
+		const sig = sentrySignature(body, secret);
+		expect(verifySentrySignature(`${body}tampered`, sig, secret)).toBe(false);
+	});
+
+	it('returns false for a completely garbage signature string', () => {
+		expect(verifySentrySignature(body, 'not-a-real-signature', secret)).toBe(false);
+	});
+
+	it('is timing-safe: the comparison does not short-circuit on length mismatch', () => {
+		expect(verifySentrySignature(body, 'abc', secret)).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// verifyHmac — generic helper (edge cases)
+// ---------------------------------------------------------------------------
+
+describe('verifyHmac', () => {
+	const secret = 'test-secret';
+	const body = 'hello world';
+
+	// Helper: compute a valid HMAC for the test body using sha256/hex/no-prefix
+	function hmacHex(data: string, s: string): string {
+		return createHmac('sha256', s).update(data, 'utf8').digest('hex');
+	}
+
+	it('returns true for a valid sha256/hex/no-prefix signature', () => {
+		const sig = hmacHex(body, secret);
+		expect(
+			verifyHmac({ algorithm: 'sha256', data: body, secret, signature: sig, encoding: 'hex' }),
+		).toBe(true);
+	});
+
+	it('returns true for a valid sha256/hex/prefix signature', () => {
+		const sig = `sha256=${hmacHex(body, secret)}`;
+		expect(
+			verifyHmac({
+				algorithm: 'sha256',
+				data: body,
+				secret,
+				signature: sig,
+				encoding: 'hex',
+				prefix: 'sha256=',
+			}),
+		).toBe(true);
+	});
+
+	it('returns false when signature is an empty string', () => {
+		expect(
+			verifyHmac({ algorithm: 'sha256', data: body, secret, signature: '', encoding: 'hex' }),
+		).toBe(false);
+	});
+
+	it('returns false when prefix is required but missing from signature', () => {
+		// Raw hex without the sha256= prefix
+		const rawHex = hmacHex(body, secret);
+		expect(
+			verifyHmac({
+				algorithm: 'sha256',
+				data: body,
+				secret,
+				signature: rawHex,
+				encoding: 'hex',
+				prefix: 'sha256=',
+			}),
+		).toBe(false);
+	});
+
+	it('returns false when prefix is wrong (sha1= instead of sha256=)', () => {
+		const wrongPrefix = `sha1=${hmacHex(body, secret)}`;
+		expect(
+			verifyHmac({
+				algorithm: 'sha256',
+				data: body,
+				secret,
+				signature: wrongPrefix,
+				encoding: 'hex',
+				prefix: 'sha256=',
+			}),
+		).toBe(false);
+	});
+
+	it('returns false when length differs (correctly-prefixed but truncated hex)', () => {
+		expect(
+			verifyHmac({
+				algorithm: 'sha256',
+				data: body,
+				secret,
+				signature: 'sha256=abc',
+				encoding: 'hex',
+				prefix: 'sha256=',
+			}),
+		).toBe(false);
+	});
+
+	it('returns false when the secret is wrong', () => {
+		const sig = hmacHex(body, 'wrong-secret');
+		expect(
+			verifyHmac({ algorithm: 'sha256', data: body, secret, signature: sig, encoding: 'hex' }),
+		).toBe(false);
+	});
+
+	it('returns false when the data has been tampered with', () => {
+		const sig = hmacHex(body, secret);
+		expect(
+			verifyHmac({
+				algorithm: 'sha256',
+				data: `${body}tampered`,
+				secret,
+				signature: sig,
+				encoding: 'hex',
+			}),
+		).toBe(false);
+	});
+
+	it('supports sha1/base64 (Trello algorithm)', () => {
+		const sig = createHmac('sha1', secret).update(body, 'utf8').digest('base64');
+		expect(
+			verifyHmac({ algorithm: 'sha1', data: body, secret, signature: sig, encoding: 'base64' }),
+		).toBe(true);
+	});
+
+	it('returns false for a completely garbage signature string', () => {
+		expect(
+			verifyHmac({
+				algorithm: 'sha256',
+				data: body,
+				secret,
+				signature: 'not-a-signature!',
+				encoding: 'hex',
+			}),
+		).toBe(false);
 	});
 });

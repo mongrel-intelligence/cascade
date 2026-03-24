@@ -1,4 +1,4 @@
-# CASCADE - Trello-to-Code Automation Platform
+# CASCADE - PM-to-Code Automation Platform
 
 ## Quick Start
 
@@ -13,37 +13,6 @@ npm run dev          # Router (webhook receiver, requires Redis)
 npm run dev:web      # Dashboard frontend (separate terminal)
 ```
 
-## Table of Contents
-
-- [Quick Start](#quick-start)
-- [Architecture](#architecture)
-- [Development](#development)
-  - [Testing](#testing)
-  - [Linting](#linting)
-  - [Git Hooks](#git-hooks)
-- [Key Directories](#key-directories)
-- [Environment Variables](#environment-variables)
-- [Database Configuration](#database-configuration)
-  - [Schema](#schema)
-  - [Database Scripts](#database-scripts)
-  - [Migration Workflow](#migration-workflow)
-  - [Credentials](#credentials)
-  - [Credential Encryption at Rest](#credential-encryption-at-rest)
-  - [GitHub Dual-Persona Model](#github-dual-persona-model)
-  - [Webhook Signature Verification](#webhook-signature-verification)
-  - [Integration Credential Resolution](#integration-credential-resolution)
-  - [Agent Trigger Configuration](#agent-trigger-configuration)
-  - [Review Agent Trigger Modes](#review-agent-trigger-modes)
-  - [PM Agent Trigger Modes](#pm-agent-trigger-modes)
-- [Claude Code Engine](#claude-code-engine)
-- [Codex Engine](#codex-engine)
-- [Dashboard](#dashboard)
-- [CLI (`cascade`)](#cli-cascade)
-- [Adding New Triggers](#adding-new-triggers)
-- [Adding New Agents](#adding-new-agents)
-- [Agent Resilience Features](#agent-resilience-features)
-- [Debugging Production Sessions](#debugging-production-sessions)
-
 ## Architecture
 
 CASCADE runs as three services (no monolithic server mode):
@@ -57,22 +26,24 @@ CASCADE runs as three services (no monolithic server mode):
 The extensible trigger system routes events to agents:
 
 ```
-Trello/GitHub Webhook → Router → Redis/BullMQ → Worker → TriggerRegistry → Agent → Code Changes → PR
+Trello/JIRA/Sentry/GitHub Webhook → Router → Redis/BullMQ → Worker → TriggerRegistry → Agent → Code Changes → PR
 ```
 
 - `src/router/` - Webhook receiver (enqueues jobs to Redis)
 - `src/webhook/` - Shared webhook handler factory, parsers, and logging
-- `src/triggers/` - Event handlers (Trello card moves, labels, GitHub PRs, attachments)
-- `src/agents/` - AI agents (splitting, planning, implementation, review, debug)
-- `src/gadgets/` - Tools agents can use (Trello API, Git operations, file system)
+- `src/triggers/` - Event handlers (Trello/JIRA card moves, labels, GitHub PRs, Sentry alerts)
+- `src/agents/` - AI agents (splitting, planning, implementation, review, debug, alerting, backlog-manager, resolve-conflicts)
+- `src/gadgets/` - Tools agents can use (PM/SCM/alerting operations, Tmux, Todo, file system)
 
 ### Multi-Project Support
 
-Projects are configured in the PostgreSQL database (`projects` table). Each project has its own Trello board, GitHub repo, and optional per-project credentials.
+Projects are configured in the PostgreSQL database (`projects` table). Each project has its own PM board, GitHub repo, and optional per-project credentials.
 
 ## Development
 
 ### Testing
+
+> **For a full catalog of test helpers, factory functions, and mock objects**, see [`tests/README.md`](tests/README.md).
 
 ```bash
 npm test                 # Run unit tests (all 4 unit projects)
@@ -131,13 +102,16 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration
 - `src/webhook/` - Shared webhook handler factory, parsers, and logging helpers
 - `src/config/` - Configuration provider, caching, Zod schemas
 - `src/db/` - Database client, Drizzle schema, repositories
-- `src/triggers/` - Extensible trigger system (Trello, GitHub)
+- `src/triggers/` - Extensible trigger system (Trello, JIRA, GitHub, Sentry)
 - `src/agents/` - AI agent implementations
-- `src/gadgets/` - Custom gadgets (Trello, Git)
+- `src/gadgets/` - Custom gadgets (PM, SCM, alerting, Tmux, Todo, file system)
 - `src/cli/dashboard/` - Dashboard CLI commands (`cascade` binary)
+- `src/cli/alerting/` - Alerting gadget commands (`cascade-tools` binary)
 - `src/api/` - Dashboard API (tRPC routers, auth handlers)
 - `src/github/` - GitHub client, dual-persona model (personas.ts)
 - `src/trello/` - Trello API client
+- `src/jira/` - JIRA API client
+- `src/sentry/` - Sentry API client and integration
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
 - `web/` - Dashboard frontend (React 19, Vite, Tailwind v4, TanStack Router)
 - `tools/` - Developer scripts (session debugging, DB seeding, secrets management)
@@ -172,9 +146,9 @@ CASCADE stores all project configuration in PostgreSQL. The `config/projects.jso
 
 - `organizations` - Organization definitions (multi-tenant support)
 - `projects` - Per-project config (repo, base branch, budget, engine, and per-project overrides for model, iterations, timeouts, progress model/interval, `squint_db_url`, `run_links_enabled`, `max_in_flight_items`)
-- `project_integrations` - Integration configs per project with `category` (pm/scm/email), `provider` (trello/jira/github/imap/gmail), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `project_integrations` - Integration configs per project with `category` (pm/scm), `provider` (trello/jira/github), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
 - `project_credentials` - Project-scoped credentials keyed by `(projectId, envVarKey)`. Stores all credential types (GitHub tokens, Trello keys, JIRA tokens, LLM API keys). Encrypted at rest when `CREDENTIAL_MASTER_KEY` is set
-- `agent_configs` - Per-agent-type overrides (model, iterations, engine, max_concurrency, `system_prompt`, `task_prompt`), project-scoped only (`project_id NOT NULL`)
+- `agent_configs` - Per-agent-type overrides (model, iterations, engine, `agent_engine_settings`, max_concurrency, `system_prompt`, `task_prompt`), project-scoped only (`project_id NOT NULL`)
 - `agent_definitions` - Agent YAML definitions (built-in and custom). Each row stores the full definition JSONB, keyed by `agent_type`
 - `agent_trigger_configs` - Configured trigger events per project/agent pair (replaces legacy `project_integrations.triggers`)
 - `prompt_partials` - Org-scoped partial prompt templates for customizing agent prompts (`.eta` partials)
@@ -204,19 +178,9 @@ Migrations are hand-written SQL files in `src/db/migrations/` tracked by drizzle
 
 For databases initially set up with `drizzle-kit push` (no migration journal), run `npm run db:bootstrap-journal` once to register existing migrations in the `drizzle.__drizzle_migrations` tracking table.
 
-### Credentials
-
-All credentials are project-scoped and stored in the `project_credentials` table keyed by `(projectId, envVarKey)`.
-
-```bash
-npx tsx tools/manage-secrets.ts set <project-id> <env-var-key> <value> [--name "..."]
-npx tsx tools/manage-secrets.ts list <project-id>
-npx tsx tools/manage-secrets.ts resolve <project-id>
-```
-
 ### Credential Encryption at Rest
 
-Credentials are encrypted using AES-256-GCM when `CREDENTIAL_MASTER_KEY` is set. Encryption is transparent — all callers (config provider, tRPC, CLI, tools) are unaffected.
+All credentials are project-scoped and stored in the `project_credentials` table keyed by `(projectId, envVarKey)`. Credentials are encrypted using AES-256-GCM when `CREDENTIAL_MASTER_KEY` is set. Encryption is transparent — all callers (config provider, tRPC, CLI, tools) are unaffected.
 
 - **Algorithm**: AES-256-GCM with 12-byte random IV, 16-byte auth tag, `projectId` as AAD
 - **Storage format**: `enc:v1:<iv_hex>:<authTag_hex>:<ciphertext_hex>` in the existing `value` TEXT column
@@ -239,11 +203,11 @@ npm run credentials:rotate-key              # Re-encrypt with CREDENTIAL_MASTER_
 CASCADE uses two dedicated GitHub bot accounts per project to prevent feedback loops:
 
 - **Implementer** (`GITHUB_TOKEN_IMPLEMENTER`) — writes code, creates PRs, responds to review comments
-  - Agents: `implementation`, `respond-to-review`, `respond-to-ci`, `respond-to-pr-comment`, `splitting`, `planning`, `respond-to-planning-comment`
+  - Agents: `implementation`, `respond-to-review`, `respond-to-ci`, `respond-to-pr-comment`, `splitting`, `planning`, `respond-to-planning-comment`, `debug`, `alerting`, `backlog-manager`, `resolve-conflicts`
 - **Reviewer** (`GITHUB_TOKEN_REVIEWER`) — reviews PRs, can approve or request changes
   - Agents: `review`
 
-Both tokens are **required** for each project. Store them directly as project credentials via the dashboard (Project Settings > Credentials tab) or CLI:
+Both tokens are **required** for each project. Store them via the dashboard (Project Settings > Credentials tab) or CLI:
 
 ```bash
 cascade projects credentials-set <project-id> --key GITHUB_TOKEN_IMPLEMENTER --value ghp_aaa...
@@ -261,28 +225,19 @@ cascade projects credentials-set <project-id> --key GITHUB_TOKEN_REVIEWER --valu
 
 CASCADE supports opt-in HMAC-SHA256 signature verification for GitHub webhook payloads.
 
-#### How it works
+1. Store a `GITHUB_WEBHOOK_SECRET` credential as a project credential:
+   ```bash
+   cascade projects credentials-set <project-id> --key GITHUB_WEBHOOK_SECRET --value <random-secret>
+   ```
+2. Create (or recreate) the GitHub webhook — CASCADE will include the secret automatically:
+   ```bash
+   cascade webhooks create <project-id> [--callback-url URL]
+   # or via the setup tool:
+   npx tsx tools/setup-webhooks.ts create <project-id> <callback-base-url>
+   ```
+3. GitHub signs every delivery with `X-Hub-Signature-256`; the CASCADE router verifies it before processing.
 
-1. Store a `GITHUB_WEBHOOK_SECRET` credential (any strong random string) as a project credential:
-
-```bash
-cascade projects credentials-set <project-id> --key GITHUB_WEBHOOK_SECRET --value <random-secret>
-```
-
-2. Create (or recreate) the GitHub webhook — CASCADE will automatically include the secret in the Octokit `createWebhook` call:
-
-```bash
-cascade webhooks create <project-id> [--callback-url URL]
-# or via the setup tool:
-npx tsx tools/setup-webhooks.ts create <project-id> <callback-base-url>
-```
-
-3. GitHub will then sign every webhook delivery with `X-Hub-Signature-256`. The CASCADE router verifies this signature before processing the payload, rejecting requests with invalid or missing signatures.
-
-#### Backwards compatibility
-
-- If no `webhook_secret` credential is configured, webhook creation behaves exactly as before (no secret, no signature verification).
-- Existing webhooks created without a secret continue to work — signature verification is only applied when a secret is present in the project credentials.
+If no `webhook_secret` credential is configured, webhook creation works exactly as before (no secret, no signature verification). Existing webhooks without a secret continue to work unaffected.
 
 ### Integration Credential Resolution
 
@@ -301,7 +256,6 @@ const openrouterKey = await getOrgCredential(projectId, 'OPENROUTER_API_KEY');
 
 Role definitions and env-var-key mappings are in `src/config/integrationRoles.ts`.
 
-
 ### Agent Trigger Configuration
 
 Triggers define which events activate which agents. Configuration is stored in the `agent_trigger_configs` table and managed via the unified `trigger-set` command.
@@ -311,42 +265,30 @@ Triggers define which events activate which agents. Configuration is stored in t
 Triggers use a category-prefixed event format: `{category}:{event-name}`
 - PM triggers: `pm:status-changed`, `pm:label-added`
 - SCM triggers: `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`
-- Email triggers: `email:received`
+- Alerting triggers: `alerting:issue-created`, `alerting:metric-alert`
 
-#### CLI Commands
+#### Setting Triggers
 
 ```bash
 # Discover available triggers for an agent
 cascade projects trigger-discover --agent review
-cascade projects trigger-discover --agent implementation
 
 # List configured triggers for a project
 cascade projects trigger-list <project-id>
-cascade projects trigger-list <project-id> --agent review
 
 # Configure a trigger (unified command)
 cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --enable
-cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --disable
 cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --params '{"authorMode":"own"}'
 
 # Enable implementation trigger for PM status change
 cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
-
-# Disable splitting trigger for PM status changes
-cascade projects trigger-set <project-id> --agent splitting --event pm:status-changed --disable
 ```
-
-#### Setting via Dashboard
 
 In the **Agent Configs** tab, each agent shows toggles for its supported triggers. Triggers with parameters (like `authorMode` for review) show additional input fields when enabled.
 
-#### Trigger Migration
-
-When merging to `dev` or `main`, legacy trigger configs from `project_integrations.triggers` are automatically migrated to the new `agent_trigger_configs` table. The migration is idempotent and preserves existing configurations.
+When merging to `dev` or `main`, legacy trigger configs from `project_integrations.triggers` are automatically migrated to the new `agent_trigger_configs` table. The migration is idempotent.
 
 ### Review Agent Trigger Modes
-
-The review agent supports multiple trigger events:
 
 | Event | Description |
 |-------|-------------|
@@ -358,16 +300,11 @@ The review agent supports multiple trigger events:
 # Enable review for implementer PRs only (most common)
 cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --enable --params '{"authorMode":"own"}'
 
-# Enable review for external contributor PRs
-cascade projects trigger-set <project-id> --agent review --event scm:check-suite-success --enable --params '{"authorMode":"external"}'
-
 # Enable review when explicitly requested
 cascade projects trigger-set <project-id> --agent review --event scm:review-requested --enable
 ```
 
 ### PM Agent Trigger Modes
-
-Splitting, planning, and implementation agents each support PM triggers:
 
 | Event | Providers | Description |
 |-------|-----------|-------------|
@@ -375,13 +312,7 @@ Splitting, planning, and implementation agents each support PM triggers:
 | `pm:label-added` | All | Trigger when Ready to Process label is added |
 
 ```bash
-# Enable status-changed trigger for implementation
 cascade projects trigger-set <project-id> --agent implementation --event pm:status-changed --enable
-
-# Disable status-changed for planning
-cascade projects trigger-set <project-id> --agent planning --event pm:status-changed --disable
-
-# Enable label-added trigger for splitting
 cascade projects trigger-set <project-id> --agent splitting --event pm:label-added --enable
 ```
 
@@ -390,28 +321,22 @@ cascade projects trigger-set <project-id> --agent splitting --event pm:label-add
 CASCADE uses the Claude Code SDK as the default agent engine. Configure per-project via the CLI or dashboard:
 
 ```bash
-# Set Claude Code as the default engine for a project
 cascade projects update <project-id> --agent-engine claude-code
 
-# Or override per agent type (via Agent Configs tab in dashboard, or CLI):
+# Or override per agent type:
 cascade agents create --agent-type implementation --project-id <project-id> --engine claude-code
-cascade agents create --agent-type review --project-id <project-id> --engine claude-code
 ```
 
 ### Authentication
 
 **Claude Max Subscription via `CLAUDE_CODE_OAUTH_TOKEN`:**
 
-Generate a long-lived OAuth token for headless/containerized environments:
-
 1. Install Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
 2. Authenticate: `claude login` -> select "Log in with your subscription account"
 3. Generate a token: `claude setup-token`
-4. Set the env var:
-   ```bash
-   export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...
-   ```
-5. The Claude Code SDK picks up the token automatically from the environment. CASCADE also creates `~/.claude.json` with `{"hasCompletedOnboarding": true}` to skip the CLI's interactive onboarding (required for headless environments).
+4. Set `CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-...` in your environment.
+
+CASCADE creates `~/.claude.json` with `{"hasCompletedOnboarding": true}` to skip interactive onboarding in headless environments.
 
 **Docker verification test:**
 ```bash
@@ -420,41 +345,53 @@ bash tests/docker/claude-code-auth/run-test.sh
 
 ## Codex Engine
 
-CASCADE supports OpenAI's Codex CLI as an alternative agent engine. Configure it per-project via the `agent-engine` setting:
+CASCADE supports OpenAI's Codex CLI as an alternative agent engine:
 
 ```bash
 cascade projects update <project-id> --agent-engine codex
 ```
 
-### Authentication
-
-The Codex engine supports two auth modes:
-
-**API key (`OPENAI_API_KEY`):** Store the key as an org-scoped credential. No extra setup needed.
+**API key (`OPENAI_API_KEY`):** Store as an org-scoped credential. No extra setup needed.
 
 **Subscription (ChatGPT Plus/Pro via `CODEX_AUTH_JSON`):**
-
-Codex CLI authenticates with an `auth.json` file at `~/.codex/auth.json` written by `codex login`. CASCADE reads this credential, writes the file before each run, and automatically captures any token refreshes the Codex CLI performs back into the database — so the credential stays current in ephemeral worker environments.
-
-Setup:
 
 ```bash
 # 1. On a machine with a browser:
 codex login
 
-# 2. Store the auth token in CASCADE (project-scoped):
+# 2. Store the auth token in CASCADE:
 cascade projects credentials-set <project-id> \
   --key CODEX_AUTH_JSON \
   --value "$(cat ~/.codex/auth.json)" \
   --name "Codex Subscription Auth"
 
-# 3. Set the engine (if not already done):
+# 3. Set the engine:
 cascade projects update <project-id> --agent-engine codex
 ```
 
-CASCADE then:
-- Writes `~/.codex/auth.json` from the stored credential at run start
-- Detects post-run token refreshes from the Codex CLI and updates the DB credential automatically
+CASCADE writes `~/.codex/auth.json` before each run and captures any post-run token refreshes back to the database automatically.
+
+## OpenCode Engine
+
+CASCADE supports the OpenCode engine as an alternative:
+
+```bash
+cascade projects update <project-id> --agent-engine opencode
+```
+
+The OpenCode engine is implemented in `src/backends/opencode/`. Configure with `cascade agents create --engine opencode` or via the Agent Configs tab in the dashboard.
+
+## Sentry / Alerting Integration
+
+CASCADE integrates with Sentry for alert-driven automation. When Sentry issues or metric alerts arrive, they are routed to the `alerting` agent.
+
+- **Sentry client**: `src/sentry/` — API client and integration helpers
+- **Triggers**: `src/triggers/sentry/` — `alerting-issue.ts`, `alerting-metric.ts`
+- **Gadgets**: `src/gadgets/sentry/` — `GetAlertingIssue`, `GetAlertingEventDetail`, `ListAlertingEvents`
+- **CLI tools**: `src/cli/alerting/` — alerting-specific commands available via `cascade-tools`
+- **Agent definition**: `src/agents/definitions/alerting.yaml`
+
+Configure the Sentry integration via the dashboard (Settings > Integrations > Alerting) or CLI.
 
 ## Dashboard
 
@@ -467,15 +404,18 @@ npm run dev          # Router on :3000 (webhook receiver, tsx watch)
 npm run dev:web      # Frontend on :5173 (Vite, proxies /trpc + /api to :3001)
 ```
 
-> **Note:** The dashboard API (`:3001`) and router (`:3000`) are separate services. Run `npm run build && node --env-file=.env dist/dashboard.js` in a third terminal for the dashboard API. The Vite dev server proxies frontend API calls to `:3001`.
+> **Note:** The dashboard API (`:3001`) and router (`:3000`) are separate services. Run `npm run build && node --env-file=.env dist/dashboard.js` in a third terminal for the dashboard API.
 
 ### Production Build
 
 ```bash
 npm run build:web    # Vite builds frontend to dist/web/
 npm run build        # tsc compiles backend to dist/
-npm start            # Serves API + static frontend on single port
+node dist/router/index.js    # Starts the router (webhook receiver) — this is npm start
+node dist/dashboard.js       # Starts the dashboard API on :3001
 ```
+
+> **Note:** `npm start` runs `dist/router/index.js` (the router), **not** the dashboard. Run `node dist/dashboard.js` separately for the dashboard API.
 
 ### Architecture
 
@@ -485,36 +425,6 @@ The dashboard is a single-process deployment. The Hono server mounts tRPC routes
 - **Auth**: Session cookies (HTTP-only, 30-day expiry) with bcrypt password hashing
 - **Frontend**: React 19 + Vite + Tailwind CSS v4 + shadcn/ui + TanStack Router
 - **Type sharing**: Frontend imports `type AppRouter` from the backend (type-only, no server code in bundle)
-
-### User Management
-
-Users can be managed via the CLI (recommended) or the dashboard at `/settings/users`:
-
-```bash
-# Create a user
-cascade users create --email user@example.com --password secret --name "User Name" --role admin
-
-# List all users
-cascade users list
-
-# Update a user
-cascade users update <id> --name "New Name" --role member
-
-# Delete a user
-cascade users delete <id> --yes
-```
-
-Alternatively, use the dashboard at `/settings/users` to manage users via the web UI.
-
-If the CLI and dashboard are unavailable, users can be inserted directly into the database as a fallback:
-
-```bash
-# Generate bcrypt hash
-node -e "import('bcrypt').then(b => b.default.hash('password', 10).then(console.log))"
-
-# Insert user
-psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, role) VALUES ('my-org', 'user@example.com', '\$2b\$10\$...', 'User Name', 'admin');"
-```
 
 ### Key Files
 
@@ -530,20 +440,11 @@ CASCADE includes a `cascade` CLI for managing the platform from the terminal. It
 
 ### Running the CLI
 
-In production the `cascade` binary is available globally. In development, run it via:
+In production the `cascade` binary is available globally. In development:
 
 ```bash
 npm run build                    # Compile TypeScript (required before first use)
 node bin/cascade.js <command>    # Run any CLI command
-```
-
-All examples below use the bare `cascade` name — substitute `node bin/cascade.js` when running locally.
-
-### Setup
-
-```bash
-cascade login --server http://localhost:3001 --email you@example.com --password secret
-cascade whoami                   # Verify session
 ```
 
 Config is stored in `~/.cascade/cli.json`. Override with env vars for CI/scripts:
@@ -553,7 +454,8 @@ export CASCADE_SERVER_URL=http://localhost:3001
 export CASCADE_SESSION_TOKEN=<token>
 ```
 
-### Commands
+<details>
+<summary><strong>Full Command Reference</strong></summary>
 
 ```bash
 # Auth
@@ -640,10 +542,9 @@ cascade webhooks create <project-id> [--callback-url URL] [--github-token ghp_xx
 cascade webhooks delete <project-id> [--callback-url URL] [--github-token ghp_xxx]
 ```
 
-### Global Flags
+Global flags: `--json` (machine-readable output), `--server URL` (override server URL).
 
-- `--json` — Machine-readable JSON output (all commands). Pipe to `jq` for scripting.
-- `--server URL` — Override server URL for a single invocation.
+</details>
 
 ### Architecture
 
@@ -666,7 +567,28 @@ src/cli/dashboard/
 └── webhooks/         # 3 commands
 ```
 
-The `cascade` binary is separate from `cascade-tools` (which is for agents). The `cascade-tools` binary uses a custom oclif config in `bin/cascade-tools.js` to discover only agent tool commands (`dist/cli/pm/`, `dist/cli/scm/`, `dist/cli/session/`), while `cascade` discovers only dashboard commands (`dist/cli/dashboard/`).
+The `cascade` binary is separate from `cascade-tools` (which is for agents). The `cascade-tools` binary uses a custom oclif config in `bin/cascade-tools.js` to discover all non-dashboard agent tool commands (everything under `dist/cli/` except dashboard), while `cascade` discovers only dashboard commands (`dist/cli/dashboard/`).
+
+## User Management
+
+Users can be managed via the CLI (recommended) or the dashboard at `/settings/users`:
+
+```bash
+cascade users create --email user@example.com --password secret --name "User Name" --role admin
+cascade users list
+cascade users update <id> --name "New Name" --role member
+cascade users delete <id> --yes
+```
+
+As a fallback when the CLI and dashboard are unavailable:
+
+```bash
+# Generate bcrypt hash
+node -e "import('bcrypt').then(b => b.default.hash('password', 10).then(console.log))"
+
+# Insert user
+psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, role) VALUES ('my-org', 'user@example.com', '\$2b\$10\$...', 'User Name', 'admin');"
+```
 
 ## Adding New Triggers
 
@@ -710,8 +632,7 @@ CASCADE integrates llmist's resilience features to ensure reliable operation dur
 
 ### Context Compaction
 - Prevents context window overflow on long-running sessions
-- **Implementation agent**: Triggers at 70% context usage, reduces to 40%, preserves 8 recent turns
-- **Other agents**: Triggers at 80% context usage, reduces to 50%, preserves 5 recent turns
+- **All agents**: Triggers at 80% context usage, reduces to 50%, preserves 5 recent turns
 - Hybrid strategy: intelligently mixes summarization and sliding-window
 - Configured in `src/config/compactionConfig.ts`
 
@@ -759,12 +680,9 @@ CASCADE includes a debug agent that automatically analyzes agent session logs:
 **Setup**: Add a `debug` list to your Trello board and configure it via the dashboard or CLI:
 
 ```bash
-# Include the debug list ID when setting the Trello PM integration config
 node bin/cascade.js projects integration-set <project-id> \
   --category pm --provider trello \
   --config '{"boardId":"BOARD_ID","lists":{"todo":"LIST_ID","inProgress":"LIST_ID","inReview":"LIST_ID","debug":"YOUR_DEBUG_LIST_ID"},...}'
 ```
-
-The list ID for the debug list is passed under the `"debug"` key in the `lists` map of the Trello integration config. You can update an existing integration config via the dashboard (**Settings** > **Integrations** > **PM** tab) or via the CLI `integration-set` command.
 
 The debug agent only analyzes logs uploaded by the authenticated CASCADE user and matching the pattern `{agent-type}-{timestamp}.zip`.

@@ -6,18 +6,18 @@ import { CAPABILITIES } from '../capabilities/registry.js';
 // ============================================================================
 
 // Integration categories (aligned with integrationRoles.ts)
-export const IntegrationCategorySchema = z.enum(['pm', 'scm']);
+export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'alerting']);
 
 // Known providers for validation
-export const KnownProviderSchema = z.enum(['trello', 'jira', 'github']);
+export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'sentry']);
 
 // Trigger event format validation: {category}:{event-name}
-// Categories: pm, scm (integration-bound), internal (orchestration chaining)
+// Categories: pm, scm (integration-bound), alerting (monitoring), internal (orchestration chaining)
 const TriggerEventSchema = z
 	.string()
 	.regex(
-		/^(pm|scm|internal):[a-z][a-z0-9-]*$/,
-		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success)',
+		/^(pm|scm|alerting|internal):[a-z][a-z0-9-]*$/,
+		'Event must be in format {category}:{event-name} (e.g., pm:status-changed, scm:check-suite-success, alerting:issue-alert)',
 	);
 
 // ============================================================================
@@ -81,6 +81,7 @@ export const CONTEXT_STEP_NAMES = [
 	'prContext',
 	'prConversation',
 	'pipelineSnapshot',
+	'alertingIssue',
 ] as const;
 
 /** Context step name schema for use in triggers */
@@ -242,10 +243,28 @@ const FinishHooksSchema = z.object({
 	pm: PmFinishSchema.optional(),
 });
 
+// --- Lifecycle hook schema ---
+/**
+ * Lifecycle hooks drive PM lifecycle behavior for agents.
+ * These replace hard-coded agentType === 'implementation' checks.
+ *
+ * - `moveOnPrepare`: PM status to move the work item to when prepareForAgent() is called
+ * - `moveOnSuccess`: PM status to move the work item to when handleSuccess() is called
+ * - `linkPR`: Whether to link the PR to the work item on success
+ * - `syncChecklist`: Whether to sync completed todos to the PM checklist on progress ticks
+ */
+export const LifecycleHooksSchema = z.object({
+	moveOnPrepare: z.string().optional(),
+	moveOnSuccess: z.string().optional(),
+	linkPR: z.boolean().optional(),
+	syncChecklist: z.boolean().optional(),
+});
+
 // --- Top-level integration hooks ---
 export const IntegrationHooksSchema = z.object({
 	trailing: TrailingHooksSchema.optional(),
 	finish: FinishHooksSchema.optional(),
+	lifecycle: LifecycleHooksSchema.optional(),
 });
 
 const PromptsSchema = z.object({
@@ -324,8 +343,11 @@ export type IntegrationRequirements = z.infer<typeof IntegrationRequirementsSche
 /** Known provider (trello, jira, github, etc.) */
 export type KnownProvider = z.infer<typeof KnownProviderSchema>;
 
-/** Integration hooks (trailing + finish) */
+/** Integration hooks (trailing + finish + lifecycle) */
 export type IntegrationHooks = z.infer<typeof IntegrationHooksSchema>;
+
+/** Lifecycle hook configuration for PM lifecycle behavior */
+export type LifecycleHooks = z.infer<typeof LifecycleHooksSchema>;
 
 /** Flattened trailing hook flags for consumers */
 export type TrailingHookFlags = z.infer<typeof ScmTrailingSchema> &

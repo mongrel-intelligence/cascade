@@ -1,60 +1,76 @@
-import { TRPCError } from '@trpc/server';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { registerBuiltInEngines } from '../../../../src/backends/bootstrap.js';
 import { CLAUDE_CODE_SETTING_DEFAULTS } from '../../../../src/backends/claude-code/settings.js';
 import { CODEX_SETTING_DEFAULTS } from '../../../../src/backends/codex/settings.js';
 import { OPENCODE_SETTING_DEFAULTS } from '../../../../src/backends/opencode/settings.js';
 import { PROJECT_DEFAULTS } from '../../../../src/config/schema.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import {
+	createCallerFor,
+	expectTRPCError,
+	setupOwnershipCheckMock,
+} from '../../../helpers/trpcTestHarness.js';
 
-const mockListProjectsForOrg = vi.fn();
+const {
+	mockListProjectsForOrg,
+	mockListProjectsFull,
+	mockGetProjectFull,
+	mockCreateProject,
+	mockUpdateProject,
+	mockDeleteProject,
+	mockListProjectIntegrations,
+	mockUpsertProjectIntegration,
+	mockDeleteProjectIntegration,
+	mockListProjectCredentials,
+	mockListProjectCredentialsMeta,
+	mockWriteProjectCredential,
+	mockDeleteProjectCredential,
+	mockCaptureException,
+} = vi.hoisted(() => ({
+	mockListProjectsForOrg: vi.fn(),
+	mockListProjectsFull: vi.fn(),
+	mockGetProjectFull: vi.fn(),
+	mockCreateProject: vi.fn(),
+	mockUpdateProject: vi.fn(),
+	mockDeleteProject: vi.fn(),
+	mockListProjectIntegrations: vi.fn(),
+	mockUpsertProjectIntegration: vi.fn(),
+	mockDeleteProjectIntegration: vi.fn(),
+	mockListProjectCredentials: vi.fn(),
+	mockListProjectCredentialsMeta: vi.fn(),
+	mockWriteProjectCredential: vi.fn(),
+	mockDeleteProjectCredential: vi.fn(),
+	mockCaptureException: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
-	listProjectsForOrg: (...args: unknown[]) => mockListProjectsForOrg(...args),
+	listProjectsForOrg: mockListProjectsForOrg,
 }));
-
-const mockListProjectsFull = vi.fn();
-const mockGetProjectFull = vi.fn();
-const mockCreateProject = vi.fn();
-const mockUpdateProject = vi.fn();
-const mockDeleteProject = vi.fn();
-const mockListProjectIntegrations = vi.fn();
-const mockUpsertProjectIntegration = vi.fn();
-const mockDeleteProjectIntegration = vi.fn();
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
-	listProjectsFull: (...args: unknown[]) => mockListProjectsFull(...args),
-	getProjectFull: (...args: unknown[]) => mockGetProjectFull(...args),
-	createProject: (...args: unknown[]) => mockCreateProject(...args),
-	updateProject: (...args: unknown[]) => mockUpdateProject(...args),
-	deleteProject: (...args: unknown[]) => mockDeleteProject(...args),
-	listProjectIntegrations: (...args: unknown[]) => mockListProjectIntegrations(...args),
-	upsertProjectIntegration: (...args: unknown[]) => mockUpsertProjectIntegration(...args),
-	deleteProjectIntegration: (...args: unknown[]) => mockDeleteProjectIntegration(...args),
+	listProjectsFull: mockListProjectsFull,
+	getProjectFull: mockGetProjectFull,
+	createProject: mockCreateProject,
+	updateProject: mockUpdateProject,
+	deleteProject: mockDeleteProject,
+	listProjectIntegrations: mockListProjectIntegrations,
+	upsertProjectIntegration: mockUpsertProjectIntegration,
+	deleteProjectIntegration: mockDeleteProjectIntegration,
 }));
-
-const mockListProjectCredentials = vi.fn();
-const mockListProjectCredentialsMeta = vi.fn();
-const mockWriteProjectCredential = vi.fn();
-const mockDeleteProjectCredential = vi.fn();
 
 vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
-	listProjectCredentials: (...args: unknown[]) => mockListProjectCredentials(...args),
-	listProjectCredentialsMeta: (...args: unknown[]) => mockListProjectCredentialsMeta(...args),
-	writeProjectCredential: (...args: unknown[]) => mockWriteProjectCredential(...args),
-	deleteProjectCredential: (...args: unknown[]) => mockDeleteProjectCredential(...args),
+	listProjectCredentials: mockListProjectCredentials,
+	listProjectCredentialsMeta: mockListProjectCredentialsMeta,
+	writeProjectCredential: mockWriteProjectCredential,
+	deleteProjectCredential: mockDeleteProjectCredential,
 }));
 
-const mockCaptureException = vi.fn();
 vi.mock('../../../../src/sentry.js', () => ({
-	captureException: (...args: unknown[]) => mockCaptureException(...args),
+	captureException: mockCaptureException,
 }));
 
 // Mock getDb for ownership checks
-const mockDbSelect = vi.fn();
-const mockDbFrom = vi.fn();
-const mockDbWhere = vi.fn();
+const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({
@@ -68,9 +84,7 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 
 import { projectsRouter } from '../../../../src/api/routers/projects.js';
 
-function createCaller(ctx: TRPCContext) {
-	return projectsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(projectsRouter);
 
 const mockUser = createMockUser();
 
@@ -115,11 +129,7 @@ describe('projectsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-
-			await expect(caller.list()).rejects.toThrow(TRPCError);
-			await expect(caller.list()).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.list(), 'UNAUTHORIZED');
 		});
 	});
 
@@ -157,7 +167,7 @@ describe('projectsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.listFull()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+			await expectTRPCError(caller.listFull(), 'UNAUTHORIZED');
 		});
 	});
 
@@ -400,9 +410,7 @@ describe('projectsRouter', () => {
 		describe('list', () => {
 			it('throws UNAUTHORIZED when not authenticated', async () => {
 				const caller = createCaller({ user: null, effectiveOrgId: null });
-				await expect(caller.credentials.list({ projectId: 'p1' })).rejects.toMatchObject({
-					code: 'UNAUTHORIZED',
-				});
+				await expectTRPCError(caller.credentials.list({ projectId: 'p1' }), 'UNAUTHORIZED');
 			});
 
 			it('returns masked metadata — never plaintext', async () => {
@@ -539,13 +547,14 @@ describe('projectsRouter', () => {
 		describe('set', () => {
 			it('throws UNAUTHORIZED when not authenticated', async () => {
 				const caller = createCaller({ user: null, effectiveOrgId: null });
-				await expect(
+				await expectTRPCError(
 					caller.credentials.set({
 						projectId: 'p1',
 						envVarKey: 'OPENROUTER_API_KEY',
 						value: 'sk-or-abc',
 					}),
-				).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+					'UNAUTHORIZED',
+				);
 			});
 
 			it('calls writeProjectCredential with correct args', async () => {
@@ -594,9 +603,10 @@ describe('projectsRouter', () => {
 		describe('delete', () => {
 			it('throws UNAUTHORIZED when not authenticated', async () => {
 				const caller = createCaller({ user: null, effectiveOrgId: null });
-				await expect(
+				await expectTRPCError(
 					caller.credentials.delete({ projectId: 'p1', envVarKey: 'OPENROUTER_API_KEY' }),
-				).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+					'UNAUTHORIZED',
+				);
 			});
 
 			it('calls deleteProjectCredential with correct args', async () => {

@@ -25,6 +25,7 @@ import {
 	processJiraWebhook,
 	registerBuiltInTriggers,
 } from './triggers/index.js';
+import { processSentryWebhook } from './triggers/sentry/webhook-handler.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import type { TriggerResult } from './types/index.js';
 import { scrubSensitiveEnv } from './utils/envScrub.js';
@@ -66,6 +67,17 @@ export interface JiraJobData {
 	triggerResult?: TriggerResult;
 }
 
+export interface SentryJobData {
+	type: 'sentry';
+	source: 'sentry';
+	payload: unknown;
+	projectId: string;
+	/** Sentry resource type: 'event_alert' | 'metric_alert' | 'issue' */
+	eventType: string;
+	receivedAt: string;
+	triggerResult?: TriggerResult;
+}
+
 export interface ManualRunJobData {
 	type: 'manual-run';
 	projectId: string;
@@ -94,7 +106,12 @@ export interface DebugAnalysisJobData {
 
 export type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysisJobData;
 
-export type JobData = TrelloJobData | GitHubJobData | JiraJobData | DashboardJobData;
+export type JobData =
+	| TrelloJobData
+	| GitHubJobData
+	| JiraJobData
+	| SentryJobData
+	| DashboardJobData;
 
 export async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
 	const { loadProjectConfigById } = await import('./config/provider.js');
@@ -190,6 +207,20 @@ export async function dispatchJob(
 				jobData.payload,
 				triggerRegistry,
 				jobData.ackCommentId,
+				jobData.triggerResult,
+			);
+			break;
+		case 'sentry':
+			logger.info('[Worker] Processing Sentry job', {
+				jobId,
+				projectId: jobData.projectId,
+				eventType: jobData.eventType,
+				hasTriggerResult: !!jobData.triggerResult,
+			});
+			await processSentryWebhook(
+				jobData.payload,
+				jobData.projectId,
+				triggerRegistry,
 				jobData.triggerResult,
 			);
 			break;

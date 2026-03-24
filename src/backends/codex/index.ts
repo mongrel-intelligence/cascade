@@ -7,13 +7,14 @@ import { createInterface } from 'node:readline';
 
 import { writeProjectCredential } from '../../db/repositories/credentialsRepository.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
+import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
+import { SHARED_ALLOWED_ENV_EXACT } from '../shared/envFilter.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
-import type { AgentEngine, AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
-import { buildEnv } from './env.js';
+import type { AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import { extractUsage, parseCodexEvent } from './jsonlParser.js';
 import type { UsageSummary } from './jsonlParser.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
@@ -336,8 +337,11 @@ async function captureRefreshedToken(
  * Uses `codex exec` in JSONL mode and a conservative event parser so the engine
  * remains robust across Codex CLI upgrades. The product surface is intentionally
  * stable even though the runtime transport can evolve later.
+ *
+ * Extends NativeToolEngine to share subprocess env-building, supportsAgentType(),
+ * resolveModel() delegation, and base afterExecute() context cleanup.
  */
-export class CodexEngine implements AgentEngine {
+export class CodexEngine extends NativeToolEngine {
 	readonly definition = CODEX_ENGINE_DEFINITION;
 
 	/** Stores the original auth JSON so afterExecute can detect token refreshes. */
@@ -345,13 +349,34 @@ export class CodexEngine implements AgentEngine {
 	/** True when beforeExecute has been called (adapter lifecycle is active). */
 	private _adapterLifecycleActive = false;
 
-	supportsAgentType(_agentType: string): boolean {
-		return true;
+	// -------------------------------------------------------------------------
+	// NativeToolEngine abstract method implementations
+	// -------------------------------------------------------------------------
+
+	getAllowedEnvExact(): Set<string> {
+		return new Set([
+			...SHARED_ALLOWED_ENV_EXACT,
+			// Codex auth
+			'OPENAI_API_KEY',
+			// Squint
+			'SQUINT_DB_PATH',
+		]);
 	}
 
-	resolveModel(cascadeModel: string): string {
+	getExtraEnvVars(): Record<string, string> {
+		return {
+			CI: 'true',
+			CODEX_DISABLE_UPDATE_NOTIFIER: '1',
+		};
+	}
+
+	resolveEngineModel(cascadeModel: string): string {
 		return resolveCodexModel(cascadeModel);
 	}
+
+	// -------------------------------------------------------------------------
+	// Engine-specific methods
+	// -------------------------------------------------------------------------
 
 	getSettingsSchema() {
 		return CodexSettingsSchema;
@@ -362,9 +387,13 @@ export class CodexEngine implements AgentEngine {
 		this._originalAuthJson = await writeCodexAuthFile(plan.projectSecrets, plan.logWriter);
 	}
 
-	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
+	/**
+	 * Calls super.afterExecute() for context file cleanup, then captures any
+	 * refreshed Codex auth token back to the project credentials.
+	 */
+	async afterExecute(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void> {
+		await super.afterExecute(plan, result);
 		await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
-		await cleanupContextFiles(plan.repoDir);
 		this._originalAuthJson = undefined;
 		this._adapterLifecycleActive = false;
 	}
@@ -432,7 +461,7 @@ export class CodexEngine implements AgentEngine {
 			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
 		);
 		const prompt = buildPrompt(systemPrompt, taskPrompt);
-		const env = buildEnv(strippedSecrets, input.cliToolsDir, input.nativeToolShimDir);
+		const env = this.buildEnv(strippedSecrets, input.cliToolsDir, input.nativeToolShimDir);
 		const args = buildArgs(input, settings, model, lastMessagePath);
 
 		input.logWriter('INFO', 'Starting Codex execution', {

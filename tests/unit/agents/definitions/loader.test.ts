@@ -15,6 +15,7 @@ import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strate
 import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
 
 const ALL_AGENT_TYPES = [
+	'alerting',
 	'backlog-manager',
 	'debug',
 	'implementation',
@@ -34,7 +35,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('getKnownAgentTypes', () => {
-		it('discovers all 11 agent types from YAML files', () => {
+		it('discovers all 12 agent types from YAML files', () => {
 			const types = getKnownAgentTypes();
 			expect(types).toEqual(ALL_AGENT_TYPES);
 		});
@@ -80,7 +81,7 @@ describe('YAML agent definitions loader', () => {
 	});
 
 	describe('loadAllAgentDefinitions', () => {
-		it('returns a map with all 11 agent types', () => {
+		it('returns a map with all 12 agent types', () => {
 			const all = loadAllAgentDefinitions();
 			expect(all.size).toBe(ALL_AGENT_TYPES.length);
 			for (const agentType of ALL_AGENT_TYPES) {
@@ -478,7 +479,7 @@ describe('YAML agent definitions loader', () => {
 		});
 
 		it('all derived integration categories are valid', () => {
-			const validCategories = ['pm', 'scm', 'email'];
+			const validCategories = ['pm', 'scm', 'email', 'alerting'];
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadAgentDefinition(agentType);
 				const integrations = deriveIntegrations(

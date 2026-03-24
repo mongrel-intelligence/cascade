@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { CreatePR } from '../../../src/gadgets/github/CreatePR.js';
-import { githubClient } from '../../../src/github/client.js';
-import { runCommand } from '../../../src/utils/repo.js';
+import { mockGitHubClientModule } from '../../helpers/sharedMocks.js';
 
 // Mock session state
 vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
@@ -13,13 +11,8 @@ vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
 	};
 });
 
-// Mock the github client
-vi.mock('../../../src/github/client.js', () => ({
-	githubClient: {
-		createPR: vi.fn(),
-		getOpenPRByBranch: vi.fn(),
-	},
-}));
+// Mock the github client using shared mock
+vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
 // Mock runCommand for git operations
 vi.mock('../../../src/utils/repo.js', () => ({
@@ -30,6 +23,10 @@ vi.mock('../../../src/utils/repo.js', () => ({
 vi.mock('../../../src/utils/runLink.js', () => ({
 	buildRunLinkFooterFromEnv: vi.fn(() => ''),
 }));
+
+import { CreatePR } from '../../../src/gadgets/github/CreatePR.js';
+import { githubClient } from '../../../src/github/client.js';
+import { runCommand } from '../../../src/utils/repo.js';
 
 const REMOTE_URL = 'https://x-access-token@github.com/test-owner/test-repo.git';
 

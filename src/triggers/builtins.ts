@@ -21,10 +21,12 @@
 import { registerGitHubTriggers } from './github/register.js';
 import { registerJiraTriggers } from './jira/register.js';
 import type { TriggerRegistry } from './registry.js';
+import { registerSentryTriggers } from './sentry/register.js';
 import { registerTrelloTriggers } from './trello/register.js';
 
 export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 	registerTrelloTriggers(registry);
 	registerJiraTriggers(registry);
 	registerGitHubTriggers(registry);
+	registerSentryTriggers(registry);
 }

@@ -1,37 +1,47 @@
 import { TRPCError } from '@trpc/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockListPRsForProject = vi.fn();
-const mockListPRsForOrg = vi.fn();
-const mockListPRsForWorkItem = vi.fn();
-const mockGetRunsForPR = vi.fn();
-const mockListUnifiedWorkForProject = vi.fn();
-const mockGetProjectWorkStats = vi.fn();
-const mockGetProjectWorkStatsAggregated = vi.fn();
+const {
+	mockListPRsForProject,
+	mockListPRsForOrg,
+	mockListPRsForWorkItem,
+	mockGetRunsForPR,
+	mockListUnifiedWorkForProject,
+	mockGetProjectWorkStats,
+	mockGetProjectWorkStatsAggregated,
+	mockVerifyProjectOrgAccess,
+} = vi.hoisted(() => ({
+	mockListPRsForProject: vi.fn(),
+	mockListPRsForOrg: vi.fn(),
+	mockListPRsForWorkItem: vi.fn(),
+	mockGetRunsForPR: vi.fn(),
+	mockListUnifiedWorkForProject: vi.fn(),
+	mockGetProjectWorkStats: vi.fn(),
+	mockGetProjectWorkStatsAggregated: vi.fn(),
+	mockVerifyProjectOrgAccess: vi.fn(),
+}));
 
 vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
-	listPRsForProject: (...args: unknown[]) => mockListPRsForProject(...args),
-	listPRsForOrg: (...args: unknown[]) => mockListPRsForOrg(...args),
-	listPRsForWorkItem: (...args: unknown[]) => mockListPRsForWorkItem(...args),
-	listUnifiedWorkForProject: (...args: unknown[]) => mockListUnifiedWorkForProject(...args),
+	listPRsForProject: mockListPRsForProject,
+	listPRsForOrg: mockListPRsForOrg,
+	listPRsForWorkItem: mockListPRsForWorkItem,
+	listUnifiedWorkForProject: mockListUnifiedWorkForProject,
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
-	getRunsForPR: (...args: unknown[]) => mockGetRunsForPR(...args),
-	getProjectWorkStats: (...args: unknown[]) => mockGetProjectWorkStats(...args),
-	getProjectWorkStatsAggregated: (...args: unknown[]) => mockGetProjectWorkStatsAggregated(...args),
+	getRunsForPR: mockGetRunsForPR,
+	getProjectWorkStats: mockGetProjectWorkStats,
+	getProjectWorkStatsAggregated: mockGetProjectWorkStatsAggregated,
 }));
 
-const mockVerifyProjectOrgAccess = vi.fn();
-
 vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
-	verifyProjectOrgAccess: (...args: unknown[]) => mockVerifyProjectOrgAccess(...args),
+	verifyProjectOrgAccess: mockVerifyProjectOrgAccess,
 }));
 
 import { prsRouter } from '../../../../src/api/routers/prs.js';
@@ -40,9 +50,7 @@ import { prsRouter } from '../../../../src/api/routers/prs.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createCaller(ctx: TRPCContext) {
-	return prsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(prsRouter);
 
 const mockUser = createMockUser();
 
@@ -122,7 +130,7 @@ describe('prsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.list({ projectId: 'test-project' })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.list({ projectId: 'test-project' }), 'UNAUTHORIZED');
 		});
 
 		it('throws when project does not belong to org', async () => {
@@ -162,9 +170,10 @@ describe('prsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.forWorkItem({ projectId: 'test-project', workItemId: 'wi-1' }),
-			).rejects.toThrow(TRPCError);
+				'UNAUTHORIZED',
+			);
 		});
 	});
 
@@ -198,8 +207,9 @@ describe('prsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.runs({ projectId: 'test-project', prNumber: 42 })).rejects.toThrow(
-				TRPCError,
+			await expectTRPCError(
+				caller.runs({ projectId: 'test-project', prNumber: 42 }),
+				'UNAUTHORIZED',
 			);
 		});
 
@@ -252,7 +262,7 @@ describe('prsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.listUnified({ projectId: 'test-project' })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.listUnified({ projectId: 'test-project' }), 'UNAUTHORIZED');
 		});
 
 		it('throws when project does not belong to org', async () => {
@@ -386,7 +396,7 @@ describe('prsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.workStats({ projectId: 'test-project' })).rejects.toThrow(TRPCError);
+			await expectTRPCError(caller.workStats({ projectId: 'test-project' }), 'UNAUTHORIZED');
 		});
 
 		it('throws when project does not belong to org', async () => {
@@ -530,8 +540,9 @@ describe('prsRouter', () => {
 
 		it('throws UNAUTHORIZED when no user', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.workStatsAggregated({ projectId: 'test-project' })).rejects.toThrow(
-				TRPCError,
+			await expectTRPCError(
+				caller.workStatsAggregated({ projectId: 'test-project' }),
+				'UNAUTHORIZED',
 			);
 		});
 

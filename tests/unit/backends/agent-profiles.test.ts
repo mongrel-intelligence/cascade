@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mockGitHubClientModule } from '../../helpers/sharedMocks.js';
 
 // Mock external dependencies used by agent-profiles.ts
 vi.mock('../../../src/agents/shared/prFormatting.js', () => ({
@@ -110,17 +111,7 @@ vi.mock('../../../src/jira/client.js', () => ({
 	},
 }));
 
-vi.mock('../../../src/github/client.js', () => ({
-	githubClient: {
-		getPR: vi.fn(),
-		getPRDiff: vi.fn(),
-		getCheckSuiteStatus: vi.fn(),
-		createPRComment: vi.fn(),
-		getPRReviewComments: vi.fn(),
-		getPRReviews: vi.fn(),
-		getPRIssueComments: vi.fn(),
-	},
-}));
+vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
 vi.mock('../../../src/agents/utils/setup.js', () => ({}));
 

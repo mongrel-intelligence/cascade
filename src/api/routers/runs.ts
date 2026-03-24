@@ -16,6 +16,7 @@ import {
 } from '../../db/repositories/runsRepository.js';
 import { publishCancelCommand } from '../../queue/cancel.js';
 import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
+import { parseLlmResponse } from '../../utils/llmResponseParser.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
@@ -116,7 +117,44 @@ export const runsRouter = router({
 				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
-			return listLlmCallsMeta(input.runId);
+			const raw = await listLlmCallsMeta(input.runId);
+			const calls = raw.map((c) => {
+				const { blocks, textPreview } = parseLlmResponse(c.response);
+				const toolCalls = blocks
+					.filter(
+						(b): b is { kind: 'tool_use'; name: string; inputSummary: string } =>
+							b.kind === 'tool_use',
+					)
+					.map((b) => ({ name: b.name, inputSummary: b.inputSummary }));
+				const thinkingBlocks = blocks.filter(
+					(b): b is { kind: 'thinking'; text: string } => b.kind === 'thinking',
+				);
+				const thinkingChars = thinkingBlocks.reduce((sum, b) => sum + b.text.length, 0);
+				const thinkingPreview =
+					thinkingChars > 0
+						? thinkingBlocks
+								.map((b) => b.text)
+								.join(' ')
+								.slice(0, 200)
+						: null;
+				return {
+					id: c.id,
+					runId: c.runId,
+					callNumber: c.callNumber,
+					inputTokens: c.inputTokens,
+					outputTokens: c.outputTokens,
+					cachedTokens: c.cachedTokens,
+					costUsd: c.costUsd,
+					durationMs: c.durationMs,
+					model: c.model,
+					createdAt: c.createdAt,
+					toolCalls,
+					textPreview,
+					thinkingChars: thinkingChars > 0 ? thinkingChars : null,
+					thinkingPreview,
+				};
+			});
+			return { engine: run.engine ?? 'unknown', calls };
 		}),
 
 	getLlmCall: protectedProcedure

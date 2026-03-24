@@ -1,34 +1,43 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TRPCContext } from '../../../../src/api/trpc.js';
 import { createMockUser } from '../../../helpers/factories.js';
+import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockGetTriggerConfigById = vi.fn();
-const mockGetTriggerConfig = vi.fn();
-const mockGetTriggerConfigsByProject = vi.fn();
-const mockGetTriggerConfigsByProjectAndAgent = vi.fn();
-const mockUpsertTriggerConfig = vi.fn();
-const mockUpdateTriggerConfig = vi.fn();
-const mockDeleteTriggerConfig = vi.fn();
-
-vi.mock('../../../../src/db/repositories/agentTriggerConfigsRepository.js', () => ({
-	getTriggerConfigById: (...args: unknown[]) => mockGetTriggerConfigById(...args),
-	getTriggerConfig: (...args: unknown[]) => mockGetTriggerConfig(...args),
-	getTriggerConfigsByProject: (...args: unknown[]) => mockGetTriggerConfigsByProject(...args),
-	getTriggerConfigsByProjectAndAgent: (...args: unknown[]) =>
-		mockGetTriggerConfigsByProjectAndAgent(...args),
-	upsertTriggerConfig: (...args: unknown[]) => mockUpsertTriggerConfig(...args),
-	updateTriggerConfig: (...args: unknown[]) => mockUpdateTriggerConfig(...args),
-	deleteTriggerConfig: (...args: unknown[]) => mockDeleteTriggerConfig(...args),
+const {
+	mockGetTriggerConfigById,
+	mockGetTriggerConfig,
+	mockGetTriggerConfigsByProject,
+	mockGetTriggerConfigsByProjectAndAgent,
+	mockUpsertTriggerConfig,
+	mockUpdateTriggerConfig,
+	mockDeleteTriggerConfig,
+	mockVerifyProjectOrgAccess,
+} = vi.hoisted(() => ({
+	mockGetTriggerConfigById: vi.fn(),
+	mockGetTriggerConfig: vi.fn(),
+	mockGetTriggerConfigsByProject: vi.fn(),
+	mockGetTriggerConfigsByProjectAndAgent: vi.fn(),
+	mockUpsertTriggerConfig: vi.fn(),
+	mockUpdateTriggerConfig: vi.fn(),
+	mockDeleteTriggerConfig: vi.fn(),
+	mockVerifyProjectOrgAccess: vi.fn(),
 }));
 
-const mockVerifyProjectOrgAccess = vi.fn();
+vi.mock('../../../../src/db/repositories/agentTriggerConfigsRepository.js', () => ({
+	getTriggerConfigById: mockGetTriggerConfigById,
+	getTriggerConfig: mockGetTriggerConfig,
+	getTriggerConfigsByProject: mockGetTriggerConfigsByProject,
+	getTriggerConfigsByProjectAndAgent: mockGetTriggerConfigsByProjectAndAgent,
+	upsertTriggerConfig: mockUpsertTriggerConfig,
+	updateTriggerConfig: mockUpdateTriggerConfig,
+	deleteTriggerConfig: mockDeleteTriggerConfig,
+}));
 
 vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
-	verifyProjectOrgAccess: (...args: unknown[]) => mockVerifyProjectOrgAccess(...args),
+	verifyProjectOrgAccess: mockVerifyProjectOrgAccess,
 }));
 
 import { agentTriggerConfigsRouter } from '../../../../src/api/routers/agentTriggerConfigs.js';
@@ -37,9 +46,7 @@ import { agentTriggerConfigsRouter } from '../../../../src/api/routers/agentTrig
 // Helpers
 // ---------------------------------------------------------------------------
 
-function createCaller(ctx: TRPCContext) {
-	return agentTriggerConfigsRouter.createCaller(ctx);
-}
+const createCaller = createCallerFor(agentTriggerConfigsRouter);
 
 const mockUser = createMockUser();
 
@@ -86,9 +93,7 @@ describe('agentTriggerConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.listByProject({ projectId: 'test-project' })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.listByProject({ projectId: 'test-project' }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -115,11 +120,10 @@ describe('agentTriggerConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.listByProjectAndAgent({ projectId: 'test-project', agentType: 'implementation' }),
-			).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+				'UNAUTHORIZED',
+			);
 		});
 	});
 
@@ -184,15 +188,14 @@ describe('agentTriggerConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.upsert({
 					projectId: 'test-project',
 					agentType: 'implementation',
 					triggerEvent: 'pm:status-changed',
 				}),
-			).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+				'UNAUTHORIZED',
+			);
 		});
 	});
 
@@ -237,9 +240,7 @@ describe('agentTriggerConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.update({ id: 1, enabled: false })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.update({ id: 1, enabled: false }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -268,9 +269,7 @@ describe('agentTriggerConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(caller.delete({ id: 1 })).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+			await expectTRPCError(caller.delete({ id: 1 }), 'UNAUTHORIZED');
 		});
 	});
 
@@ -302,14 +301,13 @@ describe('agentTriggerConfigsRouter', () => {
 
 		it('throws UNAUTHORIZED when not authenticated', async () => {
 			const caller = createCaller({ user: null, effectiveOrgId: null });
-			await expect(
+			await expectTRPCError(
 				caller.bulkUpsert({
 					projectId: 'test-project',
 					configs: [],
 				}),
-			).rejects.toMatchObject({
-				code: 'UNAUTHORIZED',
-			});
+				'UNAUTHORIZED',
+			);
 		});
 	});
 });

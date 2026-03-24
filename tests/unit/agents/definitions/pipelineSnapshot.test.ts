@@ -145,7 +145,7 @@ describe('fetchPipelineSnapshotStep', () => {
 		expect(output).toContain('Full details here');
 	});
 
-	it('uses title-only format for DONE and MERGED lists', async () => {
+	it('uses title-and-url format for DONE and MERGED lists', async () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 
 		const card = { id: 'card-done', title: 'Done Card', url: 'http://trello.com/c/2', labels: [] };
@@ -161,8 +161,25 @@ describe('fetchPipelineSnapshotStep', () => {
 		expect(mockReadWorkItem).not.toHaveBeenCalledWith('card-done', true);
 
 		const output = result[0].result as string;
-		// Title-only format
+		// Title + URL format
 		expect(output).toContain('[card-done] Done Card');
+		expect(output).toContain('http://trello.com/c/2');
+	});
+
+	it('omits URL parentheses for DONE/MERGED items when url is empty', async () => {
+		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
+
+		const card = { id: 'card-done', title: 'Done Card', url: '', labels: [] };
+		mockProvider.listWorkItems.mockImplementation(async (listId: string) => {
+			if (listId === 'list-done') return [card];
+			return [];
+		});
+
+		const result = await fetchPipelineSnapshotStep(makeParams({}, makeProject()));
+
+		const output = result[0].result as string;
+		expect(output).toContain('[card-done] Done Card');
+		expect(output).not.toContain('()');
 	});
 
 	it('handles list fetch errors gracefully', async () => {

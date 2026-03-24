@@ -46,6 +46,10 @@ vi.mock('../../../src/pm/config.js', () => ({
 	getJiraConfig: vi.fn(),
 }));
 
+vi.mock('../../../src/agents/definitions/profiles.js', () => ({
+	getAgentProfile: vi.fn().mockResolvedValue({ lifecycleHooks: {} }),
+}));
+
 import { runAgent } from '../../../src/agents/registry.js';
 import { getJiraConfig, getTrelloConfig } from '../../../src/pm/config.js';
 import { getPMProvider } from '../../../src/pm/context.js';
@@ -175,7 +179,7 @@ describe('runAgentExecutionPipeline', () => {
 		it('calls prepareForAgent by default', async () => {
 			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
 
-			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('card-123', 'implementation');
+			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('card-123', expect.any(Object));
 		});
 
 		it('skips prepareForAgent when skipPrepareForAgent is true', async () => {
@@ -212,7 +216,7 @@ describe('runAgentExecutionPipeline', () => {
 
 			expect(mockLifecycle.handleSuccess).toHaveBeenCalledWith(
 				'card-123',
-				'implementation',
+				expect.any(Object),
 				'https://github.com/pr/1',
 				undefined,
 			);
@@ -231,7 +235,7 @@ describe('runAgentExecutionPipeline', () => {
 
 			expect(mockLifecycle.handleSuccess).toHaveBeenCalledWith(
 				'card-123',
-				'implementation',
+				expect.any(Object),
 				'https://github.com/pr/1',
 				'comment-456',
 			);
@@ -312,7 +316,7 @@ describe('runAgentExecutionPipeline', () => {
 
 			await runAgentExecutionPipeline(result, mockProject, mockConfig);
 
-			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('card-456', 'implementation');
+			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('card-456', expect.any(Object));
 		});
 
 		it('uses workItemId when present', async () => {
@@ -324,7 +328,7 @@ describe('runAgentExecutionPipeline', () => {
 
 			await runAgentExecutionPipeline(result, mockProject, mockConfig);
 
-			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('issue-789', 'implementation');
+			expect(mockLifecycle.prepareForAgent).toHaveBeenCalledWith('issue-789', expect.any(Object));
 		});
 	});
 

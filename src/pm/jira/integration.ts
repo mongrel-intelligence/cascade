@@ -9,11 +9,14 @@
  * and router/reactions.ts.
  */
 
+import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
 import {
 	findProjectById,
 	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
 	loadProjectConfigByJiraProjectKey,
 } from '../../config/provider.js';
+import { getIntegrationProvider } from '../../db/repositories/credentialsRepository.js';
 import { withJiraCredentials } from '../../jira/client.js';
 import {
 	deleteJiraAck,
@@ -33,6 +36,19 @@ const JIRA_ISSUE_KEY_REGEX = /\b([A-Z][A-Z0-9]+-\d+)\b/;
 
 export class JiraIntegration implements PMIntegration {
 	readonly type = 'jira';
+	readonly category = 'pm' as const;
+
+	async hasIntegration(projectId: string): Promise<boolean> {
+		const provider = await getIntegrationProvider(projectId, 'pm');
+		if (provider !== 'jira') return false;
+
+		const roles = PROVIDER_CREDENTIAL_ROLES.jira;
+		const requiredRoles = roles.filter((r) => !r.optional);
+		const values = await Promise.all(
+			requiredRoles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+		);
+		return values.every((v) => v !== null);
+	}
 
 	createProvider(project: ProjectConfig): PMProvider {
 		const jiraConfig = getJiraConfig(project);

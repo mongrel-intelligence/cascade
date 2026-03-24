@@ -36,6 +36,10 @@ vi.mock('../../src/triggers/trello/webhook-handler.js', () => ({
 	processTrelloWebhook: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../src/triggers/sentry/webhook-handler.js', () => ({
+	processSentryWebhook: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../src/utils/index.js', () => ({
 	logger: {
 		info: vi.fn(),
@@ -81,6 +85,7 @@ import { loadProjectConfigById } from '../../src/config/provider.js';
 import { getRunById } from '../../src/db/repositories/runsRepository.js';
 import { captureException, flush } from '../../src/sentry.js';
 import { processGitHubWebhook, processJiraWebhook } from '../../src/triggers/index.js';
+import { processSentryWebhook } from '../../src/triggers/sentry/webhook-handler.js';
 import { triggerDebugAnalysis } from '../../src/triggers/shared/debug-runner.js';
 import { triggerManualRun, triggerRetryRun } from '../../src/triggers/shared/manual-runner.js';
 import { processTrelloWebhook } from '../../src/triggers/trello/webhook-handler.js';
@@ -90,6 +95,7 @@ import {
 	type JiraJobData,
 	type ManualRunJobData,
 	type RetryRunJobData,
+	type SentryJobData,
 	type TrelloJobData,
 	dispatchJob,
 	main,
@@ -178,6 +184,31 @@ describe('dispatchJob routing', () => {
 			jobPayload,
 			mockRegistry,
 			'jira-comment-789',
+			triggerResult,
+		);
+	});
+
+	it('routes sentry job to processSentryWebhook with payload, projectId, registry, and triggerResult', async () => {
+		const mockRegistry = {};
+		const jobPayload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const triggerResult = { matched: true, agentType: 'alerting' } as never;
+
+		const jobData: SentryJobData = {
+			type: 'sentry',
+			source: 'sentry',
+			payload: jobPayload,
+			projectId: 'proj-sentry',
+			eventType: 'event_alert',
+			receivedAt: '2024-01-01T00:00:00Z',
+			triggerResult,
+		};
+
+		await dispatchJob('job-sentry-1', jobData, mockRegistry as never);
+
+		expect(processSentryWebhook).toHaveBeenCalledWith(
+			jobPayload,
+			'proj-sentry',
+			mockRegistry,
 			triggerResult,
 		);
 	});

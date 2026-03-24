@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockDb } from '../../../helpers/mockDb.js';
+import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
+import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
-vi.mock('../../../../src/db/client.js', () => ({
-	getDb: vi.fn(),
-}));
+vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
-import { getDb } from '../../../../src/db/client.js';
 import {
 	createAgentConfig,
 	createProject,
@@ -24,11 +22,10 @@ import {
 } from '../../../../src/db/repositories/settingsRepository.js';
 
 describe('settingsRepository', () => {
-	let mockDb: ReturnType<typeof createMockDb>;
+	let mockDb: ReturnType<typeof createMockDbWithGetDb>;
 
 	beforeEach(() => {
-		mockDb = createMockDb({ withUpsert: true, withThenable: true, withLimit: true });
-		vi.mocked(getDb).mockReturnValue(mockDb.db as never);
+		mockDb = createMockDbWithGetDb({ withUpsert: true, withThenable: true, withLimit: true });
 	});
 
 	// ============================================================================

@@ -1,52 +1,37 @@
 import { describe, expect, it, vi } from 'vitest';
-import { mockLogger, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+import {
+	mockAcknowledgmentsModule,
+	mockConfigProvider,
+	mockConfigResolverModule,
+	mockJiraClientModule,
+	mockLogger,
+	mockReactionsModule,
+	mockTrelloClientModule,
+	mockTriggerCheckModule,
+} from '../../helpers/sharedMocks.js';
 
 vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
-vi.mock('../../../src/triggers/config-resolver.js', () => ({
-	isTriggerEnabled: vi.fn().mockResolvedValue(true),
-	getTriggerParameters: vi.fn().mockResolvedValue({}),
-}));
+vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 // Mocks required for PM integration registration (pm/index.js side-effect)
-vi.mock('../../../src/config/provider.js', () => ({
-	getIntegrationCredential: vi.fn(),
-	loadProjectConfigByBoardId: vi.fn(),
-	loadProjectConfigByJiraProjectKey: vi.fn(),
-	findProjectById: vi.fn(),
-}));
-vi.mock('../../../src/trello/client.js', () => ({
-	withTrelloCredentials: vi.fn(),
-	trelloClient: { getCard: vi.fn() },
-}));
-vi.mock('../../../src/jira/client.js', () => ({
-	withJiraCredentials: vi.fn(),
-	jiraClient: {},
-}));
-vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn(),
-	deleteTrelloAck: vi.fn(),
-	resolveTrelloBotMemberId: vi.fn(),
-	postJiraAck: vi.fn(),
-	deleteJiraAck: vi.fn(),
-	resolveJiraBotAccountId: vi.fn(),
-}));
-vi.mock('../../../src/router/reactions.js', () => ({
-	sendAcknowledgeReaction: vi.fn(),
-}));
+vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
+vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
+vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import {
-	TrelloStatusChangedPlanningTrigger,
 	TrelloStatusChangedSplittingTrigger,
 	TrelloStatusChangedTodoTrigger,
 } from '../../../src/triggers/trello/status-changed.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createMockProject, createTrelloActionPayload } from '../../helpers/factories.js';
 
 describe('TrelloStatusChangedSplittingTrigger', () => {
 	const trigger = TrelloStatusChangedSplittingTrigger;
@@ -57,20 +42,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
-				action: {
-					id: 'action1',
-					idMemberCreator: 'member1',
-					type: 'updateCard',
-					date: '2024-01-01',
-					data: {
-						card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
-						listBefore: { id: 'other-list', name: 'Other' },
-						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
-					},
-				},
-			},
+			payload: createTrelloActionPayload(),
 		};
 
 		expect(trigger.matches(ctx)).toBe(true);
@@ -80,8 +52,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -93,7 +64,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(false);
@@ -103,8 +74,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -115,7 +85,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 						list: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(true);
@@ -125,8 +95,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -137,7 +106,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 						list: { id: 'other-list', name: 'Other' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(false);
@@ -159,8 +128,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -172,7 +140,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);
@@ -189,8 +157,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -202,7 +169,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);
@@ -217,8 +184,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -230,7 +196,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 						listAfter: { id: 'splitting-list-id', name: 'Splitting' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);
@@ -251,8 +217,7 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -264,7 +229,7 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 						listAfter: { id: 'todo-list-id', name: 'TODO' },
 					},
 				},
-			},
+			}),
 		};
 
 		expect(trigger.matches(ctx)).toBe(true);
@@ -274,8 +239,7 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -287,7 +251,7 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 						listAfter: { id: 'todo-list-id', name: 'TODO' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);
@@ -300,8 +264,7 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 		const ctx: TriggerContext = {
 			project: mockProject,
 			source: 'trello',
-			payload: {
-				model: { id: 'board123', name: 'Board' },
+			payload: createTrelloActionPayload({
 				action: {
 					id: 'action1',
 					idMemberCreator: 'member1',
@@ -313,7 +276,7 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 						listAfter: { id: 'todo-list-id', name: 'TODO' },
 					},
 				},
-			},
+			}),
 		};
 
 		const result = await trigger.handle(ctx);

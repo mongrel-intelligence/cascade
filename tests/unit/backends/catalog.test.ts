@@ -57,6 +57,10 @@ describe('LLMIST_ENGINE_DEFINITION', () => {
 		expect(LLMIST_ENGINE_DEFINITION.label).toBe('LLMist');
 	});
 
+	it('has sdk archetype', () => {
+		expect(LLMIST_ENGINE_DEFINITION.archetype).toBe('sdk');
+	});
+
 	it('has free-text model selection', () => {
 		expect(LLMIST_ENGINE_DEFINITION.modelSelection.type).toBe('free-text');
 	});
@@ -76,6 +80,10 @@ describe('CLAUDE_CODE_ENGINE_DEFINITION', () => {
 	it('has correct id and label', () => {
 		expect(CLAUDE_CODE_ENGINE_DEFINITION.id).toBe('claude-code');
 		expect(CLAUDE_CODE_ENGINE_DEFINITION.label).toBe('Claude Code');
+	});
+
+	it('has native-tool archetype', () => {
+		expect(CLAUDE_CODE_ENGINE_DEFINITION.archetype).toBe('native-tool');
 	});
 
 	it('has select model selection with default label', () => {
@@ -130,6 +138,10 @@ describe('CODEX_ENGINE_DEFINITION', () => {
 		expect(CODEX_ENGINE_DEFINITION.label).toBe('Codex');
 	});
 
+	it('has native-tool archetype', () => {
+		expect(CODEX_ENGINE_DEFINITION.archetype).toBe('native-tool');
+	});
+
 	it('has select model selection with default label', () => {
 		expect(CODEX_ENGINE_DEFINITION.modelSelection.type).toBe('select');
 		if (CODEX_ENGINE_DEFINITION.modelSelection.type === 'select') {
@@ -173,6 +185,10 @@ describe('OPENCODE_ENGINE_DEFINITION', () => {
 		expect(OPENCODE_ENGINE_DEFINITION.label).toBe('OpenCode');
 	});
 
+	it('has native-tool archetype', () => {
+		expect(OPENCODE_ENGINE_DEFINITION.archetype).toBe('native-tool');
+	});
+
 	it('has free-text model selection', () => {
 		expect(OPENCODE_ENGINE_DEFINITION.modelSelection.type).toBe('free-text');
 	});
@@ -202,6 +218,22 @@ describe('OPENCODE_ENGINE_DEFINITION', () => {
 
 // ─── Cross-cutting properties ─────────────────────────────────────────────────
 describe('Engine definitions cross-cutting properties', () => {
+	it('all engines have a valid archetype value', () => {
+		for (const engine of DEFAULT_ENGINE_CATALOG) {
+			expect(['sdk', 'native-tool']).toContain(engine.archetype);
+		}
+	});
+
+	it('only llmist has sdk archetype', () => {
+		for (const engine of DEFAULT_ENGINE_CATALOG) {
+			if (engine.id === 'llmist') {
+				expect(engine.archetype).toBe('sdk');
+			} else {
+				expect(engine.archetype).toBe('native-tool');
+			}
+		}
+	});
+
 	it('all engines have scoped_env_secrets capability', () => {
 		for (const engine of DEFAULT_ENGINE_CATALOG) {
 			expect(engine.capabilities).toContain('scoped_env_secrets');

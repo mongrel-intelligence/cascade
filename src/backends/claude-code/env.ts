@@ -38,6 +38,10 @@ export const BLOCKED_ENV_EXACT = SHARED_BLOCKED_ENV_EXACT;
 /**
  * Filter process.env to only include safe variables for agent subprocesses.
  *
+ * @deprecated The standalone filterProcessEnv wrapper is no longer needed — env filtering
+ * is now handled by NativeToolEngine.buildEnv() via the base class. This export is kept
+ * for backward compatibility with existing tests and callers.
+ *
  * Resolution order per key:
  * 1. If in BLOCKED_ENV_EXACT → skip
  * 2. If in ALLOWED_ENV_EXACT → include

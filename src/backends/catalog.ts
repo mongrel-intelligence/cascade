@@ -6,6 +6,7 @@ export const LLMIST_ENGINE_DEFINITION: AgentEngineDefinition = {
 	id: 'llmist',
 	label: 'LLMist',
 	description: 'LLMist SDK with synthetic tool context and CASCADE gadget support.',
+	archetype: 'sdk',
 	capabilities: [
 		'synthetic_tool_context',
 		'streaming_text_events',
@@ -21,6 +22,7 @@ export const CLAUDE_CODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 	id: 'claude-code',
 	label: 'Claude Code',
 	description: 'Anthropic Claude Code SDK with built-in file tools and Bash-driven CASCADE tools.',
+	archetype: 'native-tool',
 	capabilities: [
 		'inline_prompt_context',
 		'offloaded_context_files',
@@ -80,6 +82,7 @@ export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {
 	id: 'codex',
 	label: 'Codex',
 	description: 'OpenAI Codex CLI in headless automation mode with CASCADE tool guidance.',
+	archetype: 'native-tool',
 	capabilities: [
 		'inline_prompt_context',
 		'offloaded_context_files',
@@ -145,6 +148,7 @@ export const OPENCODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 	id: 'opencode',
 	label: 'OpenCode',
 	description: 'OpenCode headless agent server with scoped permissions and CASCADE tool guidance.',
+	archetype: 'native-tool',
 	capabilities: [
 		'inline_prompt_context',
 		'offloaded_context_files',
