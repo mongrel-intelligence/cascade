@@ -40,6 +40,8 @@ interface Project {
 	engineSettings: Record<string, Record<string, unknown>> | null;
 	runLinksEnabled?: boolean | null;
 	maxInFlightItems?: number | null;
+	snapshotEnabled?: boolean | null;
+	snapshotTtlMs?: number | null;
 }
 
 function numericFieldDefault(value: number | null | undefined): string {
@@ -93,6 +95,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		numericFieldDefault(project.maxInFlightItems),
 	);
 	const [runLinksEnabled, setRunLinksEnabled] = useState(project.runLinksEnabled ?? false);
+	const [snapshotEnabled, setSnapshotEnabled] = useState(project.snapshotEnabled ?? false);
+	const [snapshotTtlMs, setSnapshotTtlMs] = useState(numericFieldDefault(project.snapshotTtlMs));
 
 	// Track dirty state to enable/disable Save button
 	const isDirty = useMemo(() => {
@@ -102,7 +106,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			progressModel !== (project.progressModel ?? '') ||
 			workItemBudgetUsd !== (project.workItemBudgetUsd ?? '') ||
 			maxInFlightItems !== numericFieldDefault(project.maxInFlightItems) ||
-			runLinksEnabled !== (project.runLinksEnabled ?? false)
+			runLinksEnabled !== (project.runLinksEnabled ?? false) ||
+			snapshotEnabled !== (project.snapshotEnabled ?? false) ||
+			snapshotTtlMs !== numericFieldDefault(project.snapshotTtlMs)
 		);
 	}, [
 		name,
@@ -111,6 +117,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		workItemBudgetUsd,
 		maxInFlightItems,
 		runLinksEnabled,
+		snapshotEnabled,
+		snapshotTtlMs,
 		project,
 	]);
 
@@ -121,6 +129,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		setWorkItemBudgetUsd(project.workItemBudgetUsd ?? '');
 		setMaxInFlightItems(numericFieldDefault(project.maxInFlightItems));
 		setRunLinksEnabled(project.runLinksEnabled ?? false);
+		setSnapshotEnabled(project.snapshotEnabled ?? false);
+		setSnapshotTtlMs(numericFieldDefault(project.snapshotTtlMs));
 	}
 
 	function handleSubmit(e: React.FormEvent) {
@@ -133,6 +143,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 				workItemBudgetUsd: workItemBudgetUsd || null,
 				maxInFlightItems: maxInFlightItems ? Number.parseInt(maxInFlightItems, 10) : null,
 				runLinksEnabled,
+				snapshotEnabled: snapshotEnabled || null,
+				snapshotTtlMs: snapshotTtlMs ? Number.parseInt(snapshotTtlMs, 10) : null,
 			},
 			{
 				onSuccess: () => {
@@ -298,6 +310,62 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 									</p>
 								</div>
 							</div>
+						</CardContent>
+					</Card>
+
+					{/* Container Snapshots */}
+					<Card>
+						<CardHeader>
+							<div className="flex items-center gap-1.5">
+								<CardTitle>Container Snapshots</CardTitle>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+									</TooltipTrigger>
+									<TooltipContent>
+										Enable container snapshots to speed up subsequent agent runs by reusing a saved
+										container state.
+									</TooltipContent>
+								</Tooltip>
+							</div>
+						</CardHeader>
+						<CardContent className="space-y-4">
+							<div className="flex items-center gap-3">
+								<input
+									type="checkbox"
+									id="snapshotEnabled"
+									checked={snapshotEnabled}
+									onChange={(e) => setSnapshotEnabled(e.target.checked)}
+									className="h-4 w-4 rounded border-border"
+								/>
+								<div>
+									<Label htmlFor="snapshotEnabled" className="cursor-pointer">
+										Enable container snapshots
+									</Label>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										Reuse a saved container state to speed up agent runs.
+									</p>
+								</div>
+							</div>
+							{snapshotEnabled && (
+								<div className="space-y-2">
+									<Label htmlFor="snapshotTtlMs">Snapshot TTL (ms)</Label>
+									<Input
+										id="snapshotTtlMs"
+										type="number"
+										min="1"
+										step="1"
+										className="w-48"
+										value={snapshotTtlMs}
+										onChange={(e) => setSnapshotTtlMs(e.target.value)}
+										placeholder="e.g. 3600000 (1 hour)"
+									/>
+									<p className="text-xs text-muted-foreground">
+										How long a snapshot remains valid (milliseconds). Leave blank to use the project
+										default.
+									</p>
+								</div>
+							)}
 						</CardContent>
 					</Card>
 

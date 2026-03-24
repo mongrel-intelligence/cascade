@@ -253,6 +253,49 @@ describe('projectsRouter', () => {
 				}),
 			).rejects.toThrow('Unsupported engine settings');
 		});
+
+		it('passes snapshotEnabled and snapshotTtlMs through on create', async () => {
+			const created = {
+				id: 'snap-project',
+				orgId: 'org-1',
+				name: 'Snap Project',
+				snapshotEnabled: true,
+				snapshotTtlMs: 3600000,
+			};
+			mockCreateProject.mockResolvedValue(created);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.create({
+				id: 'snap-project',
+				name: 'Snap Project',
+				repo: 'owner/repo',
+				snapshotEnabled: true,
+				snapshotTtlMs: 3600000,
+			});
+
+			expect(mockCreateProject).toHaveBeenCalledWith(
+				'org-1',
+				expect.objectContaining({ snapshotEnabled: true, snapshotTtlMs: 3600000 }),
+			);
+			expect(result).toEqual(created);
+		});
+
+		it('accepts null snapshot fields on create (clears overrides)', async () => {
+			mockCreateProject.mockResolvedValue({ id: 'p', orgId: 'org-1', name: 'P' });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				id: 'p',
+				name: 'P',
+				snapshotEnabled: null,
+				snapshotTtlMs: null,
+			});
+
+			expect(mockCreateProject).toHaveBeenCalledWith(
+				'org-1',
+				expect.objectContaining({ snapshotEnabled: null, snapshotTtlMs: null }),
+			);
+		});
 	});
 
 	describe('update', () => {
@@ -306,6 +349,46 @@ describe('projectsRouter', () => {
 				}),
 			).rejects.toThrow('Unsupported engine settings');
 			expect(mockUpdateProject).not.toHaveBeenCalled();
+		});
+
+		it('passes snapshotEnabled and snapshotTtlMs through on update', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockUpdateProject.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 'p1', snapshotEnabled: true, snapshotTtlMs: 7200000 });
+
+			expect(mockUpdateProject).toHaveBeenCalledWith(
+				'p1',
+				'org-1',
+				expect.objectContaining({ snapshotEnabled: true, snapshotTtlMs: 7200000 }),
+			);
+		});
+
+		it('accepts null snapshot fields on update (clears overrides)', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockUpdateProject.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 'p1', snapshotEnabled: null, snapshotTtlMs: null });
+
+			expect(mockUpdateProject).toHaveBeenCalledWith(
+				'p1',
+				'org-1',
+				expect.objectContaining({ snapshotEnabled: null, snapshotTtlMs: null }),
+			);
+		});
+
+		it('does not include snapshot fields when absent from update input', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockUpdateProject.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 'p1', name: 'New Name' });
+
+			const callArg = (mockUpdateProject as ReturnType<typeof vi.fn>).mock.calls[0][2];
+			expect(callArg).not.toHaveProperty('snapshotEnabled');
+			expect(callArg).not.toHaveProperty('snapshotTtlMs');
 		});
 	});
 

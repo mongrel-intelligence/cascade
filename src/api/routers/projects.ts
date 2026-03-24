@@ -116,6 +116,8 @@ export const projectsRouter = router({
 				progressIntervalMinutes: z.string().nullish(),
 				runLinksEnabled: z.boolean().optional(),
 				maxInFlightItems: z.number().int().positive().nullish(),
+				snapshotEnabled: z.boolean().nullish(),
+				snapshotTtlMs: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -144,6 +146,8 @@ export const projectsRouter = router({
 				progressIntervalMinutes: z.string().nullish(),
 				runLinksEnabled: z.boolean().optional(),
 				maxInFlightItems: z.number().int().positive().nullish(),
+				snapshotEnabled: z.boolean().nullish(),
+				snapshotTtlMs: z.number().int().positive().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
