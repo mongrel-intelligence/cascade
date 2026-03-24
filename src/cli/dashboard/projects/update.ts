@@ -28,6 +28,13 @@ export default class ProjectsUpdate extends DashboardCommand {
 		'max-in-flight-items': Flags.integer({
 			description: 'Max in-flight items (pipeline throughput)',
 		}),
+		'snapshot-enabled': Flags.boolean({
+			description: 'Enable container snapshots for this project',
+			allowNo: true,
+		}),
+		'snapshot-ttl': Flags.integer({
+			description: 'Container snapshot TTL (ms)',
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -54,6 +61,10 @@ export default class ProjectsUpdate extends DashboardCommand {
 					...(flags['max-in-flight-items'] !== undefined
 						? { maxInFlightItems: flags['max-in-flight-items'] }
 						: {}),
+					...(flags['snapshot-enabled'] !== undefined
+						? { snapshotEnabled: flags['snapshot-enabled'] }
+						: {}),
+					...(flags['snapshot-ttl'] !== undefined ? { snapshotTtlMs: flags['snapshot-ttl'] } : {}),
 				}),
 			);
 

@@ -394,6 +394,143 @@ describe('ProjectsUpdate (update)', () => {
 		const callArg = (client.projects.update.mutate as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(callArg).not.toHaveProperty('runLinksEnabled');
 	});
+
+	it('passes --snapshot-enabled to update mutate as true', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsUpdate(['my-project', '--snapshot-enabled'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.projects.update.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'my-project',
+				snapshotEnabled: true,
+			}),
+		);
+	});
+
+	it('passes --no-snapshot-enabled to update mutate as false', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsUpdate(['my-project', '--no-snapshot-enabled'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.projects.update.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'my-project',
+				snapshotEnabled: false,
+			}),
+		);
+	});
+
+	it('passes --snapshot-ttl to update mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsUpdate(
+			['my-project', '--snapshot-ttl', '3600000'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.update.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'my-project',
+				snapshotTtlMs: 3600000,
+			}),
+		);
+	});
+
+	it('does not include snapshotEnabled when flag is absent', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsUpdate(
+			['my-project', '--model', 'claude-sonnet-4-5-20250929'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		const callArg = (client.projects.update.mutate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(callArg).not.toHaveProperty('snapshotEnabled');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// projects create — snapshot flags
+// ---------------------------------------------------------------------------
+describe('ProjectsCreate (create) — snapshot flags', () => {
+	beforeEach(() => {
+		mockLoadConfig.mockReturnValue(baseConfig);
+	});
+
+	it('passes --snapshot-enabled to create mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCreate(
+			[
+				'--id',
+				'snap-project',
+				'--name',
+				'Snap Project',
+				'--repo',
+				'owner/repo',
+				'--snapshot-enabled',
+			],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.create.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				snapshotEnabled: true,
+			}),
+		);
+	});
+
+	it('passes --snapshot-ttl to create mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCreate(
+			[
+				'--id',
+				'snap-project',
+				'--name',
+				'Snap Project',
+				'--repo',
+				'owner/repo',
+				'--snapshot-ttl',
+				'7200000',
+			],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.create.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				snapshotTtlMs: 7200000,
+			}),
+		);
+	});
+
+	it('does not include snapshotEnabled when flag is absent on create', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCreate(
+			['--id', 'new-project', '--name', 'New Project', '--repo', 'owner/repo'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		const callArg = (client.projects.create.mutate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(callArg).not.toHaveProperty('snapshotEnabled');
+		expect(callArg).not.toHaveProperty('snapshotTtlMs');
+	});
 });
 
 // ---------------------------------------------------------------------------
