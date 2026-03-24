@@ -486,7 +486,7 @@ function appendPipelineSection(
 
 	if (!PIPELINE_DETAIL_LISTS.has(list.name)) {
 		for (const item of items) {
-			sections.push(`- [${item.id}] ${item.title}`);
+			sections.push(`- [${item.id}] ${item.title}${item.url ? ` (${item.url})` : ''}`);
 		}
 		sections.push('');
 		return;

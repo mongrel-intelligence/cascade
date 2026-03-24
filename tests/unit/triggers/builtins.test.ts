@@ -42,6 +42,7 @@ vi.mock('../../../src/triggers/trello/status-changed.js', () => ({
 	TrelloStatusChangedPlanningTrigger: { name: 'trello-status-changed-planning' },
 	TrelloStatusChangedTodoTrigger: { name: 'trello-status-changed-todo' },
 	TrelloStatusChangedBacklogTrigger: { name: 'trello-status-changed-backlog' },
+	TrelloStatusChangedMergedTrigger: { name: 'trello-status-changed-merged' },
 }));
 vi.mock('../../../src/triggers/trello/comment-mention.js', () => ({
 	TrelloCommentMentionTrigger: vi
@@ -87,8 +88,8 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 20 built-in triggers (18 + 2 Sentry alerting triggers)
-		expect(registry.register).toHaveBeenCalledTimes(20);
+		// Should have registered all 21 built-in triggers (19 + 2 Sentry alerting triggers)
+		expect(registry.register).toHaveBeenCalledTimes(21);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {
@@ -100,7 +101,7 @@ describe('registerBuiltInTriggers', () => {
 		expect(firstCall.name).toBe('trello-comment-mention');
 	});
 
-	it('registers all four status-changed triggers (Trello)', () => {
+	it('registers all five status-changed triggers (Trello)', () => {
 		const registry = createMockRegistry();
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
@@ -110,6 +111,7 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('trello-status-changed-planning');
 		expect(registeredNames).toContain('trello-status-changed-todo');
 		expect(registeredNames).toContain('trello-status-changed-backlog');
+		expect(registeredNames).toContain('trello-status-changed-merged');
 	});
 
 	it('registers GitHub triggers', () => {

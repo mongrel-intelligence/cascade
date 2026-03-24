@@ -29,15 +29,13 @@ triggers:
     defaultEnabled: false
     contextPipeline: [pipelineSnapshot]
   - event: pm:status-changed
-    label: Item Added to Backlog
-    description: When an item is moved to Backlog, check if pipeline is empty and it should be moved to TODO immediately
+    label: Backlog / Merged Card Move
+    description: >
+      Triggers when a card is moved to the Backlog list (new work available) OR to the
+      Merged list (a blocking dependency was resolved). Both cases may allow the next
+      backlog item to be pulled into TODO. Note: when enabled, this fires for both
+      list moves — they cannot be independently toggled.
     defaultEnabled: false
-    parameters:
-      - name: targetStatus
-        type: select
-        label: Target Status
-        options: [backlog]
-        defaultValue: backlog
     contextPipeline: [pipelineSnapshot]
   - event: internal:auto-chain
     label: Auto-chain after Splitting

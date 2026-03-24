@@ -14,6 +14,7 @@ import { TrelloCommentMentionTrigger } from './comment-mention.js';
 import { ReadyToProcessLabelTrigger } from './label-added.js';
 import {
 	TrelloStatusChangedBacklogTrigger,
+	TrelloStatusChangedMergedTrigger,
 	TrelloStatusChangedPlanningTrigger,
 	TrelloStatusChangedSplittingTrigger,
 	TrelloStatusChangedTodoTrigger,
@@ -33,6 +34,7 @@ export function registerTrelloTriggers(registry: TriggerRegistry): void {
 	registry.register(TrelloStatusChangedPlanningTrigger);
 	registry.register(TrelloStatusChangedTodoTrigger);
 	registry.register(TrelloStatusChangedBacklogTrigger);
+	registry.register(TrelloStatusChangedMergedTrigger);
 
 	registry.register(new ReadyToProcessLabelTrigger());
 }
