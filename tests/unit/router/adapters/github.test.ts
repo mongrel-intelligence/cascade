@@ -69,6 +69,10 @@ vi.mock('../../../../src/pm/trello/integration.js', () => ({
 vi.mock('../../../../src/sentry.js', () => ({
 	captureException: vi.fn(),
 }));
+vi.mock('../../../../src/utils/runLink.js', () => ({
+	buildWorkItemRunsLink: vi.fn().mockReturnValue('\n\n🕵️ [View run](https://example.com)'),
+	getDashboardUrl: vi.fn().mockReturnValue('https://example.com'),
+}));
 
 import { isPMFocusedAgent } from '../../../../src/agents/definitions/loader.js';
 import { findProjectByRepo } from '../../../../src/config/provider.js';
@@ -86,6 +90,7 @@ import { addEyesReactionToPR } from '../../../../src/router/pre-actions.js';
 import type { GitHubJob } from '../../../../src/router/queue.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
+import { buildWorkItemRunsLink } from '../../../../src/utils/runLink.js';
 
 const mockProject: RouterProjectConfig = {
 	id: 'p1',
@@ -405,6 +410,37 @@ describe('GitHubRouterAdapter', () => {
 			);
 
 			expect(postTrelloAck).toHaveBeenCalledWith('p1', 'trigger-card-id', expect.any(String));
+		});
+
+		it('uses triggerResult.workItemId over event.workItemId for GitHub PR run link', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', repo: 'owner/repo', runLinksEnabled: true } as never],
+			});
+			vi.mocked(resolveGitHubTokenForAckByAgent).mockResolvedValue({
+				token: 'ghp_test',
+				project: { id: 'p1' },
+			} as never);
+			vi.mocked(postGitHubAck).mockResolvedValue(1);
+
+			await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					workItemId: '1030', // PR number — should NOT be used for link
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'review',
+				{ agentType: 'review', agentInput: {}, workItemId: 'trello-card-abc' },
+			);
+
+			expect(buildWorkItemRunsLink).toHaveBeenCalledWith(
+				expect.objectContaining({ workItemId: 'trello-card-abc' }),
+			);
 		});
 
 		it('returns undefined for PM-focused agents when no workItemId available', async () => {
