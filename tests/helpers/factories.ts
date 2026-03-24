@@ -234,6 +234,7 @@ export interface CheckSuitePayload {
 		status: string;
 		conclusion: string;
 		head_sha: string;
+		head_branch?: string;
 		pull_requests: Array<{ number: number; head: { ref: string; sha: string } }>;
 	};
 	repository: { full_name: string; html_url: string };

@@ -307,6 +307,10 @@ node bin/cascade.js projects trigger-set my-project \
   --agent review --event scm:check-suite-success --enable \
   --params '{"authorMode":"own"}'
 
+# Enable respond-to-ci to auto-fix failing CI on Cascade's PRs
+node bin/cascade.js projects trigger-set my-project \
+  --agent respond-to-ci --event scm:check-suite-failure --enable
+
 # Enable respond-to-review when the reviewer requests changes
 node bin/cascade.js projects trigger-set my-project \
   --agent respond-to-review --event scm:pr-review-submitted --enable

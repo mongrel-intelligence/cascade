@@ -64,6 +64,7 @@ export interface GitHubCheckSuitePayload {
 			| 'skipped'
 			| null;
 		head_sha: string;
+		head_branch?: string | null;
 		pull_requests: Array<{
 			number: number;
 			head: {
