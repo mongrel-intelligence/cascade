@@ -387,6 +387,40 @@ describe('projectsRouter', () => {
 					undefined,
 				);
 			});
+
+			it('upserts alerting integration with category alerting', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockUpsertProjectIntegration.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.integrations.upsert({
+					projectId: 'p1',
+					category: 'alerting',
+					provider: 'sentry',
+					config: { organizationSlug: 'my-org' },
+				});
+
+				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith(
+					'p1',
+					'alerting',
+					'sentry',
+					{ organizationSlug: 'my-org' },
+					undefined,
+				);
+			});
+
+			it('rejects unknown category', async () => {
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				await expect(
+					caller.integrations.upsert({
+						projectId: 'p1',
+						// @ts-expect-error testing invalid category
+						category: 'unknown',
+						provider: 'sentry',
+						config: {},
+					}),
+				).rejects.toThrow();
+			});
 		});
 
 		describe('delete', () => {
@@ -398,6 +432,16 @@ describe('projectsRouter', () => {
 				await caller.integrations.delete({ projectId: 'p1', category: 'pm' });
 
 				expect(mockDeleteProjectIntegration).toHaveBeenCalledWith('p1', 'pm');
+			});
+
+			it('deletes alerting integration', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockDeleteProjectIntegration.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.integrations.delete({ projectId: 'p1', category: 'alerting' });
+
+				expect(mockDeleteProjectIntegration).toHaveBeenCalledWith('p1', 'alerting');
 			});
 		});
 	});
