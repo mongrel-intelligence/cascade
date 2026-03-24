@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { NativeToolEngine } from '../../../src/backends/shared/NativeToolEngine.js';
 import type {
 	AgentEngineDefinition,
@@ -59,6 +60,14 @@ class StubEngine extends NativeToolEngine {
 	resolveEngineModel(cascadeModel: string): string {
 		if (cascadeModel === 'stub:v1') return 'stub-v1';
 		throw new Error(`Incompatible model: ${cascadeModel}`);
+	}
+
+	// Expose protected resolveSettings for testing
+	resolveSettingsPublic<S extends z.ZodType<Record<string, unknown>>>(
+		input: AgentExecutionPlan,
+		schema: S,
+	): z.infer<S> {
+		return this.resolveSettings(input, schema);
 	}
 
 	// Simple stub: always returns a successful result
@@ -242,6 +251,73 @@ describe('NativeToolEngine (via StubEngine)', () => {
 			const plan = makeMinimalPlan();
 			const result = await engine.execute(plan);
 			expect(result).toEqual({ success: true, output: 'stub output' });
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// resolveSettings — reads engine settings from the execution plan
+	// -------------------------------------------------------------------------
+	describe('resolveSettings', () => {
+		const StubSchema = z.object({
+			timeout: z.number().optional(),
+			mode: z.string().optional(),
+		});
+
+		it('returns {} when no engineSettings or project.engineSettings are set', () => {
+			const plan = makeMinimalPlan();
+			const result = engine.resolveSettingsPublic(plan, StubSchema);
+			expect(result).toEqual({});
+		});
+
+		it('returns settings from project.engineSettings when input.engineSettings is absent', () => {
+			const plan = makeMinimalPlan({
+				project: {
+					id: 'test-project',
+					orgId: 'org-1',
+					name: 'Test',
+					repo: 'owner/repo',
+					baseBranch: 'main',
+					branchPrefix: 'feature/',
+					pm: { type: 'trello' },
+					engineSettings: { stub: { timeout: 5000, mode: 'fast' } },
+				} as AgentExecutionPlan['project'],
+			});
+			const result = engine.resolveSettingsPublic(plan, StubSchema);
+			expect(result).toEqual({ timeout: 5000, mode: 'fast' });
+		});
+
+		it('prefers input.engineSettings over project.engineSettings', () => {
+			const plan = makeMinimalPlan({
+				project: {
+					id: 'test-project',
+					orgId: 'org-1',
+					name: 'Test',
+					repo: 'owner/repo',
+					baseBranch: 'main',
+					branchPrefix: 'feature/',
+					pm: { type: 'trello' },
+					engineSettings: { stub: { timeout: 1000 } },
+				} as AgentExecutionPlan['project'],
+				engineSettings: { stub: { timeout: 9999 } },
+			});
+			const result = engine.resolveSettingsPublic(plan, StubSchema);
+			expect(result).toEqual({ timeout: 9999 });
+		});
+
+		it('returns {} when engineSettings exists but has no entry for this engine id', () => {
+			const plan = makeMinimalPlan({
+				engineSettings: { 'other-engine': { timeout: 5000 } },
+			});
+			const result = engine.resolveSettingsPublic(plan, StubSchema);
+			expect(result).toEqual({});
+		});
+
+		it('uses definition.id ("stub") as the engine settings key', () => {
+			const plan = makeMinimalPlan({
+				engineSettings: { stub: { timeout: 42 } },
+			});
+			const result = engine.resolveSettingsPublic(plan, StubSchema);
+			expect(result.timeout).toBe(42);
 		});
 	});
 
