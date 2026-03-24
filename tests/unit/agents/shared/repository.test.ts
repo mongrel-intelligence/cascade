@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock external dependencies before imports
 vi.mock('../../../../src/utils/repo.js', () => ({
 	cloneRepo: vi.fn(),
 	createTempDir: vi.fn(),
 	runCommand: vi.fn(),
+	getWorkspaceDir: vi.fn(),
 }));
 
 vi.mock('../../../../src/agents/utils/setup.js', () => ({
@@ -13,20 +14,31 @@ vi.mock('../../../../src/agents/utils/setup.js', () => ({
 
 vi.mock('node:fs', () => ({
 	existsSync: vi.fn(),
+	readdirSync: vi.fn(),
 }));
 
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 
-import { setupRepository } from '../../../../src/agents/shared/repository.js';
+import {
+	findSnapshotWorkspaceDir,
+	setupRepository,
+} from '../../../../src/agents/shared/repository.js';
 import { warmTypeScriptCache } from '../../../../src/agents/utils/setup.js';
 import type { ProjectConfig } from '../../../../src/types/index.js';
-import { cloneRepo, createTempDir, runCommand } from '../../../../src/utils/repo.js';
+import {
+	cloneRepo,
+	createTempDir,
+	getWorkspaceDir,
+	runCommand,
+} from '../../../../src/utils/repo.js';
 
 const mockCreateTempDir = vi.mocked(createTempDir);
 const mockCloneRepo = vi.mocked(cloneRepo);
 const mockRunCommand = vi.mocked(runCommand);
 const mockWarmTypeScriptCache = vi.mocked(warmTypeScriptCache);
 const mockExistsSync = vi.mocked(existsSync);
+const mockReaddirSync = vi.mocked(readdirSync);
+const mockGetWorkspaceDir = vi.mocked(getWorkspaceDir);
 
 function makeProject(overrides: Partial<ProjectConfig> = {}): ProjectConfig {
 	return {
@@ -54,8 +66,78 @@ beforeEach(() => {
 	mockCloneRepo.mockResolvedValue(undefined);
 	mockRunCommand.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
 	mockExistsSync.mockReturnValue(false);
+	mockReaddirSync.mockReturnValue([]);
 	mockWarmTypeScriptCache.mockResolvedValue(null);
+	mockGetWorkspaceDir.mockReturnValue('/workspace');
+	// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
+	delete process.env.CASCADE_SNAPSHOT_REUSE;
 });
+
+afterEach(() => {
+	// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
+	delete process.env.CASCADE_SNAPSHOT_REUSE;
+});
+
+// ── findSnapshotWorkspaceDir ───────────────────────────────────────────────────
+
+describe('findSnapshotWorkspaceDir', () => {
+	it('returns the matching directory path when a cascade-<projectId>-* entry exists', () => {
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+		mockReaddirSync.mockReturnValue([
+			'cascade-other-project-111',
+			'cascade-test-project-99999',
+			'some-other-dir',
+		] as never);
+
+		const result = findSnapshotWorkspaceDir('test-project');
+
+		expect(result).toBe('/workspace/cascade-test-project-99999');
+	});
+
+	it('returns the first matching entry when multiple candidates exist', () => {
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+		mockReaddirSync.mockReturnValue([
+			'cascade-test-project-100',
+			'cascade-test-project-200',
+		] as never);
+
+		const result = findSnapshotWorkspaceDir('test-project');
+
+		expect(result).toBe('/workspace/cascade-test-project-100');
+	});
+
+	it('returns null when no matching directory exists', () => {
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+		mockReaddirSync.mockReturnValue(['cascade-other-project-111', 'unrelated'] as never);
+
+		const result = findSnapshotWorkspaceDir('test-project');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when workspace directory cannot be read (throws)', () => {
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+		mockReaddirSync.mockImplementation(() => {
+			throw new Error('ENOENT');
+		});
+
+		const result = findSnapshotWorkspaceDir('test-project');
+
+		expect(result).toBeNull();
+	});
+
+	it('uses getWorkspaceDir to determine the base path', () => {
+		mockGetWorkspaceDir.mockReturnValue('/custom-workspace');
+		mockReaddirSync.mockReturnValue(['cascade-test-project-55555'] as never);
+
+		const result = findSnapshotWorkspaceDir('test-project');
+
+		expect(mockGetWorkspaceDir).toHaveBeenCalled();
+		expect(result).toBe('/custom-workspace/cascade-test-project-55555');
+	});
+});
+
+// ── setupRepository (cold-start path) ─────────────────────────────────────────
 
 describe('setupRepository', () => {
 	it('calls createTempDir with project.id', async () => {
@@ -234,5 +316,192 @@ describe('setupRepository', () => {
 		// Should not log "TypeScript cache warmed" when result is null
 		const infoCalls = log.info.mock.calls.map((c) => c[0]);
 		expect(infoCalls).not.toContain('TypeScript cache warmed');
+	});
+});
+
+// ── setupRepository (snapshot-reuse path) ─────────────────────────────────────
+
+describe('setupRepository — snapshot-reuse path', () => {
+	beforeEach(() => {
+		process.env.CASCADE_SNAPSHOT_REUSE = 'true';
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+	});
+
+	it('uses the baked-in snapshot directory instead of creating a new one', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		const project = makeProject();
+		const log = makeLog();
+
+		const result = await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(result).toBe('/workspace/cascade-test-project-99999');
+		expect(mockCreateTempDir).not.toHaveBeenCalled();
+		expect(mockCloneRepo).not.toHaveBeenCalled();
+	});
+
+	it('runs git fetch, git reset --hard, and git checkout on the snapshot directory', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		const project = makeProject({ baseBranch: 'main' });
+		const log = makeLog();
+
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['fetch', 'origin'],
+			'/workspace/cascade-test-project-99999',
+		);
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['reset', '--hard', 'origin/main'],
+			'/workspace/cascade-test-project-99999',
+		);
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['checkout', 'main'],
+			'/workspace/cascade-test-project-99999',
+		);
+	});
+
+	it('checks out prBranch instead of baseBranch when prBranch is provided', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		const project = makeProject({ baseBranch: 'main' });
+		const log = makeLog();
+
+		await setupRepository({
+			project,
+			log,
+			agentType: 'coder',
+			prBranch: 'feature/my-branch',
+		});
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['reset', '--hard', 'origin/feature/my-branch'],
+			'/workspace/cascade-test-project-99999',
+		);
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['checkout', 'feature/my-branch'],
+			'/workspace/cascade-test-project-99999',
+		);
+	});
+
+	it('falls back to baseBranch "main" when project.baseBranch is not set', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		const project = makeProject({ baseBranch: undefined });
+		const log = makeLog();
+
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['reset', '--hard', 'origin/main'],
+			'/workspace/cascade-test-project-99999',
+		);
+	});
+
+	it('does not run setup.sh or clone on snapshot-reuse path', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		mockExistsSync.mockReturnValue(true); // setup.sh exists but should not run
+		const project = makeProject();
+		const log = makeLog();
+
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		// Only git commands should run, not bash setup.sh
+		expect(mockRunCommand).not.toHaveBeenCalledWith(
+			'bash',
+			expect.any(Array),
+			expect.any(String),
+			expect.any(Object),
+		);
+	});
+
+	it('warms TS cache on snapshot dir when warmTsCache=true', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		mockWarmTypeScriptCache.mockResolvedValue({ success: true, durationMs: 800 });
+		const project = makeProject();
+		const log = makeLog();
+
+		await setupRepository({ project, log, agentType: 'coder', warmTsCache: true });
+
+		expect(mockWarmTypeScriptCache).toHaveBeenCalledWith('/workspace/cascade-test-project-99999');
+	});
+
+	it('logs a warning and falls back to cold-start clone when no snapshot dir is found', async () => {
+		mockReaddirSync.mockReturnValue([] as never); // no matching dir
+		const project = makeProject();
+		const log = makeLog();
+
+		const result = await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(log.warn).toHaveBeenCalledWith(
+			expect.stringContaining('falling back to clone'),
+			expect.objectContaining({ projectId: 'test-project' }),
+		);
+		// Falls through to clone path
+		expect(mockCreateTempDir).toHaveBeenCalledWith('test-project');
+		expect(mockCloneRepo).toHaveBeenCalled();
+		expect(result).toBe('/tmp/cascade-test-project-12345');
+	});
+
+	it('does not enter snapshot path when CASCADE_SNAPSHOT_REUSE is absent', async () => {
+		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
+		delete process.env.CASCADE_SNAPSHOT_REUSE;
+		const project = makeProject();
+		const log = makeLog();
+
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(mockReaddirSync).not.toHaveBeenCalled();
+		expect(mockCreateTempDir).toHaveBeenCalled();
+		expect(mockCloneRepo).toHaveBeenCalled();
+	});
+
+	it('does not enter snapshot path when project.repo is not set', async () => {
+		const project = makeProject({ repo: undefined });
+		const log = makeLog();
+
+		// Even with CASCADE_SNAPSHOT_REUSE=true, skip if no repo configured
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(mockReaddirSync).not.toHaveBeenCalled();
+		expect(mockCreateTempDir).toHaveBeenCalled();
+	});
+
+	it('continues gracefully when git fetch exits non-zero', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: 'network error', exitCode: 128 }) // fetch fails
+			.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }); // reset+checkout succeed
+		const project = makeProject();
+		const log = makeLog();
+
+		const result = await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(result).toBe('/workspace/cascade-test-project-99999');
+		expect(log.warn).toHaveBeenCalledWith(
+			'git fetch exited with non-zero code (continuing)',
+			expect.objectContaining({ exitCode: 128 }),
+		);
+	});
+
+	it('continues gracefully when git reset --hard exits non-zero', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch ok
+			.mockResolvedValueOnce({ stdout: '', stderr: 'conflict', exitCode: 1 }) // reset fails
+			.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }); // checkout ok
+		const project = makeProject();
+		const log = makeLog();
+
+		const result = await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(result).toBe('/workspace/cascade-test-project-99999');
+		expect(log.warn).toHaveBeenCalledWith(
+			'git reset --hard exited with non-zero code (continuing)',
+			expect.objectContaining({ exitCode: 1 }),
+		);
 	});
 });

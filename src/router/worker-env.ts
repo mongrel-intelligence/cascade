@@ -77,10 +77,14 @@ function appendOptionalEnvVars(env: string[]): void {
 /**
  * Build environment variables for a worker container with a pre-resolved projectId.
  * @internal Used by container-manager.ts to avoid resolving projectId twice.
+ *
+ * @param snapshotReuse - When true, injects CASCADE_SNAPSHOT_REUSE=true so the
+ *   worker knows to refresh an existing workspace instead of cloning from scratch.
  */
 export async function buildWorkerEnvWithProjectId(
 	job: Job<CascadeJob>,
 	projectId: string | null,
+	snapshotReuse = false,
 ): Promise<string[]> {
 	const env: string[] = [
 		`JOB_ID=${job.id}`,
@@ -96,6 +100,11 @@ export async function buildWorkerEnvWithProjectId(
 		// Logging
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
 	];
+
+	// Signal snapshot reuse so the worker skips redundant setup (clone, install).
+	if (snapshotReuse) {
+		env.push('CASCADE_SNAPSHOT_REUSE=true');
+	}
 
 	// Resolve project credentials in the router and set as individual env vars.
 	// NOTE: CREDENTIAL_MASTER_KEY is intentionally NOT passed to workers.
