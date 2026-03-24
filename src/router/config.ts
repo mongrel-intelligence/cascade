@@ -38,6 +38,12 @@ export interface RouterConfig {
 	// Used for Trello HMAC which includes the full callback URL in the signature.
 	// Falls back to deriving from request Host header + path at runtime if not set.
 	webhookCallbackBaseUrl: string | undefined;
+
+	// Snapshot defaults (project-level values override these)
+	snapshotEnabled: boolean;
+	snapshotDefaultTtlMs: number;
+	snapshotMaxCount: number;
+	snapshotMaxSizeBytes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -120,4 +126,10 @@ export const routerConfig: RouterConfig = {
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
 	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
 	webhookCallbackBaseUrl: process.env.WEBHOOK_CALLBACK_BASE_URL,
+
+	// Snapshot defaults — project-level values override these when set
+	snapshotEnabled: process.env.SNAPSHOT_ENABLED === 'true',
+	snapshotDefaultTtlMs: Number(process.env.SNAPSHOT_DEFAULT_TTL_MS) || 24 * 60 * 60 * 1000, // 24 hours
+	snapshotMaxCount: Number(process.env.SNAPSHOT_MAX_COUNT) || 5,
+	snapshotMaxSizeBytes: Number(process.env.SNAPSHOT_MAX_SIZE_BYTES) || 10 * 1024 * 1024 * 1024, // 10 GB
 };

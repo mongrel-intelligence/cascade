@@ -49,6 +49,22 @@ describe('routerConfig', () => {
 	it('has default emailScheduleIntervalMs of 5 minutes', () => {
 		expect(routerConfig.emailScheduleIntervalMs).toBe(5 * 60 * 1000);
 	});
+
+	it('defaults snapshotEnabled to false', () => {
+		expect(routerConfig.snapshotEnabled).toBe(false);
+	});
+
+	it('defaults snapshotDefaultTtlMs to 24 hours', () => {
+		expect(routerConfig.snapshotDefaultTtlMs).toBe(24 * 60 * 60 * 1000);
+	});
+
+	it('defaults snapshotMaxCount to 5', () => {
+		expect(routerConfig.snapshotMaxCount).toBe(5);
+	});
+
+	it('defaults snapshotMaxSizeBytes to 10 GB', () => {
+		expect(routerConfig.snapshotMaxSizeBytes).toBe(10 * 1024 * 1024 * 1024);
+	});
 });
 
 describe('loadProjectConfig', () => {

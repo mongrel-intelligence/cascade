@@ -88,6 +88,8 @@ export interface ProjectConfigRaw {
 	agentEngineSettings?: Record<string, EngineSettings>;
 	runLinksEnabled?: boolean;
 	maxInFlightItems?: number;
+	snapshotEnabled?: boolean;
+	snapshotTtlMs?: number;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -130,6 +132,8 @@ type ProjectRow = {
 	agentEngineSettings: EngineSettings | null;
 	runLinksEnabled: boolean;
 	maxInFlightItems: number | null;
+	snapshotEnabled: boolean | null;
+	snapshotTtlMs: number | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
@@ -190,6 +194,30 @@ function buildAgentEngineConfig(
 	};
 }
 
+function buildBaseProjectFields(row: ProjectRow, pmType: 'trello' | 'jira'): ProjectConfigRaw {
+	return {
+		id: row.id,
+		orgId: row.orgId,
+		name: row.name,
+		repo: row.repo ?? undefined,
+		baseBranch: row.baseBranch ?? 'main',
+		branchPrefix: row.branchPrefix ?? 'feature/',
+		pm: { type: pmType },
+		model: row.model ?? undefined,
+		maxIterations: row.maxIterations ?? undefined,
+		watchdogTimeoutMs: row.watchdogTimeoutMs ?? undefined,
+		progressModel: row.progressModel ?? undefined,
+		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
+		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
+		engineSettings: row.agentEngineSettings ?? undefined,
+		squintDbUrl: row.squintDbUrl ?? undefined,
+		runLinksEnabled: row.runLinksEnabled ?? false,
+		maxInFlightItems: row.maxInFlightItems ?? undefined,
+		snapshotEnabled: row.snapshotEnabled ?? undefined,
+		snapshotTtlMs: row.snapshotTtlMs ?? undefined,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Public mapping functions
 // ---------------------------------------------------------------------------
@@ -226,27 +254,11 @@ export function mapProjectRow({
 	const pmType = jiraConfig ? 'jira' : 'trello';
 
 	const project: ProjectConfigRaw = {
-		id: row.id,
-		orgId: row.orgId,
-		name: row.name,
-		repo: row.repo ?? undefined,
-		baseBranch: row.baseBranch ?? 'main',
-		branchPrefix: row.branchPrefix ?? 'feature/',
-		pm: { type: pmType },
-		model: row.model ?? undefined,
+		...buildBaseProjectFields(row, pmType),
 		agentModels: orUndefined(models),
-		maxIterations: row.maxIterations ?? undefined,
-		watchdogTimeoutMs: row.watchdogTimeoutMs ?? undefined,
-		progressModel: row.progressModel ?? undefined,
-		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
-		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
-		engineSettings: row.agentEngineSettings ?? undefined,
 		agentEngineSettings: orUndefined(agentEngineSettingsMap) as
 			| Record<string, EngineSettings>
 			| undefined,
-		squintDbUrl: row.squintDbUrl ?? undefined,
-		runLinksEnabled: row.runLinksEnabled ?? false,
-		maxInFlightItems: row.maxInFlightItems ?? undefined,
 	};
 
 	if (trelloConfig) {
