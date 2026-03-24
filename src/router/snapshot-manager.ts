@@ -11,6 +11,7 @@
  */
 
 import { logger } from '../utils/logging.js';
+import { routerConfig } from './config.js';
 
 export interface SnapshotMetadata {
 	/** Docker image name (e.g., 'cascade-snapshot-proj-1-card-abc:latest') */
@@ -57,10 +58,27 @@ export function registerSnapshot(
 
 /**
  * Look up snapshot metadata for a project+workItem pair.
- * Returns undefined if no snapshot exists.
+ * Returns undefined if no snapshot exists or if the snapshot has exceeded the
+ * configured TTL (snapshotDefaultTtlMs). Expired entries are removed eagerly.
  */
 export function getSnapshot(projectId: string, workItemId: string): SnapshotMetadata | undefined {
-	return snapshots.get(snapshotKey(projectId, workItemId));
+	const key = snapshotKey(projectId, workItemId);
+	const metadata = snapshots.get(key);
+	if (!metadata) return undefined;
+
+	const ageMs = Date.now() - metadata.createdAt.getTime();
+	if (ageMs > routerConfig.snapshotDefaultTtlMs) {
+		snapshots.delete(key);
+		logger.info('[SnapshotManager] Snapshot expired and evicted:', {
+			projectId,
+			workItemId,
+			ageMs,
+			ttlMs: routerConfig.snapshotDefaultTtlMs,
+		});
+		return undefined;
+	}
+
+	return metadata;
 }
 
 /**

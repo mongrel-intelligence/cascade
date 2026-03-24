@@ -13,10 +13,20 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/router/config.js', () => ({
+	routerConfig: {
+		snapshotEnabled: false,
+		snapshotDefaultTtlMs: 86400000, // 24h default
+		snapshotMaxCount: 5,
+		snapshotMaxSizeBytes: 10737418240,
+	},
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
+import { routerConfig } from '../../../src/router/config.js';
 import {
 	_clearAllSnapshots,
 	getSnapshot,
@@ -111,6 +121,31 @@ describe('snapshot-manager', () => {
 			registerSnapshot('proj-1', 'card-abc', 'my-image:latest');
 
 			expect(getSnapshot('proj-1', 'card-xyz')).toBeUndefined();
+		});
+
+		it('returns undefined and evicts an expired snapshot', () => {
+			// Register a snapshot with a createdAt in the past
+			const expired = registerSnapshot('proj-1', 'card-abc', 'old-image:latest');
+			// Backdate createdAt beyond the TTL
+			const originalTtl = routerConfig.snapshotDefaultTtlMs;
+			(routerConfig as { snapshotDefaultTtlMs: number }).snapshotDefaultTtlMs = 1000;
+			// Set createdAt to 2 seconds ago so it's past the 1000ms TTL
+			expired.createdAt = new Date(Date.now() - 2000);
+
+			expect(getSnapshot('proj-1', 'card-abc')).toBeUndefined();
+			expect(getSnapshotCount()).toBe(0);
+
+			// Restore original TTL
+			(routerConfig as { snapshotDefaultTtlMs: number }).snapshotDefaultTtlMs = originalTtl;
+		});
+
+		it('returns a valid snapshot that has not yet expired', () => {
+			const snapshot = registerSnapshot('proj-1', 'card-abc', 'fresh-image:latest');
+			// Ensure createdAt is very recent (just now)
+			snapshot.createdAt = new Date();
+
+			expect(getSnapshot('proj-1', 'card-abc')).toBeDefined();
+			expect(getSnapshotCount()).toBe(1);
 		});
 	});
 

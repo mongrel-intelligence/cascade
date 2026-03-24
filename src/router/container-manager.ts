@@ -314,10 +314,12 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 
 				// For snapshot-enabled runs, commit on clean exit and then remove the container.
 				// Failed or timed-out runs must NOT create a snapshot.
-				if (snapshotEnabled && projectId && workItemId) {
-					if (result.StatusCode === 0) {
+				// Always remove — even when projectId/workItemId are absent — to avoid
+				// orphaning containers that ran with AutoRemove=false.
+				if (snapshotEnabled) {
+					if (result.StatusCode === 0 && projectId && workItemId) {
 						await commitContainerToSnapshot(container.id, projectId, workItemId);
-					} else {
+					} else if (result.StatusCode !== 0) {
 						logger.info('[WorkerManager] Skipping snapshot commit after non-zero exit:', {
 							jobId,
 							statusCode: result.StatusCode,
