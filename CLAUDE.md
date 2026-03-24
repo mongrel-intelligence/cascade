@@ -654,9 +654,11 @@ psql $DATABASE_URL -c "INSERT INTO users (org_id, email, password_hash, name, ro
 
 ## Adding New Triggers
 
-1. Create trigger handler in `src/triggers/`
+1. Create trigger handler in `src/triggers/<provider>/`
 2. Implement `TriggerHandler` interface
-3. Register in `src/triggers/index.ts`
+3. Register in `src/triggers/builtins.ts` via `registerBuiltInTriggers()`
+
+See [`src/integrations/README.md`](src/integrations/README.md) (Step 6) for a detailed walkthrough.
 
 ## Adding New Agents
 

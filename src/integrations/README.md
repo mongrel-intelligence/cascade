@@ -244,24 +244,57 @@ template files or agent execution code.
 
 ### Step 4 — Add a webhook route in the router
 
-Open `src/router/index.ts` and add a route for the new provider's webhook:
+Open `src/router/index.ts` and add a route for the new provider's webhook. Routes follow the
+`/<provider>/webhook` pattern and use `createWebhookHandler()` (from
+`src/webhook/webhookHandlers.ts`) with a config object:
 
 ```typescript
-// Existing pattern:
-app.post('/webhook/trello', verifyWebhookSignature('trello'), async (c) => {
-  const payload = await c.req.json();
-  return processRouterWebhook(c, 'trello', payload, trelloAdapter, triggerRegistry);
-});
+import { createWebhookHandler, parseLinearPayload } from '../webhook/webhookHandlers.js';
+import { verifyLinearWebhookSignature } from './webhookVerification.js';
+import { LinearRouterAdapter } from './adapters/linear.js';
+
+// Existing pattern (Trello for reference):
+app.post(
+  '/trello/webhook',
+  createWebhookHandler({
+    source: 'trello',
+    parsePayload: parseTrelloPayload,
+    verifySignature: verifyTrelloWebhookSignature,
+    processWebhook: async (payload) => {
+      const adapter = new TrelloRouterAdapter();
+      const result = await processRouterWebhook(adapter, payload, triggerRegistry);
+      return { processed: result.shouldProcess, projectId: result.projectId, decisionReason: result.decisionReason };
+    },
+  }),
+);
 
 // New route:
-app.post('/webhook/linear', verifyWebhookSignature('linear'), async (c) => {
-  const payload = await c.req.json();
-  return processRouterWebhook(c, 'linear', payload, linearAdapter, triggerRegistry);
-});
+app.post(
+  '/linear/webhook',
+  createWebhookHandler({
+    source: 'linear',
+    parsePayload: parseLinearPayload,
+    verifySignature: verifyLinearWebhookSignature,
+    processWebhook: async (payload) => {
+      const adapter = new LinearRouterAdapter();
+      const result = await processRouterWebhook(adapter, payload, triggerRegistry);
+      return { processed: result.shouldProcess, projectId: result.projectId, decisionReason: result.decisionReason };
+    },
+  }),
+);
 ```
 
-Webhook signature verification is opt-in. See `src/router/webhookVerification.ts` for details on
-how HMAC verification works and how to add support for a new provider's signature format.
+Key points:
+- URL paths are `/<provider>/webhook` (e.g. `/linear/webhook`), **not** `/webhook/<provider>`
+- `createWebhookHandler()` accepts a config object — there is no inline middleware or Hono context
+  parameter
+- `processRouterWebhook(adapter, payload, triggerRegistry)` takes the adapter instance, the parsed
+  payload, and the trigger registry — no Hono context `c` or provider type string
+- You must also add `parseLinearPayload` to `src/webhook/webhookHandlers.ts` and
+  `verifyLinearWebhookSignature` to `src/router/webhookVerification.ts`
+
+See `src/router/webhookVerification.ts` for details on how HMAC verification works and how to add
+support for a new provider's signature format.
 
 ### Step 5 — Create a router adapter
 
