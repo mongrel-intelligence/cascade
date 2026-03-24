@@ -20,6 +20,7 @@ import {
 	stopOrphanCleanup,
 } from './container-manager.js';
 import type { CascadeJob } from './queue.js';
+import { startSnapshotCleanup, stopSnapshotCleanup } from './snapshot-cleanup.js';
 
 // Re-export container-manager public API so existing callers are unaffected.
 export { getActiveWorkerCount, getActiveWorkers, startOrphanCleanup, stopOrphanCleanup };
@@ -78,13 +79,17 @@ export function startWorkerProcessor(): void {
 	// Start periodic orphan cleanup scan
 	startOrphanCleanup();
 
+	// Start periodic snapshot eviction alongside orphan cleanup
+	startSnapshotCleanup();
+
 	logger.info('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
 }
 
 // Graceful shutdown — detach from workers, let them finish independently
 export async function stopWorkerProcessor(): Promise<void> {
-	// Stop orphan cleanup first
+	// Stop orphan cleanup and snapshot cleanup first
 	stopOrphanCleanup();
+	stopSnapshotCleanup();
 
 	if (dashboardWorker) {
 		await dashboardWorker.close();

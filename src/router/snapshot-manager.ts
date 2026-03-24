@@ -8,6 +8,14 @@
  *
  * This module is pure state management — no Docker API usage.
  * Docker commit operations are triggered from container-manager.ts.
+ *
+ * Eviction strategy:
+ * - TTL eviction: snapshots older than ttlMs are removed on access (eager)
+ *   or during periodic cleanup scans.
+ * - Max-count eviction: when the registry exceeds snapshotMaxCount, the oldest
+ *   entries are removed first (LRU by createdAt).
+ * - Max-size eviction: when the total estimated image size exceeds
+ *   snapshotMaxSizeBytes, the oldest entries are removed first.
  */
 
 import { logger } from '../utils/logging.js';
@@ -22,6 +30,8 @@ export interface SnapshotMetadata {
 	workItemId: string;
 	/** Wall-clock timestamp when the snapshot was created */
 	createdAt: Date;
+	/** Estimated size of the snapshot image in bytes (optional, used for budget eviction) */
+	imageSizeBytes?: number;
 }
 
 /** In-memory snapshot registry keyed by `${projectId}:${workItemId}` */
@@ -39,6 +49,7 @@ export function registerSnapshot(
 	projectId: string,
 	workItemId: string,
 	imageName: string,
+	imageSizeBytes?: number,
 ): SnapshotMetadata {
 	const key = snapshotKey(projectId, workItemId);
 	const metadata: SnapshotMetadata = {
@@ -46,6 +57,7 @@ export function registerSnapshot(
 		projectId,
 		workItemId,
 		createdAt: new Date(),
+		imageSizeBytes,
 	};
 	snapshots.set(key, metadata);
 	logger.info('[SnapshotManager] Snapshot registered:', {
@@ -111,6 +123,98 @@ export function invalidateSnapshot(projectId: string, workItemId: string): void 
  */
 export function getSnapshotCount(): number {
 	return snapshots.size;
+}
+
+/**
+ * Evict expired and over-budget snapshots from the in-memory registry.
+ *
+ * Eviction order:
+ * 1. TTL: remove all entries older than snapshotDefaultTtlMs.
+ * 2. Max-count: if still over-budget, remove oldest entries until at or below
+ *    snapshotMaxCount.
+ * 3. Max-size: if still over-budget, remove oldest entries until estimated
+ *    total size is at or below snapshotMaxSizeBytes.
+ *
+ * Returns the number of entries removed.
+ *
+ * This function operates only on the in-memory metadata registry. It does NOT
+ * remove Docker images — callers are responsible for any Docker cleanup.
+ */
+export function evictSnapshots(
+	ttlMs: number = routerConfig.snapshotDefaultTtlMs,
+	maxCount: number = routerConfig.snapshotMaxCount,
+	maxSizeBytes: number = routerConfig.snapshotMaxSizeBytes,
+): number {
+	let evicted = 0;
+	const now = Date.now();
+
+	// Phase 1: TTL eviction — remove all expired entries
+	for (const [key, metadata] of snapshots) {
+		const ageMs = now - metadata.createdAt.getTime();
+		if (ageMs > ttlMs) {
+			snapshots.delete(key);
+			evicted++;
+			logger.info('[SnapshotManager] Evicted expired snapshot:', {
+				projectId: metadata.projectId,
+				workItemId: metadata.workItemId,
+				ageMs,
+				ttlMs,
+			});
+		}
+	}
+
+	// Phase 2: Max-count eviction — remove oldest entries if over budget
+	if (snapshots.size > maxCount) {
+		const sorted = Array.from(snapshots.entries()).sort(
+			([, a], [, b]) => a.createdAt.getTime() - b.createdAt.getTime(),
+		);
+		const toRemove = snapshots.size - maxCount;
+		for (let i = 0; i < toRemove; i++) {
+			const [key, metadata] = sorted[i];
+			snapshots.delete(key);
+			evicted++;
+			logger.info('[SnapshotManager] Evicted snapshot (over max-count):', {
+				projectId: metadata.projectId,
+				workItemId: metadata.workItemId,
+				snapshotCount: snapshots.size + (toRemove - i),
+				maxCount,
+			});
+		}
+	}
+
+	// Phase 3: Max-size eviction — remove oldest entries if over total size budget
+	const totalSizeBytes = Array.from(snapshots.values()).reduce(
+		(sum, m) => sum + (m.imageSizeBytes ?? 0),
+		0,
+	);
+	if (totalSizeBytes > maxSizeBytes) {
+		const sorted = Array.from(snapshots.entries()).sort(
+			([, a], [, b]) => a.createdAt.getTime() - b.createdAt.getTime(),
+		);
+		let runningSize = totalSizeBytes;
+		for (const [key, metadata] of sorted) {
+			if (runningSize <= maxSizeBytes) break;
+			snapshots.delete(key);
+			evicted++;
+			runningSize -= metadata.imageSizeBytes ?? 0;
+			logger.info('[SnapshotManager] Evicted snapshot (over max-size):', {
+				projectId: metadata.projectId,
+				workItemId: metadata.workItemId,
+				imageSizeBytes: metadata.imageSizeBytes,
+				runningSize,
+				maxSizeBytes,
+			});
+		}
+	}
+
+	if (evicted > 0) {
+		logger.info('[SnapshotManager] Eviction sweep complete:', {
+			evicted,
+			remaining: snapshots.size,
+		});
+	}
+
+	return evicted;
 }
 
 /**

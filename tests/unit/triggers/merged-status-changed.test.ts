@@ -22,6 +22,12 @@ vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
 vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
 vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 
+// Mock the snapshot manager so we can verify invalidation calls
+const mockInvalidateSnapshot = vi.fn();
+vi.mock('../../../src/router/snapshot-manager.js', () => ({
+	invalidateSnapshot: (...args: unknown[]) => mockInvalidateSnapshot(...args),
+}));
+
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
@@ -247,5 +253,62 @@ describe('TrelloStatusChangedMergedTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 		expect(result).toBeNull();
+	});
+
+	it('invalidates snapshot when card is moved to merged list', async () => {
+		mockInvalidateSnapshot.mockClear();
+
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: createTrelloActionPayload({
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'updateCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card789', name: 'Resolved Dependency', idShort: 1, shortLink: 'abc' },
+						listBefore: { id: 'in-review-list', name: 'In Review' },
+						listAfter: { id: 'merged-list-id', name: 'Merged' },
+					},
+				},
+			}),
+		};
+
+		await trigger.handle(ctx);
+
+		expect(mockInvalidateSnapshot).toHaveBeenCalledWith(mockProject.id, 'card789');
+	});
+
+	it('does not invalidate snapshot when trigger is disabled (returns null before invalidation)', async () => {
+		mockInvalidateSnapshot.mockClear();
+		vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: createTrelloActionPayload({
+				action: {
+					id: 'action1',
+					idMemberCreator: 'member1',
+					type: 'updateCard',
+					date: '2024-01-01',
+					data: {
+						card: { id: 'card789', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+						listBefore: { id: 'in-review-list', name: 'In Review' },
+						listAfter: { id: 'merged-list-id', name: 'Merged' },
+					},
+				},
+			}),
+		};
+
+		const result = await trigger.handle(ctx);
+
+		// Trigger returned null (disabled) — but snapshot is still invalidated since
+		// the card truly moved to merged regardless of agent configuration
+		expect(result).toBeNull();
+		// invalidateSnapshot is NOT called when trigger is disabled (returns early)
+		expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
 	});
 });

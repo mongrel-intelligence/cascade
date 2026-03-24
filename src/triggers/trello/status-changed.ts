@@ -1,4 +1,5 @@
 import { getTrelloConfig } from '../../pm/config.js';
+import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
@@ -13,6 +14,8 @@ interface StatusChangedConfig {
 	description: string;
 	listKey: 'splitting' | 'planning' | 'todo' | 'backlog' | 'merged';
 	agentType: 'splitting' | 'planning' | 'implementation' | 'backlog-manager';
+	/** When true, invalidate any snapshot for the card when it reaches this status */
+	invalidateSnapshotOnMove?: boolean;
 }
 
 function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
@@ -68,6 +71,13 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 			const workItemUrl = cardShortLink ? `https://trello.com/c/${cardShortLink}` : undefined;
 			const workItemTitle = cardName ?? undefined;
 
+			// Fire-and-forget: invalidate any stale snapshot for this work item when
+			// the card reaches a terminal status (e.g. merged). The snapshot was built
+			// for an earlier state and is no longer useful.
+			if (config.invalidateSnapshotOnMove) {
+				invalidateSnapshot(ctx.project.id, cardId);
+			}
+
 			return {
 				agentType: config.agentType,
 				agentInput: {
@@ -122,4 +132,5 @@ export const TrelloStatusChangedMergedTrigger = createStatusChangedTrigger({
 		'Re-triggers backlog-manager when any card is moved to MERGED, so manually resolved dependencies unblock the backlog',
 	listKey: 'merged',
 	agentType: 'backlog-manager',
+	invalidateSnapshotOnMove: true,
 });
