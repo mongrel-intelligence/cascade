@@ -398,4 +398,35 @@ export const integrationsDiscoveryRouter = router({
 				});
 			}
 		}),
+
+	/**
+	 * Verify a Sentry API token and organization slug.
+	 * Used by the Integrations tab Alerting credential inputs.
+	 * Accepts plaintext credentials from the form and calls the Sentry API to verify.
+	 * The token is never stored by this endpoint.
+	 */
+	verifySentry: protectedProcedure
+		.input(z.object({ apiToken: z.string().min(1), organizationSlug: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.verifySentry called', { orgId: ctx.effectiveOrgId });
+			return wrapIntegrationCall('Failed to verify Sentry credentials', async () => {
+				const url = `https://sentry.io/api/0/organizations/${encodeURIComponent(input.organizationSlug)}/`;
+				const response = await fetch(url, {
+					headers: { Authorization: `Bearer ${input.apiToken}` },
+				});
+				if (!response.ok) {
+					throw new Error(`Sentry API returned ${response.status}: ${response.statusText}`);
+				}
+				const data = (await response.json()) as {
+					id?: string;
+					name?: string;
+					slug?: string;
+				};
+				return {
+					id: data.id ?? '',
+					name: data.name ?? '',
+					slug: data.slug ?? '',
+				};
+			});
+		}),
 });

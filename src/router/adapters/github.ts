@@ -331,7 +331,8 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			// Build the GitHub PR ack message with run link included before posting,
 			// so the actual comment on the PR contains the footer (not just internal metadata).
 			let githubAckMessage: string | undefined;
-			if (runLinksEnabled && event.workItemId) {
+			const workItemIdForLink = triggerResult?.workItemId ?? event.workItemId;
+			if (runLinksEnabled && workItemIdForLink) {
 				const dashboardUrl = getDashboardUrl();
 				if (dashboardUrl) {
 					const context = extractGitHubContext(payload, event.eventType);
@@ -339,7 +340,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 					const link = buildWorkItemRunsLink({
 						dashboardUrl,
 						projectId: project.id,
-						workItemId: event.workItemId,
+						workItemId: workItemIdForLink,
 					});
 					githubAckMessage = link ? baseMessage + link : baseMessage;
 				}
