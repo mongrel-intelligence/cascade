@@ -225,7 +225,8 @@ describe('ReviewRequestedTrigger', () => {
 			expect(result?.agentType).toBe('review');
 		});
 
-		it('returns null when the same PR head SHA was already dispatched', async () => {
+		it('overrides a prior dispatch and fires even when the same PR+SHA was already dispatched', async () => {
+			// Human-initiated review requests always supersede automated dispatch claims.
 			recentlyDispatched.set('owner/repo:42:abc123', Date.now());
 
 			const ctx: TriggerContext = {
@@ -237,7 +238,7 @@ describe('ReviewRequestedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBe('review');
 		});
 	});
 

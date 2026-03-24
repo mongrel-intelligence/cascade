@@ -6,6 +6,38 @@ import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { parsePrNumberFromRef, resolveWorkItemId } from './utils.js';
 
+/**
+ * Resolve a PR number from a check_suite payload.
+ * Tries pull_requests[], then refs/pull/{N}/head parsing, then a GitHub API lookup by branch.
+ */
+async function resolvePrNumber(
+	owner: string,
+	repo: string,
+	pullRequests: Array<{ number: number }>,
+	headBranch: string | null | undefined,
+	handlerName: string,
+): Promise<number | null> {
+	if (pullRequests.length > 0) return pullRequests[0].number;
+
+	const parsed = parsePrNumberFromRef(headBranch);
+	if (parsed !== null) return parsed;
+
+	// GitHub omits pull_requests for some check suites (e.g. CodeQL).
+	// Fall back to looking up the open PR by branch name.
+	if (!headBranch) {
+		logger.info('No pull_requests and no head_branch in payload, skipping', {
+			handler: handlerName,
+		});
+		return null;
+	}
+	const pr = await githubClient.getOpenPRByBranch(owner, repo, headBranch);
+	if (!pr) {
+		logger.info('No open PR found for head branch, skipping', { handler: handlerName, headBranch });
+		return null;
+	}
+	return pr.number;
+}
+
 // Track fix attempts per PR to prevent infinite loops
 const fixAttempts = new Map<number, number>();
 const MAX_ATTEMPTS = 3;
@@ -30,11 +62,6 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		if (payload.action !== 'completed') return false;
 		if (payload.check_suite.conclusion !== 'failure') return false;
 
-		// Must have at least one associated PR, or head_branch must be a refs/pull/{N}/head ref
-		const hasPrs = payload.check_suite.pull_requests.length > 0;
-		const hasPrRef = parsePrNumberFromRef(payload.check_suite.head_branch) !== null;
-		if (!hasPrs && !hasPrRef) return false;
-
 		return true;
 	}
 
@@ -54,20 +81,15 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
-		// Resolve PR number — from payload directly, or by parsing refs/pull/{N}/head
-		let prNumber: number;
-		if (payload.check_suite.pull_requests.length > 0) {
-			prNumber = payload.check_suite.pull_requests[0].number;
-		} else {
-			const parsed = parsePrNumberFromRef(payload.check_suite.head_branch);
-			if (parsed === null) {
-				logger.info('Could not parse PR number from head_branch ref, skipping', {
-					handler: this.name,
-				});
-				return null;
-			}
-			prNumber = parsed;
-		}
+		// Resolve PR number — from payload, refs/pull/{N}/head, or branch name lookup
+		const prNumber = await resolvePrNumber(
+			owner,
+			repo,
+			payload.check_suite.pull_requests,
+			payload.check_suite.head_branch,
+			this.name,
+		);
+		if (prNumber === null) return null;
 		const headSha = payload.check_suite.head_sha;
 
 		// Fetch PR details
