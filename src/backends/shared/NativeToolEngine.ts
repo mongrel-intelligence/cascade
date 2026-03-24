@@ -17,6 +17,8 @@
  * the subprocess pattern captured here.
  */
 
+import type { z } from 'zod';
+import { getEngineSettings } from '../../config/engineSettings.js';
 import type {
 	AgentEngine,
 	AgentEngineDefinition,
@@ -100,6 +102,28 @@ export abstract class NativeToolEngine implements AgentEngine {
 	 */
 	async afterExecute(plan: AgentExecutionPlan, _result: AgentEngineResult): Promise<void> {
 		await cleanupContextFiles(plan.repoDir);
+	}
+
+	/**
+	 * Resolve engine-specific settings from an execution plan.
+	 *
+	 * Reads from `input.engineSettings ?? input.project.engineSettings` and
+	 * validates the result against `schema`. Returns `{}` (empty object typed
+	 * as `z.infer<S>`) when no settings are configured for this engine.
+	 *
+	 * Subclasses should call this inside `execute()` with their own schema,
+	 * passing the engine id via `this.definition.id`:
+	 *
+	 * ```ts
+	 * const raw = this.resolveSettings(input, MyEngineSettingsSchema);
+	 * ```
+	 */
+	protected resolveSettings<S extends z.ZodType<Record<string, unknown>>>(
+		input: AgentExecutionPlan,
+		schema: S,
+	): z.infer<S> {
+		const effectiveSettings = input.engineSettings ?? input.project.engineSettings;
+		return getEngineSettings(effectiveSettings, this.definition.id, schema) ?? ({} as z.infer<S>);
 	}
 
 	/**
