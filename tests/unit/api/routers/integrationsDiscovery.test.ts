@@ -19,6 +19,7 @@ const {
 	mockVerifyProjectOrgAccess,
 	mockGetIntegrationCredentialOrNull,
 	mockGetIntegrationByProjectAndCategory,
+	mockFetch,
 } = vi.hoisted(() => ({
 	mockTrelloGetMe: vi.fn(),
 	mockTrelloGetBoards: vi.fn(),
@@ -36,6 +37,7 @@ const {
 	mockVerifyProjectOrgAccess: vi.fn(),
 	mockGetIntegrationCredentialOrNull: vi.fn(),
 	mockGetIntegrationByProjectAndCategory: vi.fn(),
+	mockFetch: vi.fn(),
 }));
 
 vi.mock('../../../../src/trello/client.js', () => ({
@@ -106,10 +108,14 @@ const jiraCredsInput = {
 	baseUrl: 'https://myorg.atlassian.net',
 };
 
+// Assign global fetch mock
+vi.stubGlobal('fetch', mockFetch);
+
 describe('integrationsDiscoveryRouter', () => {
 	beforeEach(() => {
 		// Default: org access check passes
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
+		mockFetch.mockReset();
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -951,6 +957,105 @@ describe('integrationsDiscoveryRouter', () => {
 		it('rejects empty token', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.verifyGithubToken({ token: '' })).rejects.toThrow();
+		});
+	});
+
+	// ── verifySentry ─────────────────────────────────────────────────────
+
+	describe('verifySentry', () => {
+		it('returns org id, name, and slug on success', async () => {
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: async () => ({ id: 'org-123', name: 'My Org', slug: 'my-org' }),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifySentry({
+				apiToken: 'sntrys_abc',
+				organizationSlug: 'my-org',
+			});
+
+			expect(result).toEqual({ id: 'org-123', name: 'My Org', slug: 'my-org' });
+			expect(mockFetch).toHaveBeenCalledWith(
+				'https://sentry.io/api/0/organizations/my-org/',
+				expect.objectContaining({
+					headers: { Authorization: 'Bearer sntrys_abc' },
+				}),
+			);
+		});
+
+		it('returns empty strings when Sentry response fields are missing', async () => {
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: async () => ({}),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifySentry({
+				apiToken: 'sntrys_abc',
+				organizationSlug: 'my-org',
+			});
+
+			expect(result).toEqual({ id: '', name: '', slug: '' });
+		});
+
+		it('wraps non-ok response in BAD_REQUEST', async () => {
+			mockFetch.mockResolvedValue({
+				ok: false,
+				status: 401,
+				statusText: 'Unauthorized',
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.verifySentry({ apiToken: 'bad-token', organizationSlug: 'my-org' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+
+		it('wraps network failure in BAD_REQUEST', async () => {
+			mockFetch.mockRejectedValue(new Error('Network error'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.verifySentry({ apiToken: 'sntrys_abc', organizationSlug: 'my-org' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+
+		it('URL-encodes the organization slug', async () => {
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: async () => ({ id: '1', name: 'Org', slug: 'org-with-slash' }),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.verifySentry({ apiToken: 'tok', organizationSlug: 'org/with/slash' });
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'https://sentry.io/api/0/organizations/org%2Fwith%2Fslash/',
+				expect.any(Object),
+			);
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expectTRPCError(
+				caller.verifySentry({ apiToken: 'tok', organizationSlug: 'my-org' }),
+				'UNAUTHORIZED',
+			);
+		});
+
+		it('rejects empty apiToken', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.verifySentry({ apiToken: '', organizationSlug: 'my-org' }),
+			).rejects.toThrow();
+		});
+
+		it('rejects empty organizationSlug', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.verifySentry({ apiToken: 'sntrys_abc', organizationSlug: '' }),
+			).rejects.toThrow();
 		});
 	});
 });

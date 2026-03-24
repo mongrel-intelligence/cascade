@@ -176,7 +176,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
+					category: z.enum(['pm', 'scm', 'alerting']),
 					provider: z.string().min(1),
 					config: z.record(z.unknown()),
 					triggers: z.record(z.boolean()).optional(),
@@ -197,7 +197,7 @@ export const projectsRouter = router({
 			.input(
 				z.object({
 					projectId: z.string(),
-					category: z.enum(['pm', 'scm']),
+					category: z.enum(['pm', 'scm', 'alerting']),
 					triggers: z.record(z.union([z.boolean(), z.string().nullable(), z.record(z.boolean())])),
 				}),
 			)
@@ -207,7 +207,7 @@ export const projectsRouter = router({
 			}),
 
 		delete: protectedProcedure
-			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm']) }))
+			.input(z.object({ projectId: z.string(), category: z.enum(['pm', 'scm', 'alerting']) }))
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
 				await deleteProjectIntegration(input.projectId, input.category);
