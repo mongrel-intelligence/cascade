@@ -520,6 +520,113 @@ describe('CheckSuiteFailureTrigger', () => {
 			});
 		});
 
+		it('fires via getOpenPRByBranch fallback when pull_requests is empty and head_branch is a plain name', async () => {
+			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue({
+				number: 42,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				title: 'Test PR',
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: '',
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/adding-engines-guide',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 1,
+				checkRuns: [{ name: 'CodeQL', status: 'completed', conclusion: 'failure' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						head_branch: 'feature/adding-engines-guide',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(githubClient.getOpenPRByBranch).toHaveBeenCalledWith(
+				'owner',
+				'repo',
+				'feature/adding-engines-guide',
+			);
+			expect(result?.agentType).toBe('respond-to-ci');
+			expect(result?.prNumber).toBe(42);
+		});
+
+		it('returns null via getOpenPRByBranch fallback when no open PR exists for branch', async () => {
+			vi.mocked(githubClient.getOpenPRByBranch).mockResolvedValue(null);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						head_branch: 'main',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(githubClient.getOpenPRByBranch).toHaveBeenCalledWith('owner', 'repo', 'main');
+			expect(result).toBeNull();
+		});
+
+		it('returns null when pull_requests is empty and head_branch is absent', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'completed',
+					check_suite: {
+						id: 1,
+						status: 'completed',
+						conclusion: 'failure',
+						head_sha: 'sha123',
+						pull_requests: [],
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'github-actions' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(githubClient.getOpenPRByBranch).not.toHaveBeenCalled();
+			expect(result).toBeNull();
+		});
+
 		it('resetFixAttempts clears attempts for a PR', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
