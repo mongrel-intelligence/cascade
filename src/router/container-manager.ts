@@ -126,6 +126,7 @@ interface SpawnSettings {
 	snapshotEnabled: boolean;
 	workerImage: string;
 	containerTimeoutMs: number;
+	snapshotTtlMs: number;
 }
 
 /**
@@ -140,8 +141,9 @@ async function resolveSpawnSettings(
 	let snapshotEnabled = false;
 	let workerImage = routerConfig.workerImage;
 	let containerTimeoutMs = routerConfig.workerTimeoutMs;
+	let snapshotTtlMs = routerConfig.snapshotDefaultTtlMs;
 
-	if (!projectId) return { snapshotEnabled, workerImage, containerTimeoutMs };
+	if (!projectId) return { snapshotEnabled, workerImage, containerTimeoutMs, snapshotTtlMs };
 
 	const { fullProjects } = await loadProjectConfig();
 	const projectCfg = fullProjects.find((p) => p.id === projectId);
@@ -149,8 +151,11 @@ async function resolveSpawnSettings(
 	// Project-level snapshotEnabled overrides the global default
 	snapshotEnabled = projectCfg?.snapshotEnabled ?? routerConfig.snapshotEnabled;
 
+	// Per-project TTL overrides the global default
+	snapshotTtlMs = projectCfg?.snapshotTtlMs ?? routerConfig.snapshotDefaultTtlMs;
+
 	if (snapshotEnabled && workItemId) {
-		const snapshot = getSnapshot(projectId, workItemId);
+		const snapshot = getSnapshot(projectId, workItemId, snapshotTtlMs);
 		if (snapshot) {
 			logger.info('[WorkerManager] Snapshot hit — using snapshot image:', {
 				jobId,
@@ -175,7 +180,7 @@ async function resolveSpawnSettings(
 		containerTimeoutMs = projectCfg.watchdogTimeoutMs + ROUTER_KILL_BUFFER_MS;
 	}
 
-	return { snapshotEnabled, workerImage, containerTimeoutMs };
+	return { snapshotEnabled, workerImage, containerTimeoutMs, snapshotTtlMs };
 }
 
 /**

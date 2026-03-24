@@ -59,21 +59,30 @@ export function registerSnapshot(
 /**
  * Look up snapshot metadata for a project+workItem pair.
  * Returns undefined if no snapshot exists or if the snapshot has exceeded the
- * configured TTL (snapshotDefaultTtlMs). Expired entries are removed eagerly.
+ * effective TTL. Expired entries are removed eagerly.
+ *
+ * @param ttlMs - Effective TTL in milliseconds. Callers should pass
+ *   `projectCfg?.snapshotTtlMs ?? routerConfig.snapshotDefaultTtlMs` so that
+ *   per-project TTL overrides are honoured. Defaults to the global
+ *   `snapshotDefaultTtlMs` when omitted.
  */
-export function getSnapshot(projectId: string, workItemId: string): SnapshotMetadata | undefined {
+export function getSnapshot(
+	projectId: string,
+	workItemId: string,
+	ttlMs: number = routerConfig.snapshotDefaultTtlMs,
+): SnapshotMetadata | undefined {
 	const key = snapshotKey(projectId, workItemId);
 	const metadata = snapshots.get(key);
 	if (!metadata) return undefined;
 
 	const ageMs = Date.now() - metadata.createdAt.getTime();
-	if (ageMs > routerConfig.snapshotDefaultTtlMs) {
+	if (ageMs > ttlMs) {
 		snapshots.delete(key);
 		logger.info('[SnapshotManager] Snapshot expired and evicted:', {
 			projectId,
 			workItemId,
 			ageMs,
-			ttlMs: routerConfig.snapshotDefaultTtlMs,
+			ttlMs,
 		});
 		return undefined;
 	}

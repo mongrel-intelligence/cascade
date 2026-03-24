@@ -98,14 +98,21 @@ export async function scanAndCleanupOrphans(): Promise<void> {
 				continue;
 			}
 
-			// This is an orphan — stop it
+			// This is an orphan — stop it and remove it.
+			// Remove is called unconditionally after stop: for non-snapshot containers
+			// (AutoRemove=true) Docker may already have removed them, in which case
+			// remove() is a harmless no-op; for snapshot containers (AutoRemove=false)
+			// it ensures stopped containers don't accumulate on disk.
 			try {
 				const container = docker.getContainer(containerId);
 				await container.stop({ t: 15 }); // 15 second graceful shutdown
+				await container.remove({ force: false }).catch(() => {
+					// Container may have been removed by Docker's AutoRemove — not an error
+				});
 
 				stoppedCount++;
 				const ageMinutes = Math.round(ageMs / 60000);
-				logger.warn('[WorkerManager] Stopped orphaned container:', {
+				logger.warn('[WorkerManager] Stopped and removed orphaned container:', {
 					containerId: containerId.slice(0, 12),
 					ageMinutes,
 				});

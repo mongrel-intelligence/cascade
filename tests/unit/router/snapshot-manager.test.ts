@@ -147,6 +147,32 @@ describe('snapshot-manager', () => {
 			expect(getSnapshot('proj-1', 'card-abc')).toBeDefined();
 			expect(getSnapshotCount()).toBe(1);
 		});
+
+		it('respects an explicit ttlMs override (per-project TTL)', () => {
+			// Register a snapshot created 2 seconds ago
+			const snap = registerSnapshot('proj-1', 'card-abc', 'img:latest');
+			snap.createdAt = new Date(Date.now() - 2000);
+
+			// With a 5-second TTL the snapshot is still fresh
+			expect(getSnapshot('proj-1', 'card-abc', 5000)).toBeDefined();
+			// With a 1-second TTL the snapshot is expired
+			expect(getSnapshot('proj-1', 'card-abc', 1000)).toBeUndefined();
+			expect(getSnapshotCount()).toBe(0);
+		});
+
+		it('uses global snapshotDefaultTtlMs when no ttlMs is passed', () => {
+			const originalTtl = routerConfig.snapshotDefaultTtlMs;
+			(routerConfig as { snapshotDefaultTtlMs: number }).snapshotDefaultTtlMs = 1000;
+
+			const snap = registerSnapshot('proj-1', 'card-abc', 'img:latest');
+			snap.createdAt = new Date(Date.now() - 2000);
+
+			// No ttlMs argument — should fall back to routerConfig.snapshotDefaultTtlMs (1000ms)
+			expect(getSnapshot('proj-1', 'card-abc')).toBeUndefined();
+			expect(getSnapshotCount()).toBe(0);
+
+			(routerConfig as { snapshotDefaultTtlMs: number }).snapshotDefaultTtlMs = originalTtl;
+		});
 	});
 
 	// -------------------------------------------------------------------------

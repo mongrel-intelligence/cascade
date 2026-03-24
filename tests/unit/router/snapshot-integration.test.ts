@@ -429,6 +429,52 @@ describe('spawnWorker — snapshot hit (existing snapshot)', () => {
 	});
 });
 
+describe('spawnWorker — per-project snapshotTtlMs forwarded to getSnapshot', () => {
+	beforeEach(() => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'info').mockImplementation(() => {});
+		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockGetSnapshot.mockReturnValue(undefined);
+		detachAll();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		detachAll();
+	});
+
+	it('passes per-project snapshotTtlMs as the ttlMs arg to getSnapshot', async () => {
+		const projectSnapshotTtlMs = 3600000; // 1 hour (overrides global 24h default)
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{ id: 'proj-snap', snapshotEnabled: true, snapshotTtlMs: projectSnapshotTtlMs },
+			],
+		});
+		setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		// getSnapshot should have been called with the project's TTL, not the global default
+		expect(mockGetSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap', projectSnapshotTtlMs);
+	});
+
+	it('passes global snapshotDefaultTtlMs when project has no snapshotTtlMs', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-snap', snapshotEnabled: true }],
+		});
+		setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		// getSnapshot should have been called with the global default TTL (86400000)
+		expect(mockGetSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap', 86400000);
+	});
+});
+
 describe('spawnWorker — snapshot label on disabled project', () => {
 	beforeEach(() => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
