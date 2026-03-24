@@ -226,9 +226,9 @@ import { createInterface } from 'node:readline';
 import { MY_ENGINE_DEFINITION } from '../catalog.js';
 import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
-import { SHARED_ALLOWED_ENV_EXACT } from '../shared/envFilter.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import { ALLOWED_ENV_EXACT } from './env.js';
 import { DEFAULT_MY_ENGINE_MODEL, MY_ENGINE_MODEL_IDS } from './models.js';
 import { MyEngineSettingsSchema, resolveMyEngineSettings } from './settings.js';
 
@@ -257,11 +257,7 @@ export class MyEngine extends NativeToolEngine {
   // ── NativeToolEngine abstract methods ──────────────────────────────────────
 
   getAllowedEnvExact(): Set<string> {
-    return new Set([
-      ...SHARED_ALLOWED_ENV_EXACT,
-      'MY_ENGINE_API_KEY',
-      'SQUINT_DB_PATH',
-    ]);
+    return ALLOWED_ENV_EXACT;
   }
 
   getExtraEnvVars(): Record<string, string> {
