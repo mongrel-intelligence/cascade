@@ -31,6 +31,9 @@ const baseProjectRow = {
 	agentEngine: null,
 	agentEngineSettings: null,
 	runLinksEnabled: false,
+	maxInFlightItems: null,
+	snapshotEnabled: null,
+	snapshotTtlMs: null,
 };
 
 const trelloConfig = {
@@ -345,5 +348,26 @@ describe('mapProjectRow', () => {
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
 		expect(Object.hasOwn(result, 'prompts')).toBe(false);
+	});
+
+	it('returns undefined snapshotEnabled and snapshotTtlMs when both are null', () => {
+		const result = mapProjectRow(makeInput());
+		expect(result.snapshotEnabled).toBeUndefined();
+		expect(result.snapshotTtlMs).toBeUndefined();
+	});
+
+	it('maps snapshotEnabled true when set on project row', () => {
+		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, snapshotEnabled: true } }));
+		expect(result.snapshotEnabled).toBe(true);
+	});
+
+	it('maps snapshotEnabled false when explicitly set on project row', () => {
+		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, snapshotEnabled: false } }));
+		expect(result.snapshotEnabled).toBe(false);
+	});
+
+	it('maps snapshotTtlMs when set on project row', () => {
+		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, snapshotTtlMs: 3600000 } }));
+		expect(result.snapshotTtlMs).toBe(3600000);
 	});
 });
