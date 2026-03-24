@@ -28,7 +28,11 @@ export function findSnapshotWorkspaceDir(projectId: string): string | null {
 	const prefix = `cascade-${projectId}-`;
 	try {
 		const entries = readdirSync(workspaceBase);
-		const match = entries.find((e) => e.startsWith(prefix));
+		const match = entries.find((e) => {
+			if (!e.startsWith(prefix)) return false;
+			const suffix = e.slice(prefix.length);
+			return /^\d+$/.test(suffix);
+		});
 		return match ? `${workspaceBase}/${match}` : null;
 	} catch {
 		return null;

@@ -135,6 +135,30 @@ describe('findSnapshotWorkspaceDir', () => {
 		expect(mockGetWorkspaceDir).toHaveBeenCalled();
 		expect(result).toBe('/custom-workspace/cascade-test-project-55555');
 	});
+
+	it('does not match a directory whose suffix is not all digits (prevents cross-project prefix collision)', () => {
+		// cascade-foo-bar-<timestamp> must NOT match projectId="foo" even though it starts with "cascade-foo-"
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+		mockReaddirSync.mockReturnValue([
+			'cascade-foo-bar-1711234567890', // wrong project: foo-bar
+			'cascade-foo-1711234567890', // correct project: foo
+		] as never);
+
+		const result = findSnapshotWorkspaceDir('foo');
+
+		expect(result).toBe('/workspace/cascade-foo-1711234567890');
+	});
+
+	it('returns null when only non-numeric-suffix entries match the prefix', () => {
+		mockGetWorkspaceDir.mockReturnValue('/workspace');
+		mockReaddirSync.mockReturnValue([
+			'cascade-foo-bar-1711234567890', // prefix matches "foo-" but suffix "bar-1711234567890" is not all digits
+		] as never);
+
+		const result = findSnapshotWorkspaceDir('foo');
+
+		expect(result).toBeNull();
+	});
 });
 
 // ── setupRepository (cold-start path) ─────────────────────────────────────────
