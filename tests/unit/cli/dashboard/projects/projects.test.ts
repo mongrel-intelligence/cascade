@@ -63,6 +63,9 @@ function makeClient(overrides: Record<string, unknown> = {}) {
 				upsert: { mutate: vi.fn().mockResolvedValue(undefined) },
 			},
 		},
+		agentConfigs: {
+			enginesInUse: { query: vi.fn().mockResolvedValue([]) },
+		},
 		agentDefinitions: {
 			get: {
 				query: vi.fn().mockResolvedValue({

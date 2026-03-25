@@ -102,6 +102,9 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 		...trpc.projects.defaults.queryOptions(),
 		staleTime: Number.POSITIVE_INFINITY,
 	});
+	const enginesInUseQuery = useQuery(
+		trpc.agentConfigs.enginesInUse.queryOptions({ projectId: project.id }),
+	);
 	const defaults = defaultsQuery.data;
 
 	const [model, setModel] = useState(project.model ?? '');
@@ -137,10 +140,18 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 
 	const credentials = credentialsQuery.data ?? [];
 
-	// Show engine secrets filtered by selected engine; show none when no engine selected
-	const visibleSecrets = effectiveEngineId
-		? ENGINE_SECRETS.filter((s) => !s.engines || s.engines.includes(effectiveEngineId))
-		: [];
+	// Collect all engine IDs that need credentials:
+	// 1. The project-level selected engine (effectiveEngineId)
+	// 2. Any per-agent engine overrides from agent configs
+	const agentEnginesInUse = enginesInUseQuery.data ?? [];
+	const allEnginesInUse = effectiveEngineId
+		? Array.from(new Set([effectiveEngineId, ...agentEnginesInUse]))
+		: agentEnginesInUse;
+
+	// Show engine secrets for all engines in use (grouped by engine when multiple)
+	const visibleSecrets = ENGINE_SECRETS.filter(
+		(s) => !s.engines || s.engines.some((e) => allEnginesInUse.includes(e)),
+	);
 
 	// Default engine label for the select placeholder
 	const defaultEngineLabel = defaults ? `Default (${capitalize(defaults.agentEngine)})` : 'Default';
@@ -275,7 +286,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
-						{!effectiveEngineId ? (
+						{allEnginesInUse.length === 0 ? (
 							<p className="text-sm text-muted-foreground">
 								Select an engine above to see required credentials.
 							</p>
@@ -285,6 +296,12 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 							</p>
 						) : (
 							<div className="space-y-4">
+								{agentEnginesInUse.length > 0 && effectiveEngineId && (
+									<p className="text-xs text-muted-foreground">
+										Showing credentials for the project engine and engines used by individual agent
+										configs.
+									</p>
+								)}
 								{visibleSecrets.map((secret) => (
 									<ProjectSecretField
 										key={secret.envVarKey}

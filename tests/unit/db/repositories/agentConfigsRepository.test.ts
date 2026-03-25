@@ -10,6 +10,7 @@ import {
 	getAgentConfigPrompts,
 	getMaxConcurrency,
 	listAgentConfigs,
+	listDistinctEnginesByProject,
 	updateAgentConfig,
 } from '../../../../src/db/repositories/agentConfigsRepository.js';
 
@@ -200,6 +201,44 @@ describe('agentConfigsRepository', () => {
 			const result = await getAgentConfigPrompts('prompts-proj-unique-2', 'splitting');
 
 			expect(result).toEqual({ systemPrompt: null, taskPrompt: null });
+		});
+	});
+
+	describe('listDistinctEnginesByProject', () => {
+		it('returns distinct engine IDs for a project', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([
+				{ agentEngine: 'codex' },
+				{ agentEngine: 'claude-code' },
+			]);
+
+			const result = await listDistinctEnginesByProject('proj-engines-1');
+
+			expect(result).toEqual(['codex', 'claude-code']);
+		});
+
+		it('returns empty array when no agent configs have engine overrides', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			const result = await listDistinctEnginesByProject('proj-engines-2');
+
+			expect(result).toEqual([]);
+		});
+
+		it('returns a single engine when all agent configs use the same engine', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([{ agentEngine: 'opencode' }]);
+
+			const result = await listDistinctEnginesByProject('proj-engines-3');
+
+			expect(result).toEqual(['opencode']);
+		});
+
+		it('uses selectDistinct on the agentConfigs table', async () => {
+			mockDb.chain.where.mockResolvedValueOnce([]);
+
+			await listDistinctEnginesByProject('proj-engines-4');
+
+			// selectDistinct is called (not select) — verify through the mock db
+			expect(mockDb.db.selectDistinct).toHaveBeenCalledTimes(1);
 		});
 	});
 });

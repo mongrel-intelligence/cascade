@@ -8,6 +8,7 @@ import {
 
 const {
 	mockListAgentConfigs,
+	mockListDistinctEnginesByProject,
 	mockCreateAgentConfig,
 	mockUpdateAgentConfig,
 	mockDeleteAgentConfig,
@@ -21,6 +22,7 @@ const {
 	mockGetDefaultTaskPrompt,
 } = vi.hoisted(() => ({
 	mockListAgentConfigs: vi.fn(),
+	mockListDistinctEnginesByProject: vi.fn(),
 	mockCreateAgentConfig: vi.fn(),
 	mockUpdateAgentConfig: vi.fn(),
 	mockDeleteAgentConfig: vi.fn(),
@@ -36,6 +38,7 @@ const {
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listAgentConfigs: mockListAgentConfigs,
+	listDistinctEnginesByProject: mockListDistinctEnginesByProject,
 	createAgentConfig: mockCreateAgentConfig,
 	updateAgentConfig: mockUpdateAgentConfig,
 	deleteAgentConfig: mockDeleteAgentConfig,
@@ -553,6 +556,45 @@ describe('agentConfigsRouter', () => {
 			});
 
 			expect(mockValidateTemplate).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('enginesInUse', () => {
+		it('returns distinct engine IDs used by agent configs in the project', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockListDistinctEnginesByProject.mockResolvedValue(['codex', 'claude-code']);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.enginesInUse({ projectId: 'proj-1' });
+
+			expect(mockListDistinctEnginesByProject).toHaveBeenCalledWith('proj-1');
+			expect(result).toEqual(['codex', 'claude-code']);
+		});
+
+		it('returns empty array when no agent configs have engine overrides', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockListDistinctEnginesByProject.mockResolvedValue([]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.enginesInUse({ projectId: 'proj-1' });
+
+			expect(result).toEqual([]);
+		});
+
+		it('throws NOT_FOUND when project does not belong to org', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'different-org' }]);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(caller.enginesInUse({ projectId: 'proj-x' })).rejects.toMatchObject({
+				code: 'NOT_FOUND',
+			});
+		});
+
+		it('throws UNAUTHORIZED when not authenticated', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expect(caller.enginesInUse({ projectId: 'proj-1' })).rejects.toMatchObject({
+				code: 'UNAUTHORIZED',
+			});
 		});
 	});
 

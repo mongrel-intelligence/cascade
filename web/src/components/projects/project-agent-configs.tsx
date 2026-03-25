@@ -480,6 +480,28 @@ function DefinitionAgentSection({
 }
 
 // ============================================================================
+// Engine credential mapping (mirrors project-harness-form.tsx ENGINE_SECRETS)
+// ============================================================================
+
+/** Maps engine ID to the env-var keys that serve as credentials for that engine. */
+const ENGINE_CREDENTIAL_KEYS: Record<string, string[]> = {
+	codex: ['OPENAI_API_KEY', 'CODEX_AUTH_JSON'],
+	opencode: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'],
+	'claude-code': ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
+	llmist: ['OPENROUTER_API_KEY'],
+};
+
+/**
+ * Returns true when the given engine has at least one credential key configured.
+ * If the engine is not in the map, we conservatively assume credentials are present.
+ */
+function engineHasCredentials(engineId: string, configuredCredentialKeys: Set<string>): boolean {
+	const requiredKeys = ENGINE_CREDENTIAL_KEYS[engineId];
+	if (!requiredKeys) return true; // Unknown engine — assume ok
+	return requiredKeys.some((key) => configuredCredentialKeys.has(key));
+}
+
+// ============================================================================
 // Agent List View
 // ============================================================================
 
@@ -511,6 +533,8 @@ interface AgentRowProps {
 	projectEngine: string | null;
 	/** System-level defaults. */
 	systemDefaults: SystemDefaults | undefined;
+	/** Set of credential env-var keys that are configured for this project. */
+	configuredCredentialKeys: Set<string>;
 }
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: table row with multiple computed display values (model, engine, trigger count) and layered inheritance fallbacks
@@ -524,6 +548,7 @@ function AgentRow({
 	projectModel,
 	projectEngine,
 	systemDefaults,
+	configuredCredentialKeys,
 }: AgentRowProps) {
 	const label = (AGENT_LABELS as Record<string, string | undefined>)[type] ?? type;
 	const activeTriggerCount = countActiveTriggers(triggers, integrations);
@@ -538,6 +563,12 @@ function AgentRow({
 	const displayModel = modelInfo ?? (inheritedModel ? `${inheritedModel} (inherited)` : null);
 	const displayEngine = engineInfo ?? (inheritedEngine ? `${inheritedEngine} (inherited)` : null);
 
+	// Check if the agent's effective engine has credentials configured
+	// Only check when there is an explicit agent-level engine override
+	const agentEngineId = config?.agentEngine ?? null;
+	const hasMissingCredentials =
+		agentEngineId !== null && !engineHasCredentials(agentEngineId, configuredCredentialKeys);
+
 	return (
 		<TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => onSelect(type)}>
 			<TableCell className="font-medium">{label}</TableCell>
@@ -550,9 +581,25 @@ function AgentRow({
 						Inactive
 					</Badge>
 				) : config ? (
-					<Badge variant="default" className="text-xs">
-						Configured
-					</Badge>
+					<div className="flex items-center gap-1.5">
+						<Badge variant="default" className="text-xs">
+							Configured
+						</Badge>
+						{hasMissingCredentials && (
+							<Tooltip>
+								<TooltipTrigger asChild>
+									<span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800 dark:bg-amber-900/30 dark:text-amber-400">
+										<AlertTriangle className="h-3 w-3" />
+										Missing credentials
+									</span>
+								</TooltipTrigger>
+								<TooltipContent>
+									This agent uses the {agentEngineId} engine but no credentials are configured for
+									it. Configure credentials on the Harness tab.
+								</TooltipContent>
+							</Tooltip>
+						)}
+					</div>
 				) : (
 					<Badge variant="outline" className="text-xs">
 						Default
@@ -631,6 +678,8 @@ interface AgentListViewProps {
 	projectModel: string | null;
 	projectEngine: string | null;
 	systemDefaults: SystemDefaults | undefined;
+	/** Set of credential env-var keys that are configured for this project. */
+	configuredCredentialKeys: Set<string>;
 }
 
 function AgentListView({
@@ -647,6 +696,7 @@ function AgentListView({
 	projectModel,
 	projectEngine,
 	systemDefaults,
+	configuredCredentialKeys,
 }: AgentListViewProps) {
 	const [deleteTarget, setDeleteTarget] = useState<{ id: number; label: string } | null>(null);
 
@@ -682,6 +732,7 @@ function AgentListView({
 										projectModel={projectModel}
 										projectEngine={projectEngine}
 										systemDefaults={systemDefaults}
+										configuredCredentialKeys={configuredCredentialKeys}
 									/>
 								))}
 							</TableBody>
@@ -848,6 +899,9 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	// Agent configs query
 	const configsQuery = useQuery(trpc.agentConfigs.list.queryOptions({ projectId }));
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
+
+	// Credentials query — used to show missing-credentials warnings on agent rows
+	const credentialsQuery = useQuery(trpc.projects.credentials.list.queryOptions({ projectId }));
 
 	// Project-level defaults (for inheritance chain display)
 	const projectQuery = useQuery(trpc.projects.getById.queryOptions({ id: projectId }));
@@ -1048,6 +1102,11 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 	// Available (unconfigured) agent types
 	const availableAgentTypes = triggersViewQuery.data?.availableAgents ?? [];
 
+	// Build set of configured credential keys for missing-credentials detection on agent rows
+	const configuredCredentialKeys = new Set<string>(
+		(credentialsQuery.data ?? []).map((c: { envVarKey: string }) => c.envVarKey),
+	);
+
 	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: save handler dispatches create vs update, builds payload from many optional fields, and chains trigger upsert
 	const handleSaveConfig = (type: string, configId: number | null, values: SaveConfigValues) => {
 		setSavingAgentType(type);
@@ -1161,6 +1220,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				projectModel={projectModel}
 				projectEngine={projectEngine}
 				systemDefaults={systemDefaults}
+				configuredCredentialKeys={configuredCredentialKeys}
 			/>
 		</div>
 	);
