@@ -1,3 +1,4 @@
+import { engineCredentialKeys } from '@/components/projects/engine-secrets.js';
 import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import {
@@ -479,24 +480,13 @@ function DefinitionAgentSection({
 	);
 }
 
-// ============================================================================
-// Engine credential mapping (mirrors project-harness-form.tsx ENGINE_SECRETS)
-// ============================================================================
-
-/** Maps engine ID to the env-var keys that serve as credentials for that engine. */
-const ENGINE_CREDENTIAL_KEYS: Record<string, string[]> = {
-	codex: ['OPENAI_API_KEY', 'CODEX_AUTH_JSON'],
-	opencode: ['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY'],
-	'claude-code': ['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN'],
-	llmist: ['OPENROUTER_API_KEY'],
-};
-
 /**
  * Returns true when the given engine has at least one credential key configured.
+ * Derived from ENGINE_SECRETS in engine-secrets.ts — no separate mapping to maintain.
  * If the engine is not in the map, we conservatively assume credentials are present.
  */
 function engineHasCredentials(engineId: string, configuredCredentialKeys: Set<string>): boolean {
-	const requiredKeys = ENGINE_CREDENTIAL_KEYS[engineId];
+	const requiredKeys = engineCredentialKeys[engineId];
 	if (!requiredKeys) return true; // Unknown engine — assume ok
 	return requiredKeys.some((key) => configuredCredentialKeys.has(key));
 }
