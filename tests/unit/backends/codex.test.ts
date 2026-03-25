@@ -245,6 +245,48 @@ describe('extractToolCall', () => {
 			}),
 		).toEqual({ name: 'finish', input: undefined });
 	});
+
+	it('returns null for item.completed event with non-function_call item type', () => {
+		expect(
+			extractToolCall({
+				type: 'item.completed',
+				item: { type: 'agent_message', text: 'Done.' },
+			}),
+		).toBeNull();
+	});
+
+	it('handles malformed JSON arguments in item.completed function_call (Responses API)', () => {
+		expect(
+			extractToolCall({
+				type: 'item.completed',
+				item: { type: 'function_call', name: 'bash', arguments: '{bad json here' },
+			}),
+		).toEqual({ name: 'bash', input: undefined });
+	});
+
+	it('handles item.completed function_call with object arguments (not string)', () => {
+		expect(
+			extractToolCall({
+				type: 'item.completed',
+				item: { type: 'function_call', name: 'Tmux', arguments: { command: 'npm test' } },
+			}),
+		).toEqual({ name: 'Tmux', input: { command: 'npm test' } });
+	});
+
+	it('returns null when item.completed has no item field', () => {
+		expect(extractToolCall({ type: 'item.completed' })).toBeNull();
+	});
+
+	it('returns null for item.completed with null item', () => {
+		expect(extractToolCall({ type: 'item.completed', item: null })).toBeNull();
+	});
+
+	it('handles tool_name without tool_input (input is undefined)', () => {
+		expect(extractToolCall({ tool_name: 'bash' })).toEqual({
+			name: 'bash',
+			input: undefined,
+		});
+	});
 });
 
 describe('extractTextParts', () => {
