@@ -19,12 +19,14 @@ const {
 	mockLoadProjectConfig,
 	mockGetSnapshot,
 	mockRegisterSnapshot,
+	mockInvalidateSnapshot,
 } = vi.hoisted(() => ({
 	mockDockerCreateContainer: vi.fn(),
 	mockDockerGetContainer: vi.fn(),
 	mockLoadProjectConfig: vi.fn().mockResolvedValue({ projects: [], fullProjects: [] }),
 	mockGetSnapshot: vi.fn().mockReturnValue(undefined),
 	mockRegisterSnapshot: vi.fn(),
+	mockInvalidateSnapshot: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -81,7 +83,7 @@ vi.mock('../../../src/router/agent-type-lock.js', () => ({
 vi.mock('../../../src/router/snapshot-manager.js', () => ({
 	getSnapshot: (...args: unknown[]) => mockGetSnapshot(...args),
 	registerSnapshot: (...args: unknown[]) => mockRegisterSnapshot(...args),
-	invalidateSnapshot: vi.fn(),
+	invalidateSnapshot: (...args: unknown[]) => mockInvalidateSnapshot(...args),
 }));
 
 vi.mock('../../../src/router/config.js', () => ({
@@ -472,6 +474,102 @@ describe('spawnWorker — per-project snapshotTtlMs forwarded to getSnapshot', (
 
 		// getSnapshot should have been called with the global default TTL (86400000)
 		expect(mockGetSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap', 86400000);
+	});
+});
+
+describe('spawnWorker — stale snapshot (image not found fallback)', () => {
+	const staleImageError = Object.assign(
+		new Error(
+			'(HTTP code 404) no such container - No such image: cascade-snapshot-proj-snap-card-snap:latest',
+		),
+		{ statusCode: 404 },
+	);
+	const snapshotMetadata = {
+		imageName: 'cascade-snapshot-proj-snap-card-snap:latest',
+		projectId: 'proj-snap',
+		workItemId: 'card-snap',
+		createdAt: new Date(),
+	};
+
+	beforeEach(() => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'info').mockImplementation(() => {});
+		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockGetSnapshot.mockReturnValue(snapshotMetadata);
+		mockInvalidateSnapshot.mockClear();
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'proj-snap', snapshotEnabled: true }],
+		});
+		detachAll();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		detachAll();
+	});
+
+	it('invalidates stale snapshot and retries with base image when Docker returns 404', async () => {
+		// First call (snapshot image) rejects with 404; second call (base image) succeeds
+		mockDockerCreateContainer.mockRejectedValueOnce(staleImageError);
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		expect(mockInvalidateSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap');
+		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
+		expect(mockDockerCreateContainer).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ Image: 'base-worker:latest' }),
+		);
+
+		resolveWait();
+	});
+
+	it('fallback still has snapshot enabled (AutoRemove=false, will commit on success)', async () => {
+		mockDockerCreateContainer.mockRejectedValueOnce(staleImageError);
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		expect(mockDockerCreateContainer).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({
+				HostConfig: expect.objectContaining({ AutoRemove: false }),
+			}),
+		);
+
+		resolveWait();
+	});
+
+	it('still invalidates the snapshot when the fallback base image also fails', async () => {
+		mockDockerCreateContainer
+			.mockRejectedValueOnce(staleImageError)
+			.mockRejectedValueOnce(new Error('base image also failed'));
+
+		await expect(spawnWorker(makeJob() as never)).rejects.toThrow('base image also failed');
+
+		expect(mockInvalidateSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap');
+	});
+
+	it('propagates 404 without retry when base image is missing (snapshotReuse=false)', async () => {
+		// No snapshot hit — fresh run, snapshotReuse will be false
+		mockGetSnapshot.mockReturnValue(undefined);
+		const baseImageError = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: base-worker:latest'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValueOnce(baseImageError);
+
+		await expect(spawnWorker(makeJob() as never)).rejects.toThrow(
+			'No such image: base-worker:latest',
+		);
+
+		// Should not retry — only one createContainer call
+		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(1);
+		expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
 	});
 });
 
