@@ -80,11 +80,15 @@ function appendOptionalEnvVars(env: string[]): void {
  *
  * @param snapshotReuse - When true, injects CASCADE_SNAPSHOT_REUSE=true so the
  *   worker knows to refresh an existing workspace instead of cloning from scratch.
+ * @param snapshotEnabled - When true, injects CASCADE_SNAPSHOT_ENABLED=true so the
+ *   worker preserves its workspace on exit (the router will commit the container to
+ *   a snapshot image after the worker exits).
  */
 export async function buildWorkerEnvWithProjectId(
 	job: Job<CascadeJob>,
 	projectId: string | null,
 	snapshotReuse = false,
+	snapshotEnabled = false,
 ): Promise<string[]> {
 	const env: string[] = [
 		`JOB_ID=${job.id}`,
@@ -104,6 +108,13 @@ export async function buildWorkerEnvWithProjectId(
 	// Signal snapshot reuse so the worker skips redundant setup (clone, install).
 	if (snapshotReuse) {
 		env.push('CASCADE_SNAPSHOT_REUSE=true');
+	}
+
+	// Signal that this container will be committed to a snapshot image after exit.
+	// The worker must NOT delete its workspace so the directory is present when the
+	// router calls docker commit (after container.wait() resolves).
+	if (snapshotEnabled) {
+		env.push('CASCADE_SNAPSHOT_ENABLED=true');
 	}
 
 	// Resolve project credentials in the router and set as individual env vars.

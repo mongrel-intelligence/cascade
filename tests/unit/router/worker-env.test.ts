@@ -299,3 +299,35 @@ describe('buildWorkerEnvWithProjectId — snapshotReuse flag', () => {
 		expect(env).toContain('REDIS_URL=redis://localhost:6379');
 	});
 });
+
+// ---------------------------------------------------------------------------
+// buildWorkerEnvWithProjectId — snapshotEnabled flag
+// ---------------------------------------------------------------------------
+
+describe('buildWorkerEnvWithProjectId — snapshotEnabled flag', () => {
+	beforeEach(() => {
+		mockGetAllProjectCredentials.mockResolvedValue({});
+	});
+
+	it('omits CASCADE_SNAPSHOT_ENABLED when snapshotEnabled=false (default)', async () => {
+		const env = await buildWorkerEnvWithProjectId(makeJob() as never, 'proj-1');
+		expect(env.some((e) => e.startsWith('CASCADE_SNAPSHOT_ENABLED='))).toBe(false);
+	});
+
+	it('includes CASCADE_SNAPSHOT_ENABLED=true when snapshotEnabled=true', async () => {
+		const env = await buildWorkerEnvWithProjectId(makeJob() as never, 'proj-1', false, true);
+		expect(env).toContain('CASCADE_SNAPSHOT_ENABLED=true');
+	});
+
+	it('can combine CASCADE_SNAPSHOT_REUSE and CASCADE_SNAPSHOT_ENABLED', async () => {
+		const env = await buildWorkerEnvWithProjectId(makeJob() as never, 'proj-1', true, true);
+		expect(env).toContain('CASCADE_SNAPSHOT_REUSE=true');
+		expect(env).toContain('CASCADE_SNAPSHOT_ENABLED=true');
+	});
+
+	it('omits CASCADE_SNAPSHOT_ENABLED when snapshotReuse=true but snapshotEnabled=false', async () => {
+		const env = await buildWorkerEnvWithProjectId(makeJob() as never, 'proj-1', true, false);
+		expect(env).toContain('CASCADE_SNAPSHOT_REUSE=true');
+		expect(env.some((e) => e.startsWith('CASCADE_SNAPSHOT_ENABLED='))).toBe(false);
+	});
+});

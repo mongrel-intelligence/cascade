@@ -380,7 +380,12 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	// A snapshot is being reused when snapshotEnabled and the image differs from the base image.
 	const snapshotReuse = snapshotEnabled && workerImage !== routerConfig.workerImage;
 
-	const workerEnv = await buildWorkerEnvWithProjectId(job, projectId, snapshotReuse);
+	const workerEnv = await buildWorkerEnvWithProjectId(
+		job,
+		projectId,
+		snapshotReuse,
+		snapshotEnabled,
+	);
 	const hasCredentials = workerEnv.some((e) => e.startsWith('CASCADE_CREDENTIAL_KEYS='));
 
 	logger.info('[WorkerManager] Spawning worker:', {
@@ -418,7 +423,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				{ jobId, staleImage: workerImage },
 			);
 			invalidateSnapshot(projectId, workItemId);
-			const fallbackEnv = await buildWorkerEnvWithProjectId(job, projectId, false);
+			const fallbackEnv = await buildWorkerEnvWithProjectId(job, projectId, false, snapshotEnabled);
 			const fallbackConfig: ContainerLaunchConfig = {
 				workerImage: routerConfig.workerImage,
 				snapshotEnabled,
