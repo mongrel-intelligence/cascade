@@ -29,6 +29,7 @@ vi.mock('../../../src/router/config.js', () => ({
 import { routerConfig } from '../../../src/router/config.js';
 import {
 	_clearAllSnapshots,
+	evictSnapshots,
 	getSnapshot,
 	getSnapshotCount,
 	invalidateSnapshot,
@@ -228,6 +229,136 @@ describe('snapshot-manager', () => {
 			invalidateSnapshot('proj-1', 'card-1');
 
 			expect(getSnapshotCount()).toBe(1);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// evictSnapshots
+	// -------------------------------------------------------------------------
+
+	describe('evictSnapshots', () => {
+		it('returns 0 when no snapshots are registered', () => {
+			expect(evictSnapshots(1000, 5, 10 * 1024 * 1024 * 1024)).toBe(0);
+		});
+
+		it('evicts expired snapshots by TTL', () => {
+			const snap1 = registerSnapshot('proj-1', 'card-1', 'img-1:latest');
+			const snap2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest');
+
+			// Backdate snap1 so it's expired
+			snap1.createdAt = new Date(Date.now() - 2000);
+			// snap2 is fresh
+
+			const evicted = evictSnapshots(1000, 10, 10 * 1024 * 1024 * 1024);
+
+			expect(evicted).toBe(1);
+			expect(getSnapshotCount()).toBe(1);
+			expect(getSnapshot('proj-1', 'card-2')).toBeDefined();
+			expect(getSnapshot('proj-1', 'card-1', 1000)).toBeUndefined();
+		});
+
+		it('evicts oldest snapshots when max-count is exceeded', () => {
+			const s1 = registerSnapshot('proj-1', 'card-1', 'img-1:latest');
+			const s2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest');
+			const s3 = registerSnapshot('proj-1', 'card-3', 'img-3:latest');
+
+			// Make s1 oldest and s3 newest
+			s1.createdAt = new Date(Date.now() - 3000);
+			s2.createdAt = new Date(Date.now() - 2000);
+			s3.createdAt = new Date(Date.now() - 1000);
+
+			// Allow all TTL, but cap at 2 snapshots
+			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 2, 10 * 1024 * 1024 * 1024);
+
+			expect(evicted).toBe(1);
+			expect(getSnapshotCount()).toBe(2);
+			// s1 (oldest) should have been evicted
+			expect(getSnapshot('proj-1', 'card-1')).toBeUndefined();
+			// s2 and s3 (newer) should remain
+			expect(getSnapshot('proj-1', 'card-2')).toBeDefined();
+			expect(getSnapshot('proj-1', 'card-3')).toBeDefined();
+		});
+
+		it('evicts oldest snapshots when max-size is exceeded', () => {
+			const s1 = registerSnapshot('proj-1', 'card-1', 'img-1:latest', 500);
+			const s2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest', 600);
+			const s3 = registerSnapshot('proj-1', 'card-3', 'img-3:latest', 400);
+
+			// Make s1 oldest
+			s1.createdAt = new Date(Date.now() - 3000);
+			s2.createdAt = new Date(Date.now() - 2000);
+			s3.createdAt = new Date(Date.now() - 1000);
+
+			// Total = 1500 bytes, cap at 1100 — need to evict 400+ bytes (oldest first)
+			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 100, 1100);
+
+			// After removing s1 (500 bytes): 1000 <= 1100, done
+			expect(evicted).toBe(1);
+			expect(getSnapshotCount()).toBe(2);
+			expect(getSnapshot('proj-1', 'card-1')).toBeUndefined();
+			expect(getSnapshot('proj-1', 'card-2')).toBeDefined();
+			expect(getSnapshot('proj-1', 'card-3')).toBeDefined();
+		});
+
+		it('applies TTL eviction before max-count eviction', () => {
+			const s1 = registerSnapshot('proj-1', 'card-1', 'img-1:latest');
+			const s2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest');
+			const s3 = registerSnapshot('proj-1', 'card-3', 'img-3:latest');
+
+			// Expire s1 and s2
+			s1.createdAt = new Date(Date.now() - 2000);
+			s2.createdAt = new Date(Date.now() - 2000);
+			s3.createdAt = new Date();
+
+			// TTL = 1s, maxCount = 2 — TTL should remove s1 and s2 first
+			const evicted = evictSnapshots(1000, 2, 10 * 1024 * 1024 * 1024);
+
+			// Both expired, so 2 removed by TTL, count drops to 1 which is under maxCount=2
+			expect(evicted).toBe(2);
+			expect(getSnapshotCount()).toBe(1);
+			expect(getSnapshot('proj-1', 'card-3')).toBeDefined();
+		});
+
+		it('does not evict when under all budgets', () => {
+			registerSnapshot('proj-1', 'card-1', 'img-1:latest', 100);
+			registerSnapshot('proj-1', 'card-2', 'img-2:latest', 200);
+
+			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 10, 10 * 1024 * 1024 * 1024);
+
+			expect(evicted).toBe(0);
+			expect(getSnapshotCount()).toBe(2);
+		});
+
+		it('handles snapshots with no imageSizeBytes in max-size eviction', () => {
+			const s1 = registerSnapshot('proj-1', 'card-1', 'img-1:latest'); // no size
+			const s2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest', 500);
+
+			// s1 oldest
+			s1.createdAt = new Date(Date.now() - 2000);
+			s2.createdAt = new Date(Date.now() - 1000);
+
+			// Total known size = 500 bytes, below the 1000 byte cap
+			// Snapshots without size contribute 0 — no eviction needed
+			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 100, 1000);
+
+			expect(evicted).toBe(0);
+			expect(getSnapshotCount()).toBe(2);
+		});
+
+		it('uses routerConfig defaults when no args passed', () => {
+			// Register 6 snapshots — over the mocked snapshotMaxCount of 5
+			for (let i = 1; i <= 6; i++) {
+				const s = registerSnapshot('proj-1', `card-${i}`, `img-${i}:latest`);
+				// Age oldest first
+				s.createdAt = new Date(Date.now() - (7 - i) * 1000);
+			}
+
+			// routerConfig.snapshotMaxCount = 5 (from mock) — evictSnapshots() with no args
+			// should use that default
+			const evicted = evictSnapshots();
+
+			expect(evicted).toBe(1);
+			expect(getSnapshotCount()).toBe(5);
 		});
 	});
 });

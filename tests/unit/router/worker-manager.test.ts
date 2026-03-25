@@ -18,6 +18,11 @@ vi.mock('../../../src/router/container-manager.js', () => ({
 	stopOrphanCleanup: vi.fn(),
 }));
 
+vi.mock('../../../src/router/snapshot-cleanup.js', () => ({
+	startSnapshotCleanup: vi.fn(),
+	stopSnapshotCleanup: vi.fn(),
+}));
+
 vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: {
 		redisUrl: 'redis://localhost:6379',
@@ -52,6 +57,7 @@ import {
 	startOrphanCleanup,
 	stopOrphanCleanup,
 } from '../../../src/router/container-manager.js';
+import { startSnapshotCleanup, stopSnapshotCleanup } from '../../../src/router/snapshot-cleanup.js';
 import {
 	startWorkerProcessor,
 	stopWorkerProcessor,
@@ -68,6 +74,8 @@ const mockGetActiveWorkers = vi.mocked(getActiveWorkers);
 const mockDetachAll = vi.mocked(detachAll);
 const mockStartOrphanCleanup = vi.mocked(startOrphanCleanup);
 const mockStopOrphanCleanup = vi.mocked(stopOrphanCleanup);
+const mockStartSnapshotCleanup = vi.mocked(startSnapshotCleanup);
+const mockStopSnapshotCleanup = vi.mocked(stopSnapshotCleanup);
 const mockLogger = vi.mocked(logger);
 
 // ---------------------------------------------------------------------------
@@ -248,5 +256,16 @@ describe('stopWorkerProcessor', () => {
 		startWorkerProcessor();
 		await stopWorkerProcessor();
 		expect(mockStopOrphanCleanup).toHaveBeenCalled();
+	});
+
+	it('calls startSnapshotCleanup during startup', () => {
+		startWorkerProcessor();
+		expect(mockStartSnapshotCleanup).toHaveBeenCalled();
+	});
+
+	it('calls stopSnapshotCleanup during shutdown', async () => {
+		startWorkerProcessor();
+		await stopWorkerProcessor();
+		expect(mockStopSnapshotCleanup).toHaveBeenCalled();
 	});
 });
