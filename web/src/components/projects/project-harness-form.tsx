@@ -85,9 +85,6 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 			: undefined;
 	}
 
-	// Default engine label for the select placeholder
-	const defaultEngineLabel = defaults ? `Default (${capitalize(defaults.agentEngine)})` : 'Default';
-
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		const activeEngine = agentEngine || null;
@@ -303,15 +300,17 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 														const sharedWith = sharedSecretEngines(secret.envVarKey);
 														const sharedNote =
 															sharedWith.length > 0
-																? `Also used by: ${sharedWith.join(', ')}`
+																? `Also used by: ${sharedWith.map((id) => engines.find((e) => e.id === id)?.label ?? id).join(', ')}`
 																: undefined;
+														const description =
+															secret.description + (sharedNote ? ` · ${sharedNote}` : '');
 														return (
 															<ProjectSecretField
 																key={secret.envVarKey}
 																projectId={project.id}
 																envVarKey={secret.envVarKey}
 																label={secret.label}
-																description={sharedNote ?? secret.description}
+																description={description}
 																placeholder={secret.placeholder}
 																credential={credentials.find(
 																	(c) => c.envVarKey === secret.envVarKey,
