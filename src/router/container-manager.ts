@@ -22,7 +22,7 @@ import { loadProjectConfig, routerConfig } from './config.js';
 import { notifyTimeout } from './notifications.js';
 import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
-import { getSnapshot, registerSnapshot } from './snapshot-manager.js';
+import { getSnapshot, invalidateSnapshot, registerSnapshot } from './snapshot-manager.js';
 import { clearAllWorkItemLocks } from './work-item-lock.js';
 import {
 	buildWorkerEnvWithProjectId,
@@ -184,6 +184,169 @@ async function resolveSpawnSettings(
 }
 
 /**
+ * Returns true when a Docker error indicates the requested image does not exist.
+ * Uses the HTTP statusCode from dockerode's error objects as the primary signal,
+ * with a substring check on the message as a secondary guard.
+ */
+function isImageNotFoundError(err: unknown): boolean {
+	return (
+		err != null &&
+		typeof err === 'object' &&
+		'statusCode' in err &&
+		(err as { statusCode: unknown }).statusCode === 404 &&
+		String(err).toLowerCase().includes('no such image')
+	);
+}
+
+interface ContainerLaunchConfig {
+	workerImage: string;
+	snapshotEnabled: boolean;
+	containerTimeoutMs: number;
+	workerEnv: string[];
+}
+
+/**
+ * Create, start, and set up async exit-monitoring for a single worker container.
+ * Extracted from spawnWorker so snapshot fallback can retry with a different image.
+ * Returns immediately after the container starts — exit monitoring runs in the background.
+ */
+async function createAndMonitorContainer(
+	job: Job<CascadeJob>,
+	jobId: string,
+	containerName: string,
+	projectId: string | null,
+	workItemId: string | undefined,
+	agentType: string | undefined,
+	config: ContainerLaunchConfig,
+): Promise<void> {
+	const { workerImage, snapshotEnabled, containerTimeoutMs, workerEnv } = config;
+	const container = await docker.createContainer({
+		Image: workerImage,
+		name: containerName,
+		Env: workerEnv,
+		HostConfig: {
+			Memory: routerConfig.workerMemoryMb * 1024 * 1024,
+			MemorySwap: routerConfig.workerMemoryMb * 1024 * 1024, // No swap
+			NetworkMode: routerConfig.dockerNetwork,
+			// Disable AutoRemove for snapshot-enabled runs so the container remains
+			// available for docker commit after a successful exit.
+			AutoRemove: !snapshotEnabled,
+		},
+		Labels: {
+			'cascade.job.id': jobId,
+			'cascade.job.type': job.data.type,
+			'cascade.managed': 'true',
+			'cascade.project.id': projectId ?? '',
+			'cascade.agent.type': agentType ?? '',
+			'cascade.snapshot.enabled': snapshotEnabled ? 'true' : 'false',
+		},
+	});
+
+	await container.start();
+
+	// Set up timeout — fires at watchdogTimeoutMs + 2min (router backup kill)
+	const startedAt = new Date();
+	const timeoutHandle = setTimeout(() => {
+		const durationMs = Date.now() - startedAt.getTime();
+		logger.warn('[WorkerManager] Worker timeout, killing:', {
+			jobId,
+			durationMs,
+		});
+		captureException(new Error(`Worker timeout after ${durationMs}ms`), {
+			tags: { source: 'worker_timeout', jobType: job.data.type },
+			extra: { jobId, durationMs },
+			level: 'warning',
+		});
+		killWorker(jobId).catch((err) => {
+			logger.error('[WorkerManager] Failed to kill timed-out worker:', err);
+		});
+	}, containerTimeoutMs);
+
+	// Track the worker
+	activeWorkers.set(jobId, {
+		containerId: container.id,
+		jobId,
+		startedAt,
+		timeoutHandle,
+		job: job.data,
+		projectId: projectId ?? undefined,
+		workItemId,
+		agentType,
+	});
+
+	logger.info('[WorkerManager] Worker started:', {
+		jobId,
+		containerId: container.id.slice(0, 12),
+	});
+
+	// Monitor container exit
+	container
+		.wait()
+		.then(async (result) => {
+			// Collect worker logs before removal
+			try {
+				const logs = await container.logs({
+					stdout: true,
+					stderr: true,
+					follow: false,
+				});
+				const logText = logs.toString('utf-8');
+				if (logText.trim()) {
+					const lines = logText.trim().split('\n');
+					const tail = lines.slice(-50).join('\n');
+					logger.info(
+						`[WorkerManager] Worker logs (last ${Math.min(lines.length, 50)} of ${lines.length} lines):\n${tail}`,
+					);
+				}
+			} catch {
+				// Container may already be removed — expected with AutoRemove
+			}
+
+			if (result.StatusCode !== 0) {
+				captureException(new Error(`Worker exited with status ${result.StatusCode}`), {
+					tags: { source: 'worker_exit', jobType: job.data.type },
+					extra: { jobId, statusCode: result.StatusCode },
+				});
+			}
+			logger.info('[WorkerManager] Worker exited:', {
+				jobId,
+				statusCode: result.StatusCode,
+			});
+
+			// For snapshot-enabled runs, commit on clean exit and then remove the container.
+			// Failed or timed-out runs must NOT create a snapshot.
+			// Always remove — even when projectId/workItemId are absent — to avoid
+			// orphaning containers that ran with AutoRemove=false.
+			if (snapshotEnabled) {
+				if (result.StatusCode === 0 && projectId && workItemId) {
+					await commitContainerToSnapshot(container.id, projectId, workItemId);
+				} else if (result.StatusCode !== 0) {
+					logger.info('[WorkerManager] Skipping snapshot commit after non-zero exit:', {
+						jobId,
+						statusCode: result.StatusCode,
+					});
+				}
+				// Always remove the container manually since AutoRemove is disabled
+				await removeContainer(container.id);
+			}
+
+			cleanupWorker(jobId, result.StatusCode);
+		})
+		.catch((err) => {
+			logger.error('[WorkerManager] Error waiting for container:', err);
+			captureException(err, {
+				tags: { source: 'worker_wait', jobType: job.data.type },
+				extra: { jobId },
+			});
+			// Ensure container is cleaned up even on wait error (snapshot runs only)
+			if (snapshotEnabled) {
+				removeContainer(container.id).catch(() => {});
+			}
+			cleanupWorker(jobId);
+		});
+}
+
+/**
  * Spawn a worker container for a job.
  * Sets up timeout tracking and monitors container exit asynchronously.
  *
@@ -192,6 +355,8 @@ async function resolveSpawnSettings(
  * - Disables AutoRemove so the container can be committed on clean exit.
  * - On successful exit, commits the container to a snapshot image.
  * - On failed/timed-out exit, does NOT create a snapshot.
+ * - If the snapshot image is missing (deleted externally), invalidates the stale
+ *   registry entry and retries transparently with the base worker image.
  */
 export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const jobId = job.id ?? `unknown-${Date.now()}`;
@@ -227,132 +392,63 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		workerImage,
 	});
 
+	const launchConfig: ContainerLaunchConfig = {
+		workerImage,
+		snapshotEnabled,
+		containerTimeoutMs,
+		workerEnv,
+	};
+
 	try {
-		const container = await docker.createContainer({
-			Image: workerImage,
-			name: containerName,
-			Env: workerEnv,
-			HostConfig: {
-				Memory: routerConfig.workerMemoryMb * 1024 * 1024,
-				MemorySwap: routerConfig.workerMemoryMb * 1024 * 1024, // No swap
-				NetworkMode: routerConfig.dockerNetwork,
-				// Disable AutoRemove for snapshot-enabled runs so the container remains
-				// available for docker commit after a successful exit.
-				AutoRemove: !snapshotEnabled,
-			},
-			Labels: {
-				'cascade.job.id': jobId,
-				'cascade.job.type': job.data.type,
-				'cascade.managed': 'true',
-				'cascade.project.id': projectId ?? '',
-				'cascade.agent.type': agentType ?? '',
-				'cascade.snapshot.enabled': snapshotEnabled ? 'true' : 'false',
-			},
-		});
-
-		await container.start();
-
-		// Set up timeout — fires at watchdogTimeoutMs + 2min (router backup kill)
-		const startedAt = new Date();
-		const timeoutHandle = setTimeout(() => {
-			const durationMs = Date.now() - startedAt.getTime();
-			logger.warn('[WorkerManager] Worker timeout, killing:', {
-				jobId,
-				durationMs,
-			});
-			captureException(new Error(`Worker timeout after ${durationMs}ms`), {
-				tags: { source: 'worker_timeout', jobType: job.data.type },
-				extra: { jobId, durationMs },
-				level: 'warning',
-			});
-			killWorker(jobId).catch((err) => {
-				logger.error('[WorkerManager] Failed to kill timed-out worker:', err);
-			});
-		}, containerTimeoutMs);
-
-		// Track the worker
-		activeWorkers.set(jobId, {
-			containerId: container.id,
+		await createAndMonitorContainer(
+			job,
 			jobId,
-			startedAt,
-			timeoutHandle,
-			job: job.data,
-			projectId: projectId ?? undefined,
+			containerName,
+			projectId,
 			workItemId,
 			agentType,
-		});
-
-		logger.info('[WorkerManager] Worker started:', {
-			jobId,
-			containerId: container.id.slice(0, 12),
-		});
-
-		// Monitor container exit
-		container
-			.wait()
-			.then(async (result) => {
-				// Collect worker logs before removal
-				try {
-					const logs = await container.logs({
-						stdout: true,
-						stderr: true,
-						follow: false,
-					});
-					const logText = logs.toString('utf-8');
-					if (logText.trim()) {
-						const lines = logText.trim().split('\n');
-						const tail = lines.slice(-50).join('\n');
-						logger.info(
-							`[WorkerManager] Worker logs (last ${Math.min(lines.length, 50)} of ${lines.length} lines):\n${tail}`,
-						);
-					}
-				} catch {
-					// Container may already be removed — expected with AutoRemove
-				}
-
-				if (result.StatusCode !== 0) {
-					captureException(new Error(`Worker exited with status ${result.StatusCode}`), {
-						tags: { source: 'worker_exit', jobType: job.data.type },
-						extra: { jobId, statusCode: result.StatusCode },
-					});
-				}
-				logger.info('[WorkerManager] Worker exited:', {
-					jobId,
-					statusCode: result.StatusCode,
-				});
-
-				// For snapshot-enabled runs, commit on clean exit and then remove the container.
-				// Failed or timed-out runs must NOT create a snapshot.
-				// Always remove — even when projectId/workItemId are absent — to avoid
-				// orphaning containers that ran with AutoRemove=false.
-				if (snapshotEnabled) {
-					if (result.StatusCode === 0 && projectId && workItemId) {
-						await commitContainerToSnapshot(container.id, projectId, workItemId);
-					} else if (result.StatusCode !== 0) {
-						logger.info('[WorkerManager] Skipping snapshot commit after non-zero exit:', {
-							jobId,
-							statusCode: result.StatusCode,
-						});
-					}
-					// Always remove the container manually since AutoRemove is disabled
-					await removeContainer(container.id);
-				}
-
-				cleanupWorker(jobId, result.StatusCode);
-			})
-			.catch((err) => {
-				logger.error('[WorkerManager] Error waiting for container:', err);
-				captureException(err, {
-					tags: { source: 'worker_wait', jobType: job.data.type },
-					extra: { jobId },
-				});
-				// Ensure container is cleaned up even on wait error (snapshot runs only)
-				if (snapshotEnabled) {
-					removeContainer(container.id).catch(() => {});
-				}
-				cleanupWorker(jobId);
-			});
+			launchConfig,
+		);
 	} catch (err) {
+		// Snapshot image deleted externally — invalidate the stale registry entry and
+		// retry transparently with the base worker image.
+		if (snapshotReuse && projectId && workItemId && isImageNotFoundError(err)) {
+			logger.warn(
+				'[WorkerManager] Snapshot image not found — invalidating and retrying with base image:',
+				{ jobId, staleImage: workerImage },
+			);
+			invalidateSnapshot(projectId, workItemId);
+			const fallbackEnv = await buildWorkerEnvWithProjectId(job, projectId, false);
+			const fallbackConfig: ContainerLaunchConfig = {
+				workerImage: routerConfig.workerImage,
+				snapshotEnabled,
+				containerTimeoutMs,
+				workerEnv: fallbackEnv,
+			};
+			try {
+				await createAndMonitorContainer(
+					job,
+					jobId,
+					containerName,
+					projectId,
+					workItemId,
+					agentType,
+					fallbackConfig,
+				);
+				return;
+			} catch (fallbackErr) {
+				logger.error('[WorkerManager] Failed to spawn worker with fallback base image:', {
+					jobId,
+					error: String(fallbackErr),
+				});
+				captureException(fallbackErr, {
+					tags: { source: 'worker_spawn_fallback', jobType: job.data.type },
+					extra: { jobId, staleImage: workerImage },
+				});
+				throw fallbackErr;
+			}
+		}
+
 		logger.error('[WorkerManager] Failed to spawn worker:', {
 			jobId,
 			error: String(err),
