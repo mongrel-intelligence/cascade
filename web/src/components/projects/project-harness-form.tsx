@@ -170,24 +170,6 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 							</div>
 						</form>
 					</CardContent>
-					<CardFooter>
-						<div className="flex items-center gap-2">
-							<button
-								type="submit"
-								form="engine-runtime-form"
-								disabled={updateMutation.isPending}
-								className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-							>
-								{updateMutation.isPending ? 'Saving...' : 'Save Changes'}
-							</button>
-							{updateMutation.isSuccess && (
-								<span className="text-sm text-muted-foreground">Saved</span>
-							)}
-							{updateMutation.isError && (
-								<span className="text-sm text-destructive">{updateMutation.error.message}</span>
-							)}
-						</div>
-					</CardFooter>
 				</Card>
 
 				{/* Per-engine tabs: credentials + settings + default toggle */}
@@ -261,6 +243,15 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 															{agentEngine === '' &&
 																` (inheriting system default: ${capitalize(systemDefaultEngineId)})`}
 														</span>
+														{agentEngine !== '' && (
+															<button
+																type="button"
+																onClick={() => setAgentEngine('')}
+																className="ml-2 text-xs text-muted-foreground underline hover:text-foreground transition-colors"
+															>
+																Reset to system default
+															</button>
+														)}
 													</div>
 												) : (
 													<button
