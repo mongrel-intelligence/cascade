@@ -249,7 +249,7 @@ export function ProjectWorkTable({
 		<div className="space-y-4">
 			{/* Agent color legend */}
 			{agentTypesInView.length > 0 && (
-				<div className="flex flex-wrap gap-3 hidden sm:flex" style={{ fontSize: 12 }}>
+				<div className="hidden sm:flex flex-wrap gap-3" style={{ fontSize: 12 }}>
 					{agentTypesInView.map((at) => (
 						<div key={at} className="flex items-center gap-1 text-muted-foreground">
 							<span
