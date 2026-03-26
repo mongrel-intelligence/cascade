@@ -11,9 +11,9 @@ export default class ProjectsIntegrationSet extends DashboardCommand {
 	static override flags = {
 		...DashboardCommand.baseFlags,
 		category: Flags.string({
-			description: 'Integration category (pm or scm)',
+			description: 'Integration category (pm, scm, or alerting)',
 			required: true,
-			options: ['pm', 'scm'],
+			options: ['pm', 'scm', 'alerting'],
 		}),
 		provider: Flags.string({
 			description: 'Integration provider (trello, jira, github)',
@@ -46,7 +46,7 @@ export default class ProjectsIntegrationSet extends DashboardCommand {
 			await this.withSpinner('Setting integration...', () =>
 				this.client.projects.integrations.upsert.mutate({
 					projectId: args.id,
-					category: flags.category as 'pm' | 'scm',
+					category: flags.category as 'pm' | 'scm' | 'alerting',
 					provider: flags.provider,
 					config,
 					triggers,

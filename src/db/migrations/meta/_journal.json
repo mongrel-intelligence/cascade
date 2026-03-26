@@ -330,6 +330,13 @@
 			"when": 1781000000000,
 			"tag": "0046_add_snapshot_policy",
 			"breakpoints": false
+		},
+		{
+			"idx": 47,
+			"version": "7",
+			"when": 1782000000000,
+			"tag": "0047_add_alerting_integration",
+			"breakpoints": false
 		}
 	]
 }
