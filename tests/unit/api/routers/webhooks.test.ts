@@ -11,6 +11,7 @@ import {
 const {
 	mockFindProjectByIdFromDb,
 	mockGetAllProjectCredentials,
+	mockGetIntegrationByProjectAndCategory,
 	mockListWebhooks,
 	mockCreateWebhook,
 	mockDeleteWebhook,
@@ -18,6 +19,7 @@ const {
 } = vi.hoisted(() => ({
 	mockFindProjectByIdFromDb: vi.fn(),
 	mockGetAllProjectCredentials: vi.fn(),
+	mockGetIntegrationByProjectAndCategory: vi.fn(),
 	mockListWebhooks: vi.fn(),
 	mockCreateWebhook: vi.fn(),
 	mockDeleteWebhook: vi.fn(),
@@ -38,6 +40,10 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 
 vi.mock('../../../../src/db/repositories/configRepository.js', () => ({
 	findProjectByIdFromDb: mockFindProjectByIdFromDb,
+}));
+
+vi.mock('../../../../src/db/repositories/integrationsRepository.js', () => ({
+	getIntegrationByProjectAndCategory: mockGetIntegrationByProjectAndCategory,
 }));
 
 vi.mock('../../../../src/config/provider.js', () => ({
@@ -101,6 +107,7 @@ function setupJiraProjectContext() {
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 	mockFindProjectByIdFromDb.mockResolvedValue(mockJiraProject);
+	mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
 	mockGetAllProjectCredentials.mockResolvedValue({
 		JIRA_EMAIL: 'bot@example.com',
 		JIRA_API_TOKEN: 'jira-token-123',
@@ -117,6 +124,7 @@ function setupProjectContext(opts?: {
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
 	mockFindProjectByIdFromDb.mockResolvedValue(mockProject);
+	mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
 	const creds: Record<string, string> = {};
 	if (!opts?.noTrello) {
 		creds.TRELLO_API_KEY = 'trello-key';

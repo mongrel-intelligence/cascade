@@ -33,6 +33,7 @@ export default class WebhooksList extends DashboardCommand {
 
 			const result = await this.client.webhooks.list.query({
 				projectId: args.projectId,
+				callbackBaseUrl: this.config_.serverUrl || undefined,
 				oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
 			});
 
@@ -80,6 +81,16 @@ export default class WebhooksList extends DashboardCommand {
 				for (const w of result.jira) {
 					this.log(`  [${w.id}] ${w.url} (active: ${w.enabled})`);
 				}
+			}
+
+			this.log('');
+			this.log('Sentry webhook:');
+			if (result.sentry) {
+				this.log(`  URL: ${result.sentry.url}`);
+				this.log(`  Webhook secret: ${result.sentry.webhookSecretSet ? 'configured' : 'not set'}`);
+				this.log(`  ${result.sentry.note}`);
+			} else {
+				this.log('  (not configured)');
 			}
 		} catch (err) {
 			this.handleError(err);
