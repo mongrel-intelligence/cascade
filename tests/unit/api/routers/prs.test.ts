@@ -13,6 +13,7 @@ const {
 	mockListPRsForWorkItem,
 	mockGetRunsForPR,
 	mockListUnifiedWorkForProject,
+	mockListUnifiedWorkWithDurations,
 	mockGetProjectWorkStats,
 	mockGetProjectWorkStatsAggregated,
 	mockVerifyProjectOrgAccess,
@@ -22,6 +23,7 @@ const {
 	mockListPRsForWorkItem: vi.fn(),
 	mockGetRunsForPR: vi.fn(),
 	mockListUnifiedWorkForProject: vi.fn(),
+	mockListUnifiedWorkWithDurations: vi.fn(),
 	mockGetProjectWorkStats: vi.fn(),
 	mockGetProjectWorkStatsAggregated: vi.fn(),
 	mockVerifyProjectOrgAccess: vi.fn(),
@@ -32,6 +34,7 @@ vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	listPRsForOrg: mockListPRsForOrg,
 	listPRsForWorkItem: mockListPRsForWorkItem,
 	listUnifiedWorkForProject: mockListUnifiedWorkForProject,
+	listUnifiedWorkWithDurations: mockListUnifiedWorkWithDurations,
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
@@ -552,6 +555,65 @@ describe('prsRouter', () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
 			await expect(
 				caller.workStatsAggregated({ projectId: 'other-project' }),
+			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+	});
+
+	// =========================================================================
+	// listUnifiedWithDurations
+	// =========================================================================
+	describe('listUnifiedWithDurations', () => {
+		const mockWithDurationsResult = {
+			items: [
+				{
+					...mockUnifiedItem,
+					runs: [
+						{ agentType: 'implementation', durationMs: 60000, status: 'completed' },
+						{ agentType: 'review', durationMs: 30000, status: 'completed' },
+					],
+				},
+			],
+			projectAvgDurationMs: 90000,
+		};
+
+		it('returns items with run duration breakdowns and project average', async () => {
+			mockListUnifiedWorkWithDurations.mockResolvedValue(mockWithDurationsResult);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.listUnifiedWithDurations({ projectId: 'test-project' });
+
+			expect(result).toEqual(mockWithDurationsResult);
+			expect(mockVerifyProjectOrgAccess).toHaveBeenCalledWith('test-project', 'org-1');
+			expect(mockListUnifiedWorkWithDurations).toHaveBeenCalledWith('test-project');
+		});
+
+		it('returns empty items with null avg when no work exists', async () => {
+			mockListUnifiedWorkWithDurations.mockResolvedValue({
+				items: [],
+				projectAvgDurationMs: null,
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			const result = await caller.listUnifiedWithDurations({ projectId: 'test-project' });
+
+			expect(result.items).toEqual([]);
+			expect(result.projectAvgDurationMs).toBeNull();
+		});
+
+		it('throws UNAUTHORIZED when no user', async () => {
+			const caller = createCaller({ user: null, effectiveOrgId: null });
+			await expectTRPCError(
+				caller.listUnifiedWithDurations({ projectId: 'test-project' }),
+				'UNAUTHORIZED',
+			);
+		});
+
+		it('throws when project does not belong to org', async () => {
+			mockVerifyProjectOrgAccess.mockRejectedValue(new TRPCError({ code: 'NOT_FOUND' }));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: 'org-1' });
+			await expect(
+				caller.listUnifiedWithDurations({ projectId: 'other-project' }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
 		});
 	});
