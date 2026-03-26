@@ -78,6 +78,21 @@ export default class WebhooksCreate extends DashboardCommand {
 					this.success(`Created JIRA webhook: [${result.jira.id}] ${result.jira.url}`);
 				}
 			}
+
+			if (result.sentry) {
+				this.log('');
+				this.log('Sentry (manual setup required):');
+				this.log(`  Webhook URL: ${result.sentry.url}`);
+				this.log(`  Webhook secret: ${result.sentry.webhookSecretSet ? 'configured' : 'not set'}`);
+				this.log('  Steps:');
+				this.log('    1. Go to Sentry > Settings > Developer Settings > Internal Integrations');
+				this.log('    2. Create or edit an Internal Integration');
+				this.log('    3. Set the Webhook URL to the URL above');
+				this.log('    4. Enable "issue" and/or "event_alert" webhook subscriptions');
+				if (!result.sentry.webhookSecretSet) {
+					this.log('    5. Copy the Client Secret and save it as SENTRY_WEBHOOK_SECRET credential');
+				}
+			}
 		} catch (err) {
 			this.handleError(err);
 		}

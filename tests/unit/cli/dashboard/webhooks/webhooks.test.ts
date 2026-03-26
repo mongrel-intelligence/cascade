@@ -77,6 +77,7 @@ describe('WebhooksList (webhooks list)', () => {
 
 		expect(client.webhooks.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
+			callbackBaseUrl: 'http://localhost:3001',
 			oneTimeTokens: undefined,
 		});
 	});
@@ -93,6 +94,7 @@ describe('WebhooksList (webhooks list)', () => {
 
 		expect(client.webhooks.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
+			callbackBaseUrl: 'http://localhost:3001',
 			oneTimeTokens: { github: 'ghp_testtoken123' },
 		});
 	});
@@ -117,6 +119,7 @@ describe('WebhooksList (webhooks list)', () => {
 
 		expect(client.webhooks.list.query).toHaveBeenCalledWith({
 			projectId: 'my-project',
+			callbackBaseUrl: 'http://localhost:3001',
 			oneTimeTokens: {
 				github: 'ghp_testtoken123',
 				trelloApiKey: 'trello-key',
