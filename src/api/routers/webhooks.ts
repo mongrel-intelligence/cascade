@@ -13,15 +13,21 @@ import {
 	jiraListWebhooks,
 } from './webhooks/jira.js';
 import { trelloCreateWebhook, trelloDeleteWebhook, trelloListWebhooks } from './webhooks/trello.js';
-import type { GitHubWebhook, JiraWebhookInfo, TrelloWebhook } from './webhooks/types.js';
+import type {
+	GitHubWebhook,
+	JiraWebhookInfo,
+	SentryWebhookInfo,
+	TrelloWebhook,
+} from './webhooks/types.js';
 
-export type { GitHubWebhook, JiraWebhookInfo, TrelloWebhook };
+export type { GitHubWebhook, JiraWebhookInfo, SentryWebhookInfo, TrelloWebhook };
 
 export const webhooksRouter = router({
 	list: superAdminProcedure
 		.input(
 			z.object({
 				projectId: z.string(),
+				callbackBaseUrl: z.string().url().optional(),
 				oneTimeTokens: oneTimeTokensSchema,
 			}),
 		)
@@ -35,10 +41,22 @@ export const webhooksRouter = router({
 				jiraListWebhooks(pctx),
 			]);
 
+			// Sentry — informational only (webhooks must be configured in Sentry UI)
+			let sentry: SentryWebhookInfo | null = null;
+			if (input.callbackBaseUrl && pctx.sentryConfigured) {
+				const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
+				sentry = {
+					url: `${baseUrl}/sentry/webhook/${input.projectId}`,
+					webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
+					note: 'Configure this URL in your Sentry Internal Integration webhook settings.',
+				};
+			}
+
 			return {
 				trello: trelloResult.status === 'fulfilled' ? trelloResult.value : [],
 				github: githubResult.status === 'fulfilled' ? githubResult.value : [],
 				jira: jiraResult.status === 'fulfilled' ? jiraResult.value : [],
+				sentry,
 				errors: {
 					trello: trelloResult.status === 'rejected' ? String(trelloResult.reason) : null,
 					github: githubResult.status === 'rejected' ? String(githubResult.reason) : null,
@@ -66,6 +84,7 @@ export const webhooksRouter = router({
 				trello?: TrelloWebhook | string;
 				github?: GitHubWebhook | string;
 				jira?: JiraWebhookInfo | string;
+				sentry?: SentryWebhookInfo;
 				labelsEnsured?: string[];
 			} = {};
 
@@ -128,6 +147,15 @@ export const webhooksRouter = router({
 				} else {
 					results.github = await githubCreateWebhook(pctx, githubCallbackUrl);
 				}
+			}
+
+			// Sentry — display-only (cannot create programmatically)
+			if (pctx.sentryConfigured) {
+				results.sentry = {
+					url: `${baseUrl}/sentry/webhook/${input.projectId}`,
+					webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
+					note: 'Configure this URL manually in your Sentry Internal Integration webhook settings.',
+				};
 			}
 
 			return results;
