@@ -399,3 +399,91 @@ export async function listUnifiedWorkForProject(projectId: string): Promise<Unif
 		};
 	});
 }
+
+// ============================================================================
+// Unified work view with durations
+// ============================================================================
+
+export interface WorkItemRunBreakdown {
+	agentType: string;
+	durationMs: number;
+	status: string;
+}
+
+export interface UnifiedWorkItemWithDurations extends UnifiedWorkItem {
+	runs: WorkItemRunBreakdown[];
+}
+
+export interface UnifiedWorkWithDurationsResult {
+	items: UnifiedWorkItemWithDurations[];
+	projectAvgDurationMs: number | null;
+}
+
+/**
+ * Returns unified work items for a project, each with an array of per-run duration breakdowns.
+ * Also computes the project-wide average total duration for outlier detection.
+ *
+ * Two-query approach:
+ * - Query 1: existing unified items (same as listUnifiedWorkForProject)
+ * - Query 2: agent_runs for the project (completed/failed/timed_out, durationMs IS NOT NULL),
+ *   joined back to pr_work_items via the dual-join logic to associate runs with work items.
+ */
+export async function listUnifiedWorkWithDurations(
+	projectId: string,
+): Promise<UnifiedWorkWithDurationsResult> {
+	const db = getDb();
+
+	// Query 1: Fetch unified work items (same as listUnifiedWorkForProject)
+	const items = await listUnifiedWorkForProject(projectId);
+
+	// Query 2: Fetch per-work-item run breakdowns (completed/failed/timed_out with durationMs)
+	// We join agent_runs to pr_work_items using the dual-join condition to attribute
+	// each run to a pr_work_items row.
+	const runRows = await db
+		.select({
+			prWorkItemId: prWorkItems.id,
+			agentType: agentRuns.agentType,
+			durationMs: agentRuns.durationMs,
+			status: agentRuns.status,
+		})
+		.from(agentRuns)
+		.innerJoin(prWorkItems, buildAgentRunWorkItemJoin())
+		.where(
+			and(
+				eq(prWorkItems.projectId, projectId),
+				isNotNull(agentRuns.durationMs),
+				inArray(agentRuns.status, ['completed', 'failed', 'timed_out']),
+			),
+		);
+
+	// Build a map of prWorkItems.id → runs
+	const runsByWorkItemId = new Map<string, WorkItemRunBreakdown[]>();
+	for (const row of runRows) {
+		const existing = runsByWorkItemId.get(row.prWorkItemId) ?? [];
+		existing.push({
+			agentType: row.agentType,
+			durationMs: row.durationMs as number,
+			status: row.status,
+		});
+		runsByWorkItemId.set(row.prWorkItemId, existing);
+	}
+
+	// Compute project-wide average total duration across all work items that have runs
+	let projectAvgDurationMs: number | null = null;
+	const itemTotals: number[] = [];
+	for (const [, runs] of runsByWorkItemId) {
+		const total = runs.reduce((s, r) => s + r.durationMs, 0);
+		if (total > 0) itemTotals.push(total);
+	}
+	if (itemTotals.length > 0) {
+		projectAvgDurationMs = itemTotals.reduce((s, v) => s + v, 0) / itemTotals.length;
+	}
+
+	// Merge runs into unified items
+	const itemsWithDurations: UnifiedWorkItemWithDurations[] = items.map((item) => ({
+		...item,
+		runs: runsByWorkItemId.get(item.id) ?? [],
+	}));
+
+	return { items: itemsWithDurations, projectAvgDurationMs };
+}

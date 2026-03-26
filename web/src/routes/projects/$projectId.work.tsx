@@ -11,14 +11,17 @@ function ProjectWorkPage() {
 	const { projectId } = projectWorkRoute.useParams();
 	const [workOffset, setWorkOffset] = useState(0);
 
-	const workQuery = useQuery(trpc.prs.listUnified.queryOptions({ projectId }));
+	const workQuery = useQuery(trpc.prs.listUnifiedWithDurations.queryOptions({ projectId }));
+
+	const items = workQuery.data?.items ?? [];
+	const projectAvgDurationMs = workQuery.data?.projectAvgDurationMs ?? null;
 
 	return (
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<h2 className="text-lg font-semibold">Work</h2>
 				{workQuery.data && (
-					<span className="text-sm text-muted-foreground">{workQuery.data.length} total</span>
+					<span className="text-sm text-muted-foreground">{items.length} total</span>
 				)}
 			</div>
 
@@ -34,11 +37,12 @@ function ProjectWorkPage() {
 
 			{workQuery.data && (
 				<ProjectWorkTable
-					items={workQuery.data}
+					items={items}
 					projectId={projectId}
 					offset={workOffset}
 					limit={WORK_PAGE_SIZE}
 					onPageChange={setWorkOffset}
+					projectAvgDurationMs={projectAvgDurationMs}
 				/>
 			)}
 		</div>
