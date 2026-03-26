@@ -1,7 +1,15 @@
+import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
 import { formatCostSummary } from '@/lib/utils.js';
 import { useNavigate } from '@tanstack/react-router';
 import { Link } from '@tanstack/react-router';
 import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
+import { WorkItemDurationBar } from './work-item-duration-bar.js';
+
+interface WorkItemRun {
+	agentType: string;
+	durationMs: number;
+	status: string;
+}
 
 interface WorkItem {
 	id: string;
@@ -16,6 +24,7 @@ interface WorkItem {
 	runCount: number;
 	updatedAt: Date | string | null;
 	totalCostUsd: string | number | null;
+	runs?: WorkItemRun[];
 }
 
 interface ProjectWorkTableProps {
@@ -24,6 +33,7 @@ interface ProjectWorkTableProps {
 	offset: number;
 	limit: number;
 	onPageChange: (offset: number) => void;
+	projectAvgDurationMs?: number | null;
 }
 
 // ============================================================================
@@ -33,6 +43,7 @@ interface ProjectWorkTableProps {
 interface WorkItemRowProps {
 	item: WorkItem;
 	projectId: string;
+	projectAvgDurationMs?: number | null;
 }
 
 function ItemIcon({ item }: Pick<WorkItemRowProps, 'item'>) {
@@ -140,7 +151,7 @@ function SecondaryItemTitle({ item }: Pick<WorkItemRowProps, 'item'>) {
 	);
 }
 
-function WorkItemRow({ item, projectId }: WorkItemRowProps) {
+function WorkItemRow({ item, projectId, projectAvgDurationMs }: WorkItemRowProps) {
 	const navigate = useNavigate();
 	const canNavigate = item.runCount > 0;
 
@@ -187,6 +198,14 @@ function WorkItemRow({ item, projectId }: WorkItemRowProps) {
 				</div>
 			</td>
 
+			{/* Duration bar */}
+			<td className="px-4 py-3 hidden sm:table-cell" style={{ minWidth: 160 }}>
+				<WorkItemDurationBar
+					runs={item.runs ?? []}
+					projectAvgDurationMs={projectAvgDurationMs ?? null}
+				/>
+			</td>
+
 			{/* Run count */}
 			<td className="px-4 py-3 text-right tabular-nums">
 				{canNavigate ? (
@@ -214,14 +233,41 @@ export function ProjectWorkTable({
 	offset,
 	limit,
 	onPageChange,
+	projectAvgDurationMs,
 }: ProjectWorkTableProps) {
 	const total = items.length;
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;
 	const pageItems = items.slice(offset, offset + limit);
 
+	// Collect unique agent types from visible items for the legend
+	const agentTypesInView = Array.from(
+		new Set(pageItems.flatMap((item) => (item.runs ?? []).map((r) => r.agentType))),
+	);
+
 	return (
 		<div className="space-y-4">
+			{/* Agent color legend */}
+			{agentTypesInView.length > 0 && (
+				<div className="hidden sm:flex flex-wrap gap-3" style={{ fontSize: 12 }}>
+					{agentTypesInView.map((at) => (
+						<div key={at} className="flex items-center gap-1 text-muted-foreground">
+							<span
+								style={{
+									display: 'inline-block',
+									width: 10,
+									height: 10,
+									borderRadius: 2,
+									background: getAgentColor(at),
+									flexShrink: 0,
+								}}
+							/>
+							<span>{agentTypeLabel(at)}</span>
+						</div>
+					))}
+				</div>
+			)}
+
 			<div className="overflow-x-auto rounded-lg border border-border">
 				<table className="w-full text-sm">
 					<thead>
@@ -230,6 +276,9 @@ export function ProjectWorkTable({
 							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
 								Title / Associated Item
 							</th>
+							<th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">
+								Duration
+							</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Runs</th>
 							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
 						</tr>
@@ -237,13 +286,18 @@ export function ProjectWorkTable({
 					<tbody>
 						{pageItems.length === 0 && (
 							<tr>
-								<td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">
+								<td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
 									No work found for this project
 								</td>
 							</tr>
 						)}
 						{pageItems.map((item) => (
-							<WorkItemRow key={item.id} item={item} projectId={projectId} />
+							<WorkItemRow
+								key={item.id}
+								item={item}
+								projectId={projectId}
+								projectAvgDurationMs={projectAvgDurationMs}
+							/>
 						))}
 					</tbody>
 				</table>

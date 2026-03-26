@@ -458,4 +458,53 @@ describe('configRepository', () => {
 			expect(result).toBeUndefined();
 		});
 	});
+
+	describe('snapshot config mapping', () => {
+		it('maps snapshotEnabled and snapshotTtlMs from project row', async () => {
+			const projectWithSnapshot = {
+				...projectRow,
+				snapshotEnabled: true,
+				snapshotTtlMs: 3600000,
+			};
+			const mockDb = createSequentialMockDb([[projectWithSnapshot], [], [trelloIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			const proj = config.projects[0];
+			expect(proj.snapshotEnabled).toBe(true);
+			expect(proj.snapshotTtlMs).toBe(3600000);
+		});
+
+		it('leaves snapshotEnabled and snapshotTtlMs undefined when null in DB', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			const proj = config.projects[0];
+			expect(proj.snapshotEnabled).toBeUndefined();
+			expect(proj.snapshotTtlMs).toBeUndefined();
+		});
+
+		it('maps snapshotEnabled false when explicitly disabled on project', async () => {
+			const projectWithSnapshotDisabled = {
+				...projectRow,
+				snapshotEnabled: false,
+				snapshotTtlMs: null,
+			};
+			const mockDb = createSequentialMockDb([
+				[projectWithSnapshotDisabled],
+				[],
+				[trelloIntegration],
+			]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			const proj = config.projects[0];
+			expect(proj.snapshotEnabled).toBe(false);
+			expect(proj.snapshotTtlMs).toBeUndefined();
+		});
+	});
 });

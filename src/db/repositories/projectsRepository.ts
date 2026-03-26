@@ -44,6 +44,8 @@ export async function createProject(
 		progressIntervalMinutes?: string | null;
 		runLinksEnabled?: boolean;
 		maxInFlightItems?: number | null;
+		snapshotEnabled?: boolean | null;
+		snapshotTtlMs?: number | null;
 	},
 ) {
 	const db = getDb();
@@ -66,6 +68,8 @@ export async function createProject(
 			progressIntervalMinutes: rest.progressIntervalMinutes,
 			runLinksEnabled: rest.runLinksEnabled ?? false,
 			maxInFlightItems: rest.maxInFlightItems,
+			snapshotEnabled: rest.snapshotEnabled,
+			snapshotTtlMs: rest.snapshotTtlMs,
 			...(engineSettings !== undefined
 				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
 				: {}),
@@ -92,6 +96,8 @@ export async function updateProject(
 		progressIntervalMinutes?: string | null;
 		runLinksEnabled?: boolean;
 		maxInFlightItems?: number | null;
+		snapshotEnabled?: boolean | null;
+		snapshotTtlMs?: number | null;
 	},
 ) {
 	const db = getDb();

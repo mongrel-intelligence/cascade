@@ -86,6 +86,8 @@ export const ProjectConfigSchema = z.object({
 	squintDbUrl: z.string().url().optional(),
 	runLinksEnabled: z.boolean().default(false),
 	maxInFlightItems: z.number().int().positive().optional(),
+	snapshotEnabled: z.boolean().optional(),
+	snapshotTtlMs: z.number().int().positive().optional(),
 });
 
 export const CascadeConfigSchema = z.object({

@@ -5,14 +5,16 @@ import {
 	validateIntegrations,
 } from '../../../../src/triggers/shared/integration-validation.js';
 
-// Mock the integration check functions
-vi.mock('../../../../src/pm/integration.js', () => ({
-	hasPmIntegration: vi.fn(),
-}));
-
-vi.mock('../../../../src/github/integration.js', () => ({
-	hasScmIntegration: vi.fn(),
-	hasScmPersonaToken: vi.fn(),
+// Mock the integration registry
+vi.mock('../../../../src/integrations/registry.js', () => ({
+	integrationRegistry: {
+		getByCategory: vi.fn(),
+		getOrNull: vi.fn().mockReturnValue(null),
+		register: vi.fn(),
+		get: vi.fn(),
+		all: vi.fn().mockReturnValue([]),
+		hasIntegration: vi.fn().mockResolvedValue(false),
+	},
 }));
 
 vi.mock('../../../../src/github/personas.js', () => ({
@@ -28,9 +30,35 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { hasScmIntegration, hasScmPersonaToken } from '../../../../src/github/integration.js';
 import { getPersonaForAgentType } from '../../../../src/github/personas.js';
-import { hasPmIntegration } from '../../../../src/pm/integration.js';
+import { integrationRegistry } from '../../../../src/integrations/registry.js';
+
+// Helper to create a mock integration module
+function mockIntegration(opts: {
+	type: string;
+	category: string;
+	hasIntegration?: boolean;
+	hasPersonaToken?: boolean;
+}) {
+	const integration: {
+		type: string;
+		category: string;
+		hasIntegration: ReturnType<typeof vi.fn>;
+		hasPersonaToken?: ReturnType<typeof vi.fn>;
+		withCredentials: ReturnType<typeof vi.fn>;
+	} = {
+		type: opts.type,
+		category: opts.category,
+		hasIntegration: vi.fn().mockResolvedValue(opts.hasIntegration ?? true),
+		withCredentials: vi.fn(),
+	};
+
+	if (opts.category === 'scm') {
+		integration.hasPersonaToken = vi.fn().mockResolvedValue(opts.hasPersonaToken ?? true);
+	}
+
+	return integration;
+}
 
 describe('integration-validation', () => {
 	describe('getIntegrationRequirements', () => {
@@ -61,11 +89,29 @@ describe('integration-validation', () => {
 	});
 
 	describe('validateIntegrations', () => {
+		beforeEach(() => {
+			vi.mocked(getPersonaForAgentType).mockReturnValue('implementer');
+		});
+
 		describe('PM integration validation', () => {
 			it('passes when PM integration is configured for agents requiring it', async () => {
-				vi.mocked(hasPmIntegration).mockResolvedValue(true);
-				vi.mocked(hasScmIntegration).mockResolvedValue(true);
-				vi.mocked(hasScmPersonaToken).mockResolvedValue(true);
+				const pmIntegration = mockIntegration({
+					type: 'trello',
+					category: 'pm',
+					hasIntegration: true,
+				});
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: true,
+					hasPersonaToken: true,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'pm') return [pmIntegration as never];
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'implementation');
 				expect(result.valid).toBe(true);
@@ -73,9 +119,23 @@ describe('integration-validation', () => {
 			});
 
 			it('fails when PM integration is missing for agents requiring it', async () => {
-				vi.mocked(hasPmIntegration).mockResolvedValue(false);
-				vi.mocked(hasScmIntegration).mockResolvedValue(true);
-				vi.mocked(hasScmPersonaToken).mockResolvedValue(true);
+				const pmIntegration = mockIntegration({
+					type: 'trello',
+					category: 'pm',
+					hasIntegration: false,
+				});
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: true,
+					hasPersonaToken: true,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'pm') return [pmIntegration as never];
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'implementation');
 				expect(result.valid).toBe(false);
@@ -85,7 +145,7 @@ describe('integration-validation', () => {
 			});
 
 			it('passes for debug agent when only PM is configured', async () => {
-				vi.mocked(hasPmIntegration).mockResolvedValue(true);
+				vi.mocked(integrationRegistry.getByCategory).mockReturnValue([]);
 
 				const result = await validateIntegrations('test-project', 'debug');
 				expect(result.valid).toBe(true);
@@ -95,8 +155,17 @@ describe('integration-validation', () => {
 
 		describe('SCM integration validation', () => {
 			it('passes when SCM integration and persona token are configured', async () => {
-				vi.mocked(hasScmIntegration).mockResolvedValue(true);
-				vi.mocked(hasScmPersonaToken).mockResolvedValue(true);
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: true,
+					hasPersonaToken: true,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'review');
 				expect(result.valid).toBe(true);
@@ -104,7 +173,17 @@ describe('integration-validation', () => {
 			});
 
 			it('fails when SCM integration is missing', async () => {
-				vi.mocked(hasScmIntegration).mockResolvedValue(false);
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: false,
+					hasPersonaToken: true,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'review');
 				expect(result.valid).toBe(false);
@@ -114,8 +193,17 @@ describe('integration-validation', () => {
 			});
 
 			it('fails when persona token is missing', async () => {
-				vi.mocked(hasScmIntegration).mockResolvedValue(true);
-				vi.mocked(hasScmPersonaToken).mockResolvedValue(false);
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: true,
+					hasPersonaToken: false,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'review');
 				expect(result.valid).toBe(false);
@@ -126,8 +214,18 @@ describe('integration-validation', () => {
 
 			it('checks reviewer token for review agent', async () => {
 				vi.mocked(getPersonaForAgentType).mockReturnValue('reviewer');
-				vi.mocked(hasScmIntegration).mockResolvedValue(true);
-				vi.mocked(hasScmPersonaToken).mockResolvedValue(false);
+
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: true,
+					hasPersonaToken: false,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'review');
 				expect(result.valid).toBe(false);
@@ -135,10 +233,80 @@ describe('integration-validation', () => {
 			});
 		});
 
+		describe('alerting integration validation', () => {
+			it('fails when alerting integration is required but not configured', async () => {
+				const alertingIntegration = mockIntegration({
+					type: 'sentry',
+					category: 'alerting',
+					hasIntegration: false,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'alerting') return [alertingIntegration as never];
+					return [];
+				});
+
+				// Simulate an agent that requires alerting
+				// We mock getIntegrationRequirements indirectly by using the alerting agent
+				// For this test, we mock validateIntegrations to require alerting
+				// by overriding getByCategory for the alerting category
+				const result = await validateIntegrations('test-project', 'alerting');
+				expect(result.valid).toBe(false);
+				expect(result.errors).toHaveLength(1);
+				expect(result.errors[0].category).toBe('alerting');
+				expect(result.errors[0].message).toContain('alerting integration (Sentry)');
+			});
+
+			it('passes when alerting integration is required and configured', async () => {
+				const alertingIntegration = mockIntegration({
+					type: 'sentry',
+					category: 'alerting',
+					hasIntegration: true,
+				});
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: true,
+					hasPersonaToken: true,
+				});
+				const pmIntegration = mockIntegration({
+					type: 'trello',
+					category: 'pm',
+					hasIntegration: true,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'alerting') return [alertingIntegration as never];
+					if (category === 'scm') return [scmIntegration as never];
+					if (category === 'pm') return [pmIntegration as never];
+					return [];
+				});
+
+				const result = await validateIntegrations('test-project', 'alerting');
+				expect(result.valid).toBe(true);
+				expect(result.errors).toEqual([]);
+			});
+		});
+
 		describe('multiple missing integrations', () => {
 			it('reports all missing integrations', async () => {
-				vi.mocked(hasPmIntegration).mockResolvedValue(false);
-				vi.mocked(hasScmIntegration).mockResolvedValue(false);
+				const pmIntegration = mockIntegration({
+					type: 'trello',
+					category: 'pm',
+					hasIntegration: false,
+				});
+				const scmIntegration = mockIntegration({
+					type: 'github',
+					category: 'scm',
+					hasIntegration: false,
+					hasPersonaToken: false,
+				});
+
+				vi.mocked(integrationRegistry.getByCategory).mockImplementation((category) => {
+					if (category === 'pm') return [pmIntegration as never];
+					if (category === 'scm') return [scmIntegration as never];
+					return [];
+				});
 
 				const result = await validateIntegrations('test-project', 'implementation');
 				expect(result.valid).toBe(false);

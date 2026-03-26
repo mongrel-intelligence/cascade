@@ -45,6 +45,12 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 
+// Mock the snapshot manager so we can verify invalidation calls
+const mockInvalidateSnapshot = vi.fn();
+vi.mock('../../../src/router/snapshot-manager.js', () => ({
+	invalidateSnapshot: (...args: unknown[]) => mockInvalidateSnapshot(...args),
+}));
+
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
@@ -77,6 +83,7 @@ describe('PRMergedTrigger', () => {
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+		mockInvalidateSnapshot.mockClear();
 	});
 
 	describe('matches', () => {
@@ -643,6 +650,121 @@ describe('PRMergedTrigger', () => {
 
 			expect(result).toBeNull();
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+		});
+
+		it('invalidates snapshot for the work item when PR is merged', async () => {
+			// isLifecycleTriggerEnabled: prMerged = true; then checkTriggerEnabled: backlog-manager = false
+			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(true);
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+			mockProvider.getWorkItem.mockResolvedValue({
+				id: 'abc123',
+				title: 'Card',
+				description: '',
+				url: '',
+				status: 'todo-list-id',
+				labels: [],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123/card-name',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			await trigger.handle(ctx);
+
+			// Snapshot should be invalidated for the project+workItem pair
+			expect(mockInvalidateSnapshot).toHaveBeenCalledWith(mockProject.id, 'abc123');
+		});
+
+		it('does not invalidate snapshot when PR is not merged', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'https://trello.com/c/abc123',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			await trigger.handle(ctx);
+
+			// No invalidation when PR is not merged
+			expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
+		});
+
+		it('does not invalidate snapshot when no work item is linked', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 123,
+				title: 'Test PR',
+				body: 'No Trello link',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: true,
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					action: 'closed',
+					number: 123,
+					pull_request: {
+						number: 123,
+						body: 'No Trello link',
+					},
+					repository: {
+						full_name: 'owner/repo',
+					},
+				},
+			};
+
+			await trigger.handle(ctx);
+
+			// No invalidation when there's no linked work item
+			expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
 		});
 	});
 });

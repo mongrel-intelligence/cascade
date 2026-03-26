@@ -1,6 +1,7 @@
 import { githubClient } from '../../github/client.js';
 import { getPMProvider } from '../../pm/context.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
+import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
@@ -45,6 +46,11 @@ export class PRMergedTrigger implements TriggerHandler {
 			logger.info('No work item linked to PR, skipping pr-merged', { prNumber });
 			return null;
 		}
+
+		// Fire-and-forget: invalidate any stale snapshot for this work item now that
+		// the PR is merged. The snapshot was built for a specific state of the work
+		// item and is no longer valid after the work is done.
+		invalidateSnapshot(ctx.project.id, workItemId);
 
 		const pmConfig = resolveProjectPMConfig(ctx.project);
 		const mergedStatus = pmConfig.statuses.merged;

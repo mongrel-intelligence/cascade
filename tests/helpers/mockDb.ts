@@ -6,6 +6,7 @@ export type MockDbChain = Record<string, ReturnType<typeof vi.fn>>;
 export interface MockDbResult {
 	db: {
 		select: ReturnType<typeof vi.fn>;
+		selectDistinct: ReturnType<typeof vi.fn>;
 		insert: ReturnType<typeof vi.fn>;
 		update: ReturnType<typeof vi.fn>;
 		delete: ReturnType<typeof vi.fn>;
@@ -81,6 +82,7 @@ export function createMockDb(
 
 	const db = {
 		select: vi.fn().mockReturnValue({ from: chain.from }),
+		selectDistinct: vi.fn().mockReturnValue({ from: chain.from }),
 		insert: vi.fn().mockReturnValue({ values: chain.values }),
 		update: vi.fn().mockReturnValue({ set: chain.set }),
 		delete: vi.fn().mockReturnValue({ where: chain.where }),

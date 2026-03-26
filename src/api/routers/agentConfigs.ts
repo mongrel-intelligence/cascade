@@ -16,6 +16,7 @@ import {
 	deleteAgentConfig,
 	getAgentConfigPrompts,
 	listAgentConfigs,
+	listDistinctEnginesByProject,
 	updateAgentConfig,
 } from '../../db/repositories/settingsRepository.js';
 import { agentConfigs } from '../../db/schema/index.js';
@@ -43,6 +44,19 @@ export const agentConfigsRouter = router({
 		registerBuiltInEngines();
 		return getEngineCatalog();
 	}),
+
+	/**
+	 * Returns the distinct set of engine IDs actively used by agent configs in a project.
+	 * Includes only non-null agent_engine overrides — does not include the project-level default engine.
+	 * The frontend merges this with the project-level effectiveEngineId to show all needed credentials.
+	 */
+	enginesInUse: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.query(async ({ ctx, input }) => {
+			// Verify project belongs to org
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			return listDistinctEnginesByProject(input.projectId);
+		}),
 
 	list: protectedProcedure
 		.input(z.object({ projectId: z.string() }))

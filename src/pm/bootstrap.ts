@@ -20,6 +20,7 @@
 
 import { GitHubSCMIntegration } from '../github/scm-integration.js';
 import { integrationRegistry } from '../integrations/registry.js';
+import { SentryAlertingIntegration } from '../sentry/alerting-integration.js';
 import { JiraIntegration } from './jira/integration.js';
 import { pmRegistry } from './registry.js';
 import { TrelloIntegration } from './trello/integration.js';
@@ -36,4 +37,7 @@ if (!pmRegistry.getOrNull('jira')) {
 }
 if (!integrationRegistry.getOrNull('github')) {
 	integrationRegistry.register(new GitHubSCMIntegration());
+}
+if (!integrationRegistry.getOrNull('sentry')) {
+	integrationRegistry.register(new SentryAlertingIntegration());
 }

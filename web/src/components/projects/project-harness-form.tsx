@@ -1,7 +1,9 @@
+import { ENGINE_SECRETS } from '@/components/projects/engine-secrets.js';
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
 import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
+import { Badge } from '@/components/ui/badge.js';
 import {
 	Card,
 	CardContent,
@@ -12,13 +14,7 @@ import {
 } from '@/components/ui/card.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select.js';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import {
 	Tooltip,
 	TooltipContent,
@@ -46,52 +42,7 @@ function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const ENGINE_SECRETS: Array<{
-	envVarKey: string;
-	label: string;
-	description: string;
-	placeholder?: string;
-	engines?: string[];
-}> = [
-	{
-		envVarKey: 'OPENAI_API_KEY',
-		label: 'OpenAI API Key',
-		description: 'API key for OpenAI/Codex or OpenCode backend.',
-		placeholder: 'sk-...',
-		engines: ['codex', 'opencode'],
-	},
-	{
-		envVarKey: 'CODEX_AUTH_JSON',
-		label: 'Codex Auth JSON',
-		description: 'Codex subscription auth.json contents for ChatGPT Plus/Pro.',
-		placeholder: '{"token":"..."}',
-		engines: ['codex'],
-	},
-	{
-		envVarKey: 'ANTHROPIC_API_KEY',
-		label: 'Anthropic API Key',
-		description: 'API key for Claude Code (non-subscription) or OpenCode backend.',
-		placeholder: 'sk-ant-api03-...',
-		engines: ['claude-code', 'opencode'],
-	},
-	{
-		envVarKey: 'CLAUDE_CODE_OAUTH_TOKEN',
-		label: 'Claude Code OAuth Token',
-		description: 'OAuth token for Claude Code subscription auth.',
-		placeholder: 'sk-ant-oat01-...',
-		engines: ['claude-code'],
-	},
-	{
-		envVarKey: 'OPENROUTER_API_KEY',
-		label: 'OpenRouter API Key',
-		description:
-			'API key for OpenCode engine. Also configurable on the General tab for LLM routing.',
-		placeholder: 'sk-or-...',
-		engines: ['opencode'],
-	},
-];
-
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multiple query dependencies and credential sections for engine-specific settings rendering
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multiple query dependencies and per-engine tab rendering for credentials and settings
 export function ProjectHarnessForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
@@ -102,6 +53,9 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 		...trpc.projects.defaults.queryOptions(),
 		staleTime: Number.POSITIVE_INFINITY,
 	});
+	const enginesInUseQuery = useQuery(
+		trpc.agentConfigs.enginesInUse.queryOptions({ projectId: project.id }),
+	);
 	const defaults = defaultsQuery.data;
 
 	const [model, setModel] = useState(project.model ?? '');
@@ -111,39 +65,38 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 		project.engineSettings ?? {},
 	);
 
-	const effectiveEngineId = agentEngine || '';
-	const effectiveEngine = enginesQuery.data?.find((engine) => engine.id === effectiveEngineId);
+	// Derived values
+	const engines = enginesQuery.data ?? [];
+	const credentials = credentialsQuery.data ?? [];
+	const agentEnginesInUse = enginesInUseQuery.data ?? [];
 
-	// Resolved engine defaults for the EngineSettingsFields component
-	const engineDefaults =
-		defaults && effectiveEngineId
-			? (defaults.engineSettings as Record<string, Record<string, unknown>>)[effectiveEngineId]
+	// System default engine (e.g. 'claude-code') shown when no project-level engine is set
+	const systemDefaultEngineId = defaults?.agentEngine ?? 'claude-code';
+	// The effective project-level engine: either explicitly set or the system default
+	const effectiveEngineId = agentEngine || systemDefaultEngineId;
+
+	// Default tab to show: project's selected engine, or system default
+	const defaultTab = effectiveEngineId;
+
+	// Resolved engine defaults for EngineSettingsFields
+	function getEngineDefaults(engineId: string): Record<string, unknown> | undefined {
+		return defaults
+			? (defaults.engineSettings as Record<string, Record<string, unknown>>)[engineId]
 			: undefined;
+	}
 
 	function handleSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		const activeEngine = agentEngine || null;
-		const activeEngineSettings =
-			activeEngine && engineSettings[activeEngine]
-				? { [activeEngine]: engineSettings[activeEngine] }
-				: null;
+		// Save all engine settings, not just the active engine
+		const allEngineSettings = Object.keys(engineSettings).length > 0 ? engineSettings : null;
 		updateMutation.mutate({
 			model: model || null,
 			maxIterations: maxIterations ? Number.parseInt(maxIterations, 10) : null,
 			agentEngine: activeEngine,
-			engineSettings: activeEngineSettings,
+			engineSettings: allEngineSettings,
 		});
 	}
-
-	const credentials = credentialsQuery.data ?? [];
-
-	// Show engine secrets filtered by selected engine; show none when no engine selected
-	const visibleSecrets = effectiveEngineId
-		? ENGINE_SECRETS.filter((s) => !s.engines || s.engines.includes(effectiveEngineId))
-		: [];
-
-	// Default engine label for the select placeholder
-	const defaultEngineLabel = defaults ? `Default (${capitalize(defaults.agentEngine)})` : 'Default';
 
 	return (
 		<TooltipProvider>
@@ -155,38 +108,16 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 					</p>
 				</div>
 
-				{/* Engine & Runtime Card */}
+				{/* Model & Iterations Card — engine-agnostic, always visible */}
 				<Card>
 					<CardHeader>
-						<CardTitle>Engine &amp; Runtime</CardTitle>
+						<CardTitle>Model &amp; Runtime</CardTitle>
 						<CardDescription>
-							Choose which AI engine runs agents and configure its parameters.
+							Global model and iteration settings applied to all agents unless overridden per-agent.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
 						<form onSubmit={handleSubmit} className="space-y-4" id="engine-runtime-form">
-							<div className="space-y-2">
-								<Label>Agent Engine</Label>
-								<Select
-									value={agentEngine || '_none'}
-									onValueChange={(v) => setAgentEngine(v === '_none' ? '' : v)}
-								>
-									<SelectTrigger className="w-full">
-										<SelectValue placeholder={defaultEngineLabel} />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="_none">{defaultEngineLabel}</SelectItem>
-										{enginesQuery.data?.map((engine) => (
-											<SelectItem key={engine.id} value={engine.id}>
-												{engine.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-								<p className="text-xs text-muted-foreground">
-									Determines which AI SDK processes agent runs.
-								</p>
-							</div>
 							<div className="space-y-2">
 								<div className="flex items-center gap-1.5">
 									<Label htmlFor="model">Model</Label>
@@ -211,12 +142,6 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 									Project default model. Per-agent overrides in the Agents tab.
 								</p>
 							</div>
-							<EngineSettingsFields
-								engine={effectiveEngine}
-								value={engineSettings}
-								onChange={(next) => setEngineSettings(next ?? {})}
-								engineDefaults={engineDefaults}
-							/>
 							<div className="space-y-2">
 								<div className="flex items-center gap-1.5">
 									<Label htmlFor="maxIterations">Max Iterations</Label>
@@ -245,6 +170,157 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 							</div>
 						</form>
 					</CardContent>
+				</Card>
+
+				{/* Per-engine tabs: credentials + settings + default toggle */}
+				<Card>
+					<CardHeader>
+						<CardTitle>Engine Settings &amp; Credentials</CardTitle>
+						<CardDescription>
+							Configure each engine's credentials and settings. The default engine tab is
+							highlighted. New engines are added automatically as the catalog expands.
+						</CardDescription>
+					</CardHeader>
+					<CardContent>
+						{engines.length === 0 ? (
+							<p className="text-sm text-muted-foreground">Loading engines…</p>
+						) : (
+							<Tabs defaultValue={defaultTab}>
+								<TabsList className="flex w-full h-auto flex-wrap">
+									{engines.map((engine) => {
+										const isDefault = engine.id === effectiveEngineId;
+										const isUsedByAgents = agentEnginesInUse.includes(engine.id);
+										return (
+											<TabsTrigger
+												key={engine.id}
+												value={engine.id}
+												className="flex items-center gap-1.5"
+											>
+												{engine.label}
+												{isDefault && (
+													<Badge variant="secondary" className="text-xs px-1 py-0">
+														Default
+													</Badge>
+												)}
+												{!isDefault && isUsedByAgents && (
+													<Badge variant="outline" className="text-xs px-1 py-0">
+														In use
+													</Badge>
+												)}
+											</TabsTrigger>
+										);
+									})}
+								</TabsList>
+
+								{engines.map((engine) => {
+									const isDefault = engine.id === effectiveEngineId;
+									const isUsedByAgents = agentEnginesInUse.includes(engine.id);
+									const engineSecrets = ENGINE_SECRETS.filter((s) =>
+										s.engines?.includes(engine.id),
+									);
+									// Secrets shared with other engines: show a note
+									const sharedSecretEngines = (envVarKey: string): string[] => {
+										const secret = ENGINE_SECRETS.find((s) => s.envVarKey === envVarKey);
+										if (!secret?.engines) return [];
+										return secret.engines.filter((e) => e !== engine.id);
+									};
+
+									const engineDefaults = getEngineDefaults(engine.id);
+
+									return (
+										<TabsContent key={engine.id} value={engine.id} className="mt-4 space-y-6">
+											{/* Engine description */}
+											{engine.description && (
+												<p className="text-sm text-muted-foreground">{engine.description}</p>
+											)}
+
+											{/* Default engine indicator / Set as Default button */}
+											<div className="flex items-center gap-3">
+												{isDefault ? (
+													<div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
+														<span className="text-muted-foreground">
+															✓ Default engine for this project
+															{agentEngine === '' &&
+																` (inheriting system default: ${capitalize(systemDefaultEngineId)})`}
+														</span>
+														{agentEngine !== '' && (
+															<button
+																type="button"
+																onClick={() => setAgentEngine('')}
+																className="ml-2 text-xs text-muted-foreground underline hover:text-foreground transition-colors"
+															>
+																Reset to system default
+															</button>
+														)}
+													</div>
+												) : (
+													<button
+														type="button"
+														onClick={() => setAgentEngine(engine.id)}
+														className="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
+													>
+														Set as Default Engine
+													</button>
+												)}
+												{!isDefault && isUsedByAgents && (
+													<span className="text-xs text-muted-foreground">
+														Used by agent config overrides
+													</span>
+												)}
+											</div>
+
+											{/* Engine settings */}
+											<EngineSettingsFields
+												engine={engine}
+												value={engineSettings}
+												onChange={(next) => setEngineSettings(next ?? {})}
+												engineDefaults={engineDefaults}
+											/>
+
+											{/* Engine credentials */}
+											{engineSecrets.length > 0 ? (
+												<div className="space-y-4">
+													<div>
+														<h4 className="text-sm font-medium">Credentials</h4>
+														<p className="text-xs text-muted-foreground mt-0.5">
+															API keys and tokens for {engine.label}. Values are stored encrypted
+															and never returned to the browser.
+														</p>
+													</div>
+													{engineSecrets.map((secret) => {
+														const sharedWith = sharedSecretEngines(secret.envVarKey);
+														const sharedNote =
+															sharedWith.length > 0
+																? `Also used by: ${sharedWith.map((id) => engines.find((e) => e.id === id)?.label ?? id).join(', ')}`
+																: undefined;
+														const description =
+															secret.description + (sharedNote ? ` · ${sharedNote}` : '');
+														return (
+															<ProjectSecretField
+																key={secret.envVarKey}
+																projectId={project.id}
+																envVarKey={secret.envVarKey}
+																label={secret.label}
+																description={description}
+																placeholder={secret.placeholder}
+																credential={credentials.find(
+																	(c) => c.envVarKey === secret.envVarKey,
+																)}
+															/>
+														);
+													})}
+												</div>
+											) : (
+												<p className="text-sm text-muted-foreground">
+													No credentials required for {engine.label}.
+												</p>
+											)}
+										</TabsContent>
+									);
+								})}
+							</Tabs>
+						)}
+					</CardContent>
 					<CardFooter>
 						<div className="flex items-center gap-2">
 							<button
@@ -263,42 +339,6 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 							)}
 						</div>
 					</CardFooter>
-				</Card>
-
-				{/* Engine Credentials Card */}
-				<Card>
-					<CardHeader>
-						<CardTitle>Engine Credentials</CardTitle>
-						<CardDescription>
-							API keys and tokens for the agent engine. Values are stored encrypted and never
-							returned to the browser.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						{!effectiveEngineId ? (
-							<p className="text-sm text-muted-foreground">
-								Select an engine above to see required credentials.
-							</p>
-						) : visibleSecrets.length === 0 ? (
-							<p className="text-sm text-muted-foreground">
-								No credentials required for the selected engine.
-							</p>
-						) : (
-							<div className="space-y-4">
-								{visibleSecrets.map((secret) => (
-									<ProjectSecretField
-										key={secret.envVarKey}
-										projectId={project.id}
-										envVarKey={secret.envVarKey}
-										label={secret.label}
-										description={secret.description}
-										placeholder={secret.placeholder}
-										credential={credentials.find((c) => c.envVarKey === secret.envVarKey)}
-									/>
-								))}
-							</div>
-						)}
-					</CardContent>
 				</Card>
 			</div>
 		</TooltipProvider>

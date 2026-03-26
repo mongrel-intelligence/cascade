@@ -8,9 +8,9 @@
 import { deriveIntegrations } from '../../agents/capabilities/index.js';
 import { resolveAgentDefinition } from '../../agents/definitions/loader.js';
 import type { IntegrationCategory } from '../../agents/definitions/schema.js';
-import { hasScmIntegration, hasScmPersonaToken } from '../../github/integration.js';
 import { getPersonaForAgentType } from '../../github/personas.js';
-import { hasPmIntegration } from '../../pm/integration.js';
+import { integrationRegistry } from '../../integrations/registry.js';
+import type { SCMIntegration } from '../../integrations/scm.js';
 import { logger } from '../../utils/logging.js';
 
 export interface ValidationError {
@@ -56,41 +56,85 @@ export async function getIntegrationRequirements(agentType: string): Promise<Der
 // Category-specific validators
 // ============================================================================
 
-async function validatePmIntegration(
-	projectId: string,
-	agentType: string,
-): Promise<ValidationError | null> {
-	const hasPM = await hasPmIntegration(projectId);
-	if (!hasPM) {
-		return {
-			category: 'pm',
-			message: `Agent '${agentType}' requires a PM integration (Trello/JIRA), but none is configured.`,
-		};
-	}
-	return null;
+/**
+ * Type guard to check if an integration is an SCMIntegration.
+ */
+function isScmIntegration(integration: unknown): integration is SCMIntegration {
+	return (
+		integration !== null &&
+		typeof integration === 'object' &&
+		(integration as SCMIntegration).category === 'scm' &&
+		typeof (integration as SCMIntegration).hasPersonaToken === 'function'
+	);
 }
 
-async function validateScmIntegration(
+/**
+ * Build the "not configured" error message for a category.
+ */
+function notConfiguredError(category: IntegrationCategory, agentType: string): ValidationError {
+	const categoryLabels: Partial<Record<IntegrationCategory, string>> = {
+		pm: 'a PM integration (Trello/JIRA)',
+		scm: 'SCM integration (GitHub)',
+		alerting: 'alerting integration (Sentry)',
+	};
+	const label = categoryLabels[category] ?? `${category} integration`;
+	return {
+		category,
+		message: `Agent '${agentType}' requires ${label}, but none is configured.`,
+	};
+}
+
+/**
+ * Validate SCM persona token for an agent.
+ * Returns a ValidationError if the required persona token is missing, or null if valid.
+ */
+async function validateScmPersonaToken(
 	projectId: string,
 	agentType: string,
+	integrations: ReturnType<typeof integrationRegistry.getByCategory>,
 ): Promise<ValidationError | null> {
-	const hasSCM = await hasScmIntegration(projectId);
-	if (!hasSCM) {
-		return {
-			category: 'scm',
-			message: `Agent '${agentType}' requires SCM integration (GitHub), but none is configured.`,
-		};
-	}
+	const scmIntegration = integrations.find(isScmIntegration);
+	if (!scmIntegration) return null;
 
-	// Also check specific persona token
 	const persona = getPersonaForAgentType(agentType);
-	const hasToken = await hasScmPersonaToken(projectId, persona);
+	const hasToken = await scmIntegration.hasPersonaToken(projectId, persona);
 	if (!hasToken) {
 		const label = persona === 'implementer' ? 'Implementer' : 'Reviewer';
 		return {
 			category: 'scm',
 			message: `Agent '${agentType}' requires ${label} token, but it is not configured.`,
 		};
+	}
+	return null;
+}
+
+/**
+ * Validate a single integration category for a project.
+ * Returns a ValidationError if the category is not properly configured, or null if valid.
+ */
+async function validateCategory(
+	category: IntegrationCategory,
+	projectId: string,
+	agentType: string,
+): Promise<ValidationError | null> {
+	const integrations = integrationRegistry.getByCategory(category);
+
+	if (integrations.length === 0) {
+		return {
+			category,
+			message: `Agent '${agentType}' requires ${category} integration, but none is registered.`,
+		};
+	}
+
+	// Check if at least one integration in this category is configured
+	const hasAny = await Promise.all(integrations.map((i) => i.hasIntegration(projectId)));
+	if (!hasAny.some(Boolean)) {
+		return notConfiguredError(category, agentType);
+	}
+
+	// SCM-specific: also check persona token
+	if (category === 'scm') {
+		return validateScmPersonaToken(projectId, agentType, integrations);
 	}
 
 	return null;
@@ -103,6 +147,9 @@ async function validateScmIntegration(
 /**
  * Validate all required integrations are configured before agent runs.
  * Integrations are derived from the agent's required capabilities.
+ *
+ * Uses the integrationRegistry to look up integration modules by category,
+ * making validation automatically extensible to new integration categories.
  */
 export async function validateIntegrations(
 	projectId: string,
@@ -110,17 +157,10 @@ export async function validateIntegrations(
 ): Promise<ValidationResult> {
 	const { required } = await getIntegrationRequirements(agentType);
 
-	// Run all validations in parallel
-	const validationPromises = required.map(async (category): Promise<ValidationError | null> => {
-		switch (category) {
-			case 'pm':
-				return validatePmIntegration(projectId, agentType);
-			case 'scm':
-				return validateScmIntegration(projectId, agentType);
-			default:
-				return null;
-		}
-	});
+	// Run all category validations in parallel
+	const validationPromises = required.map((category) =>
+		validateCategory(category, projectId, agentType),
+	);
 
 	const results = await Promise.all(validationPromises);
 	const errors = results.filter((e): e is ValidationError => e !== null);

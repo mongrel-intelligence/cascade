@@ -22,8 +22,12 @@ export function cleanupAgentResources(
 	clearWatchdogCleanup();
 
 	const isLocalMode = process.env.CASCADE_LOCAL_MODE === 'true';
+	// Preserve the workspace when the router will commit this container to a snapshot image.
+	// If the workspace is deleted before process exit, docker commit captures an empty
+	// /workspace and the snapshot fails to provide any reuse benefit.
+	const isSnapshotEnabled = process.env.CASCADE_SNAPSHOT_ENABLED === 'true';
 
-	if (repoDir && !isLocalMode && !skipRepoDeletion) {
+	if (repoDir && !isLocalMode && !skipRepoDeletion && !isSnapshotEnabled) {
 		try {
 			cleanupTempDir(repoDir);
 		} catch (err) {

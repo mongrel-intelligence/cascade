@@ -27,6 +27,9 @@ export const projects = pgTable(
 		runLinksEnabled: boolean('run_links_enabled').default(false).notNull(),
 		maxInFlightItems: integer('max_in_flight_items'),
 
+		snapshotEnabled: boolean('snapshot_enabled'),
+		snapshotTtlMs: integer('snapshot_ttl_ms'),
+
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

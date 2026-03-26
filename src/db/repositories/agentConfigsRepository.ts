@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import type { EngineSettings } from '../../config/engineSettings.js';
 import { getDb } from '../client.js';
 import { agentConfigs } from '../schema/index.js';
@@ -180,6 +180,22 @@ export function clearAgentConfigPromptsCache(): void {
  */
 export function clearMaxConcurrencyCache(): void {
 	maxConcurrencyCache.clear();
+}
+
+/**
+ * Return distinct non-null agent_engine values for all agent configs in a project.
+ * Used to determine which engines need credentials configured on the Harness tab.
+ *
+ * Example: if a project has a `review` agent config with `agent_engine = 'codex'`,
+ * this returns `['codex']` even if the project-level default engine is `claude-code`.
+ */
+export async function listDistinctEnginesByProject(projectId: string): Promise<string[]> {
+	const db = getDb();
+	const rows = await db
+		.selectDistinct({ agentEngine: agentConfigs.agentEngine })
+		.from(agentConfigs)
+		.where(and(eq(agentConfigs.projectId, projectId), isNotNull(agentConfigs.agentEngine)));
+	return rows.map((r) => r.agentEngine as string);
 }
 
 /**

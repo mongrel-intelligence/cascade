@@ -143,13 +143,14 @@ describe('orphan-cleanup', () => {
 			expect(mockDockerGetContainer).not.toHaveBeenCalled();
 		});
 
-		it('stops orphaned containers older than workerTimeoutMs', async () => {
+		it('stops and removes orphaned containers older than workerTimeoutMs', async () => {
 			const orphanContainerId = 'orphan-container-old';
 			const now = Math.floor(Date.now() / 1000);
 			const createdAt = now - 6; // 6 seconds old, workerTimeoutMs is 5000ms
 
 			const mockOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -163,6 +164,56 @@ describe('orphan-cleanup', () => {
 			await scanAndCleanupOrphans();
 
 			expect(mockOrphanContainer.stop).toHaveBeenCalledWith({ t: 15 });
+			expect(mockOrphanContainer.remove).toHaveBeenCalled();
+		});
+
+		it('removes orphaned container after stopping (prevents disk accumulation for AutoRemove=false containers)', async () => {
+			const orphanContainerId = 'orphan-snapshot-container';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6;
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					Labels: { 'cascade.snapshot.enabled': 'true' },
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+
+			await scanAndCleanupOrphans();
+
+			expect(mockOrphanContainer.stop).toHaveBeenCalledWith({ t: 15 });
+			expect(mockOrphanContainer.remove).toHaveBeenCalled();
+		});
+
+		it('swallows remove errors (container may already be removed by AutoRemove)', async () => {
+			const orphanContainerId = 'orphan-already-removed';
+			const now = Math.floor(Date.now() / 1000);
+			const createdAt = now - 6;
+
+			const mockOrphanContainer = {
+				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockRejectedValue(new Error('no such container')),
+			};
+			mockDockerListContainers.mockResolvedValue([
+				{
+					Id: orphanContainerId,
+					Created: createdAt,
+					State: 'running',
+				} as never,
+			]);
+			mockDockerGetContainer.mockReturnValue(mockOrphanContainer as never);
+
+			// Should not throw even if remove fails
+			await expect(scanAndCleanupOrphans()).resolves.toBeUndefined();
+			expect(mockOrphanContainer.stop).toHaveBeenCalled();
+			expect(mockOrphanContainer.remove).toHaveBeenCalled();
 		});
 
 		it('leaves young orphaned containers alone', async () => {
@@ -201,6 +252,7 @@ describe('orphan-cleanup', () => {
 
 			const mockFailContainer = {
 				stop: vi.fn().mockRejectedValue(new Error('already stopped')),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -221,9 +273,11 @@ describe('orphan-cleanup', () => {
 
 			const mockContainer1 = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			const mockContainer2 = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 
 			mockDockerListContainers.mockResolvedValue([
@@ -242,7 +296,7 @@ describe('orphan-cleanup', () => {
 			mockDockerGetContainer.mockImplementation((id: string) => {
 				if (id === 'orphan-1') return mockContainer1 as never;
 				if (id === 'orphan-2') return mockContainer2 as never;
-				return null;
+				return { stop: vi.fn(), remove: vi.fn() } as never;
 			});
 
 			await scanAndCleanupOrphans();
@@ -258,6 +312,7 @@ describe('orphan-cleanup', () => {
 
 			const mockOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -291,6 +346,7 @@ describe('orphan-cleanup', () => {
 
 			const mockOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -314,6 +370,7 @@ describe('orphan-cleanup', () => {
 
 			const mockOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -338,6 +395,7 @@ describe('orphan-cleanup', () => {
 
 			const mockOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -373,6 +431,7 @@ describe('orphan-cleanup', () => {
 
 			const mockOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			mockDockerListContainers.mockResolvedValue([
 				{
@@ -405,9 +464,11 @@ describe('orphan-cleanup', () => {
 			const now = Math.floor(Date.now() / 1000);
 			const mockedOrphanContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 			const mockedYoungContainer = {
 				stop: vi.fn().mockResolvedValue(undefined),
+				remove: vi.fn().mockResolvedValue(undefined),
 			};
 
 			mockDockerListContainers.mockResolvedValue([
@@ -431,7 +492,7 @@ describe('orphan-cleanup', () => {
 			mockDockerGetContainer.mockImplementation((id: string) => {
 				if (id === 'orphan-old') return mockedOrphanContainer as never;
 				if (id === 'orphan-young') return mockedYoungContainer as never;
-				return { stop: vi.fn() } as never;
+				return { stop: vi.fn(), remove: vi.fn() } as never;
 			});
 
 			await scanAndCleanupOrphans();
