@@ -42,7 +42,6 @@ function capitalize(s: string): string {
 	return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multiple query dependencies and per-engine tab rendering for credentials and settings
 export function ProjectHarnessForm({ project }: { project: Project }) {
 	const updateMutation = useProjectUpdate(project.id);
 	const enginesQuery = useQuery(trpc.agentConfigs.engines.queryOptions());
