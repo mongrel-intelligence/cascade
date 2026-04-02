@@ -84,6 +84,21 @@ export async function deleteExpiredSessions(): Promise<void> {
 	await db.delete(sessions).where(lt(sessions.expiresAt, new Date()));
 }
 
+/**
+ * Delete all sessions for a given user. Optionally exclude a specific token
+ * (e.g. to preserve the caller's own session when they change their own password).
+ */
+export async function deleteUserSessions(userId: string, excludeToken?: string): Promise<void> {
+	const db = getDb();
+	if (excludeToken !== undefined) {
+		await db
+			.delete(sessions)
+			.where(and(eq(sessions.userId, userId), ne(sessions.token, excludeToken)));
+	} else {
+		await db.delete(sessions).where(eq(sessions.userId, userId));
+	}
+}
+
 // ============================================================================
 // CRUD for users (org-scoped)
 // ============================================================================

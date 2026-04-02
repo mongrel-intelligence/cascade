@@ -8,6 +8,7 @@ const {
 	mockUpdateUser,
 	mockDeleteUser,
 	mockGetUserById,
+	mockDeleteUserSessions,
 	mockBcryptHash,
 } = vi.hoisted(() => ({
 	mockListOrgUsers: vi.fn(),
@@ -15,6 +16,7 @@ const {
 	mockUpdateUser: vi.fn(),
 	mockDeleteUser: vi.fn(),
 	mockGetUserById: vi.fn(),
+	mockDeleteUserSessions: vi.fn(),
 	mockBcryptHash: vi.fn(),
 }));
 
@@ -24,6 +26,7 @@ vi.mock('../../../../src/db/repositories/usersRepository.js', () => ({
 	updateUser: mockUpdateUser,
 	deleteUser: mockDeleteUser,
 	getUserById: mockGetUserById,
+	deleteUserSessions: mockDeleteUserSessions,
 }));
 
 vi.mock('bcrypt', () => ({
@@ -43,6 +46,7 @@ const mockMember = createMockUser({ id: 'member-1', role: 'member' });
 describe('usersRouter', () => {
 	beforeEach(() => {
 		mockBcryptHash.mockResolvedValue('hashed-password');
+		mockDeleteUserSessions.mockResolvedValue(undefined);
 	});
 
 	describe('list', () => {
@@ -405,6 +409,36 @@ describe('usersRouter', () => {
 			await expect(caller.update({ id: 'user-2', name: 'X' })).rejects.toMatchObject({
 				code: 'FORBIDDEN',
 			});
+		});
+
+		it('invalidates all sessions when password is changed', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'member' });
+			mockUpdateUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await caller.update({ id: 'user-2', password: 'newpassword12' });
+
+			expect(mockDeleteUserSessions).toHaveBeenCalledWith('user-2');
+		});
+
+		it('does not invalidate sessions when password is not changed', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'member' });
+			mockUpdateUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await caller.update({ id: 'user-2', name: 'New Name' });
+
+			expect(mockDeleteUserSessions).not.toHaveBeenCalled();
+		});
+
+		it('does not invalidate sessions when only role/email are changed', async () => {
+			mockGetUserById.mockResolvedValue({ id: 'user-2', orgId: 'org-1', role: 'member' });
+			mockUpdateUser.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockAdminUser, effectiveOrgId: mockAdminUser.orgId });
+
+			await caller.update({ id: 'user-2', email: 'new@example.com' });
+
+			expect(mockDeleteUserSessions).not.toHaveBeenCalled();
 		});
 	});
 
