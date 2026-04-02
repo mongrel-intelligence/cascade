@@ -154,6 +154,17 @@ Style and preferences - mention only if egregious:
 - **Build-time config**: For features requiring build-time injection, verify the injection point exists
 - **When uncertain**: Ask in your review rather than assuming deployment is configured correctly
 
+### Documentation
+- **Currency**: Do CLAUDE.md, README.md, and docs/ still accurately describe features changed by this PR?
+- **New features**: Are user-facing or developer-facing features introduced without any documentation?
+- **Stale references**: Does the PR remove or rename something that's still referenced in docs?
+- **JSDoc**: Are new public functions/classes missing parameter or return type documentation?
+
+Severity guide:
+- Missing docs for a user-facing feature or new env var = **SHOULD_FIX**
+- Missing JSDoc on a new public API = **NITPICK**
+- Actively misleading docs (describe behavior that no longer exists) = **SHOULD_FIX**
+
 ## Strategic Questions
 
 Answer these during Phase 1 — they catch design problems that line-by-line review misses:

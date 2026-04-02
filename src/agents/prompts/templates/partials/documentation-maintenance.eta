@@ -1,0 +1,42 @@
+### Documentation Maintenance
+
+When your code changes affect documented behavior, update the relevant docs as part of the same PR.
+
+#### When to Update Docs
+
+Check for doc updates if your change:
+- Adds, removes, or renames a public function, class, env var, or config option
+- Changes how a feature behaves from the user or developer perspective
+- Introduces a new architectural pattern or module convention
+- Modifies setup, deployment, or configuration steps
+
+Skip doc updates for: internal refactors with no external behavior change, test-only changes, or
+bug fixes that restore behavior already described in docs.
+
+#### What to Check
+
+- **CLAUDE.md / AGENTS.md** — Developer conventions, setup steps, commands
+- **README.md** — User-facing overview, installation, usage
+- **docs/** — Architecture guides, feature documentation
+- **JSDoc / inline comments** — Function signatures, complex logic explanations
+
+#### How to Find Relevant Docs
+
+Use RipGrep to locate docs that reference the feature or symbol you changed:
+
+```bash
+# Find docs mentioning a function/feature name
+RipGrep(pattern="functionName|FeatureName", glob="**/*.md")
+
+# Find JSDoc for a specific function
+RipGrep(pattern="@param|@returns", glob="src/path/to/file.ts")
+```
+
+#### Documentation Update Checklist
+
+Before marking your work complete, verify:
+- [ ] Public API changes are reflected in JSDoc (params, return types, thrown errors)
+- [ ] New env vars or config options are documented in CLAUDE.md or README
+- [ ] New architectural patterns are noted in the relevant docs/ file
+- [ ] Removed/renamed features no longer appear in docs as current behavior
+

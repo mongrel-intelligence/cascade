@@ -131,6 +131,8 @@ Use `UpdatePRComment` with the comment ID from session state.
 
 <%~ include("partials/test-protocol") %>
 
+<%~ include("partials/documentation-maintenance") %>
+
 <%~ include("partials/verification-protocol") %>
 
 <%~ include("partials/rules-efficiency") %>
