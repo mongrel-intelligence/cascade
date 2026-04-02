@@ -77,40 +77,22 @@ describe('buildCorsMiddleware', () => {
 	});
 
 	describe('when CORS_ORIGIN is not set AND NODE_ENV=production', () => {
-		it('logs a warning at startup', () => {
-			const warn = vi.fn();
-			buildCorsMiddleware({
-				corsOriginEnv: undefined,
-				isProduction: true,
-				warn,
-			});
-
-			expect(warn).toHaveBeenCalledOnce();
-			expect(warn).toHaveBeenCalledWith(
-				expect.stringContaining('CORS_ORIGIN is not set in production'),
-			);
+		it('throws an error at startup', () => {
+			expect(() =>
+				buildCorsMiddleware({
+					corsOriginEnv: undefined,
+					isProduction: true,
+				}),
+			).toThrowError(/CORS_ORIGIN is not set/);
 		});
 
-		it('blocks all cross-origin requests (empty origin list)', async () => {
-			const middleware = buildCorsMiddleware({
-				corsOriginEnv: undefined,
-				isProduction: true,
-				warn: vi.fn(),
-			});
-
-			const res = await fetchWithOrigin(middleware, 'https://any-origin.example.com');
-			expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
-		});
-
-		it('also blocks localhost when in production without CORS_ORIGIN', async () => {
-			const middleware = buildCorsMiddleware({
-				corsOriginEnv: undefined,
-				isProduction: true,
-				warn: vi.fn(),
-			});
-
-			const res = await fetchWithOrigin(middleware, 'http://localhost:5173');
-			expect(res.headers.get('Access-Control-Allow-Origin')).toBeNull();
+		it('throws an error with an actionable message', () => {
+			expect(() =>
+				buildCorsMiddleware({
+					corsOriginEnv: undefined,
+					isProduction: true,
+				}),
+			).toThrowError(/Set CORS_ORIGIN to your frontend URL/);
 		});
 	});
 

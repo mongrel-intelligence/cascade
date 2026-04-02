@@ -3,7 +3,7 @@
  *
  * Selects the appropriate CORS middleware options based on environment:
  * - When CORS_ORIGIN is set: allow only those origins (comma-separated)
- * - When unset in production: warn and allow no origins (restrictive default)
+ * - When unset in production: throws an error at startup (hard failure)
  * - When unset outside production: default to localhost:5173 (dev convenience)
  */
 
@@ -28,15 +28,14 @@ export interface CorsConfig {
  * Returns a ready-to-use Hono `cors()` middleware configured for the current
  * environment:
  *  - If `corsOriginEnv` is set (comma-separated), only those origins are allowed.
- *  - If `corsOriginEnv` is unset in production, a warning is logged and an empty
- *    origin list is used (blocks all cross-origin requests).
+ *  - If `corsOriginEnv` is unset in production, throws an `Error` to crash the
+ *    process at startup with a clear, actionable message.
  *  - If `corsOriginEnv` is unset outside production, `http://localhost:5173` is
  *    used as a dev-friendly default.
  */
 export function buildCorsMiddleware({
 	corsOriginEnv,
 	isProduction,
-	warn = console.warn,
 }: CorsConfigOptions): ReturnType<typeof cors> {
 	const origins = corsOriginEnv
 		?.split(',')
@@ -48,12 +47,11 @@ export function buildCorsMiddleware({
 	}
 
 	if (isProduction) {
-		warn(
-			'[Dashboard] WARNING: CORS_ORIGIN is not set in production. ' +
-				'Using restrictive default (no origins allowed). ' +
+		throw new Error(
+			'[Dashboard] CORS_ORIGIN is not set. ' +
+				'This is required in production. ' +
 				'Set CORS_ORIGIN to your frontend URL (e.g., https://dashboard.example.com).',
 		);
-		return cors({ origin: [], credentials: true });
 	}
 
 	// Development default
