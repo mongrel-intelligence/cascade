@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
 	createUser,
 	deleteUser,
+	deleteUserSessions,
 	getUserById,
 	listOrgUsers,
 	updateUser,
@@ -122,6 +123,12 @@ export const usersRouter = router({
 			}
 
 			await updateUser(input.id, updates);
+
+			// Invalidate all sessions for the target user when their password changes.
+			// This prevents stale sessions from remaining valid after a password reset.
+			if (updates.passwordHash !== undefined) {
+				await deleteUserSessions(input.id);
+			}
 		}),
 
 	delete: adminProcedure.input(z.object({ id: z.string() })).mutation(async ({ ctx, input }) => {

@@ -29,6 +29,7 @@ import {
 	deleteExpiredSessions,
 	deleteSession,
 	deleteUser,
+	deleteUserSessions,
 	getSessionByToken,
 	getUserByEmail,
 	getUserById,
@@ -286,6 +287,36 @@ describe('usersRepository', () => {
 			await deleteUser('u1');
 
 			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('deleteUserSessions', () => {
+		it('deletes all sessions for a user', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await deleteUserSessions('user-1');
+
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+		});
+
+		it('deletes all sessions when excludeToken is not provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await deleteUserSessions('user-1');
+
+			// Without excludeToken the where clause uses a single eq condition (no and/ne)
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.where).toHaveBeenCalledTimes(1);
+		});
+
+		it('excludes a specific token when provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await deleteUserSessions('user-1', 'keep-this-token');
+
+			// With excludeToken the where clause uses an and(eq, ne) condition
+			expect(mockDb.db.delete).toHaveBeenCalledTimes(1);
+			expect(mockDb.chain.where).toHaveBeenCalledTimes(1);
 		});
 	});
 });
