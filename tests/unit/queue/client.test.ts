@@ -172,7 +172,6 @@ describe('getQueue error handling', () => {
 	it('throws an error when REDIS_URL is not set', async () => {
 		// Ensure REDIS_URL is not present in the environment
 		const saved = process.env.REDIS_URL;
-		// biome-ignore lint/performance/noDelete: need to fully remove the key so !redisUrl is true
 		delete process.env.REDIS_URL;
 
 		try {

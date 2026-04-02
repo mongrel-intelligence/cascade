@@ -15,18 +15,13 @@ describe('instrument (Sentry init)', () => {
 	});
 
 	afterEach(() => {
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_DSN;
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_ENVIRONMENT;
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_RELEASE;
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_TRACES_SAMPLE_RATE;
 	});
 
 	it('does NOT call Sentry.init when SENTRY_DSN is unset', async () => {
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_DSN;
 		await import('../../src/instrument.js');
 		expect(mockInit).not.toHaveBeenCalled();
@@ -49,7 +44,6 @@ describe('instrument (Sentry init)', () => {
 
 	it('falls back to NODE_ENV for environment', async () => {
 		process.env.SENTRY_DSN = 'https://fake@sentry.io/123';
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_ENVIRONMENT;
 		const originalNodeEnv = process.env.NODE_ENV;
 		process.env.NODE_ENV = 'test';
@@ -67,7 +61,6 @@ describe('instrument (Sentry init)', () => {
 
 	it('defaults tracesSampleRate to 0.1', async () => {
 		process.env.SENTRY_DSN = 'https://fake@sentry.io/123';
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.SENTRY_TRACES_SAMPLE_RATE;
 		await import('../../src/instrument.js');
 		expect(mockInit).toHaveBeenCalledWith(expect.objectContaining({ tracesSampleRate: 0.1 }));

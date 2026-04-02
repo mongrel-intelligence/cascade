@@ -1,9 +1,9 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 
 function slugify(name: string): string {
 	return name
@@ -34,7 +34,9 @@ export function OrganizationFormDialog({
 			setId(organization.id);
 			setIdManual(true);
 		} else {
-			resetForm();
+			setName('');
+			setId('');
+			setIdManual(false);
 		}
 	}, [organization]);
 

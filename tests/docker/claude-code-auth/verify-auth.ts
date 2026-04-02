@@ -7,7 +7,7 @@ import { join } from 'node:path';
  * to verify that subscription auth works in a containerized environment.
  * The SDK picks up the token automatically from the environment.
  */
-import { type SDKResultMessage, query } from '@anthropic-ai/claude-agent-sdk';
+import { query, type SDKResultMessage } from '@anthropic-ai/claude-agent-sdk';
 
 const token = process.env.CLAUDE_CODE_OAUTH_TOKEN;
 if (!token) {

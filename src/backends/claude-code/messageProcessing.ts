@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type {
+	query,
 	SDKAssistantMessage,
 	SDKResultMessage,
 	SDKResultSuccess,
@@ -7,7 +8,6 @@ import type {
 	SDKSystemMessage,
 	SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk';
-import type { query } from '@anthropic-ai/claude-agent-sdk';
 import { calculateCost } from '../../utils/llmMetrics.js';
 import { extractPRUrl } from '../../utils/prUrl.js';
 import { buildEngineResult } from '../shared/engineResult.js';

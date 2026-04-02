@@ -8,8 +8,8 @@ vi.mock('../../../../src/router/config.js', () => ({
 }));
 
 import { SentryRouterAdapter } from '../../../../src/router/adapters/sentry.js';
-import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
+import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { SentryJob } from '../../../../src/router/queue.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
 

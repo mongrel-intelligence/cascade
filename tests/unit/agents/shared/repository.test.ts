@@ -69,12 +69,10 @@ beforeEach(() => {
 	mockReaddirSync.mockReturnValue([]);
 	mockWarmTypeScriptCache.mockResolvedValue(null);
 	mockGetWorkspaceDir.mockReturnValue('/workspace');
-	// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 	delete process.env.CASCADE_SNAPSHOT_REUSE;
 });
 
 afterEach(() => {
-	// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 	delete process.env.CASCADE_SNAPSHOT_REUSE;
 });
 
@@ -471,7 +469,6 @@ describe('setupRepository — snapshot-reuse path', () => {
 	});
 
 	it('does not enter snapshot path when CASCADE_SNAPSHOT_REUSE is absent', async () => {
-		// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 		delete process.env.CASCADE_SNAPSHOT_REUSE;
 		const project = makeProject();
 		const log = makeLog();

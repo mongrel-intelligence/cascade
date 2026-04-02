@@ -243,7 +243,7 @@ describe('snapshot-manager', () => {
 
 		it('evicts expired snapshots by TTL', () => {
 			const snap1 = registerSnapshot('proj-1', 'card-1', 'img-1:latest');
-			const snap2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest');
+			const _snap2 = registerSnapshot('proj-1', 'card-2', 'img-2:latest');
 
 			// Backdate snap1 so it's expired
 			snap1.createdAt = new Date(Date.now() - 2000);

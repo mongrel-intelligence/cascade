@@ -1,7 +1,6 @@
 import { Command, Flags } from '@oclif/core';
 import { readCompletionEvidence } from '../../backends/completion.js';
-import { validateFinish } from '../../gadgets/session/core/finish.js';
-import { writePushedChangesSidecar } from '../../gadgets/session/core/finish.js';
+import { validateFinish, writePushedChangesSidecar } from '../../gadgets/session/core/finish.js';
 import { finishDef } from '../../gadgets/session/definitions.js';
 import type { SessionHooks } from '../../gadgets/sessionState.js';
 import {

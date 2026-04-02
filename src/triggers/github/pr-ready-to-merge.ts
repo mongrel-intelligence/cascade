@@ -1,7 +1,7 @@
 import { githubClient } from '../../github/client.js';
 import { getPMProvider } from '../../pm/context.js';
-import { hasAutoLabel, resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { ProjectPMConfig } from '../../pm/lifecycle.js';
+import { hasAutoLabel, resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { PMProvider } from '../../pm/types.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';

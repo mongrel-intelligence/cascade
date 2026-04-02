@@ -12,8 +12,6 @@ vi.mock('../../../src/router/config.js', () => ({
 
 import { countActiveRuns } from '../../../src/db/repositories/runsRepository.js';
 import {
-	MAX_SAME_TYPE_PER_WORK_ITEM,
-	MAX_WORK_ITEM_CONCURRENCY,
 	clearAllWorkItemLocks,
 	clearWorkItemEnqueued,
 	isWorkItemLocked,

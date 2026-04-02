@@ -1,5 +1,4 @@
-import { serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
-import { pgTable } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, uniqueIndex } from 'drizzle-orm/pg-core';
 import { projects } from './projects.js';
 
 export const projectCredentials = pgTable(

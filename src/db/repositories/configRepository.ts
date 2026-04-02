@@ -1,12 +1,12 @@
-import { type SQL, eq, sql } from 'drizzle-orm';
+import { eq, type SQL, sql } from 'drizzle-orm';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
 import { agentConfigs, projectIntegrations, projects } from '../schema/index.js';
 import {
 	type AgentConfigRow,
-	type IntegrationRow,
 	extractIntegrationConfigs,
+	type IntegrationRow,
 	mapProjectRow,
 } from './configMapper.js';
 

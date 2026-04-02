@@ -63,15 +63,6 @@ vi.mock('../../../../src/gadgets/github/core/updatePRComment.js', () => ({
 	updatePRComment: vi.fn().mockResolvedValue({ id: 300, body: 'Updated' }),
 }));
 
-import { getCIRunLogs } from '../../../../src/gadgets/github/core/getCIRunLogs.js';
-import { getPRChecks } from '../../../../src/gadgets/github/core/getPRChecks.js';
-import { getPRComments } from '../../../../src/gadgets/github/core/getPRComments.js';
-import { getPRDetails } from '../../../../src/gadgets/github/core/getPRDetails.js';
-import { getPRDiff } from '../../../../src/gadgets/github/core/getPRDiff.js';
-import { postPRComment } from '../../../../src/gadgets/github/core/postPRComment.js';
-import { replyToReviewComment } from '../../../../src/gadgets/github/core/replyToReviewComment.js';
-import { updatePRComment } from '../../../../src/gadgets/github/core/updatePRComment.js';
-
 import GetCIRunLogs from '../../../../src/cli/scm/get-ci-run-logs.js';
 import GetPRChecks from '../../../../src/cli/scm/get-pr-checks.js';
 import GetPRComments from '../../../../src/cli/scm/get-pr-comments.js';
@@ -80,6 +71,14 @@ import GetPRDiff from '../../../../src/cli/scm/get-pr-diff.js';
 import PostPRComment from '../../../../src/cli/scm/post-pr-comment.js';
 import ReplyToReviewComment from '../../../../src/cli/scm/reply-to-review-comment.js';
 import UpdatePRComment from '../../../../src/cli/scm/update-pr-comment.js';
+import { getCIRunLogs } from '../../../../src/gadgets/github/core/getCIRunLogs.js';
+import { getPRChecks } from '../../../../src/gadgets/github/core/getPRChecks.js';
+import { getPRComments } from '../../../../src/gadgets/github/core/getPRComments.js';
+import { getPRDetails } from '../../../../src/gadgets/github/core/getPRDetails.js';
+import { getPRDiff } from '../../../../src/gadgets/github/core/getPRDiff.js';
+import { postPRComment } from '../../../../src/gadgets/github/core/postPRComment.js';
+import { replyToReviewComment } from '../../../../src/gadgets/github/core/replyToReviewComment.js';
+import { updatePRComment } from '../../../../src/gadgets/github/core/updatePRComment.js';
 
 /** Create a fresh minimal oclif config to satisfy this.parse() in each test */
 function makeMockConfig() {

@@ -1,15 +1,15 @@
-import { constants, accessSync, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { getEngineSettings } from '../../config/engineSettings.js';
 import { logger } from '../../utils/logging.js';
 import { getWorkspaceDir } from '../../utils/repo.js';
 import { CLAUDE_CODE_ENGINE_DEFINITION } from '../catalog.js';
-import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { runContinuationLoop } from '../shared/continuationLoop.js';
+import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { ALLOWED_ENV_EXACT, buildClaudeEnv } from './env.js';
@@ -24,9 +24,9 @@ import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
 import { ClaudeCodeSettingsSchema, resolveClaudeCodeSettings } from './settings.js';
 
 export {
-	buildToolGuidance,
-	buildTaskPrompt,
 	buildSystemPrompt,
+	buildTaskPrompt,
+	buildToolGuidance,
 } from '../shared/nativeToolPrompts.js';
 export { buildClaudeEnv as buildEnv } from './env.js';
 export { buildPromptWithImages, formatErrorMessage } from './messageProcessing.js';

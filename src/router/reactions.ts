@@ -9,14 +9,14 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
-import { type PersonaIdentities, isCascadeBot } from '../github/personas.js';
+import { isCascadeBot, type PersonaIdentities } from '../github/personas.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import {
-	JiraPlatformClient,
 	_resetJiraCloudIdCache,
+	JiraPlatformClient,
 	resolveGitHubHeaders,
 	resolveTrelloCredentials,
 } from './platformClients/index.js';

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { buildEngineEnv } from '../../../src/backends/shared/envBuilder.js';
 import {
 	SHARED_ALLOWED_ENV_EXACT,

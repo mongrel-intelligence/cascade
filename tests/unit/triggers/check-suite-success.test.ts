@@ -11,6 +11,7 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckM
 
 vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
+import { githubClient } from '../../../src/github/client.js';
 import {
 	CheckSuiteSuccessTrigger,
 	recentlyDispatched,
@@ -20,8 +21,6 @@ import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requ
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createCheckSuitePayload, createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
-
-import { githubClient } from '../../../src/github/client.js';
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),

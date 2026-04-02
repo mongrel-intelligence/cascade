@@ -1,44 +1,43 @@
-export {
-	AgentDefinitionSchema,
-	IntegrationHooksSchema,
-	type AgentDefinition,
-	type AgentCapabilities,
-	type IntegrationHooks,
-	type TrailingHookFlags,
-	type FinishHookFlags,
-} from './schema.js';
-export {
-	loadAgentDefinition,
-	loadAllAgentDefinitions,
-	getKnownAgentTypes,
-	clearDefinitionCache,
-	resolveAgentDefinition,
-	resolveAllAgentDefinitions,
-	resolveKnownAgentTypes,
-	invalidateDefinitionCache,
-	isPMFocusedAgent,
-} from './loader.js';
-export { CONTEXT_STEP_REGISTRY } from './strategies.js';
-export type { FetchContextParams } from './contextSteps.js';
-export type { AgentProfile } from './profiles.js';
-export { getAgentProfile, getAgentCapabilities, needsGitStateStopHooks } from './profiles.js';
-export { getToolManifests } from './toolManifests.js';
-
 // Re-export capability system
 export {
+	buildGadgetsFromCapabilities,
 	CAPABILITIES,
 	CAPABILITY_REGISTRY,
 	type Capability,
 	type CapabilityDefinition,
-	getCapabilitiesByIntegration,
-	getCapabilityIntegration,
-	isBuiltInCapability,
-	isValidCapability,
-	buildGadgetsFromCapabilities,
 	deriveIntegrations,
 	deriveRequiredIntegrations,
 	filterToolManifests,
+	getCapabilitiesByIntegration,
+	getCapabilityIntegration,
 	getGadgetNamesFromCapabilities,
 	getSdkToolsFromCapabilities,
+	isBuiltInCapability,
+	isValidCapability,
 	resolveEffectiveCapabilities,
 } from '../capabilities/index.js';
+export type { FetchContextParams } from './contextSteps.js';
+export {
+	clearDefinitionCache,
+	getKnownAgentTypes,
+	invalidateDefinitionCache,
+	isPMFocusedAgent,
+	loadAgentDefinition,
+	loadAllAgentDefinitions,
+	resolveAgentDefinition,
+	resolveAllAgentDefinitions,
+	resolveKnownAgentTypes,
+} from './loader.js';
+export type { AgentProfile } from './profiles.js';
+export { getAgentCapabilities, getAgentProfile, needsGitStateStopHooks } from './profiles.js';
+export {
+	type AgentCapabilities,
+	type AgentDefinition,
+	AgentDefinitionSchema,
+	type FinishHookFlags,
+	type IntegrationHooks,
+	IntegrationHooksSchema,
+	type TrailingHookFlags,
+} from './schema.js';
+export { CONTEXT_STEP_REGISTRY } from './strategies.js';
+export { getToolManifests } from './toolManifests.js';

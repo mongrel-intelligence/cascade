@@ -5,7 +5,7 @@ import type {
 	PreToolUseHookInput,
 	StopHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	buildHooks,
 	buildPostToolUseFailureHooks,

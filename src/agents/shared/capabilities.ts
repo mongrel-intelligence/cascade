@@ -8,30 +8,26 @@
  * - '../definitions/schema.js' for AgentCapabilities type
  */
 
-// Re-export capability types
-export type { Capability, AgentCapabilities } from '../definitions/schema.js';
-
 // Re-export capability functions
 export {
+	buildGadgetsFromCapabilities,
 	CAPABILITIES,
 	CAPABILITY_REGISTRY,
-	getCapabilitiesByIntegration,
-	getCapabilityIntegration,
-	isBuiltInCapability,
-	isValidCapability,
-} from '../capabilities/index.js';
-
-export {
-	buildGadgetsFromCapabilities,
 	deriveIntegrations,
 	deriveRequiredIntegrations,
 	filterToolManifests,
 	generateUnavailableCapabilitiesNote,
+	getCapabilitiesByIntegration,
+	getCapabilityIntegration,
 	getGadgetNamesFromCapabilities,
 	getSdkToolsFromCapabilities,
 	getUnavailableOptionalCapabilities,
+	isBuiltInCapability,
+	isValidCapability,
 	resolveEffectiveCapabilities,
 } from '../capabilities/index.js';
+// Re-export capability types
+export type { AgentCapabilities, Capability } from '../definitions/schema.js';
 
 import { resolveAgentDefinition } from '../definitions/index.js';
 

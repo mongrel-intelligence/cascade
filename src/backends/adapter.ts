@@ -1,5 +1,5 @@
 import { getAgentProfile } from '../agents/definitions/profiles.js';
-import { type PipelineContext, executeAgentPipeline } from '../agents/shared/executionPipeline.js';
+import { executeAgentPipeline, type PipelineContext } from '../agents/shared/executionPipeline.js';
 import { setupRepository } from '../agents/shared/repository.js';
 import { finalizeEngineRun, tryCreateRun } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';

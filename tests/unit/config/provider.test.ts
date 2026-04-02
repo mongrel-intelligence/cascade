@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 // Mock DB repositories first (must be before imports)
 vi.mock('../../../src/db/repositories/configRepository.js', () => ({

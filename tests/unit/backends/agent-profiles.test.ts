@@ -156,8 +156,11 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { execFileSync } from 'node:child_process';
-import { needsGitStateStopHooks } from '../../../src/agents/definitions/profiles.js';
-import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
+import {
+	type AgentProfile,
+	getAgentProfile,
+	needsGitStateStopHooks,
+} from '../../../src/agents/definitions/profiles.js';
 import {
 	formatPRComments,
 	formatPRDetails,
@@ -172,7 +175,7 @@ import { resolveSquintDbPath } from '../../../src/utils/squintDb.js';
 
 const mockExecFileSync = vi.mocked(execFileSync);
 const mockResolveSquintDbPath = vi.mocked(resolveSquintDbPath);
-const mockReadWorkItem = vi.mocked(readWorkItem);
+const _mockReadWorkItem = vi.mocked(readWorkItem);
 const mockReadWorkItemWithMedia = vi.mocked(readWorkItemWithMedia);
 
 const mockGithub = vi.mocked(githubClient);

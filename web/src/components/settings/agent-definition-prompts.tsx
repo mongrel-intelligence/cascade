@@ -3,10 +3,11 @@
  * Extracted from agent-definition-editor.tsx — handles all prompt editing
  * functionality as a self-contained module with its own queries and mutations.
  */
-import { Badge } from '@/components/ui/badge.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import { ReferencePanel } from './prompt-editor.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
-import { trpc } from '@/lib/trpc.js';
-import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { trpc } from '@/lib/trpc.js';
+import { cn } from '@/lib/utils.js';
 
 interface LogViewerProps {
 	runId: string;

@@ -8,12 +8,6 @@ import { AstGrep } from '../../gadgets/AstGrep.js';
 import { FileMultiEdit } from '../../gadgets/FileMultiEdit.js';
 import { FileSearchAndReplace } from '../../gadgets/FileSearchAndReplace.js';
 import { Finish } from '../../gadgets/Finish.js';
-import { ListDirectory } from '../../gadgets/ListDirectory.js';
-import { ReadFile } from '../../gadgets/ReadFile.js';
-import { RipGrep } from '../../gadgets/RipGrep.js';
-import { Sleep } from '../../gadgets/Sleep.js';
-import { VerifyChanges } from '../../gadgets/VerifyChanges.js';
-import { WriteFile } from '../../gadgets/WriteFile.js';
 import {
 	CreatePR,
 	CreatePRReview,
@@ -26,6 +20,7 @@ import {
 	ReplyToReviewComment,
 	UpdatePRComment,
 } from '../../gadgets/github/index.js';
+import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import {
 	AddChecklist,
 	CreateWorkItem,
@@ -37,6 +32,9 @@ import {
 	ReadWorkItem,
 	UpdateWorkItem,
 } from '../../gadgets/pm/index.js';
+import { ReadFile } from '../../gadgets/ReadFile.js';
+import { RipGrep } from '../../gadgets/RipGrep.js';
+import { Sleep } from '../../gadgets/Sleep.js';
 import {
 	GetAlertingEventDetail,
 	GetAlertingIssue,
@@ -44,6 +42,8 @@ import {
 } from '../../gadgets/sentry/index.js';
 import { Tmux } from '../../gadgets/tmux.js';
 import { TodoDelete, TodoUpdateStatus, TodoUpsert } from '../../gadgets/todo/index.js';
+import { VerifyChanges } from '../../gadgets/VerifyChanges.js';
+import { WriteFile } from '../../gadgets/WriteFile.js';
 import type { ToolManifest } from '../contracts/index.js';
 import type { IntegrationCategory } from '../definitions/schema.js';
 import {

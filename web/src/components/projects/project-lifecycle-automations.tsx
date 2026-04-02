@@ -1,8 +1,8 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { TriggerToggles } from '@/components/shared/trigger-toggles.js';
 import { LIFECYCLE_TRIGGERS } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState } from 'react';
 
 export function ProjectLifecycleAutomations({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
@@ -21,7 +21,10 @@ export function ProjectLifecycleAutomations({ projectId }: { projectId: string }
 		mutationFn: ({
 			category,
 			triggers,
-		}: { category: 'pm' | 'scm'; triggers: Record<string, unknown> }) =>
+		}: {
+			category: 'pm' | 'scm';
+			triggers: Record<string, unknown>;
+		}) =>
 			trpcClient.projects.integrations.updateTriggers.mutate({
 				projectId,
 				category,

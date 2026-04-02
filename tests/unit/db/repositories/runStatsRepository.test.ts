@@ -50,8 +50,6 @@ vi.mock('../../../../src/db/repositories/joinHelpers.js', () => ({
 	buildAgentRunWorkItemJoin: () => 'mock-join-condition',
 }));
 
-import { mockGetDb } from '../../../helpers/sharedMocks.js';
-
 import {
 	type AggregatedProjectStats,
 	getProjectWorkStats,
@@ -61,6 +59,7 @@ import {
 	listProjectsForOrg,
 	listRuns,
 } from '../../../../src/db/repositories/runStatsRepository.js';
+import { mockGetDb } from '../../../helpers/sharedMocks.js';
 
 // ============================================================================
 // Test helper

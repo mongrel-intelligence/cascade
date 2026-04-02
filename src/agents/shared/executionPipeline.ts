@@ -15,6 +15,7 @@ export type AgentLogger = ReturnType<typeof createAgentLogger>;
 
 // Re-export from the canonical single definition in contracts.
 export type { LogWriter } from '../contracts/index.js';
+
 import type { LogWriter } from '../contracts/index.js';
 
 /**

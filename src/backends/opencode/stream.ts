@@ -5,16 +5,15 @@
  * permission requests, session lifecycle events, and message part updates.
  */
 
-import type { createOpencodeClient } from '@opencode-ai/sdk/client';
-import type { Event, Part, ToolPart } from '@opencode-ai/sdk/client';
+import type { createOpencodeClient, Event, Part, ToolPart } from '@opencode-ai/sdk/client';
 
 import { retryNativeToolOperation } from '../nativeToolRetry.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import type { AgentExecutionPlan } from '../types.js';
 import {
-	type OpenCodePermissionConfig,
 	normalizePermissionDecision,
+	type OpenCodePermissionConfig,
 	resolvePermissionDecision,
 } from './permissions.js';
 

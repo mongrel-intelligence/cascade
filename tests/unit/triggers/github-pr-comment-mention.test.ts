@@ -37,11 +37,7 @@ import { PRCommentMentionTrigger } from '../../../src/triggers/github/pr-comment
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
-import {
-	IMPLEMENTER_USERNAME,
-	REVIEWER_USERNAME,
-	mockPersonaIdentities,
-} from '../../helpers/mockPersonas.js';
+import { IMPLEMENTER_USERNAME, mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 const HUMAN_USERNAME = 'alice-human';
 const CARD_SHORT_ID = 'abc123card';

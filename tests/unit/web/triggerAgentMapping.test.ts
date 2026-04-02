@@ -3,8 +3,8 @@ import {
 	AGENT_LABELS,
 	ALL_AGENT_TYPES,
 	CATEGORY_LABELS,
-	LIFECYCLE_TRIGGERS,
 	getTriggerValue,
+	LIFECYCLE_TRIGGERS,
 	setTriggerValue,
 } from '../../../web/src/lib/trigger-agent-mapping.js';
 

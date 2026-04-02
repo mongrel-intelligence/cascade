@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 /** Create a mock class with the given name so constructor.name works in assertions */
 function mockClass(name: string) {

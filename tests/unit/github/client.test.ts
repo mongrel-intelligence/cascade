@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Mock Octokit before importing client
 const mockPulls = {
@@ -52,13 +52,12 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+import { Octokit } from '@octokit/rest';
 import {
 	getGitHubUserForToken,
 	githubClient,
 	withGitHubToken,
 } from '../../../src/github/client.js';
-
-import { Octokit } from '@octokit/rest';
 
 describe('githubClient', () => {
 	describe('getClient throws without scope', () => {
@@ -808,7 +807,7 @@ describe('githubClient', () => {
 			});
 		});
 
-		it('falls back to Run #${id} when run name is null', async () => {
+		it('falls back to Run #<id> when run name is null', async () => {
 			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
 				data: {
 					workflow_runs: [{ id: 99, name: null, conclusion: 'failure' }],

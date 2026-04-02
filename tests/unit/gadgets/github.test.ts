@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mockGitHubClientModule } from '../../helpers/sharedMocks.js';
 
 // Mock session state
@@ -37,7 +37,7 @@ function mockRunCommand(
 		args?: string[],
 	) => Promise<{ stdout: string; stderr: string; exitCode: number }>,
 ) {
-	vi.mocked(runCommand).mockImplementation(async (cmd, args, cwd) => {
+	vi.mocked(runCommand).mockImplementation(async (cmd, args, _cwd) => {
 		// Auto-detect owner/repo from git remote
 		if (args?.[0] === 'remote') {
 			return { stdout: REMOTE_URL, stderr: '', exitCode: 0 };

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { REVIEW_FILE_CONTENT_TOKEN_LIMIT, estimateTokens } from '../../config/reviewConfig.js';
+import { estimateTokens, REVIEW_FILE_CONTENT_TOKEN_LIMIT } from '../../config/reviewConfig.js';
 import type { githubClient } from '../../github/client.js';
 
 type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;
@@ -10,7 +10,7 @@ type PRComments = Awaited<ReturnType<typeof githubClient.getPRReviewComments>>;
 type PRReviews = Awaited<ReturnType<typeof githubClient.getPRReviews>>;
 type PRIssueComments = Awaited<ReturnType<typeof githubClient.getPRIssueComments>>;
 
-export type { PRDetails, PRDiff, PRComments, PRReviews, PRIssueComments };
+export type { PRComments, PRDetails, PRDiff, PRIssueComments, PRReviews };
 
 export function formatPRDetails(prDetails: PRDetails): string {
 	return [

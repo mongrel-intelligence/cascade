@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../../src/github/client.js', () => ({
 	githubClient: {
@@ -54,7 +54,7 @@ describe('detectOwnerRepo (tested through createPR)', () => {
 			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
 		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
 
-		const result = await createPR({
+		const _result = await createPR({
 			title: 'Test',
 			body: 'Body',
 			head: 'feat',
@@ -152,7 +152,7 @@ describe('detectOwnerRepo (tested through createPR)', () => {
 describe('stageAndCommit (tested through createPR)', () => {
 	it('stages tracked changes and commits', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') {
 				return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
@@ -189,7 +189,7 @@ describe('stageAndCommit (tested through createPR)', () => {
 
 	it('stages untracked files individually', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') {
 				return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
@@ -226,7 +226,7 @@ describe('stageAndCommit (tested through createPR)', () => {
 
 	it('skips commit when nothing staged', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') {
 				return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
@@ -280,7 +280,7 @@ describe('stageAndCommit (tested through createPR)', () => {
 describe('pushBranch (tested through createPR)', () => {
 	it('pushes with -u origin flag', async () => {
 		const calls: string[][] = [];
-		mockGitCommands((cmd, args) => {
+		mockGitCommands((_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'status' && args?.[1] === '--porcelain') {
 				return { stdout: '', stderr: '', exitCode: 0 };
@@ -320,7 +320,7 @@ describe('pushBranch (tested through createPR)', () => {
 
 describe('verifyBranchOnRemote (tested through createPR)', () => {
 	it('throws when branch not on remote', async () => {
-		mockGitCommands((cmd, args) => {
+		mockGitCommands((_cmd, args) => {
 			if (args?.[0] === 'ls-remote') {
 				return { stdout: '', stderr: '', exitCode: 0 }; // empty = not found
 			}
@@ -342,7 +342,7 @@ describe('verifyBranchOnRemote (tested through createPR)', () => {
 
 describe('createPR', () => {
 	function setupSuccessfulGitCommands() {
-		mockGitCommands((cmd, args) => {
+		mockGitCommands((_cmd, args) => {
 			if (args?.[0] === 'status' && args?.[1] === '--porcelain') {
 				return { stdout: '', stderr: '', exitCode: 0 };
 			}
@@ -355,7 +355,7 @@ describe('createPR', () => {
 
 	it('commits and pushes by default', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
 			if (args?.[0] === 'status' && args?.[1] === '--porcelain')
@@ -379,7 +379,7 @@ describe('createPR', () => {
 
 	it('skips commit when commit=false', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
 			if (args?.[0] === 'ls-remote')
@@ -400,7 +400,7 @@ describe('createPR', () => {
 
 	it('skips push when push=false', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
 			if (args?.[0] === 'ls-remote')
@@ -499,7 +499,7 @@ describe('createPR', () => {
 
 	it('uses custom commitMessage when provided', async () => {
 		const calls: string[][] = [];
-		mockRunCommand.mockImplementation(async (cmd, args) => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			calls.push(args || []);
 			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
 			if (args?.[0] === 'status' && args?.[1] === '--porcelain')

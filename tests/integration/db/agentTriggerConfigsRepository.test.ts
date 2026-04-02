@@ -444,7 +444,7 @@ describe('agentTriggerConfigsRepository (integration)', () => {
 				flag: true,
 			};
 
-			const config = await upsertTriggerConfig({
+			const _config = await upsertTriggerConfig({
 				projectId: 'test-project',
 				agentType: 'review',
 				triggerEvent: 'scm:check-suite-success',

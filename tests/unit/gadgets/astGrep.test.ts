@@ -54,7 +54,6 @@ vi.mock('../../../src/gadgets/shared/postEditChecks.js', () => ({
 import { AstGrep } from '../../../src/gadgets/AstGrep.js';
 import { assertFileRead } from '../../../src/gadgets/readTracking.js';
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
-import { validatePath } from '../../../src/gadgets/shared/pathValidation.js';
 import { runPostEditChecks } from '../../../src/gadgets/shared/postEditChecks.js';
 
 const mockGetSessionState = vi.mocked(getSessionState);

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
@@ -29,8 +29,8 @@ import { isDuplicateAction, markActionProcessed } from '../../../src/router/acti
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import type { RouterProjectConfig } from '../../../src/router/config.js';
 import type { RouterPlatformAdapter } from '../../../src/router/platform-adapter.js';
-import { addJob } from '../../../src/router/queue.js';
 import type { CascadeJob } from '../../../src/router/queue.js';
+import { addJob } from '../../../src/router/queue.js';
 import { processRouterWebhook } from '../../../src/router/webhook-processor.js';
 import { isWorkItemLocked, markWorkItemEnqueued } from '../../../src/router/work-item-lock.js';
 import type { TriggerRegistry } from '../../../src/triggers/registry.js';

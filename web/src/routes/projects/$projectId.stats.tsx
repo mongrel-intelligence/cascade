@@ -1,12 +1,12 @@
-import { StatsFiltersBar } from '@/components/projects/stats-filters.js';
+import { useQuery } from '@tanstack/react-query';
+import { createRoute } from '@tanstack/react-router';
+import { useMemo, useState } from 'react';
 import type { StatsFilters } from '@/components/projects/stats-filters.js';
+import { StatsFiltersBar } from '@/components/projects/stats-filters.js';
 import { StatsSummary } from '@/components/projects/stats-summary.js';
 import { ProjectWorkDurationChart } from '@/components/runs/project-work-duration-chart.js';
 import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
 import { projectDetailRoute } from './$projectId.js';
 
 export function computeDateFrom(timeRange: string): string | undefined {

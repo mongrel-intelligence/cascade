@@ -6,21 +6,20 @@
  */
 
 import { execFileSync } from 'node:child_process';
-
-import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
+import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { readWorkItem, readWorkItemWithMedia } from '../../gadgets/pm/core/readWorkItem.js';
 import { formatSentryEvent } from '../../gadgets/sentry/core/format.js';
+import type { Todo } from '../../gadgets/todo/storage.js';
 import {
 	formatTodoList,
 	getNextId,
 	initTodoSession,
 	saveTodos,
 } from '../../gadgets/todo/storage.js';
-import type { Todo } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
-import { MAX_IMAGES_PER_WORK_ITEM, getPMProviderOrNull } from '../../pm/index.js';
+import { getPMProviderOrNull, MAX_IMAGES_PER_WORK_ITEM } from '../../pm/index.js';
 import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';

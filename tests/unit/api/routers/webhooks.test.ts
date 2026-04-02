@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 import {
 	createCallerFor,
@@ -26,7 +26,7 @@ const {
 	mockFetch: vi.fn(),
 }));
 
-const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
+const { mockDbSelect, mockDbFrom, mockDbWhere } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({

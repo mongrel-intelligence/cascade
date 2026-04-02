@@ -41,7 +41,7 @@ import { createCLICommand } from '../../../src/gadgets/shared/cliCommandFactory.
 import type { ToolDefinition } from '../../../src/gadgets/shared/toolDefinition.js';
 
 /** Minimal oclif config to satisfy this.parse() */
-const mockConfig = { runHook: vi.fn().mockResolvedValue({ successes: [], failures: [] }) };
+const _mockConfig = { runHook: vi.fn().mockResolvedValue({ successes: [], failures: [] }) };
 
 let tmpDir: string;
 

@@ -1,9 +1,9 @@
-import { RunFilters } from '@/components/runs/run-filters.js';
-import { RunsTable } from '@/components/runs/runs-table.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute, useNavigate, useSearch } from '@tanstack/react-router';
 import { z } from 'zod';
+import { RunFilters } from '@/components/runs/run-filters.js';
+import { RunsTable } from '@/components/runs/runs-table.js';
+import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
 const searchSchema = z.object({

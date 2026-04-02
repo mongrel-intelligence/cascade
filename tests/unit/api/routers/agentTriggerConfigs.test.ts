@@ -278,7 +278,7 @@ describe('agentTriggerConfigsRouter', () => {
 	// =====================================================================
 	describe('bulkUpsert', () => {
 		it('bulk upserts multiple trigger configs', async () => {
-			const configs = [
+			const _configs = [
 				createMockConfig(),
 				createMockConfig({ id: 2, triggerEvent: 'pm:label-added' }),
 			];

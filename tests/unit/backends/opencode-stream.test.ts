@@ -38,6 +38,7 @@ vi.mock('../../../src/backends/nativeToolRetry.js', () => ({
 
 // ── Imports after mocks ──────────────────────────────────────────────────────
 
+import type { OpenCodeStreamState } from '../../../src/backends/opencode/stream.js';
 import {
 	appendPartialOutput,
 	getPartialOutput,
@@ -46,7 +47,6 @@ import {
 	handleSessionTerminalEvent,
 	reportToolPart,
 } from '../../../src/backends/opencode/stream.js';
-import type { OpenCodeStreamState } from '../../../src/backends/opencode/stream.js';
 import type { AgentExecutionPlan } from '../../../src/backends/types.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -757,11 +757,7 @@ describe('handlePermissionEvent', () => {
 	});
 
 	function makePermissionEvent(
-		overrides: {
-			sessionID?: string;
-			permissionId?: string;
-			type?: string;
-		} = {},
+		overrides: { sessionID?: string; permissionId?: string; type?: string } = {},
 	) {
 		return {
 			type: 'permission.updated',

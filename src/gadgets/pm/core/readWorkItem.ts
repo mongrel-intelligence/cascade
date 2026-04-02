@@ -1,5 +1,5 @@
-import { filterImageMedia, getPMProvider } from '../../../pm/index.js';
 import type { Attachment, MediaReference } from '../../../pm/index.js';
+import { filterImageMedia, getPMProvider } from '../../../pm/index.js';
 
 interface Label {
 	name: string;

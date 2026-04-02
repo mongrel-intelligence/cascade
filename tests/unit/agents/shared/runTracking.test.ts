@@ -26,8 +26,8 @@ vi.mock('node:fs', () => ({
 
 import fs from 'node:fs';
 import {
-	type RunTrackingInput,
 	finalizeEngineRun,
+	type RunTrackingInput,
 	tryCompleteRun,
 	tryCreateRun,
 	tryStoreRunLogs,
@@ -73,7 +73,6 @@ describe('tryCreateRun', () => {
 	});
 
 	afterEach(() => {
-		// biome-ignore lint/performance/noDelete: Clean up test environment
 		delete process.env.JOB_ID;
 	});
 
@@ -102,7 +101,6 @@ describe('tryCreateRun', () => {
 	});
 
 	it('does not call updateRunJobId when JOB_ID env var is not set', async () => {
-		// biome-ignore lint/performance/noDelete: Clean environment before test
 		delete process.env.JOB_ID;
 		mockUpdateRunJobId.mockClear();
 

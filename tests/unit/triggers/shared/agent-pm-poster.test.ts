@@ -32,10 +32,10 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 import {
-	PM_SUMMARY_AGENT_TYPES,
 	formatAgentOutputForPM,
 	formatReviewForPM,
 	isOutputBasedAgent,
+	PM_SUMMARY_AGENT_TYPES,
 	postAgentOutputToPM,
 	postReviewToPM,
 } from '../../../../src/triggers/shared/agent-pm-poster.js';

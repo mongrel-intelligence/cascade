@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@trpc/client', () => ({
 	createTRPCClient: vi.fn(() => ({ mock: 'client' })),

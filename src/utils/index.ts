@@ -1,16 +1,16 @@
-export { logger, setLogLevel, getLogLevel } from './logging.js';
+export { cleanupLogFile, createFileLogger, type FileLogger } from './fileLogger.js';
 export {
-	startWatchdog,
 	clearWatchdog,
-	setWatchdogCleanup,
 	clearWatchdogCleanup,
+	setWatchdogCleanup,
+	startWatchdog,
 } from './lifecycle.js';
+export { getLogLevel, logger, setLogLevel } from './logging.js';
 export {
-	createTempDir,
-	cloneRepo,
 	cleanupTempDir,
-	runCommand,
+	cloneRepo,
+	createTempDir,
 	getWorkspaceDir,
 	parseRepoFullName,
+	runCommand,
 } from './repo.js';
-export { createFileLogger, cleanupLogFile, type FileLogger } from './fileLogger.js';

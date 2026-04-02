@@ -44,8 +44,8 @@ vi.mock('../../../../src/jira/client.js', () => ({
 
 import { postJiraAck, resolveJiraBotAccountId } from '../../../../src/router/acknowledgments.js';
 import { JiraRouterAdapter } from '../../../../src/router/adapters/jira.js';
-import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
+import { loadProjectConfig } from '../../../../src/router/config.js';
 import { resolveJiraCredentials } from '../../../../src/router/platformClients/index.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';

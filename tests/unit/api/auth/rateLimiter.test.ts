@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-	MAX_ATTEMPTS,
-	WINDOW_MS,
 	_resetForTesting,
 	_runCleanup,
 	checkRateLimit,
+	MAX_ATTEMPTS,
 	rateLimitStore,
 	recordSuccessfulLogin,
+	WINDOW_MS,
 } from '../../../../src/api/auth/rateLimiter.js';
 
 describe('rateLimiter', () => {

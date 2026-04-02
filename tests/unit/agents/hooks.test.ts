@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/utils/llmMetrics.js', () => ({
 	calculateCost: vi.fn().mockReturnValue(0.005),

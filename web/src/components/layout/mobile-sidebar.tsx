@@ -1,6 +1,6 @@
-import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet.js';
 import { useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet.js';
 import { Sidebar } from './sidebar.js';
 
 interface MobileSidebarProps {

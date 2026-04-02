@@ -5,7 +5,7 @@
  * Use includeGitIgnored=true to include all files.
  */
 import { execSync } from 'node:child_process';
-import { type Stats, readdirSync, statSync } from 'node:fs';
+import { readdirSync, type Stats, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
 import { Gadget, z } from 'llmist';

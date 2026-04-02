@@ -1,5 +1,5 @@
-import { constants, accessSync, existsSync, readFileSync } from 'node:fs';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
 	buildNativeToolPath,
@@ -71,7 +71,7 @@ describe('createNativeToolRuntimeArtifacts', () => {
 	});
 
 	it('cleanup does not throw even if the directory was already removed', () => {
-		const { shimDir, cleanup } = createNativeToolRuntimeArtifacts();
+		const { cleanup } = createNativeToolRuntimeArtifacts();
 		cleanupFns.push(cleanup);
 
 		// Remove the directory manually first

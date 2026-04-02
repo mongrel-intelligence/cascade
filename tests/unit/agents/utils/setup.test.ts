@@ -11,9 +11,9 @@ vi.mock('../../../../src/utils/repo.js', () => ({
 
 import { existsSync, readFileSync } from 'node:fs';
 import {
-	LOG_LEVELS,
 	getLogLevel,
 	installDependencies,
+	LOG_LEVELS,
 	readContextFiles,
 	warmTypeScriptCache,
 } from '../../../../src/agents/utils/setup.js';

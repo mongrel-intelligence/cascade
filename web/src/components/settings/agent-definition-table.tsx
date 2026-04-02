@@ -1,3 +1,6 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import type { inferRouterOutputs } from '@trpc/server';
+import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
 import type { AppRouter } from '@/../../src/api/router.js';
 import { Badge } from '@/components/ui/badge.js';
 import {
@@ -9,9 +12,6 @@ import {
 	TableRow,
 } from '@/components/ui/table.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { inferRouterOutputs } from '@trpc/server';
-import { Pencil, RotateCcw, Trash2 } from 'lucide-react';
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type DefinitionRow = RouterOutput['agentDefinitions']['list'][number];

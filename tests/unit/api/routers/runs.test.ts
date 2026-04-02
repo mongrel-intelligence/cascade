@@ -57,7 +57,7 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 }));
 
 // Mock getDb for the inline org-access check in getById
-const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
+const { mockDbSelect, mockDbFrom, mockDbWhere } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({

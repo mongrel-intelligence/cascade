@@ -1,4 +1,4 @@
-import { type SQL, and, count, desc, eq, gte, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, gte, isNull, type SQL } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems } from '../schema/index.js';
 import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
@@ -306,6 +306,13 @@ export async function cancelRunById(runId: string, reason: string): Promise<bool
 // Re-exports from domain-focused repositories (for backward compatibility)
 // ============================================================================
 
+export type { CreateDebugAnalysisInput } from './debugAnalysisRepository.js';
+export {
+	deleteDebugAnalysisByRunId,
+	getDebugAnalysisByDebugRunId,
+	getDebugAnalysisByRunId,
+	storeDebugAnalysis,
+} from './debugAnalysisRepository.js';
 export type { LlmCallRecord } from './llmCallsRepository.js';
 export {
 	getLlmCallByNumber,
@@ -314,14 +321,6 @@ export {
 	storeLlmCall,
 	storeLlmCallsBulk,
 } from './llmCallsRepository.js';
-
-export type { CreateDebugAnalysisInput } from './debugAnalysisRepository.js';
-export {
-	deleteDebugAnalysisByRunId,
-	getDebugAnalysisByDebugRunId,
-	getDebugAnalysisByRunId,
-	storeDebugAnalysis,
-} from './debugAnalysisRepository.js';
 
 export { getRunLogs, storeRunLogs } from './runLogsRepository.js';
 

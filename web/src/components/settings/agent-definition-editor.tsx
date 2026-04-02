@@ -1,9 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { Textarea } from '@/components/ui/textarea.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
 import { PromptsPanel } from './agent-definition-prompts.js';
 import {
 	CapabilitiesSection,

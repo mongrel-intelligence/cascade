@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	mockAgentLoggerModule,
 	mockCascadeEnvModule,
@@ -120,7 +120,7 @@ import {
 	cleanupLogFile,
 	createFileLogger,
 } from '../../../src/utils/fileLogger.js';
-import { clearWatchdogCleanup, setWatchdogCleanup } from '../../../src/utils/lifecycle.js';
+import { clearWatchdogCleanup } from '../../../src/utils/lifecycle.js';
 import { logger } from '../../../src/utils/logging.js';
 import { cleanupTempDir } from '../../../src/utils/repo.js';
 
@@ -302,7 +302,7 @@ describe('executeWithEngine', () => {
 	});
 
 	it('includes log buffer in result', async () => {
-		const loggerInstance = setupMocks();
+		const _loggerInstance = setupMocks();
 		const engine = makeMockBackend();
 		vi.mocked(engine.execute).mockResolvedValue({
 			success: true,

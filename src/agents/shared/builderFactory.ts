@@ -2,15 +2,15 @@ import { execSync } from 'node:child_process';
 import {
 	AgentBuilder,
 	BudgetPricingUnavailableError,
-	type LLMist,
 	type createLogger,
+	type LLMist,
 } from 'llmist';
 
 import { getCompactionConfig } from '../../config/compactionConfig.js';
 import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
-import { type SessionHooks, initSessionState, setReadOnlyFs } from '../../gadgets/sessionState.js';
+import { initSessionState, type SessionHooks, setReadOnlyFs } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { IProgressMonitor } from '../contracts/index.js';

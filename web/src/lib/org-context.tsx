@@ -31,7 +31,10 @@ interface MeData {
 export function OrgProvider({
 	children,
 	me,
-}: { children: React.ReactNode; me: MeData | undefined }) {
+}: {
+	children: React.ReactNode;
+	me: MeData | undefined;
+}) {
 	const [effectiveOrgId, setEffectiveOrgId] = useState<string | null>(null);
 	const isAdmin = me?.role === 'superadmin';
 	const initialized = useRef(false);

@@ -90,7 +90,6 @@ describe('publishCancelCommand', () => {
 
 	it('throws an error when REDIS_URL is not set', async () => {
 		const saved = process.env.REDIS_URL;
-		// biome-ignore lint/performance/noDelete: need to fully remove the key
 		delete process.env.REDIS_URL;
 
 		try {
@@ -298,7 +297,6 @@ describe('subscribeToCancelCommands', () => {
 
 	it('throws an error when REDIS_URL is not set', async () => {
 		const saved = process.env.REDIS_URL;
-		// biome-ignore lint/performance/noDelete: need to fully remove the key
 		delete process.env.REDIS_URL;
 
 		try {

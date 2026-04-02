@@ -1,7 +1,7 @@
-import { trpc } from '@/lib/trpc.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
+import { trpc } from '@/lib/trpc.js';
 import { API_URL } from '../lib/api.js';
 import { rootRoute } from './__root.js';
 

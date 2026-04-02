@@ -221,7 +221,7 @@ export async function postAgentOutputToPM(
 	output: string,
 	progressCommentId?: string,
 ): Promise<void> {
-	if (!output || !output.trim()) {
+	if (!output?.trim()) {
 		logger.warn('postAgentOutputToPM skipped: empty output', { workItemId, agentType });
 		return;
 	}

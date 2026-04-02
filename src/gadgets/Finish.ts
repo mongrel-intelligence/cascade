@@ -1,8 +1,7 @@
 import { TaskCompletionSignal } from 'llmist';
 import { validateFinish, writePushedChangesSidecar } from './session/core/finish.js';
 import { finishDef } from './session/definitions.js';
-import { PUSHED_CHANGES_SIDECAR_ENV_VAR } from './sessionState.js';
-import { getSessionState } from './sessionState.js';
+import { getSessionState, PUSHED_CHANGES_SIDECAR_ENV_VAR } from './sessionState.js';
 import { createGadgetClass } from './shared/gadgetFactory.js';
 
 export const Finish = createGadgetClass(finishDef, async (params) => {

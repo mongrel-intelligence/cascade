@@ -40,17 +40,16 @@ vi.mock('../../../src/gadgets/github/core/postPRComment.js', () => ({
 	postPRComment: vi.fn().mockResolvedValue({ id: 123 }),
 }));
 
-import { createPR } from '../../../src/gadgets/github/core/createPR.js';
-import { postPRComment } from '../../../src/gadgets/github/core/postPRComment.js';
-import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
-import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
-import { updateWorkItem } from '../../../src/gadgets/pm/core/updateWorkItem.js';
-
 import CreateWorkItem from '../../../src/cli/pm/create-work-item.js';
 import PostComment from '../../../src/cli/pm/post-comment.js';
 import UpdateWorkItem from '../../../src/cli/pm/update-work-item.js';
 import CreatePR from '../../../src/cli/scm/create-pr.js';
 import PostPRComment from '../../../src/cli/scm/post-pr-comment.js';
+import { createPR } from '../../../src/gadgets/github/core/createPR.js';
+import { postPRComment } from '../../../src/gadgets/github/core/postPRComment.js';
+import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
+import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
+import { updateWorkItem } from '../../../src/gadgets/pm/core/updateWorkItem.js';
 
 let tmpDir: string;
 

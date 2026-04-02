@@ -24,7 +24,6 @@ describe('sentry wrappers', () => {
 
 		beforeEach(async () => {
 			vi.resetModules();
-			// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 			delete process.env.SENTRY_DSN;
 			sentry = await import('../../src/sentry.js');
 		});
@@ -65,7 +64,6 @@ describe('sentry wrappers', () => {
 		});
 
 		afterEach(() => {
-			// biome-ignore lint/performance/noDelete: process.env requires delete to truly unset
 			delete process.env.SENTRY_DSN;
 		});
 

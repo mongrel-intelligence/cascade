@@ -17,11 +17,7 @@ vi.mock('../../../src/config/configCache.js', () => ({
 }));
 
 import { loadConfig } from '../../../src/config/provider.js';
-import {
-	_resetProjectConfigCache,
-	loadProjectConfig,
-	routerConfig,
-} from '../../../src/router/config.js';
+import { routerConfig } from '../../../src/router/config.js';
 
 const mockLoadConfig = vi.mocked(loadConfig);
 

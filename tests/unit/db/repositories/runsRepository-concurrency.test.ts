@@ -79,8 +79,6 @@ vi.mock('../../../../src/db/repositories/runStatsRepository.js', () => ({
 	getProjectWorkStatsAggregated: vi.fn(),
 }));
 
-import { mockGetDb } from '../../../helpers/sharedMocks.js';
-
 import {
 	cancelRunById,
 	countActiveRuns,
@@ -88,6 +86,7 @@ import {
 	failOrphanedRunFallback,
 	hasActiveRunForWorkItem,
 } from '../../../../src/db/repositories/runsRepository.js';
+import { mockGetDb } from '../../../helpers/sharedMocks.js';
 
 // ============================================================================
 // Test helpers

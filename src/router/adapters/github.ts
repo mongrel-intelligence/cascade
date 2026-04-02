@@ -12,8 +12,8 @@ import { getProjectGitHubToken } from '../../config/projects.js';
 import { findProjectByRepo } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import {
-	type PersonaIdentities,
 	isCascadeBot,
+	type PersonaIdentities,
 	resolvePersonaIdentities,
 } from '../../github/personas.js';
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
@@ -30,7 +30,7 @@ import {
 	postTrelloAck,
 	resolveGitHubTokenForAckByAgent,
 } from '../acknowledgments.js';
-import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
+import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import { extractPRNumber } from '../notifications.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { addEyesReactionToPR } from '../pre-actions.js';

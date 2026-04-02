@@ -144,11 +144,11 @@ Use for:
 			];
 
 			const sg = spawn('sg', args);
-			let output = '';
+			let _output = '';
 			let errorOutput = '';
 
 			sg.stdout.on('data', (data: Buffer) => {
-				output += data.toString();
+				_output += data.toString();
 			});
 			sg.stderr.on('data', (data: Buffer) => {
 				errorOutput += data.toString();
