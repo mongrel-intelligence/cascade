@@ -6,6 +6,7 @@ import {
 	isEncryptedValue,
 	isEncryptionEnabled,
 	reEncryptCredential,
+	validateCredentialMasterKey,
 } from '../../../src/db/crypto.js';
 
 // Generate a valid 32-byte hex key for tests
@@ -184,6 +185,54 @@ describe('crypto', () => {
 			expect(() => decryptCredential('enc:v1:onlytwoparts', 'org-1')).toThrow(
 				'Malformed encrypted credential',
 			);
+		});
+	});
+
+	describe('validateCredentialMasterKey', () => {
+		it('returns valid when CREDENTIAL_MASTER_KEY is not set', () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', '');
+			const result = validateCredentialMasterKey();
+			expect(result).toEqual({ valid: true });
+		});
+
+		it('returns valid for a correct 64-char hex key', () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', TEST_KEY);
+			const result = validateCredentialMasterKey();
+			expect(result).toEqual({ valid: true });
+		});
+
+		it('returns invalid for a key that is too short', () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'abcd');
+			const result = validateCredentialMasterKey();
+			expect(result.valid).toBe(false);
+			if (!result.valid) {
+				expect(result.reason).toContain('64-char hex string');
+			}
+		});
+
+		it('returns invalid for a key that is too long', () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', 'a'.repeat(128));
+			const result = validateCredentialMasterKey();
+			expect(result.valid).toBe(false);
+			if (!result.valid) {
+				expect(result.reason).toContain('64-char hex string');
+			}
+		});
+
+		it('returns invalid for non-hex characters', () => {
+			// 63 valid hex chars + 1 invalid 'g'
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', `${'a'.repeat(63)}g`);
+			const result = validateCredentialMasterKey();
+			expect(result.valid).toBe(false);
+			if (!result.valid) {
+				expect(result.reason).toContain('non-hex');
+			}
+		});
+
+		it('returns valid for uppercase hex', () => {
+			vi.stubEnv('CREDENTIAL_MASTER_KEY', TEST_KEY.toUpperCase());
+			const result = validateCredentialMasterKey();
+			expect(result).toEqual({ valid: true });
 		});
 	});
 });

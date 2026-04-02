@@ -22,6 +22,29 @@ export function isEncryptionEnabled(): boolean {
 	return !!process.env.CREDENTIAL_MASTER_KEY;
 }
 
+/**
+ * Validates the format of CREDENTIAL_MASTER_KEY without throwing.
+ * Returns `{ valid: true }` if the key is unset (encryption is opt-in) or correctly formatted.
+ * Returns `{ valid: false, reason: string }` if the key is set but malformed.
+ */
+export function validateCredentialMasterKey(): { valid: true } | { valid: false; reason: string } {
+	const hex = process.env.CREDENTIAL_MASTER_KEY;
+	if (!hex) return { valid: true };
+	if (hex.length !== KEY_LENGTH * 2) {
+		return {
+			valid: false,
+			reason: `CREDENTIAL_MASTER_KEY must be a ${KEY_LENGTH * 2}-char hex string (${KEY_LENGTH} bytes). Got ${hex.length} chars.`,
+		};
+	}
+	if (!/^[0-9a-fA-F]+$/.test(hex)) {
+		return {
+			valid: false,
+			reason: `CREDENTIAL_MASTER_KEY contains non-hex characters. Must be a ${KEY_LENGTH * 2}-char hex string.`,
+		};
+	}
+	return { valid: true };
+}
+
 /** Returns true if the value has the encrypted-value prefix. */
 export function isEncryptedValue(value: string): boolean {
 	return value.startsWith(PREFIX);

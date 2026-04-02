@@ -28,6 +28,7 @@ import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
 import { appRouter } from './api/router.js';
 import { registerBuiltInEngines } from './backends/bootstrap.js';
+import { validateCredentialMasterKey } from './db/crypto.js';
 import { captureException, flush, setTag } from './sentry.js';
 import { buildCorsMiddleware } from './utils/corsConfig.js';
 
@@ -106,6 +107,12 @@ app.onError((err, c) => {
 const port = Number(process.env.PORT) || 3001;
 
 async function startDashboard(): Promise<void> {
+	const keyValidation = validateCredentialMasterKey();
+	if (!keyValidation.valid) {
+		console.error(`[Dashboard] ${keyValidation.reason}`);
+		process.exit(1);
+	}
+
 	await initPrompts();
 	console.log(`[Dashboard] Starting on port ${port}`);
 	serve({ fetch: app.fetch, port });
