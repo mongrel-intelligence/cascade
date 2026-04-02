@@ -3,7 +3,7 @@ import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
-import { type TrelloWebhookPayload, isTrelloWebhookPayload } from './types.js';
+import { isTrelloWebhookPayload, type TrelloWebhookPayload } from './types.js';
 
 // ============================================================================
 // Status Changed Trigger Factory (Trello)

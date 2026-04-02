@@ -16,7 +16,7 @@ vi.mock('../../../../src/utils/repo.js', () => ({
 import { validatePath } from '../../../../src/gadgets/shared/pathValidation.js';
 
 describe('validatePath', () => {
-	const originalCwd = process.cwd();
+	const _originalCwd = process.cwd();
 
 	beforeEach(() => {
 		vi.resetAllMocks();

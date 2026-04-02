@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-	LOOP_THRESHOLDS,
 	checkForLoopAndAdvance,
 	consumeLoopAction,
 	consumeLoopWarning,
 	createTrackingContext,
+	LOOP_THRESHOLDS,
 	recordGadgetCallForLoop,
 } from '../../../../src/agents/utils/tracking.js';
 

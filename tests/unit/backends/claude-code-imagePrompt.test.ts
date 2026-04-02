@@ -1,4 +1,3 @@
-import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources';
 import { describe, expect, it, vi } from 'vitest';
 import type { ContextImage } from '../../../src/agents/contracts/index.js';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { MODEL_RATE_LIMITS, getRateLimitForModel } from '../../../src/config/rateLimits.js';
+import { getRateLimitForModel, MODEL_RATE_LIMITS } from '../../../src/config/rateLimits.js';
 
 describe.concurrent('config/rateLimits', () => {
 	describe('getRateLimitForModel', () => {
@@ -101,7 +101,7 @@ describe.concurrent('config/rateLimits', () => {
 		});
 
 		it('safety margin is between 0 and 1', () => {
-			for (const [modelId, config] of Object.entries(MODEL_RATE_LIMITS)) {
+			for (const [_modelId, config] of Object.entries(MODEL_RATE_LIMITS)) {
 				expect(config.safetyMargin).toBeGreaterThan(0);
 				expect(config.safetyMargin).toBeLessThanOrEqual(1);
 			}

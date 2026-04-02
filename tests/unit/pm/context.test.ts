@@ -171,7 +171,7 @@ describe('pm/context', () => {
 					await withPMProvider(innerProvider, async () => {
 						throw new Error('Inner error');
 					});
-				} catch (error) {
+				} catch (_error) {
 					// Expected error
 				}
 

@@ -83,8 +83,8 @@ import {
 	resolveGitHubTokenForAckByAgent,
 } from '../../../../src/router/acknowledgments.js';
 import { GitHubRouterAdapter, injectEventType } from '../../../../src/router/adapters/github.js';
-import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
+import { loadProjectConfig } from '../../../../src/router/config.js';
 import { extractPRNumber } from '../../../../src/router/notifications.js';
 import { addEyesReactionToPR } from '../../../../src/router/pre-actions.js';
 import type { GitHubJob } from '../../../../src/router/queue.js';

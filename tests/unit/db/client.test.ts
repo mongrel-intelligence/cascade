@@ -32,10 +32,10 @@ vi.mock('node:fs', () => ({
 // ── Imports (after mocks) ─────────────────────────────────────────────────────
 
 import {
-	DatabaseContext,
 	_setTestDb,
 	closeDb,
 	createDatabaseContext,
+	DatabaseContext,
 	getDb,
 	setDefaultDatabaseContext,
 } from '../../../src/db/client.js';

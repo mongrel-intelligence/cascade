@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	decryptCredential,
 	encryptCredential,

@@ -48,7 +48,7 @@ import {
 const mockAddBreadcrumb = vi.mocked(addBreadcrumb);
 const mockConsumePendingSessionNotices = vi.mocked(consumePendingSessionNotices);
 const mockDisplayGadgetCall = vi.mocked(displayGadgetCall);
-const mockDisplayGadgetResult = vi.mocked(displayGadgetResult);
+const _mockDisplayGadgetResult = vi.mocked(displayGadgetResult);
 const mockDisplayLLMText = vi.mocked(displayLLMText);
 const mockWaitForEnter = vi.mocked(waitForEnter);
 const mockConsumeLoopAction = vi.mocked(consumeLoopAction);

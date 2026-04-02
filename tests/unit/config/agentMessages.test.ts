@@ -11,11 +11,11 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 }));
 
 import {
+	_resetAgentMessages,
 	AGENT_LABELS,
 	AGENT_ROLE_HINTS,
-	INITIAL_MESSAGES,
-	_resetAgentMessages,
 	getAgentLabel,
+	INITIAL_MESSAGES,
 	initAgentMessages,
 } from '../../../src/config/agentMessages.js';
 

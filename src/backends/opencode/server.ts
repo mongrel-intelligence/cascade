@@ -6,7 +6,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { type Server, createServer } from 'node:net';
+import { createServer, type Server } from 'node:net';
 
 import type { Config } from '@opencode-ai/sdk/client';
 

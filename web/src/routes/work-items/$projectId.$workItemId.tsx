@@ -1,10 +1,10 @@
+import { useQuery } from '@tanstack/react-query';
+import { createRoute } from '@tanstack/react-router';
+import { ExternalLink } from 'lucide-react';
 import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
 import { WorkItemDurationChart } from '@/components/runs/work-item-duration-chart.js';
 import { WorkItemRunsTable } from '@/components/runs/work-item-runs-table.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
-import { ExternalLink } from 'lucide-react';
 import { rootRoute } from '../__root.js';
 
 function WorkItemRunsPage() {

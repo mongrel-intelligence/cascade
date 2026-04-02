@@ -1,7 +1,3 @@
-import { Input } from '@/components/ui/input.js';
-import { Label } from '@/components/ui/label.js';
-import { API_URL } from '@/lib/api.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
@@ -15,6 +11,10 @@ import {
 	Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Input } from '@/components/ui/input.js';
+import { Label } from '@/components/ui/label.js';
+import { API_URL } from '@/lib/api.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import { PMWizard } from './pm-wizard.js';
 import { ProjectSecretField } from './project-secret-field.js';
 
@@ -308,13 +308,7 @@ interface SCMTabProject {
 	branchPrefix?: string | null;
 }
 
-function SCMTab({
-	projectId,
-	project,
-}: {
-	projectId: string;
-	project?: SCMTabProject;
-}) {
+function SCMTab({ projectId, project }: { projectId: string; project?: SCMTabProject }) {
 	const queryClient = useQueryClient();
 
 	// Project-level SCM fields

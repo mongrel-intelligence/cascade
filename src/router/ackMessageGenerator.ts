@@ -231,7 +231,7 @@ export async function generateAckMessage(
 
 		const result = await Promise.race([llmPromise, timeoutPromise]);
 
-		if (!result || !result.trim()) {
+		if (!result?.trim()) {
 			return fallback;
 		}
 

@@ -17,9 +17,9 @@ import {
 	type AgentDefinition,
 	CAPABILITY_GROUPS,
 	type Capability,
+	deepSet,
 	type SchemaData,
 	Toggle,
-	deepSet,
 } from './agent-definition-shared.js';
 
 // ─────────────────────────────────────────────────────────────────────────────

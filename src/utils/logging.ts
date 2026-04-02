@@ -1,5 +1,5 @@
-import { createLogger } from 'llmist';
 import type { ILogObj, Logger } from 'llmist';
+import { createLogger } from 'llmist';
 
 export const LOG_LEVELS: Record<string, number> = {
 	silly: 0,

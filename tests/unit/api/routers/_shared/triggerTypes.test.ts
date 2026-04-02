@@ -130,7 +130,7 @@ describe('triggerTypes', () => {
 		});
 
 		it('all triggers have required KnownTriggerEvent fields', () => {
-			for (const [category, triggers] of Object.entries(TRIGGER_REGISTRY)) {
+			for (const [_category, triggers] of Object.entries(TRIGGER_REGISTRY)) {
 				for (const trigger of triggers) {
 					expect(trigger.event).toBeTruthy();
 					expect(trigger.label).toBeTruthy();

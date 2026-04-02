@@ -1,8 +1,8 @@
-import { Badge } from '@/components/ui/badge.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { Badge } from '@/components/ui/badge.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 
 interface PromptEditorProps {
 	target: { name: string };
@@ -13,7 +13,7 @@ export function PromptEditor({ target, onClose }: PromptEditorProps) {
 	return <PartialEditor name={target.name} onClose={onClose} />;
 }
 
-function PartialEditor({ name, onClose }: { name: string; onClose: () => void }) {
+function PartialEditor({ name, onClose: _onClose }: { name: string; onClose: () => void }) {
 	const queryClient = useQueryClient();
 	const [content, setContent] = useState('');
 	const [validationStatus, setValidationStatus] = useState<string | null>(null);

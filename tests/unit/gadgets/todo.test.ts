@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { TodoUpdateStatus } from '../../../src/gadgets/todo/TodoUpdateStatus.js';
 import { TodoUpsert } from '../../../src/gadgets/todo/TodoUpsert.js';
@@ -20,7 +20,7 @@ vi.mock('../../../src/gadgets/todo/storage.js', () => {
 		}),
 		getNextId: vi.fn((existingTodos) => {
 			const maxId = existingTodos.reduce(
-				(max: number, t: { id: string }) => Math.max(max, Number.parseInt(t.id) || 0),
+				(max: number, t: { id: string }) => Math.max(max, Number.parseInt(t.id, 10) || 0),
 				0,
 			);
 			return String(maxId + 1);

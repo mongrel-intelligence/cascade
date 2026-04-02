@@ -3,14 +3,14 @@
  * Uses definition-based triggers from the API via agentTriggerConfigs.getProjectTriggersView.
  */
 
-// Re-export shared types for convenience
-export { TRIGGER_CATEGORY_LABELS as CATEGORY_LABELS } from '../../../src/api/routers/_shared/triggerTypes.js';
 export type {
+	ProjectTriggersView,
 	ResolvedTrigger,
 	TriggerParameterDef,
 	TriggerParameterValue,
-	ProjectTriggersView,
 } from '../../../src/api/routers/_shared/triggerTypes.js';
+// Re-export shared types for convenience
+export { TRIGGER_CATEGORY_LABELS as CATEGORY_LABELS } from '../../../src/api/routers/_shared/triggerTypes.js';
 
 // ============================================================================
 // Types

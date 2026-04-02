@@ -40,17 +40,16 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
+import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import { githubClient } from '../../../src/github/client.js';
 import { PRReadyToMergeTrigger } from '../../../src/triggers/github/pr-ready-to-merge.js';
+import { isLifecycleTriggerEnabled } from '../../../src/triggers/shared/lifecycle-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import {
 	createCheckSuitePayload,
 	createMockProject,
 	createReviewPayload,
 } from '../../helpers/factories.js';
-
-import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
-import { githubClient } from '../../../src/github/client.js';
-import { isLifecycleTriggerEnabled } from '../../../src/triggers/shared/lifecycle-check.js';
 
 describe('PRReadyToMergeTrigger', () => {
 	const trigger = new PRReadyToMergeTrigger();

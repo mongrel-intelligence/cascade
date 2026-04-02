@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LlmCallLogPayload } from '../../../src/backends/shared/llmCallLogger.js';
 import { logLlmCall } from '../../../src/backends/shared/llmCallLogger.js';
 

@@ -11,7 +11,7 @@
  * Consumers can migrate to the focused modules at their own pace.
  */
 
+export * from './agentConfigsRepository.js';
+export * from './integrationsRepository.js';
 export * from './organizationsRepository.js';
 export * from './projectsRepository.js';
-export * from './integrationsRepository.js';
-export * from './agentConfigsRepository.js';

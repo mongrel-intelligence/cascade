@@ -3,6 +3,7 @@
  */
 
 import type { JiraCredentials } from '../../jira/types.js';
+
 export type { TrelloCredentials } from '../../trello/types.js';
 
 /** Extends JiraCredentials with a pre-computed Base64 Basic auth header value. */

@@ -3,7 +3,7 @@
  * Helps agents plan and organize their implementation tasks.
  */
 import { Gadget, z } from 'llmist';
-import { type Todo, formatTodoList, getNextId, loadTodos, saveTodos } from './storage.js';
+import { formatTodoList, getNextId, loadTodos, saveTodos, type Todo } from './storage.js';
 
 interface TodoItem {
 	id?: string;

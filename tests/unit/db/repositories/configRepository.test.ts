@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { mockDbClientModule, mockGetDb } from '../../../helpers/sharedMocks.js';
 
 vi.mock('../../../../src/db/client.js', () => mockDbClientModule);

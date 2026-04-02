@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { safeOperation, silentOperation } from '../../../src/utils/safeOperation.js';
 
 vi.mock('../../../src/utils/logging.js', () => ({

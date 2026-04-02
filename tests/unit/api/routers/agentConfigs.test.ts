@@ -65,7 +65,7 @@ vi.mock('../../../../src/agents/definitions/index.js', () => ({
 }));
 
 // Mock getDb for ownership checks
-const { mockDbSelect, mockDbFrom, mockDbWhere, configureOwnership } = setupOwnershipCheckMock();
+const { mockDbSelect, mockDbFrom, mockDbWhere } = setupOwnershipCheckMock();
 
 vi.mock('../../../../src/db/client.js', () => ({
 	getDb: () => ({

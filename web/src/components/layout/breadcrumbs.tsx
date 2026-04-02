@@ -1,8 +1,8 @@
-import { PROJECT_SECTIONS } from '@/lib/project-sections.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { ChevronRight } from 'lucide-react';
+import { PROJECT_SECTIONS } from '@/lib/project-sections.js';
+import { trpc } from '@/lib/trpc.js';
 
 interface Segment {
 	label: string;
@@ -127,7 +127,7 @@ export function Breadcrumbs() {
 			{segments.map((segment, i) => {
 				const isLast = i === segments.length - 1;
 				return (
-					<span key={`${segment.label}-${i}`} className="flex min-w-0 items-center gap-1">
+					<span key={segment.label} className="flex min-w-0 items-center gap-1">
 						{i > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
 						{isLast || !segment.href ? (
 							<span

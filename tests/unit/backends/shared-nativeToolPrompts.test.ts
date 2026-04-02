@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ToolManifest } from '../../../src/agents/contracts/index.js';
-import type { ContextInjection } from '../../../src/agents/contracts/index.js';
+import type { ContextInjection, ToolManifest } from '../../../src/agents/contracts/index.js';
 
 // Mock contextFiles module to avoid filesystem I/O
 vi.mock('../../../src/backends/shared/contextFiles.js', () => ({

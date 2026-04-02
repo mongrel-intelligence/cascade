@@ -8,8 +8,8 @@ vi.mock('../../../../src/gadgets/pm/core/readWorkItem.js', () => ({
 	readWorkItem: vi.fn(),
 }));
 
-import { fetchPipelineSnapshotStep } from '../../../../src/agents/definitions/contextSteps.js';
 import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
+import { fetchPipelineSnapshotStep } from '../../../../src/agents/definitions/contextSteps.js';
 import { readWorkItem } from '../../../../src/gadgets/pm/core/readWorkItem.js';
 import { getPMProviderOrNull } from '../../../../src/pm/index.js';
 import type { AgentInput, ProjectConfig } from '../../../../src/types/index.js';

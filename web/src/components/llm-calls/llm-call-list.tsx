@@ -1,9 +1,9 @@
-import { getToolStyle } from '@/lib/tool-style.js';
-import { trpc } from '@/lib/trpc.js';
-import { formatCost } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { Fragment, useState } from 'react';
+import { getToolStyle } from '@/lib/tool-style.js';
+import { trpc } from '@/lib/trpc.js';
+import { formatCost } from '@/lib/utils.js';
 import { LlmCallDetail } from './llm-call-detail.js';
 
 interface LlmCallListProps {
@@ -34,6 +34,7 @@ function ToolCallList({ toolCalls }: { toolCalls: ToolCall[] }) {
 			{toolCalls.map((tc, i) => {
 				const { bg, text } = getToolStyle(tc.name);
 				return (
+					// biome-ignore lint/suspicious/noArrayIndexKey: tool calls have no unique ID; index is stable for this read-only list
 					<span key={`${i}-${tc.name}`} className="flex items-baseline gap-1.5 min-w-0">
 						<span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${bg} ${text}`}>
 							{tc.name}

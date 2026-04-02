@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
 import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
 vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
@@ -22,8 +21,6 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 	},
 }));
 
-import { mockGetDb } from '../../../helpers/sharedMocks.js';
-
 import {
 	getWebhookLogById,
 	getWebhookLogStats,
@@ -31,6 +28,7 @@ import {
 	listWebhookLogs,
 	pruneWebhookLogs,
 } from '../../../../src/db/repositories/webhookLogsRepository.js';
+import { mockGetDb } from '../../../helpers/sharedMocks.js';
 
 // Helper to build a chainable mock db
 function buildMockDb() {

@@ -11,8 +11,8 @@ vi.mock('../../../src/github/personas.js', () => ({
 import type { AgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { ENV_VAR_NAME } from '../../../src/backends/progressState.js';
 import {
-	GITHUB_ACK_COMMENT_ID_ENV_VAR,
 	augmentProjectSecrets,
+	GITHUB_ACK_COMMENT_ID_ENV_VAR,
 	injectGitHubAckCommentId,
 	injectProgressCommentId,
 	resolveGitHubToken,

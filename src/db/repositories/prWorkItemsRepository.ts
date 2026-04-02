@@ -1,5 +1,4 @@
 import {
-	type SQL,
 	and,
 	countDistinct,
 	desc,
@@ -8,10 +7,11 @@ import {
 	isNotNull,
 	isNull,
 	max,
+	type SQL,
 	sum,
 } from 'drizzle-orm';
 import { getDb } from '../client.js';
-import { agentRuns, prWorkItems, projects } from '../schema/index.js';
+import { agentRuns, projects, prWorkItems } from '../schema/index.js';
 import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 export interface LinkPRToWorkItemOptions {

@@ -1,9 +1,9 @@
+import { useQuery } from '@tanstack/react-query';
 import type { ComboboxOption } from '@/components/ui/combobox.js';
 import { Combobox } from '@/components/ui/combobox.js';
 import { Input } from '@/components/ui/input.js';
-import { OPENROUTER_PREFIX, addPrefix, modelDetail, modelGroup } from '@/lib/openrouter-utils.js';
+import { addPrefix, modelDetail, modelGroup, OPENROUTER_PREFIX } from '@/lib/openrouter-utils.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
 
 interface OpenRouterModelComboboxProps {
 	projectId: string;

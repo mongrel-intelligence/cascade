@@ -15,7 +15,7 @@ import { sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type CascadeConfigSchema, validateConfig } from '../src/config/schema.js';
 import { closeDb, getDb } from '../src/db/client.js';
-import { agentConfigs, projectIntegrations, projects } from '../src/db/schema/index.js';
+import { projectIntegrations, projects } from '../src/db/schema/index.js';
 
 type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
 type ProjectConfig = CascadeConfig['projects'][number];

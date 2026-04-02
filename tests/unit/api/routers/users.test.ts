@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
-import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
+import { createCallerFor } from '../../../helpers/trpcTestHarness.js';
 
 const {
 	mockListOrgUsers,

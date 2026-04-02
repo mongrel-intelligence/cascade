@@ -41,7 +41,7 @@ export async function checkTriggerEnabledWithParams(
 	handlerName: string,
 ): Promise<{ enabled: boolean; parameters: Record<string, unknown> }> {
 	const config = await getResolvedTriggerConfig(projectId, agentType, triggerEvent);
-	if (!config || !config.enabled) {
+	if (!config?.enabled) {
 		logger.info('Trigger disabled by config, skipping', {
 			handler: handlerName,
 			agentType,

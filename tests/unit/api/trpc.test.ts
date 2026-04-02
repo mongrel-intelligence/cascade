@@ -1,11 +1,11 @@
 import { TRPCError } from '@trpc/server';
 import { describe, expect, it } from 'vitest';
 import {
-	type TRPCContext,
 	adminProcedure,
 	protectedProcedure,
 	router,
 	superAdminProcedure,
+	type TRPCContext,
 } from '../../../src/api/trpc.js';
 
 // Create a minimal test router

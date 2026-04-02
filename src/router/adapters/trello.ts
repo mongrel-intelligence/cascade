@@ -14,7 +14,7 @@ import { logger } from '../../utils/logging.js';
 import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractTrelloContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postTrelloAck } from '../acknowledgments.js';
-import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
+import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveTrelloCredentials } from '../platformClients/index.js';
 import type { CascadeJob, TrelloJob } from '../queue.js';

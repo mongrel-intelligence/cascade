@@ -40,19 +40,19 @@ export {
 	getActiveWorkers,
 } from './active-workers.js';
 export {
+	scanAndCleanupOrphans,
 	startOrphanCleanup,
 	stopOrphanCleanup,
-	scanAndCleanupOrphans,
 } from './orphan-cleanup.js';
-export {
-	buildWorkerEnv,
-	extractProjectIdFromJob,
-} from './worker-env.js';
 export {
 	getSnapshot,
 	invalidateSnapshot,
 	registerSnapshot,
 } from './snapshot-manager.js';
+export {
+	buildWorkerEnv,
+	extractProjectIdFromJob,
+} from './worker-env.js';
 
 const docker = new Docker();
 

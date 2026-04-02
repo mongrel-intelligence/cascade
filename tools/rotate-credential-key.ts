@@ -63,7 +63,7 @@ async function main() {
 		.from(projectCredentials);
 
 	let rotated = 0;
-	const skipped = 0;
+	const _skipped = 0;
 
 	for (const cred of allCreds) {
 		// Decrypt with current key (handles both encrypted and plaintext)

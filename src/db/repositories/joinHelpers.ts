@@ -1,4 +1,4 @@
-import { type SQL, and, eq, or, sql } from 'drizzle-orm';
+import { and, eq, or, type SQL, sql } from 'drizzle-orm';
 import { agentRuns, prWorkItems } from '../schema/index.js';
 
 /**

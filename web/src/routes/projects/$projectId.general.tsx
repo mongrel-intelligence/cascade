@@ -1,7 +1,7 @@
-import { ProjectGeneralForm } from '@/components/projects/project-general-form.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
+import { ProjectGeneralForm } from '@/components/projects/project-general-form.js';
+import { trpc } from '@/lib/trpc.js';
 import { projectDetailRoute } from './$projectId.js';
 
 function ProjectGeneralPage() {

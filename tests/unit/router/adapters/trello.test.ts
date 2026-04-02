@@ -46,8 +46,8 @@ vi.mock('../../../../src/router/trello.js', () => ({
 
 import { postTrelloAck } from '../../../../src/router/acknowledgments.js';
 import { TrelloRouterAdapter } from '../../../../src/router/adapters/trello.js';
-import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
+import { loadProjectConfig } from '../../../../src/router/config.js';
 import { resolveTrelloCredentials } from '../../../../src/router/platformClients/index.js';
 import { sendAcknowledgeReaction } from '../../../../src/router/reactions.js';
 import { isCardInTriggerList, isSelfAuthoredTrelloComment } from '../../../../src/router/trello.js';

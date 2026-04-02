@@ -5,8 +5,8 @@
  * allowing the trailing message to display consolidated diagnostic status.
  */
 
-import { runDiagnostics as runDiagnosticsCore, shouldRunDiagnostics } from './diagnostics.js';
 import type { DiagnosticsResult } from './diagnostics.js';
+import { runDiagnostics as runDiagnosticsCore, shouldRunDiagnostics } from './diagnostics.js';
 
 /**
  * Individual diagnostic error.

@@ -2,7 +2,7 @@ import { imageFromBase64, text } from 'llmist';
 
 import { logger } from '../../utils/logging.js';
 import type { ContextImage } from '../contracts/index.js';
-import { type TrackingContext, recordSyntheticInvocationId } from '../utils/tracking.js';
+import { recordSyntheticInvocationId, type TrackingContext } from '../utils/tracking.js';
 import type { BuilderType } from './builderFactory.js';
 
 /** MIME types supported by the llmist SDK for image content parts. */

@@ -12,10 +12,10 @@ import {
 	writeProjectCredential,
 } from '../../src/db/repositories/credentialsRepository.js';
 import {
-	type PersonaIdentities,
 	getPersonaForAgentType,
 	getPersonaForLogin,
 	isCascadeBot,
+	type PersonaIdentities,
 } from '../../src/github/personas.js';
 import { PRReviewSubmittedTrigger } from '../../src/triggers/github/pr-review-submitted.js';
 import { ReviewRequestedTrigger } from '../../src/triggers/github/review-requested.js';

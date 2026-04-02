@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
-import { AgentDefinitionSchema } from '../../agents/definitions/schema.js';
 import type { AgentDefinition } from '../../agents/definitions/schema.js';
+import { AgentDefinitionSchema } from '../../agents/definitions/schema.js';
 import { getDb } from '../client.js';
 import { agentDefinitions } from '../schema/index.js';
 

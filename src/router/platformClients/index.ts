@@ -8,12 +8,12 @@
  * directory path.
  */
 
-export type { JiraCredentialsWithAuth, PlatformCommentClient, TrelloCredentials } from './types.js';
 export {
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
 } from './credentials.js';
-export { TrelloPlatformClient } from './trello.js';
 export { GitHubPlatformClient } from './github.js';
-export { JiraPlatformClient, _resetJiraCloudIdCache } from './jira.js';
+export { _resetJiraCloudIdCache, JiraPlatformClient } from './jira.js';
+export { TrelloPlatformClient } from './trello.js';
+export type { JiraCredentialsWithAuth, PlatformCommentClient, TrelloCredentials } from './types.js';

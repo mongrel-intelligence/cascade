@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Mock all trigger imports
 vi.mock('../../../src/triggers/github/check-suite-failure.js', () => ({

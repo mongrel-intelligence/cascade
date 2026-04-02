@@ -64,12 +64,7 @@ export async function seedProject(
  * Seeds a project-scoped credential via the repository.
  */
 export async function seedCredential(
-	overrides: {
-		projectId?: string;
-		name?: string;
-		envVarKey?: string;
-		value?: string;
-	} = {},
+	overrides: { projectId?: string; name?: string; envVarKey?: string; value?: string } = {},
 ) {
 	const projectId = overrides.projectId ?? 'test-project';
 	const envVarKey = overrides.envVarKey ?? 'TEST_KEY';
@@ -114,10 +109,7 @@ export async function seedIntegrationCredential(overrides: {
 	role?: string;
 	credentialId: number;
 }) {
-	// For backward compatibility: look up the integration and write to project_credentials
-	const { removeIntegrationCredential } = await import(
-		'../../../src/db/repositories/integrationsRepository.js'
-	);
+	// For backward compatibility.
 	// The credentialId is no longer meaningful after legacy table removal.
 	// This function is preserved to avoid breaking existing test seeds that call it.
 	// Integration credentials are now stored in project_credentials by envVarKey.
@@ -264,11 +256,7 @@ export async function seedWebhookLog(
  * Seeds a prompt partial row.
  */
 export async function seedPromptPartial(
-	overrides: {
-		orgId?: string | null;
-		name?: string;
-		content?: string;
-	} = {},
+	overrides: { orgId?: string | null; name?: string; content?: string } = {},
 ) {
 	const db = getDb();
 	const [row] = await db
@@ -285,11 +273,7 @@ export async function seedPromptPartial(
 /**
  * Seeds a session for a user.
  */
-export async function seedSession(overrides: {
-	userId: string;
-	token?: string;
-	expiresAt?: Date;
-}) {
+export async function seedSession(overrides: { userId: string; token?: string; expiresAt?: Date }) {
 	const db = getDb();
 	const futureDate = new Date();
 	futureDate.setDate(futureDate.getDate() + 30);

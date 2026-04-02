@@ -511,7 +511,7 @@ describe('projectsRepository (integration)', () => {
 
 	describe('optional fields round-trip', () => {
 		it('all nullable fields read back correctly when set', async () => {
-			const project = await createProject('test-org', {
+			const _project = await createProject('test-org', {
 				id: 'all-fields-project',
 				name: 'All Fields Project',
 				repo: 'owner/all-fields',

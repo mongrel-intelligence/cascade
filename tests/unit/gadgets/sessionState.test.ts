@@ -12,7 +12,6 @@ vi.mock('../../../src/github/client.js', () => ({
 }));
 
 import {
-	SessionState,
 	clearInitialComment,
 	createSessionState,
 	deleteInitialComment,
@@ -26,6 +25,7 @@ import {
 	recordInitialComment,
 	recordPRCreation,
 	recordReviewSubmission,
+	SessionState,
 	setDefaultSessionState,
 } from '../../../src/gadgets/sessionState.js';
 

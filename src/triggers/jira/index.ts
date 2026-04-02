@@ -5,7 +5,7 @@
  */
 
 export { JiraCommentMentionTrigger } from './comment-mention.js';
-export { JiraStatusChangedTrigger } from './status-changed.js';
 export { JiraReadyToProcessLabelTrigger } from './label-added.js';
-export { processJiraWebhook } from './webhook-handler.js';
 export { registerJiraTriggers } from './register.js';
+export { JiraStatusChangedTrigger } from './status-changed.js';
+export { processJiraWebhook } from './webhook-handler.js';

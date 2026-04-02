@@ -1,19 +1,18 @@
 import { describe, expect, it } from 'vitest';
-
+import type {
+	WizardAction,
+	WizardState,
+} from '../../../web/src/components/projects/pm-wizard-state.js';
 import {
-	INITIAL_JIRA_LABELS,
 	areCredentialsReady,
 	buildEditState,
 	createInitialState,
+	INITIAL_JIRA_LABELS,
 	isStep1Complete,
 	isStep2Complete,
 	isStep3Complete,
 	isStep4Complete,
 	wizardReducer,
-} from '../../../web/src/components/projects/pm-wizard-state.js';
-import type {
-	WizardAction,
-	WizardState,
 } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 // ============================================================================

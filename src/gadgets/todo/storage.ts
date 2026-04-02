@@ -88,7 +88,7 @@ export function saveTodos(todos: Todo[]): void {
  * Generates the next available todo ID (incrementing integer).
  */
 export function getNextId(todos: Todo[]): string {
-	const maxId = todos.reduce((max, t) => Math.max(max, Number.parseInt(t.id) || 0), 0);
+	const maxId = todos.reduce((max, t) => Math.max(max, Number.parseInt(t.id, 10) || 0), 0);
 	return String(maxId + 1);
 }
 

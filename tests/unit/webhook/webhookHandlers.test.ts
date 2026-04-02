@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Must mock heavy imports BEFORE importing the module under test
 vi.mock('../../../src/utils/index.js', () => ({

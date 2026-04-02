@@ -2,13 +2,14 @@
  * Reusable project-scoped secret input field.
  * Write-only — shows masked metadata when configured, never exposes plaintext.
  */
+
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { CheckCircle, Loader2, Trash2, XCircle } from 'lucide-react';
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Loader2, Trash2, XCircle } from 'lucide-react';
-import { useState } from 'react';
 
 export interface ProjectCredentialMeta {
 	envVarKey: string;

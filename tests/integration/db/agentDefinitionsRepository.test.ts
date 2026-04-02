@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { AgentDefinitionSchema } from '../../../src/agents/definitions/schema.js';
 import type { AgentDefinition } from '../../../src/agents/definitions/schema.js';
+import { AgentDefinitionSchema } from '../../../src/agents/definitions/schema.js';
 import {
 	deleteAgentDefinition,
 	getAgentDefinition,

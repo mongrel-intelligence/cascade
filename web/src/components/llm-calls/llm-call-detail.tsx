@@ -1,8 +1,8 @@
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { type ParsedBlock, parseLlmResponse } from '@/lib/llm-response-parser.js';
 import { getToolStyle } from '@/lib/tool-style.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
 
 interface LlmCallDetailProps {
 	runId: string;

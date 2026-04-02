@@ -32,11 +32,11 @@ vi.mock('../../../../src/gadgets/pm/core/readWorkItem.js', () => ({
 	readWorkItemWithMedia: vi.fn(),
 }));
 
+import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
 import {
 	fetchWorkItemStep,
 	prepopulateTodosStep,
 } from '../../../../src/agents/definitions/contextSteps.js';
-import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
 import { readWorkItemWithMedia } from '../../../../src/gadgets/pm/core/readWorkItem.js';
 import { initTodoSession, saveTodos } from '../../../../src/gadgets/todo/storage.js';
 import { getPMProviderOrNull } from '../../../../src/pm/index.js';

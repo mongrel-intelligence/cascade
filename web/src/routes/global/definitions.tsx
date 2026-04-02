@@ -1,6 +1,10 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { createRoute } from '@tanstack/react-router';
+import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import { AgentDefinitionEditor } from '@/components/settings/agent-definition-editor.js';
-import { AgentDefinitionsTable } from '@/components/settings/agent-definition-table.js';
 import type { DefinitionRow } from '@/components/settings/agent-definition-table.js';
+import { AgentDefinitionsTable } from '@/components/settings/agent-definition-table.js';
 import { PromptEditor } from '@/components/settings/prompt-editor.js';
 import { Badge } from '@/components/ui/badge.js';
 import {
@@ -12,10 +16,6 @@ import {
 	TableRow,
 } from '@/components/ui/table.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
 type Tab = 'definitions' | 'partials';

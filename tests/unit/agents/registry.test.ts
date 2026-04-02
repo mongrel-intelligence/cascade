@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Must mock engine modules before importing the registry
 vi.mock('../../../src/backends/adapter.js', () => ({

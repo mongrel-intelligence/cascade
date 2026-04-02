@@ -23,11 +23,11 @@ import { formatStatusMessage } from '../config/statusUpdateConfig.js';
 import { captureException } from '../sentry.js';
 import { buildRunLink, buildWorkItemRunsLink, getDashboardUrl } from '../utils/runLink.js';
 import { callProgressModel } from './progressModel.js';
-import { clearProgressCommentId, writeProgressCommentId } from './progressState.js';
 import { ProgressAccumulator } from './progressState/accumulator.js';
 import { GitHubProgressPoster } from './progressState/githubPoster.js';
 import { PMProgressPoster } from './progressState/pmPoster.js';
 import { DEFAULT_SCHEDULE_MINUTES, ProgressScheduler } from './progressState/scheduler.js';
+import { clearProgressCommentId, writeProgressCommentId } from './progressState.js';
 import type { LogWriter, ProgressReporter } from './types.js';
 
 export interface ProgressMonitorConfig {

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
@@ -41,7 +41,6 @@ vi.mock('trello.js', () => ({
 	})),
 }));
 
-import { TrelloClient } from 'trello.js';
 import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
 
 describe('trelloClient', () => {
@@ -469,7 +468,7 @@ describe('trelloClient', () => {
 		});
 
 		it('handles missing fields gracefully', async () => {
-			const fetchSpy = vi
+			const _fetchSpy = vi
 				.spyOn(globalThis, 'fetch')
 				.mockResolvedValue(new Response(JSON.stringify([{}, { id: 'b1' }]), { status: 200 }));
 

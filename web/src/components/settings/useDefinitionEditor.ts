@@ -3,9 +3,10 @@
  * agent definition editor. Extracted from agent-definition-editor.tsx to keep
  * the main component as a thin orchestrator.
  */
-import { trpc, trpcClient } from '@/lib/trpc.js';
+
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import {
 	type AgentDefinition,
 	type DefinitionRow,

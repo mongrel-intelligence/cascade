@@ -20,6 +20,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { getIntegrationCredential } from '../../../src/config/provider.js';
 import { getGitHubUserForToken } from '../../../src/github/client.js';
+import type { PersonaIdentities } from '../../../src/github/personas.js';
 import {
 	_resetPersonaIdentityCache,
 	getPersonaForAgentType,
@@ -28,7 +29,6 @@ import {
 	isCascadeBot,
 	resolvePersonaIdentities,
 } from '../../../src/github/personas.js';
-import type { PersonaIdentities } from '../../../src/github/personas.js';
 
 describe('personas', () => {
 	beforeEach(() => {

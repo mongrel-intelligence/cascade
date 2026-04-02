@@ -5,7 +5,6 @@
  * All commands run as windows within a single control session.
  */
 import { Gadget, z } from 'llmist';
-import { type TmuxControlClient, getControlClient } from './TmuxControlClient.js';
 import {
 	DEFAULT_TIMEOUT_MS,
 	DEFAULT_WAIT_MS,
@@ -18,6 +17,7 @@ import {
 import { CommandFailedError } from './errors.js';
 import { validateGitCommand } from './gitValidation.js';
 import { addPendingNotice } from './sessionNotices.js';
+import { getControlClient, type TmuxControlClient } from './TmuxControlClient.js';
 import { sanitizeSessionName, sleep } from './utils.js';
 
 export class TmuxGadget extends Gadget({

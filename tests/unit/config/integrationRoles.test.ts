@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+	getCredentialRoles,
 	type IntegrationCategory,
 	type IntegrationProvider,
 	PROVIDER_CATEGORY,
 	PROVIDER_CREDENTIAL_ROLES,
-	getCredentialRoles,
 	registerCredentialRoles,
 } from '../../../src/config/integrationRoles.js';
 
@@ -28,7 +28,7 @@ describe.concurrent('PROVIDER_CATEGORY', () => {
 
 	it('maps all known providers to valid categories', () => {
 		const validCategories: IntegrationCategory[] = ['pm', 'scm', 'alerting'];
-		for (const [provider, category] of Object.entries(PROVIDER_CATEGORY)) {
+		for (const [_provider, category] of Object.entries(PROVIDER_CATEGORY)) {
 			expect(validCategories).toContain(category);
 		}
 	});

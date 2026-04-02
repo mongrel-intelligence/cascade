@@ -1,34 +1,31 @@
+export { getPMProvider, getPMProviderOrNull, withPMProvider } from './context.js';
+// PMIntegration interface + registry
+export type { PMIntegration, PMWebhookEvent } from './integration.js';
+export { hasPmIntegration } from './integration.js';
+export { JiraPMProvider } from './jira/adapter.js';
+export type { ProjectPMConfig } from './lifecycle.js';
+export { hasAutoLabel, PMLifecycleManager, resolveProjectPMConfig } from './lifecycle.js';
+export {
+	extractMarkdownImages,
+	filterImageMedia,
+	isImageMimeType,
+	MAX_IMAGE_SIZE_BYTES,
+	MAX_IMAGES_PER_WORK_ITEM,
+} from './media.js';
+export { pmRegistry } from './registry.js';
+export { TrelloPMProvider } from './trello/adapter.js';
 export type {
+	Attachment,
+	Checklist,
+	ChecklistItem,
+	CreateWorkItemConfig,
+	MediaReference,
 	PMProvider,
 	PMType,
 	WorkItem,
 	WorkItemComment,
 	WorkItemLabel,
-	Checklist,
-	ChecklistItem,
-	Attachment,
-	CreateWorkItemConfig,
-	MediaReference,
 } from './types.js';
-
-export {
-	MAX_IMAGE_SIZE_BYTES,
-	MAX_IMAGES_PER_WORK_ITEM,
-	isImageMimeType,
-	filterImageMedia,
-	extractMarkdownImages,
-} from './media.js';
-
-export { withPMProvider, getPMProvider, getPMProviderOrNull } from './context.js';
-export { TrelloPMProvider } from './trello/adapter.js';
-export { JiraPMProvider } from './jira/adapter.js';
-export { PMLifecycleManager, resolveProjectPMConfig, hasAutoLabel } from './lifecycle.js';
-export type { ProjectPMConfig } from './lifecycle.js';
-
-// PMIntegration interface + registry
-export type { PMIntegration, PMWebhookEvent } from './integration.js';
-export { hasPmIntegration } from './integration.js';
-export { pmRegistry } from './registry.js';
 export { processPMWebhook } from './webhook-handler.js';
 
 import { integrationRegistry } from '../integrations/registry.js';

@@ -3,9 +3,9 @@ import type { AgentInput, CascadeConfig, ProjectConfig } from '../../types/index
 import { logger } from '../../utils/logging.js';
 import { resolveAgentDefinition } from '../definitions/loader.js';
 import {
-	type PromptContext,
 	buildTaskPromptContext,
 	getSystemPrompt,
+	type PromptContext,
 	renderCustomPrompt,
 	renderInlineTaskPrompt,
 } from '../prompts/index.js';

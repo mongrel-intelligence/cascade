@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LOG_LEVELS, getLogLevel, logger, setLogLevel } from '../../../src/utils/logging.js';
+import { getLogLevel, LOG_LEVELS, logger, setLogLevel } from '../../../src/utils/logging.js';
 
 /**
  * Tests for setLogLevel and getLogLevel in utils/logging.ts.

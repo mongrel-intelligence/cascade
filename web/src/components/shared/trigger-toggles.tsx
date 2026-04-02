@@ -1,5 +1,5 @@
 import { Label } from '@/components/ui/label.js';
-import { type TriggerDef, getTriggerValue, setTriggerValue } from '@/lib/trigger-agent-mapping.js';
+import { getTriggerValue, setTriggerValue, type TriggerDef } from '@/lib/trigger-agent-mapping.js';
 
 export type { TriggerDef };
 

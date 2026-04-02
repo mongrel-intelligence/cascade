@@ -12,6 +12,7 @@ import { createMockProject } from '../../helpers/factories.js';
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
+
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 

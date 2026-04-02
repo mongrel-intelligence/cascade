@@ -59,14 +59,6 @@ vi.mock('../../../../src/gadgets/pm/core/postComment.js', () => ({
 	postComment: vi.fn().mockResolvedValue({ id: 'comment-1' }),
 }));
 
-import { createWorkItem } from '../../../../src/gadgets/pm/core/createWorkItem.js';
-import { deleteChecklistItem } from '../../../../src/gadgets/pm/core/deleteChecklistItem.js';
-import { listWorkItems } from '../../../../src/gadgets/pm/core/listWorkItems.js';
-import { moveWorkItem } from '../../../../src/gadgets/pm/core/moveWorkItem.js';
-import { postComment } from '../../../../src/gadgets/pm/core/postComment.js';
-import { readWorkItem } from '../../../../src/gadgets/pm/core/readWorkItem.js';
-import { updateChecklistItem } from '../../../../src/gadgets/pm/core/updateChecklistItem.js';
-
 import CreateWorkItem from '../../../../src/cli/pm/create-work-item.js';
 import DeleteChecklistItem from '../../../../src/cli/pm/delete-checklist-item.js';
 import ListWorkItems from '../../../../src/cli/pm/list-work-items.js';
@@ -74,6 +66,13 @@ import MoveWorkItem from '../../../../src/cli/pm/move-work-item.js';
 import PostComment from '../../../../src/cli/pm/post-comment.js';
 import ReadWorkItem from '../../../../src/cli/pm/read-work-item.js';
 import UpdateChecklistItem from '../../../../src/cli/pm/update-checklist-item.js';
+import { createWorkItem } from '../../../../src/gadgets/pm/core/createWorkItem.js';
+import { deleteChecklistItem } from '../../../../src/gadgets/pm/core/deleteChecklistItem.js';
+import { listWorkItems } from '../../../../src/gadgets/pm/core/listWorkItems.js';
+import { moveWorkItem } from '../../../../src/gadgets/pm/core/moveWorkItem.js';
+import { postComment } from '../../../../src/gadgets/pm/core/postComment.js';
+import { readWorkItem } from '../../../../src/gadgets/pm/core/readWorkItem.js';
+import { updateChecklistItem } from '../../../../src/gadgets/pm/core/updateChecklistItem.js';
 
 /** Create a fresh minimal oclif config to satisfy this.parse() in each test */
 function makeMockConfig() {

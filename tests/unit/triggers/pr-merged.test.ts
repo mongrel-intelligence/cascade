@@ -54,15 +54,14 @@ vi.mock('../../../src/router/snapshot-manager.js', () => ({
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
-import { PRMergedTrigger } from '../../../src/triggers/github/pr-merged.js';
-import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
-
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';
+import { PRMergedTrigger } from '../../../src/triggers/github/pr-merged.js';
 import { isPipelineAtCapacity } from '../../../src/triggers/shared/backlog-check.js';
 import { isLifecycleTriggerEnabled } from '../../../src/triggers/shared/lifecycle-check.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import type { TriggerContext } from '../../../src/triggers/types.js';
+import { createMockProject } from '../../helpers/factories.js';
 
 describe('PRMergedTrigger', () => {
 	const trigger = new PRMergedTrigger();

@@ -1,5 +1,5 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/client';
 import type { AssistantMessage, Config, Part } from '@opencode-ai/sdk/client';
+import { createOpencodeClient } from '@opencode-ai/sdk/client';
 
 import { logger } from '../../utils/logging.js';
 import { OPENCODE_ENGINE_DEFINITION } from '../catalog.js';
@@ -8,23 +8,23 @@ import {
 	isRetryableNativeToolError,
 	retryNativeToolOperation,
 } from '../nativeToolRetry.js';
-import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { SHARED_ALLOWED_ENV_EXACT } from '../shared/envFilter.js';
+import { NativeToolEngine } from '../shared/NativeToolEngine.js';
 import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.js';
 import type { AgentEngineResult, AgentExecutionPlan } from '../types.js';
 import { DEFAULT_OPENCODE_MODEL } from './models.js';
 import { buildPermissionConfig } from './permissions.js';
 import {
-	type OpenCodeServerState,
 	attachServerState,
 	formatOpenCodeServerExitError,
+	type OpenCodeServerState,
 	startOpenCodeServer,
 } from './server.js';
 import { OpenCodeSettingsSchema, resolveOpenCodeSettings } from './settings.js';
-import { type OpenCodeStreamState, getPartialOutput, processStreamEvent } from './stream.js';
+import { getPartialOutput, type OpenCodeStreamState, processStreamEvent } from './stream.js';
 
 export function resolveOpenCodeModel(cascadeModel: string): string {
 	if (cascadeModel.includes('/') && !cascadeModel.includes(':')) return cascadeModel;

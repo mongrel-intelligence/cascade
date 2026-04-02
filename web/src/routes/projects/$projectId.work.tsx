@@ -1,8 +1,8 @@
-import { ProjectWorkTable } from '@/components/projects/project-work-table.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
 import { useState } from 'react';
+import { ProjectWorkTable } from '@/components/projects/project-work-table.js';
+import { trpc } from '@/lib/trpc.js';
 import { projectDetailRoute } from './$projectId.js';
 
 const WORK_PAGE_SIZE = 50;
