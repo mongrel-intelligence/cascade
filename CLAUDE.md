@@ -92,6 +92,17 @@ npm run lint:fix         # Fix
 npm run typecheck        # Type check
 ```
 
+### Zod Version Policy
+
+Both the root workspace and the `web/` workspace **must use the same Zod major version**. Currently both are aligned on `zod@^3.25.0` (the bridge version that ships v3 and v4 dual exports).
+
+- **Root (`package.json`)**: `"zod": "^3.25.0"` — backend uses the v3 API surface
+- **Web (`web/package.json`)**: `"zod": "^3.25.0"` — frontend also uses v3 API surface
+
+**Why this matters**: `web/tsconfig.json` includes `../src/api/**/*` and `../src/db/**/*` (backend files that import from `zod`). If the two workspaces resolve different Zod major versions, `z.infer<>` can silently compute different types for the same schema in backend vs. frontend compilation contexts.
+
+**When upgrading Zod**: Both workspaces must be bumped to the same new version together. A full migration to the v4 API would also require auditing `z.ZodType` usage (renamed class hierarchy in v4), `z.ZodIssueCode` (slightly different enum), and `.default()` behavior (eagerly evaluated in v4).
+
 ### Git Hooks
 
 Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration tests) hooks automatically. The pre-push hook auto-starts an ephemeral PostgreSQL via Docker (`npm run test:db:up`) for integration tests — Docker must be running.

@@ -83,7 +83,7 @@
 		"pg": "^8.18.0",
 		"trello.js": "^1.2.8",
 		"zangief": "^1.0.5",
-		"zod": "^3.24.1"
+		"zod": "^3.25.0"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
