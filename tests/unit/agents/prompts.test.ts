@@ -15,6 +15,7 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 			'respond-to-planning-comment',
 			'debug',
 			'backlog-manager',
+			'resolve-conflicts',
 		]),
 }));
 
@@ -398,6 +399,7 @@ describe('readTemplateFileSync', () => {
 			'respond-to-planning-comment',
 			'debug',
 			'backlog-manager',
+			'resolve-conflicts',
 		];
 		for (const agentType of builtinTypes) {
 			const content = readTemplateFileSync(agentType);
@@ -655,6 +657,7 @@ describe('duplicate content detection', () => {
 		'respond-to-planning-comment',
 		'debug',
 		'backlog-manager',
+		'resolve-conflicts',
 	];
 
 	for (const agentType of allAgentTypes) {
@@ -825,5 +828,129 @@ describe('squintEnabled template gating', () => {
 		const rendered = renderCustomPrompt(partial, { squintEnabled: false });
 		expect(rendered).not.toContain('squint-modules');
 		expect(rendered).not.toContain('squint-features');
+	});
+});
+
+describe('documentation-maintenance partial', () => {
+	it('partial exists in getAvailablePartialNames()', () => {
+		const names = getAvailablePartialNames();
+		expect(names).toContain('documentation-maintenance');
+	});
+
+	it('partial contains key doc-update phrases', () => {
+		const content = getRawPartial('documentation-maintenance');
+		expect(content).toContain('CLAUDE.md');
+		expect(content).toContain('README');
+		expect(content).toContain('JSDoc');
+		expect(content).toContain('docs/');
+	});
+
+	it('partial describes when to update docs (conditional guidance)', () => {
+		const content = getRawPartial('documentation-maintenance');
+		expect(content).toContain('When to');
+	});
+
+	it('partial provides a documentation update checklist', () => {
+		const content = getRawPartial('documentation-maintenance');
+		expect(content).toContain('Documentation Update Checklist');
+	});
+});
+
+describe('documentation maintenance in code-modifying agent prompts', () => {
+	it('implementation prompt contains documentation maintenance section', () => {
+		const prompt = getSystemPrompt('implementation');
+		expect(prompt).toContain('Documentation Maintenance');
+		expect(prompt).toContain('CLAUDE.md');
+		expect(prompt).toContain('JSDoc');
+	});
+
+	it('implementation prompt completion protocol includes documentation step', () => {
+		const prompt = getSystemPrompt('implementation');
+		expect(prompt).toContain('Documentation updated');
+	});
+
+	it('respond-to-review prompt contains documentation maintenance section', () => {
+		const prompt = getSystemPrompt('respond-to-review');
+		expect(prompt).toContain('Documentation Maintenance');
+		expect(prompt).toContain('CLAUDE.md');
+	});
+
+	it('respond-to-review prompt scope section mentions documentation updates', () => {
+		const prompt = getSystemPrompt('respond-to-review');
+		expect(prompt).toContain('documented behavior');
+	});
+
+	it('respond-to-ci prompt contains documentation maintenance section', () => {
+		const prompt = getSystemPrompt('respond-to-ci');
+		expect(prompt).toContain('Documentation Maintenance');
+		expect(prompt).toContain('CLAUDE.md');
+	});
+
+	it('respond-to-pr-comment prompt contains documentation maintenance section', () => {
+		const prompt = getSystemPrompt('respond-to-pr-comment');
+		expect(prompt).toContain('Documentation Maintenance');
+		expect(prompt).toContain('CLAUDE.md');
+	});
+
+	it('respond-to-pr-comment prompt scope section mentions documentation updates', () => {
+		const prompt = getSystemPrompt('respond-to-pr-comment');
+		expect(prompt).toContain('documented behavior');
+	});
+
+	it('resolve-conflicts prompt contains documentation maintenance section', () => {
+		const prompt = getSystemPrompt('resolve-conflicts');
+		expect(prompt).toContain('Documentation Maintenance');
+		expect(prompt).toContain('CLAUDE.md');
+	});
+});
+
+describe('documentation review checks in review agent', () => {
+	it('review prompt contains Documentation subsection under What to Verify', () => {
+		const prompt = getSystemPrompt('review');
+		expect(prompt).toContain('### Documentation');
+	});
+
+	it('review prompt covers documentation currency', () => {
+		const prompt = getSystemPrompt('review');
+		expect(prompt).toContain('Currency');
+	});
+
+	it('review prompt covers undocumented new features', () => {
+		const prompt = getSystemPrompt('review');
+		expect(prompt).toContain('New features');
+	});
+
+	it('review prompt covers stale references in docs', () => {
+		const prompt = getSystemPrompt('review');
+		expect(prompt).toContain('Stale references');
+	});
+
+	it('review prompt includes SHOULD_FIX severity for missing user-facing docs', () => {
+		const prompt = getSystemPrompt('review');
+		expect(prompt).toContain('SHOULD_FIX');
+	});
+
+	it('review prompt does NOT include documentation-maintenance partial (reports gaps, does not fix)', () => {
+		const prompt = getSystemPrompt('review');
+		// The partial's checklist heading should not be present in review
+		expect(prompt).not.toContain('Documentation Update Checklist');
+	});
+});
+
+describe('documentation planning in planning agent', () => {
+	it('planning prompt contains documentation check as step 6 in pattern analysis', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('Check documentation');
+	});
+
+	it('planning prompt includes guidance to add doc update steps to plans', () => {
+		const prompt = getSystemPrompt('planning');
+		expect(prompt).toContain('doc update step');
+	});
+
+	it('planning prompt does NOT include documentation-maintenance partial', () => {
+		const prompt = getSystemPrompt('planning');
+		// The partial's checklist heading should not be in planning prompt
+		expect(prompt).not.toContain('Documentation Update Checklist');
 	});
 });

@@ -106,6 +106,8 @@ Use `PostComment` to post a summary on the <%= it.workItemNoun || 'card' %> once
 
 <%~ include("partials/test-protocol") %>
 
+<%~ include("partials/documentation-maintenance") %>
+
 ### Completion Protocol (CRITICAL)
 
 NEVER mark acceptance criteria or checklist items complete until ALL of:
@@ -113,5 +115,6 @@ NEVER mark acceptance criteria or checklist items complete until ALL of:
 2. Tests pass (zero failures)
 3. Lint passes (zero errors)
 4. PR is successfully created (and you have the PR number)
+5. Documentation updated (if changes affect documented behavior)
 
 <%~ include("partials/rules-efficiency") %>

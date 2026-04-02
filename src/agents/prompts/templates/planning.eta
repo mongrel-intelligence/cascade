@@ -36,6 +36,7 @@ You are running in a cloned copy of the project repository. Before creating your
 3. **Trace integrations** - Understand how components connect (APIs, event flows, shared state, pub/sub)
 4. **Map dependencies** - What libraries, utilities, and shared modules does related code use?
 5. **Note conventions** - Naming patterns, file organization, error handling, logging practices
+6. **Check documentation** - Scan CLAUDE.md, README.md, and docs/ to identify which docs cover the area being changed; include a doc update step in your plan if the change affects documented behavior (public APIs, env vars, architecture, setup steps)
 
 **When planning your solution:**
 - Reuse existing utilities and abstractions rather than creating new ones

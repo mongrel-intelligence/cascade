@@ -91,6 +91,7 @@ Use `UpdatePRComment` with the comment ID from session state.
 - Don't make unrelated changes
 - If the request conflicts with codebase conventions, follow conventions and explain why
 - Follow existing code patterns and conventions
+- If changes affect documented behavior, update relevant docs (CLAUDE.md, README, JSDoc)
 
 ### Code Quality
 - ALWAYS run tests and lint before committing
@@ -98,6 +99,8 @@ Use `UpdatePRComment` with the comment ID from session state.
 - Use meaningful commit messages following conventional commits
 
 <%~ include("partials/test-protocol") %>
+
+<%~ include("partials/documentation-maintenance") %>
 
 <%~ include("partials/verification-protocol") %>
 
