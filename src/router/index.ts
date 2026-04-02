@@ -6,6 +6,7 @@ import '../integrations/bootstrap.js';
 import { initPrompts } from '../agents/prompts/index.js';
 import { registerBuiltInEngines } from '../backends/bootstrap.js';
 import { initAgentMessages } from '../config/agentMessages.js';
+import { validateCredentialMasterKey } from '../db/crypto.js';
 import { seedAgentDefinitions } from '../db/seeds/seedAgentDefinitions.js';
 import { registerBuiltInTriggers } from '../triggers/builtins.js';
 import { createTriggerRegistry } from '../triggers/registry.js';
@@ -192,6 +193,12 @@ process.on('unhandledRejection', (reason) => {
 // Start server and worker processor
 async function startRouter(): Promise<void> {
 	const port = Number(process.env.PORT) || 3000;
+
+	const keyValidation = validateCredentialMasterKey();
+	if (!keyValidation.valid) {
+		logger.error('Invalid CREDENTIAL_MASTER_KEY', { reason: keyValidation.reason });
+		process.exit(1);
+	}
 
 	// Seed built-in agent definitions to DB, then initialize in-memory caches
 	logger.info('Seeding agent definitions...');
