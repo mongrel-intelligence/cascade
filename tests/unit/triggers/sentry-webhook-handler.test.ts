@@ -7,16 +7,6 @@ vi.mock('../../../src/config/provider.js', () => ({
 	loadProjectConfigById: vi.fn(),
 }));
 
-vi.mock('../../../src/pm/context.js', () => ({
-	withPMCredentials: vi.fn().mockImplementation((_id, _type, _getter, fn) => fn()),
-	withPMProvider: vi.fn().mockImplementation((_provider, fn) => fn()),
-}));
-
-vi.mock('../../../src/pm/index.js', () => ({
-	createPMProvider: vi.fn().mockReturnValue({}),
-	pmRegistry: { getOrNull: vi.fn().mockReturnValue(null) },
-}));
-
 vi.mock('../../../src/utils/lifecycle.js', () => ({
 	startWatchdog: vi.fn(),
 }));
@@ -25,10 +15,25 @@ vi.mock('../../../src/triggers/shared/agent-execution.js', () => ({
 	runAgentExecutionPipeline: vi.fn().mockResolvedValue(undefined),
 }));
 
+// Mock shared utilities used by processSentryWebhook
+vi.mock('../../../src/triggers/shared/concurrency.js', () => ({
+	withAgentTypeConcurrency: vi.fn().mockImplementation((_projectId, _agentType, fn) => fn()),
+}));
+
+vi.mock('../../../src/triggers/shared/credential-scope.js', () => ({
+	withPMScope: vi.fn().mockImplementation((_project, fn) => fn()),
+}));
+
+vi.mock('../../../src/triggers/shared/trigger-resolution.js', () => ({
+	resolveTriggerResult: vi.fn(),
+}));
+
 import { loadProjectConfigById } from '../../../src/config/provider.js';
-import { withPMCredentials, withPMProvider } from '../../../src/pm/context.js';
 import { processSentryWebhook } from '../../../src/triggers/sentry/webhook-handler.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
+import { withAgentTypeConcurrency } from '../../../src/triggers/shared/concurrency.js';
+import { withPMScope } from '../../../src/triggers/shared/credential-scope.js';
+import { resolveTriggerResult } from '../../../src/triggers/shared/trigger-resolution.js';
 import { createMockProject } from '../../helpers/factories.js';
 
 const mockProject = createMockProject({ id: 'proj-sentry' });
@@ -45,22 +50,29 @@ describe('processSentryWebhook', () => {
 		});
 		vi.mocked(runAgentExecutionPipeline).mockResolvedValue(undefined);
 		// Re-apply pass-through implementations after resetAllMocks clears them
-		vi.mocked(withPMCredentials).mockImplementation((_id, _type, _getter, fn) => fn());
-		vi.mocked(withPMProvider).mockImplementation((_provider, fn) => fn());
+		vi.mocked(withAgentTypeConcurrency).mockImplementation((_projectId, _agentType, fn) =>
+			fn().then(() => true),
+		);
+		vi.mocked(withPMScope).mockImplementation((_project, fn) => fn());
+		// resolveTriggerResult defaults to null (no trigger matched)
+		vi.mocked(resolveTriggerResult).mockResolvedValue(null);
 	});
 
-	it('loads project config by projectId and dispatches with sentry source when no triggerResult', async () => {
+	it('loads project config by projectId and calls resolveTriggerResult with sentry source', async () => {
 		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, undefined);
 
 		expect(loadProjectConfigById).toHaveBeenCalledWith('proj-sentry');
-		expect(mockRegistry.dispatch).toHaveBeenCalledWith(
+		expect(resolveTriggerResult).toHaveBeenCalledWith(
+			mockRegistry,
 			expect.objectContaining({
 				source: 'sentry',
 				payload,
 				project: mockProject,
 			}),
+			undefined,
+			'processSentryWebhook',
 		);
 	});
 
@@ -69,13 +81,14 @@ describe('processSentryWebhook', () => {
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
 
-		const dispatchCall = mockRegistry.dispatch.mock.calls[0][0];
-		expect(dispatchCall.source).toBe('sentry');
-		expect(dispatchCall.payload).toBe(payload);
-		expect(dispatchCall.project).toBe(mockProject);
+		const resolveCall = vi.mocked(resolveTriggerResult).mock.calls[0];
+		const ctx = resolveCall[1];
+		expect(ctx.source).toBe('sentry');
+		expect(ctx.payload).toBe(payload);
+		expect(ctx.project).toBe(mockProject);
 	});
 
-	it('logs a warning and returns without dispatching when project is not found', async () => {
+	it('logs a warning and returns without calling resolveTriggerResult when project is not found', async () => {
 		vi.mocked(loadProjectConfigById).mockResolvedValue(undefined);
 
 		const payload = { resource: 'event_alert' };
@@ -85,26 +98,33 @@ describe('processSentryWebhook', () => {
 			expect.stringContaining('project not found'),
 			expect.objectContaining({ projectId: 'unknown-proj' }),
 		);
-		expect(mockRegistry.dispatch).not.toHaveBeenCalled();
+		expect(resolveTriggerResult).not.toHaveBeenCalled();
 	});
 
-	it('does NOT call registry.dispatch when triggerResult is provided', async () => {
+	it('passes triggerResult to resolveTriggerResult when provided', async () => {
 		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
 
-		expect(mockRegistry.dispatch).not.toHaveBeenCalled();
+		expect(resolveTriggerResult).toHaveBeenCalledWith(
+			mockRegistry,
+			expect.any(Object),
+			triggerResult,
+			'processSentryWebhook',
+		);
 	});
 
-	it('logs info message when triggerResult is provided', async () => {
+	it('logs info message when triggerResult is provided (via resolveTriggerResult)', async () => {
 		const payload = { resource: 'event_alert' };
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
 
+		// processSentryWebhook logs "running agent" when it proceeds after resolution
 		expect(mockLogger.info).toHaveBeenCalledWith(
-			expect.stringContaining('pre-computed trigger result'),
+			expect.stringContaining('running agent'),
 			expect.objectContaining({ projectId: 'proj-sentry', agentType: 'alerting' }),
 		);
 	});
@@ -112,6 +132,7 @@ describe('processSentryWebhook', () => {
 	it('runs the agent execution pipeline when triggerResult has an agentType', async () => {
 		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
 
@@ -123,11 +144,37 @@ describe('processSentryWebhook', () => {
 		);
 	});
 
-	it('does not run the agent when registry dispatch returns null', async () => {
+	it('does not run the agent when resolveTriggerResult returns null', async () => {
 		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
-		mockRegistry.dispatch.mockResolvedValue(null);
+		vi.mocked(resolveTriggerResult).mockResolvedValue(null);
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
+
+		expect(runAgentExecutionPipeline).not.toHaveBeenCalled();
+	});
+
+	it('applies agent-type concurrency when running the agent', async () => {
+		const payload = { resource: 'event_alert' };
+		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
+
+		expect(withAgentTypeConcurrency).toHaveBeenCalledWith(
+			'proj-sentry',
+			'alerting',
+			expect.any(Function),
+			'processSentryWebhook',
+		);
+	});
+
+	it('skips execution when concurrency is blocked', async () => {
+		const payload = { resource: 'event_alert' };
+		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+		vi.mocked(withAgentTypeConcurrency).mockResolvedValue(false);
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
 
 		expect(runAgentExecutionPipeline).not.toHaveBeenCalled();
 	});

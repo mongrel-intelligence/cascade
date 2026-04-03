@@ -5,15 +5,21 @@
  * falling back to dispatching through the trigger registry if not.
  * After resolving the trigger result, runs the matched agent via the
  * shared execution pipeline.
+ *
+ * Shared utilities used:
+ * - Trigger resolution → ../shared/trigger-resolution.ts
+ * - Agent-type concurrency → ../shared/concurrency.ts
+ * - PM credential scope → ../shared/credential-scope.ts
  */
 
-import { withPMCredentials, withPMProvider } from '../../pm/context.js';
-import { createPMProvider, pmRegistry } from '../../pm/index.js';
 import type { TriggerResult } from '../../types/index.js';
 import { startWatchdog } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
 import type { TriggerRegistry } from '../registry.js';
 import { runAgentExecutionPipeline } from '../shared/agent-execution.js';
+import { withAgentTypeConcurrency } from '../shared/concurrency.js';
+import { withPMScope } from '../shared/credential-scope.js';
+import { resolveTriggerResult } from '../shared/trigger-resolution.js';
 
 export async function processSentryWebhook(
 	payload: unknown,
@@ -29,22 +35,14 @@ export async function processSentryWebhook(
 		return;
 	}
 
+	const ctx = {
+		project: pc.project,
+		source: 'sentry' as const,
+		payload,
+	};
+
 	// Resolve trigger result — use pre-computed from router or dispatch via registry
-	let result: TriggerResult | null;
-	if (triggerResult) {
-		logger.info('processSentryWebhook: using pre-computed trigger result', {
-			projectId,
-			agentType: triggerResult.agentType,
-		});
-		result = triggerResult;
-	} else {
-		const ctx = {
-			project: pc.project,
-			source: 'sentry' as const,
-			payload,
-		};
-		result = await registry.dispatch(ctx);
-	}
+	const result = await resolveTriggerResult(registry, ctx, triggerResult, 'processSentryWebhook');
 
 	if (!result) {
 		logger.info('processSentryWebhook: no trigger matched', { projectId });
@@ -65,18 +63,17 @@ export async function processSentryWebhook(
 
 	startWatchdog(pc.project.watchdogTimeoutMs);
 
-	const pmProvider = createPMProvider(pc.project);
-	await withPMCredentials(
+	await withAgentTypeConcurrency(
 		pc.project.id,
-		pc.project.pm?.type,
-		(t) => pmRegistry.getOrNull(t),
+		result.agentType,
 		() =>
-			withPMProvider(pmProvider, () =>
+			withPMScope(pc.project, () =>
 				runAgentExecutionPipeline(result, pc.project, pc.config, {
 					logLabel: 'Sentry agent',
 					skipPrepareForAgent: true,
 					skipHandleFailure: true,
 				}),
 			),
+		'processSentryWebhook',
 	);
 }

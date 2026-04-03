@@ -6,26 +6,23 @@
  * - CI check polling → ./check-polling.ts
  * - Credential scoping + agent execution → ../shared/webhook-execution.ts
  * - GitHub-specific AgentExecutionConfig → ./integration.ts
+ * - Agent-type concurrency → ../shared/concurrency.ts
+ * - PM credential scope → ../shared/credential-scope.ts
+ * - PM ack posting → ../shared/pm-ack.ts
  */
 
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { githubClient, withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
-import { withPMCredentials, withPMProvider } from '../../pm/context.js';
-import { createPMProvider, pmRegistry } from '../../pm/index.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
-import { postJiraAck, postTrelloAck } from '../../router/acknowledgments.js';
-import {
-	checkAgentTypeConcurrency,
-	clearAgentTypeEnqueued,
-	markAgentTypeEnqueued,
-	markRecentlyDispatched,
-} from '../../router/agent-type-lock.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import { logger, startWatchdog } from '../../utils/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
+import { withAgentTypeConcurrency } from '../shared/concurrency.js';
+import { withPMScope } from '../shared/credential-scope.js';
+import { postPMAckComment } from '../shared/pm-ack.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
 import type { TriggerResult } from '../types.js';
 import { postAcknowledgmentComment, updateInitialCommentWithError } from './ack-comments.js';
@@ -53,10 +50,6 @@ function requireProjectId(project: ProjectConfig): string {
 	return project.id;
 }
 
-function isValidPmType(pmType: string | undefined): pmType is 'trello' | 'jira' {
-	return pmType === 'trello' || pmType === 'jira';
-}
-
 async function maybePostPmAckComment(
 	result: TriggerResult,
 	payload: unknown,
@@ -73,18 +66,13 @@ async function maybePostPmAckComment(
 	);
 	const pmType = project.pm?.type;
 
-	if (!isValidPmType(pmType)) {
-		logger.warn('Unknown PM type for PM-focused agent ack (worker-side)', {
-			agentType: result.agentType,
-			pmType,
-		});
-		return;
-	}
-
-	const commentId =
-		pmType === 'trello'
-			? await postTrelloAck(projectId, workItemId, message)
-			: await postJiraAck(projectId, workItemId, message);
+	const commentId = await postPMAckComment(
+		projectId,
+		workItemId,
+		pmType,
+		message,
+		result.agentType ?? undefined,
+	);
 
 	if (commentId) {
 		result.agentInput.ackCommentId = commentId;
@@ -102,14 +90,7 @@ async function dispatchTrigger(
 	const personaIdentities = await resolvePersonaIdentities(projectId);
 	const githubToken = await getPersonaToken(projectId, 'implementation');
 	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
-	const pmProvider = createPMProvider(project);
-	return withPMCredentials(
-		projectId,
-		project.pm?.type,
-		(t) => pmRegistry.getOrNull(t),
-		() =>
-			withPMProvider(pmProvider, () => withGitHubToken(githubToken, () => registry.dispatch(ctx))),
-	);
+	return withPMScope(project, () => withGitHubToken(githubToken, () => registry.dispatch(ctx)));
 }
 
 /** Post ack comment on the PR using the agent-specific persona token. */
@@ -167,43 +148,35 @@ async function runGitHubAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	// Agent-type concurrency limit
-	let agentTypeMaxConcurrency: number | null = null;
-	if (result.agentType) {
-		const concurrencyCheck = await checkAgentTypeConcurrency(project.id, result.agentType);
-		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
-		if (concurrencyCheck.blocked) return;
-		if (agentTypeMaxConcurrency !== null) {
-			markRecentlyDispatched(project.id, result.agentType);
-			markAgentTypeEnqueued(project.id, result.agentType);
-		}
-	}
-
 	startWatchdog(project.watchdogTimeoutMs);
 
 	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should use
 	// PM-appropriate lifecycle config: no GitHub PR comment callbacks, allow PM lifecycle ops.
 	const pmFocused = result.agentType ? await isPMFocusedAgent(result.agentType) : false;
 
-	try {
+	const agentType = result.agentType;
+
+	const execute = async () => {
 		// Establish PM credential + provider scope for agents with workItemId
 		// (needed for PM lifecycle operations: labels, status moves, PR links)
-		const pmProvider = createPMProvider(project);
-		await withPMCredentials(
-			project.id,
-			project.pm?.type,
-			(t) => pmRegistry.getOrNull(t),
-			() =>
-				withPMProvider(pmProvider, () =>
-					runAgentWithCredentials(
-						integration,
-						result,
-						project,
-						config,
-						resolveGitHubExecutionConfig(pmFocused),
-					),
-				),
+		await withPMScope(project, () =>
+			runAgentWithCredentials(
+				integration,
+				result,
+				project,
+				config,
+				resolveGitHubExecutionConfig(pmFocused),
+			),
 		);
+	};
+
+	// Agent-type concurrency limit wraps the entire execution
+	try {
+		if (agentType) {
+			await withAgentTypeConcurrency(project.id, agentType, execute, 'GitHub agent');
+		} else {
+			await execute();
+		}
 	} catch (err) {
 		logger.error('Failed to process GitHub webhook', { error: String(err) });
 		if (!pmFocused) {
@@ -215,10 +188,6 @@ async function runGitHubAgent(
 			await withGitHubToken(prCommentToken, () =>
 				updateInitialCommentWithError(result, { success: false, error: String(err) }),
 			);
-		}
-	} finally {
-		if (result.agentType && agentTypeMaxConcurrency !== null) {
-			clearAgentTypeEnqueued(project.id, result.agentType);
 		}
 	}
 }
