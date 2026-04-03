@@ -162,7 +162,7 @@ interface CapabilityDefinition {
 ```mermaid
 flowchart TD
     A["Agent definition<br/>(capabilities.required + optional)"] --> B[Create integration checker]
-    B --> C["Check hasPmIntegration(),<br/>hasScmIntegration(),<br/>hasAlertingIntegration()"]
+    B --> C["integrationRegistry.getByCategory(cat)<br/>.hasIntegration(projectId)<br/>for pm, scm, alerting"]
     C --> D[resolveEffectiveCapabilities]
     D --> E["Built-in caps: always included"]
     D --> F["Integration caps: only if provider configured"]

@@ -12,13 +12,13 @@
  */
 
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { hasScmIntegration, hasScmPersonaToken } from '../../src/github/integration.js';
 // Bootstrap the integration registry so validateIntegrations() can find registered modules.
 // The new registry-driven implementation requires integrations to be registered before
 // calling getByCategory() — without this import the registry is empty and all validations
 // report "none is registered" instead of checking actual project credentials.
 import '../../src/integrations/bootstrap.js';
-import { hasPmIntegration } from '../../src/pm/integration.js';
+import { integrationRegistry } from '../../src/integrations/registry.js';
+import type { SCMIntegration } from '../../src/integrations/scm.js';
 import {
 	formatValidationErrors,
 	getIntegrationRequirements,
@@ -49,6 +49,32 @@ vi.mock('../../src/utils/logging.js', () => ({
 beforeAll(async () => {
 	await truncateAll();
 });
+
+// Helper functions using the integration registry
+async function hasPmIntegration(projectId: string): Promise<boolean> {
+	const integrations = integrationRegistry.getByCategory('pm');
+	const statuses = await Promise.all(integrations.map((i) => i.hasIntegration(projectId)));
+	return statuses.some(Boolean);
+}
+
+async function hasScmIntegration(projectId: string): Promise<boolean> {
+	const integrations = integrationRegistry.getByCategory('scm');
+	const statuses = await Promise.all(integrations.map((i) => i.hasIntegration(projectId)));
+	return statuses.some(Boolean);
+}
+
+async function hasScmPersonaToken(
+	projectId: string,
+	persona: 'implementer' | 'reviewer',
+): Promise<boolean> {
+	const integrations = integrationRegistry.getByCategory('scm');
+	const statuses = await Promise.all(
+		integrations
+			.filter((i): i is SCMIntegration => 'hasPersonaToken' in i)
+			.map((i) => i.hasPersonaToken(projectId, persona)),
+	);
+	return statuses.some(Boolean);
+}
 
 describe('Integration Validation (integration)', () => {
 	beforeEach(async () => {

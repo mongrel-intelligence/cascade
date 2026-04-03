@@ -4,13 +4,10 @@
  * Encapsulates GitHub SCM credential resolution and validation
  * into a unified integration class following the IntegrationModule pattern.
  *
- * Consolidates:
- * - `hasScmIntegration()` logic from src/github/integration.ts
- * - `hasScmPersonaToken()` logic from src/github/integration.ts
- * - `withGitHubToken()` usage from src/github/client.ts
- *
- * Backward compatibility: the standalone functions in src/github/integration.ts
- * remain exported and continue to work identically.
+ * Provides:
+ * - `hasIntegration()` — checks if at least one token (implementer or reviewer) is configured
+ * - `hasPersonaToken()` — checks if a specific persona token is configured
+ * - `withCredentials()` — runs a function within the implementer token credential scope
  */
 
 import { getIntegrationCredential, getIntegrationCredentialOrNull } from '../config/provider.js';

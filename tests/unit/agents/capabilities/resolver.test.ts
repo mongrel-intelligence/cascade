@@ -6,6 +6,14 @@ function mockClass(name: string) {
 	return vi.fn().mockImplementation(() => new cls());
 }
 
+// Mock integrationRegistry
+const mockGetByCategory = vi.fn();
+vi.mock('../../../../src/integrations/registry.js', () => ({
+	integrationRegistry: {
+		getByCategory: (...args: unknown[]) => mockGetByCategory(...args),
+	},
+}));
+
 // Mock all gadget imports
 vi.mock('../../../../src/gadgets/AstGrep.js', () => ({ AstGrep: mockClass('AstGrep') }));
 vi.mock('../../../../src/gadgets/FileMultiEdit.js', () => ({
@@ -57,6 +65,7 @@ vi.mock('../../../../src/gadgets/todo/index.js', () => ({
 
 import type { Capability } from '../../../../src/agents/capabilities/index.js';
 import {
+	createIntegrationChecker,
 	deriveIntegrations,
 	deriveRequiredIntegrations,
 	filterToolManifests,
@@ -289,5 +298,106 @@ describe('filterToolManifests', () => {
 			expect.stringContaining('Expected tools not found in manifests'),
 		);
 		warnSpy.mockRestore();
+	});
+});
+
+describe('createIntegrationChecker', () => {
+	it('returns true for pm category when a pm integration is configured', async () => {
+		const mockPmIntegration = { hasIntegration: vi.fn().mockResolvedValue(true) };
+		mockGetByCategory.mockImplementation((cat: string) => {
+			if (cat === 'pm') return [mockPmIntegration];
+			return [];
+		});
+
+		const checker = await createIntegrationChecker('proj-1');
+
+		expect(checker('pm')).toBe(true);
+		expect(checker('scm')).toBe(false);
+		expect(checker('alerting')).toBe(false);
+	});
+
+	it('returns true for scm category when a scm integration is configured', async () => {
+		const mockScmIntegration = { hasIntegration: vi.fn().mockResolvedValue(true) };
+		mockGetByCategory.mockImplementation((cat: string) => {
+			if (cat === 'scm') return [mockScmIntegration];
+			return [];
+		});
+
+		const checker = await createIntegrationChecker('proj-1');
+
+		expect(checker('scm')).toBe(true);
+		expect(checker('pm')).toBe(false);
+		expect(checker('alerting')).toBe(false);
+	});
+
+	it('returns true for alerting category when an alerting integration is configured', async () => {
+		const mockAlertingIntegration = { hasIntegration: vi.fn().mockResolvedValue(true) };
+		mockGetByCategory.mockImplementation((cat: string) => {
+			if (cat === 'alerting') return [mockAlertingIntegration];
+			return [];
+		});
+
+		const checker = await createIntegrationChecker('proj-1');
+
+		expect(checker('alerting')).toBe(true);
+		expect(checker('pm')).toBe(false);
+		expect(checker('scm')).toBe(false);
+	});
+
+	it('returns false for all categories when no integrations are configured', async () => {
+		mockGetByCategory.mockReturnValue([]);
+
+		const checker = await createIntegrationChecker('proj-1');
+
+		expect(checker('pm')).toBe(false);
+		expect(checker('scm')).toBe(false);
+		expect(checker('alerting')).toBe(false);
+	});
+
+	it('returns false when integration hasIntegration() returns false', async () => {
+		const mockIntegration = { hasIntegration: vi.fn().mockResolvedValue(false) };
+		mockGetByCategory.mockImplementation((cat: string) => {
+			if (cat === 'pm') return [mockIntegration];
+			return [];
+		});
+
+		const checker = await createIntegrationChecker('proj-1');
+
+		expect(checker('pm')).toBe(false);
+	});
+
+	it('returns true if ANY integration in a category is configured (OR logic)', async () => {
+		const mockInt1 = { hasIntegration: vi.fn().mockResolvedValue(false) };
+		const mockInt2 = { hasIntegration: vi.fn().mockResolvedValue(true) };
+		mockGetByCategory.mockImplementation((cat: string) => {
+			if (cat === 'pm') return [mockInt1, mockInt2];
+			return [];
+		});
+
+		const checker = await createIntegrationChecker('proj-1');
+
+		expect(checker('pm')).toBe(true);
+	});
+
+	it('calls hasIntegration with the correct projectId', async () => {
+		const mockIntegration = { hasIntegration: vi.fn().mockResolvedValue(true) };
+		mockGetByCategory.mockImplementation((cat: string) => {
+			if (cat === 'pm') return [mockIntegration];
+			return [];
+		});
+
+		await createIntegrationChecker('my-project-id');
+
+		expect(mockIntegration.hasIntegration).toHaveBeenCalledWith('my-project-id');
+	});
+
+	it('calls getByCategory for pm, scm, and alerting', async () => {
+		mockGetByCategory.mockReturnValue([]);
+
+		await createIntegrationChecker('proj-1');
+
+		expect(mockGetByCategory).toHaveBeenCalledWith('pm');
+		expect(mockGetByCategory).toHaveBeenCalledWith('scm');
+		expect(mockGetByCategory).toHaveBeenCalledWith('alerting');
 	});
 });

@@ -37,12 +37,3 @@ export async function getSentryIntegrationConfig(
 		organizationSlug: config.organizationSlug,
 	};
 }
-
-/**
- * Returns true if a Sentry alerting integration is configured for the project.
- * Used by createIntegrationChecker() in the capability resolver.
- */
-export async function hasAlertingIntegration(projectId: string): Promise<boolean> {
-	const config = await getSentryIntegrationConfig(projectId);
-	return config !== null;
-}

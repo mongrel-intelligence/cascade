@@ -11,11 +11,9 @@ vi.mock('../../../src/config/provider.js', () => ({
 }));
 
 const mockGetSentryIntegrationConfig = vi.fn();
-const mockHasAlertingIntegration = vi.fn();
 
 vi.mock('../../../src/sentry/integration.js', () => ({
 	getSentryIntegrationConfig: (...args: unknown[]) => mockGetSentryIntegrationConfig(...args),
-	hasAlertingIntegration: (...args: unknown[]) => mockHasAlertingIntegration(...args),
 }));
 
 import { SentryAlertingIntegration } from '../../../src/sentry/alerting-integration.js';
@@ -49,30 +47,30 @@ describe('SentryAlertingIntegration', () => {
 	// hasIntegration
 	// =========================================================================
 	describe('hasIntegration', () => {
-		it('returns true when sentry integration is configured', async () => {
-			mockHasAlertingIntegration.mockResolvedValue(true);
+		it('returns true when sentry integration config is non-null', async () => {
+			mockGetSentryIntegrationConfig.mockResolvedValue({ organizationSlug: 'my-org' });
 
 			const result = await integration.hasIntegration('proj-1');
 
 			expect(result).toBe(true);
-			expect(mockHasAlertingIntegration).toHaveBeenCalledWith('proj-1');
+			expect(mockGetSentryIntegrationConfig).toHaveBeenCalledWith('proj-1');
 		});
 
-		it('returns false when sentry integration is not configured', async () => {
-			mockHasAlertingIntegration.mockResolvedValue(false);
+		it('returns false when sentry integration config is null', async () => {
+			mockGetSentryIntegrationConfig.mockResolvedValue(null);
 
 			const result = await integration.hasIntegration('proj-1');
 
 			expect(result).toBe(false);
-			expect(mockHasAlertingIntegration).toHaveBeenCalledWith('proj-1');
+			expect(mockGetSentryIntegrationConfig).toHaveBeenCalledWith('proj-1');
 		});
 
-		it('delegates to hasAlertingIntegration() with the correct projectId', async () => {
-			mockHasAlertingIntegration.mockResolvedValue(true);
+		it('calls getSentryIntegrationConfig with the correct projectId', async () => {
+			mockGetSentryIntegrationConfig.mockResolvedValue(null);
 
 			await integration.hasIntegration('my-project-id');
 
-			expect(mockHasAlertingIntegration).toHaveBeenCalledWith('my-project-id');
+			expect(mockGetSentryIntegrationConfig).toHaveBeenCalledWith('my-project-id');
 		});
 	});
 

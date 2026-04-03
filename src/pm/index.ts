@@ -1,7 +1,6 @@
 export { getPMProvider, getPMProviderOrNull, withPMProvider } from './context.js';
 // PMIntegration interface + registry
 export type { PMIntegration, PMWebhookEvent } from './integration.js';
-export { hasPmIntegration } from './integration.js';
 export { JiraPMProvider } from './jira/adapter.js';
 export type { ProjectPMConfig } from './lifecycle.js';
 export { hasAutoLabel, PMLifecycleManager, resolveProjectPMConfig } from './lifecycle.js';
