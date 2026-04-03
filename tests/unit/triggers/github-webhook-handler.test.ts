@@ -59,23 +59,21 @@ vi.mock('../../../src/router/ackMessageGenerator.js', () => ({
 	generateAckMessage: vi.fn().mockResolvedValue('Starting...'),
 }));
 
-vi.mock('../../../src/router/acknowledgments.js', () => ({
-	postTrelloAck: vi.fn().mockResolvedValue('comment-id'),
-	postJiraAck: vi.fn().mockResolvedValue('comment-id'),
-}));
-
 vi.mock('../../../src/utils/safeOperation.js', () => ({
 	safeOperation: vi.fn().mockImplementation((fn) => fn()),
 }));
 
-vi.mock('../../../src/pm/context.js', () => ({
-	withPMCredentials: vi.fn().mockImplementation((_id, _type, _get, fn) => fn()),
-	withPMProvider: vi.fn().mockImplementation((_provider, fn) => fn()),
+// Mock shared utilities used by processGitHubWebhook
+vi.mock('../../../src/triggers/shared/concurrency.js', () => ({
+	withAgentTypeConcurrency: vi.fn().mockImplementation((_id, _type, fn) => fn()),
 }));
 
-vi.mock('../../../src/pm/index.js', () => ({
-	createPMProvider: vi.fn().mockReturnValue({}),
-	pmRegistry: { getOrNull: vi.fn().mockReturnValue(null) },
+vi.mock('../../../src/triggers/shared/credential-scope.js', () => ({
+	withPMScope: vi.fn().mockImplementation((_project, fn) => fn()),
+}));
+
+vi.mock('../../../src/triggers/shared/pm-ack.js', () => ({
+	postPMAckComment: vi.fn().mockResolvedValue('pm-comment-id'),
 }));
 
 vi.mock('../../../src/triggers/shared/webhook-execution.js', () => ({
@@ -91,13 +89,6 @@ vi.mock('../../../src/triggers/github/check-polling.js', () => ({
 	pollWaitForChecks: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock('../../../src/router/agent-type-lock.js', () => ({
-	checkAgentTypeConcurrency: vi.fn().mockResolvedValue({ maxConcurrency: null, blocked: false }),
-	markAgentTypeEnqueued: vi.fn(),
-	clearAgentTypeEnqueued: vi.fn(),
-	markRecentlyDispatched: vi.fn(),
-}));
-
 vi.mock('../../../src/utils/index.js', () => ({
 	logger: {
 		debug: vi.fn(),
@@ -110,14 +101,14 @@ vi.mock('../../../src/utils/index.js', () => ({
 
 import { isPMFocusedAgent } from '../../../src/agents/definitions/loader.js';
 import { githubClient } from '../../../src/github/client.js';
-import { postJiraAck, postTrelloAck } from '../../../src/router/acknowledgments.js';
-import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import {
 	postAcknowledgmentComment,
 	updateInitialCommentWithError,
 } from '../../../src/triggers/github/ack-comments.js';
 import { pollWaitForChecks } from '../../../src/triggers/github/check-polling.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
+import { withAgentTypeConcurrency } from '../../../src/triggers/shared/concurrency.js';
+import { postPMAckComment } from '../../../src/triggers/shared/pm-ack.js';
 import { runAgentWithCredentials } from '../../../src/triggers/shared/webhook-execution.js';
 import { startWatchdog } from '../../../src/utils/index.js';
 
@@ -144,6 +135,7 @@ const validPayload = {
 
 beforeEach(() => {
 	mockRunAgentWithCredentials.mockResolvedValue(undefined);
+	vi.mocked(withAgentTypeConcurrency).mockImplementation((_id, _type, fn) => fn());
 });
 
 describe('processGitHubWebhook', () => {
@@ -235,10 +227,7 @@ describe('processGitHubWebhook', () => {
 	});
 
 	it('skips agent execution when agent-type concurrency is blocked', async () => {
-		vi.mocked(checkAgentTypeConcurrency).mockResolvedValueOnce({
-			maxConcurrency: 1,
-			blocked: true,
-		});
+		vi.mocked(withAgentTypeConcurrency).mockResolvedValueOnce(false);
 		const registry = createMockRegistry();
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
@@ -322,9 +311,9 @@ describe('processGitHubWebhook', () => {
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 
-	it('posts PM ack to Trello when PM-focused agent triggered from GitHub (trello PM)', async () => {
+	it('posts PM ack to PM tool when PM-focused agent triggered from GitHub', async () => {
 		vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
-		vi.mocked(postTrelloAck).mockResolvedValue('trello-ack-id');
+		vi.mocked(postPMAckComment).mockResolvedValue('pm-ack-id');
 
 		// Override lookupProject to return a project with trello PM
 		const { GitHubWebhookIntegration } = await import(
@@ -354,7 +343,7 @@ describe('processGitHubWebhook', () => {
 
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 
-		// PM ack should be posted to Trello (or attempt was made); GitHub PR comment not used
+		// PM ack should be posted to PM tool; GitHub PR comment not used
 		expect(postAcknowledgmentComment).not.toHaveBeenCalled();
 	});
 
@@ -371,8 +360,7 @@ describe('processGitHubWebhook', () => {
 
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 
-		expect(postTrelloAck).not.toHaveBeenCalled();
-		expect(postJiraAck).not.toHaveBeenCalled();
+		expect(postPMAckComment).not.toHaveBeenCalled();
 		expect(postAcknowledgmentComment).not.toHaveBeenCalled();
 	});
 
