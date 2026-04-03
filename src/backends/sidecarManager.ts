@@ -23,7 +23,7 @@ import type { AgentEngineResult } from './types.js';
  */
 export function createCompletionArtifacts(
 	profile: Awaited<ReturnType<typeof getAgentProfile>>,
-	agentType: string,
+	_agentType: string,
 	needsNativeToolRuntime: boolean,
 	input: AgentInput,
 	projectSecrets: Record<string, string>,
@@ -33,10 +33,9 @@ export function createCompletionArtifacts(
 	reviewSidecarPath: string | undefined;
 	pmWriteSidecarPath: string | undefined;
 } {
-	const reviewSidecarPath =
-		agentType === 'review'
-			? join(tmpdir(), `cascade-review-sidecar-${process.pid}-${Date.now()}.json`)
-			: undefined;
+	const reviewSidecarPath = profile.finishHooks.requiresReview
+		? join(tmpdir(), `cascade-review-sidecar-${process.pid}-${Date.now()}.json`)
+		: undefined;
 	if (reviewSidecarPath) {
 		projectSecrets[REVIEW_SIDECAR_ENV_VAR] = reviewSidecarPath;
 	}

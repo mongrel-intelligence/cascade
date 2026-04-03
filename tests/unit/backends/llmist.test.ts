@@ -22,6 +22,7 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 	getAgentProfile: vi.fn(() => ({
 		getLlmistGadgets: vi.fn(() => []),
+		finishHooks: {},
 	})),
 }));
 
@@ -363,6 +364,7 @@ describe('LlmistEngine.execute', () => {
 		const mockGetLlmistGadgets = vi.fn().mockReturnValue([]);
 		mockGetAgentProfile.mockReturnValue({
 			getLlmistGadgets: mockGetLlmistGadgets,
+			finishHooks: {},
 		} as ReturnType<typeof getAgentProfile>);
 
 		const engine = new LlmistEngine();
