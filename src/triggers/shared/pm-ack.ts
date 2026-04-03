@@ -3,10 +3,13 @@
  *
  * Centralises the logic for posting acknowledgment comments to PM tools
  * (Trello/JIRA) for PM-focused agents triggered from GitHub or other
- * non-PM sources. This is shared between:
+ * non-PM sources.
  *
- * - Router-side: `router/adapters/github.ts` (postPMAck)
+ * Used by:
  * - Worker-side: `triggers/github/webhook-handler.ts` (maybePostPmAckComment)
+ *
+ * Note: `router/adapters/github.ts` has its own local `postPMAck` function
+ * and does not use this shared utility.
  */
 
 import { postJiraAck, postTrelloAck } from '../../router/acknowledgments.js';

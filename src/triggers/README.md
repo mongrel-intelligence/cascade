@@ -74,9 +74,9 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 | File | Purpose | Used By |
 |------|---------|---------|
 | `concurrency.ts` | `withAgentTypeConcurrency()` — wraps check→mark→execute→clear | GitHub, Sentry |
-| `trigger-resolution.ts` | `resolveTriggerResult()` — pre-resolved or dispatch | GitHub, Sentry (PM has inline logic) |
+| `trigger-resolution.ts` | `resolveTriggerResult()` — pre-resolved or dispatch | Sentry (GitHub and PM use inline logic) |
 | `credential-scope.ts` | `withPMScope()` — `withPMCredentials` + `withPMProvider` | GitHub, Sentry |
-| `pm-ack.ts` | `postPMAckComment()` — posts ack to Trello/JIRA | Router GitHub adapter, GitHub worker handler |
+| `pm-ack.ts` | `postPMAckComment()` — posts ack to Trello/JIRA | GitHub worker handler |
 | `agent-execution.ts` | `runAgentExecutionPipeline()` — full agent lifecycle | All handlers (via `webhook-execution.ts`) |
 | `webhook-execution.ts` | `runAgentWithCredentials()` — LLM keys + credentials + pipeline | GitHub, PM |
 
@@ -108,7 +108,7 @@ processPMWebhook(integration, payload, registry)
 processGitHubWebhook(payload, eventType, registry, ackCommentId, triggerResult)
   └─ integration.parseWebhookPayload(payload)       → event
   └─ integration.lookupProject(event.repo)          → project
-  └─ resolveTriggerResult(registry, ctx, preResolved)
+  └─ [inline] if triggerResult → use it, else dispatchTrigger(registry, payload, project)
   └─ [optional] pollWaitForChecks(result, repo)     → checksOk
   └─ maybePostAckComment(result, ...)               → PR or PM ack
   └─ runGitHubAgent(result, project, config)
