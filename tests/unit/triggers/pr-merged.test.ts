@@ -35,10 +35,17 @@ vi.mock('../../../src/pm/context.js', () => ({
 	getPMProvider: () => mockProvider,
 }));
 
-// Mocks required for PM integration registration (pm/index.js side-effect)
+// Mocks required for PM integration registration (integrations/bootstrap.js side-effect)
 vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue(null),
+}));
 vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
 vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
+	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
+}));
 vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
 vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
@@ -51,8 +58,8 @@ vi.mock('../../../src/router/snapshot-manager.js', () => ({
 	invalidateSnapshot: (...args: unknown[]) => mockInvalidateSnapshot(...args),
 }));
 
-// Register PM integrations in the registry
-import '../../../src/pm/index.js';
+// Register PM integrations in the registry via the canonical bootstrap path
+import '../../../src/integrations/bootstrap.js';
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { githubClient } from '../../../src/github/client.js';

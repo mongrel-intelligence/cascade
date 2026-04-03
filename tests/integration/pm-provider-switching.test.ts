@@ -6,6 +6,9 @@
  */
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+// Bootstrap the integration registry so pmRegistry and createPMProvider work correctly.
+// After removing side-effect registration from src/pm/index.ts, this is required.
+import '../../src/integrations/bootstrap.js';
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
