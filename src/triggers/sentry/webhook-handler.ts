@@ -61,19 +61,22 @@ export async function processSentryWebhook(
 		agentType: result.agentType,
 	});
 
-	startWatchdog(pc.project.watchdogTimeoutMs);
-
 	await withAgentTypeConcurrency(
 		pc.project.id,
 		result.agentType,
-		() =>
-			withPMScope(pc.project, () =>
+		() => {
+			// Only start the watchdog when the agent actually runs (after concurrency check passes).
+			// Starting it before the check risks a spurious process.exit(1) if the container
+			// is still alive after a concurrency-blocked job finishes.
+			startWatchdog(pc.project.watchdogTimeoutMs);
+			return withPMScope(pc.project, () =>
 				runAgentExecutionPipeline(result, pc.project, pc.config, {
 					logLabel: 'Sentry agent',
 					skipPrepareForAgent: true,
 					skipHandleFailure: true,
 				}),
-			),
+			);
+		},
 		'processSentryWebhook',
 	);
 }

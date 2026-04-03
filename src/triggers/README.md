@@ -34,7 +34,7 @@ Webhook processing is split into two distinct tiers:
 | PM credential scope | ✅ `integration.withCredentials` | ✅ `withPMCredentials` | ✅ `withPMCredentials` |
 | PM lifecycle ops | ✅ prepareForAgent / handleFailure | ✅ For PM-focused agents | ❌ Skipped |
 | Persona token mgmt | ❌ N/A | ✅ Implementer / reviewer | ❌ N/A |
-| Agent concurrency | ✅ `checkAgentTypeConcurrency` | ✅ `checkAgentTypeConcurrency` | ✅ `withAgentTypeConcurrency` |
+| Agent concurrency | ✅ `checkAgentTypeConcurrency` | ✅ `withAgentTypeConcurrency` | ✅ `withAgentTypeConcurrency` |
 
 ---
 
@@ -73,7 +73,7 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 
 | File | Purpose | Used By |
 |------|---------|---------|
-| `concurrency.ts` | `withAgentTypeConcurrency()` — wraps check→mark→execute→clear | GitHub, PM, Sentry |
+| `concurrency.ts` | `withAgentTypeConcurrency()` — wraps check→mark→execute→clear | GitHub, Sentry |
 | `trigger-resolution.ts` | `resolveTriggerResult()` — pre-resolved or dispatch | GitHub, Sentry (PM has inline logic) |
 | `credential-scope.ts` | `withPMScope()` — `withPMCredentials` + `withPMProvider` | GitHub, Sentry |
 | `pm-ack.ts` | `postPMAckComment()` — posts ack to Trello/JIRA | Router GitHub adapter, GitHub worker handler |
@@ -113,9 +113,9 @@ processGitHubWebhook(payload, eventType, registry, ackCommentId, triggerResult)
   └─ maybePostAckComment(result, ...)               → PR or PM ack
   └─ runGitHubAgent(result, project, config)
        └─ withAgentTypeConcurrency(projectId, agentType)
-       └─ startWatchdog()
-       └─ withPMScope(project)
-            └─ runAgentWithCredentials(integration, result, ...)
+            └─ startWatchdog()
+            └─ withPMScope(project)
+                 └─ runAgentWithCredentials(integration, result, ...)
 ```
 
 ### Sentry webhook
@@ -125,7 +125,7 @@ processSentryWebhook(payload, projectId, registry, triggerResult)
   └─ loadProjectConfigById(projectId)               → project
   └─ resolveTriggerResult(registry, ctx, preResolved)
   └─ withAgentTypeConcurrency(projectId, agentType)
-  └─ startWatchdog()
-  └─ withPMScope(project)
-       └─ runAgentExecutionPipeline(result, ...)
+       └─ startWatchdog()
+       └─ withPMScope(project)
+            └─ runAgentExecutionPipeline(result, ...)
 ```

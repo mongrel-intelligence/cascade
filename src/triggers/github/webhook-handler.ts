@@ -148,8 +148,6 @@ async function runGitHubAgent(
 	project: ProjectConfig,
 	config: CascadeConfig,
 ): Promise<void> {
-	startWatchdog(project.watchdogTimeoutMs);
-
 	// PM-focused agents (e.g. backlog-manager) triggered from GitHub should use
 	// PM-appropriate lifecycle config: no GitHub PR comment callbacks, allow PM lifecycle ops.
 	const pmFocused = result.agentType ? await isPMFocusedAgent(result.agentType) : false;
@@ -157,6 +155,11 @@ async function runGitHubAgent(
 	const agentType = result.agentType;
 
 	const execute = async () => {
+		// Only start the watchdog when the agent actually runs (after concurrency check passes).
+		// Starting it before the check risks a spurious process.exit(1) if the container
+		// is still alive after a concurrency-blocked job finishes.
+		startWatchdog(project.watchdogTimeoutMs);
+
 		// Establish PM credential + provider scope for agents with workItemId
 		// (needed for PM lifecycle operations: labels, status moves, PR links)
 		await withPMScope(project, () =>
