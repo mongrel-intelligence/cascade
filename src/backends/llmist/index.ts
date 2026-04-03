@@ -65,7 +65,10 @@ export class LlmistEngine implements AgentEngine {
 
 		// Create per-execution llmist logger and tracking state
 		const llmistLogger = createLogger({ minLevel: getLogLevel() });
-		const trackingContext = createTrackingContext(agentType);
+		const trackingContext = createTrackingContext(
+			agentType,
+			profile.finishHooks.requiresReview ? 'review' : 'default',
+		);
 		const llmCallAccumulator: AccumulatedLlmCall[] = [];
 
 		// Create a LLM call logger for raw request/response file logging.

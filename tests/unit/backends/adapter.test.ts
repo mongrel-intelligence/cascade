@@ -854,6 +854,9 @@ describe('executeWithEngine', () => {
 
 		it('calls recordReviewSubmission when sidecar exists for review agent', async () => {
 			setupMocks();
+			mockGetAgentProfile.mockReturnValue(
+				makeMockProfile({ finishHooks: { requiresReview: true } }),
+			);
 			const engine = makeMockBackend();
 			writeSidecarAtInjectedPath(engine, {
 				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-99',
@@ -873,6 +876,9 @@ describe('executeWithEngine', () => {
 
 		it('injects CASCADE_REVIEW_SIDECAR_PATH into projectSecrets for review agent', async () => {
 			setupMocks();
+			mockGetAgentProfile.mockReturnValue(
+				makeMockProfile({ finishHooks: { requiresReview: true } }),
+			);
 			const engine = makeMockBackend();
 			const input = makeInput();
 
@@ -951,6 +957,9 @@ describe('executeWithEngine', () => {
 
 		it('clears initialCommentId when sidecar has ackCommentDeleted: true', async () => {
 			setupMocks();
+			mockGetAgentProfile.mockReturnValue(
+				makeMockProfile({ finishHooks: { requiresReview: true } }),
+			);
 			const engine = makeMockBackend();
 			writeSidecarAtInjectedPath(engine, {
 				reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-42',

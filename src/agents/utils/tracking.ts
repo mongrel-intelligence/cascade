@@ -72,6 +72,12 @@ export interface TrackingContext {
 	loopDetection: LoopDetectionState;
 	/** Agent type for role-aware loop messages */
 	agentType?: string;
+	/**
+	 * Loop advice profile to use for role-aware messages.
+	 * When set, takes precedence over the agentType-based lookup.
+	 * Derived from `profile.finishHooks.requiresReview`.
+	 */
+	loopAdviceProfile?: 'review' | 'default';
 }
 
 /**
@@ -92,12 +98,16 @@ export function createLoopDetectionState(): LoopDetectionState {
 /**
  * Create a new tracking context with zero metrics.
  */
-export function createTrackingContext(agentType?: string): TrackingContext {
+export function createTrackingContext(
+	agentType?: string,
+	loopAdviceProfile?: 'review' | 'default',
+): TrackingContext {
 	return {
 		metrics: { llmIterations: 0, gadgetCalls: 0 },
 		syntheticInvocationIds: new Set(),
 		loopDetection: createLoopDetectionState(),
 		agentType,
+		loopAdviceProfile,
 	};
 }
 
@@ -215,8 +225,13 @@ const LOOP_ADVICE = {
 	},
 } as const;
 
-function getAdvice(agentType?: string): (typeof LOOP_ADVICE)[keyof typeof LOOP_ADVICE] {
-	return agentType === 'review' ? LOOP_ADVICE.review : LOOP_ADVICE.default;
+function getAdvice(
+	agentType?: string,
+	loopAdviceProfile?: 'review' | 'default',
+): (typeof LOOP_ADVICE)[keyof typeof LOOP_ADVICE] {
+	const isReview =
+		loopAdviceProfile !== undefined ? loopAdviceProfile === 'review' : agentType === 'review';
+	return isReview ? LOOP_ADVICE.review : LOOP_ADVICE.default;
 }
 
 /**
@@ -236,13 +251,14 @@ function generateLoopWarning(
 	repeatCount: number,
 	repeatedPattern: string,
 	agentType?: string,
+	loopAdviceProfile?: 'review' | 'default',
 ): string {
 	const urgency = repeatCount >= 3 ? '🚨' : '⚠️';
 	return `[System] ${urgency} LOOP DETECTED (×${repeatCount})
 
 Pattern: ${repeatedPattern}
 
-${getAdvice(agentType).exact}`;
+${getAdvice(agentType, loopAdviceProfile).exact}`;
 }
 
 /**
@@ -252,9 +268,11 @@ function generateNameOnlyLoopAction(
 	repeatCount: number,
 	pattern: string,
 	agentType?: string,
+	loopAdviceProfile?: 'review' | 'default',
 ): LoopAction | null {
-	const isReview = agentType === 'review';
-	const advice = getAdvice(agentType);
+	const isReview =
+		loopAdviceProfile !== undefined ? loopAdviceProfile === 'review' : agentType === 'review';
+	const advice = getAdvice(agentType, loopAdviceProfile);
 
 	if (repeatCount >= LOOP_THRESHOLDS.HARD_STOP) {
 		return {
@@ -324,6 +342,7 @@ export function checkForLoopAndAdvance(context: TrackingContext): boolean {
 			state.repeatCount,
 			state.repeatedPattern,
 			context.agentType,
+			context.loopAdviceProfile,
 		);
 	} else {
 		state.repeatCount = 1;
@@ -346,6 +365,7 @@ export function checkForLoopAndAdvance(context: TrackingContext): boolean {
 				state.nameOnlyRepeatCount,
 				formatCallsForDisplay(state.currentIterationCalls),
 				context.agentType,
+				context.loopAdviceProfile,
 			);
 		} else {
 			state.nameOnlyRepeatCount = 1;

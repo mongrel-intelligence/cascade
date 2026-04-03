@@ -519,4 +519,51 @@ describe('loop detection', () => {
 			expect(action?.message).toContain('delete the failing test');
 		});
 	});
+
+	describe('loopAdviceProfile overrides agentType', () => {
+		it('uses review loop advice when loopAdviceProfile is "review" and agentType is not "review"', () => {
+			const ctx = createTrackingContext('implementation', 'review');
+
+			// Create exact-match loop to trigger warning
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+
+			const warning = consumeLoopWarning(ctx);
+			expect(warning).toContain('CreatePRReview');
+			expect(warning).not.toContain('COMPLETELY DIFFERENT APPROACH');
+		});
+
+		it('uses default loop advice when loopAdviceProfile is "default" and agentType is "review"', () => {
+			const ctx = createTrackingContext('review', 'default');
+
+			// Create exact-match loop to trigger warning
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+			recordGadgetCallForLoop(ctx, 'ReadFile', { filePath: '/foo.ts' });
+			checkForLoopAndAdvance(ctx);
+
+			const warning = consumeLoopWarning(ctx);
+			expect(warning).toContain('COMPLETELY DIFFERENT APPROACH');
+			expect(warning).not.toContain('CreatePRReview');
+		});
+
+		it('uses review name-only loop action when loopAdviceProfile is "review" and agentType is not "review"', () => {
+			const ctx = createTrackingContext('implementation', 'review');
+
+			for (let i = 0; i < LOOP_THRESHOLDS.WARNING; i++) {
+				recordGadgetCallForLoop(ctx, 'FileSearchAndReplace', {
+					filePath: '/foo.ts',
+					search: `v${i}`,
+				});
+				checkForLoopAndAdvance(ctx);
+			}
+
+			const action = consumeLoopAction(ctx);
+			expect(action).not.toBeNull();
+			expect(action?.message).toContain('CreatePRReview');
+			expect(action?.message).not.toContain('delete the failing test');
+		});
+	});
 });

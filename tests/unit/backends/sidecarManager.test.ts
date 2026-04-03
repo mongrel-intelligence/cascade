@@ -59,8 +59,8 @@ function makeSidecarPath(name: string): string {
 }
 
 describe('createCompletionArtifacts', () => {
-	it('creates a review sidecar path for review agent type', () => {
-		const profile = makeProfile();
+	it('creates a review sidecar path when profile.finishHooks.requiresReview is true', () => {
+		const profile = makeProfile({ finishHooks: { requiresReview: true } });
 		const projectSecrets: Record<string, string> = {};
 
 		const result = createCompletionArtifacts(
@@ -77,6 +77,38 @@ describe('createCompletionArtifacts', () => {
 
 	it('does not create review sidecar for non-review agents', () => {
 		const profile = makeProfile();
+		const projectSecrets: Record<string, string> = {};
+
+		const result = createCompletionArtifacts(
+			profile,
+			'implementation',
+			false,
+			{} as AgentInput,
+			projectSecrets,
+		);
+
+		expect(result.reviewSidecarPath).toBeUndefined();
+		expect(projectSecrets.CASCADE_REVIEW_SIDECAR_PATH).toBeUndefined();
+	});
+
+	it('creates review sidecar for custom agent with requiresReview: true', () => {
+		const profile = makeProfile({ finishHooks: { requiresReview: true } });
+		const projectSecrets: Record<string, string> = {};
+
+		const result = createCompletionArtifacts(
+			profile,
+			'custom-reviewer',
+			false,
+			{} as AgentInput,
+			projectSecrets,
+		);
+
+		expect(result.reviewSidecarPath).toMatch(/cascade-review-sidecar-\d+-\d+\.json$/);
+		expect(projectSecrets.CASCADE_REVIEW_SIDECAR_PATH).toBe(result.reviewSidecarPath);
+	});
+
+	it('does not create review sidecar when requiresReview is not set', () => {
+		const profile = makeProfile({ finishHooks: {} });
 		const projectSecrets: Record<string, string> = {};
 
 		const result = createCompletionArtifacts(
