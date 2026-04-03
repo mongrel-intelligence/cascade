@@ -29,7 +29,7 @@ export default class WebhooksCreate extends DashboardCommand {
 		const { args, flags } = await this.parse(WebhooksCreate);
 
 		try {
-			const callbackBaseUrl = flags['callback-url'] || this.config_.serverUrl;
+			const callbackBaseUrl = flags['callback-url'] || this.cliConfig.serverUrl;
 
 			const oneTimeTokens: Record<string, string> = {};
 			if (flags['github-token']) oneTimeTokens.github = flags['github-token'];
