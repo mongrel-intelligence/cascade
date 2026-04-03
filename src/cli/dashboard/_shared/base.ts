@@ -52,22 +52,22 @@ export abstract class DashboardCommand extends Command {
 	};
 
 	private _client: DashboardClient | undefined;
-	private _config: CliConfig | undefined;
+	private _cliConfig: CliConfig | undefined;
 
-	protected get config_(): CliConfig {
-		if (!this._config) {
+	protected get cliConfig(): CliConfig {
+		if (!this._cliConfig) {
 			const config = loadConfig();
 			if (!config) {
 				this.error('Not logged in. Run `cascade login` first.');
 			}
-			this._config = config;
+			this._cliConfig = config;
 		}
-		return this._config;
+		return this._cliConfig;
 	}
 
 	protected get client(): DashboardClient {
 		if (!this._client) {
-			const config = this.config_;
+			const config = this.cliConfig;
 			// Allow --server and --org flags to override
 			const flags = this.parseBaseFlags();
 			if (flags?.server) {
@@ -192,7 +192,7 @@ export abstract class DashboardCommand extends Command {
 			process.stderr.write(`${err.stack}\n`);
 		}
 
-		const serverUrl = this._config?.serverUrl;
+		const serverUrl = this._cliConfig?.serverUrl;
 		const actionable = mapError(err, serverUrl);
 		const message = formatActionableError(actionable);
 

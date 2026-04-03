@@ -33,7 +33,7 @@ export default class WebhooksList extends DashboardCommand {
 
 			const result = await this.client.webhooks.list.query({
 				projectId: args.projectId,
-				callbackBaseUrl: this.config_.serverUrl || undefined,
+				callbackBaseUrl: this.cliConfig.serverUrl || undefined,
 				oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
 			});
 
