@@ -54,7 +54,7 @@
 	"author": "Zbigniew Sobiecki",
 	"license": "MIT",
 	"dependencies": {
-		"@anthropic-ai/claude-agent-sdk": "^0.2.42",
+		"@anthropic-ai/claude-agent-sdk": "^0.2.91",
 		"@hono/node-server": "^1.13.7",
 		"@hono/trpc-server": "^0.4.2",
 		"@llmist/cli": "^16.0.3",
