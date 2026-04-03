@@ -167,8 +167,7 @@ integrationRegistry.getOrNull('sentry')     // null if missing
 integrationRegistry.getByCategory('pm')     // all PM integrations
 ```
 
-PM integrations are also registered in `pmRegistry` (`src/pm/registry.ts`) for backward
-compatibility with existing PM-specific callers.
+PM integrations are registered in `pmRegistry` via `src/integrations/bootstrap.ts` (the single canonical registration point).
 
 ### Credential roles
 

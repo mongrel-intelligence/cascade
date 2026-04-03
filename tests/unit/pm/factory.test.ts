@@ -22,9 +22,14 @@ vi.mock('../../../src/pm/jira/adapter.js', () => ({
 // Mock provider.ts to avoid DB calls from integration constructors
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn().mockResolvedValue('mock-cred'),
+	getIntegrationCredentialOrNull: vi.fn().mockResolvedValue(null),
 	loadProjectConfigByBoardId: vi.fn().mockResolvedValue(null),
 	loadProjectConfigByJiraProjectKey: vi.fn().mockResolvedValue(null),
 	findProjectById: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../../src/trello/client.js', () => ({
@@ -36,6 +41,31 @@ vi.mock('../../../src/jira/client.js', () => ({
 	withJiraCredentials: vi.fn((_creds, fn) => fn()),
 	jiraClient: {},
 }));
+
+vi.mock('../../../src/github/client.js', () => ({
+	withGitHubToken: vi.fn((_token, fn) => fn()),
+}));
+
+vi.mock('../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
+	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn().mockResolvedValue(null),
+	deleteTrelloAck: vi.fn().mockResolvedValue(undefined),
+	resolveTrelloBotMemberId: vi.fn().mockResolvedValue(null),
+	postJiraAck: vi.fn().mockResolvedValue(null),
+	deleteJiraAck: vi.fn().mockResolvedValue(undefined),
+	resolveJiraBotAccountId: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+
+// Import bootstrap after mocks — registers integrations into pmRegistry via the canonical path
+import '../../../src/integrations/bootstrap.js';
 
 // Import after mocks so the integrations register with mocked adapters
 // factory.ts was removed; createPMProvider is now an inline function in index.ts

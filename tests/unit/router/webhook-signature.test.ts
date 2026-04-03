@@ -74,8 +74,6 @@ vi.mock('../../../src/agents/prompts/index.js', () => ({
 	initPrompts: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../src/pm/bootstrap.js', () => ({}));
-
 vi.mock('../../../src/triggers/builtins.js', () => ({
 	registerBuiltInTriggers: vi.fn(),
 }));

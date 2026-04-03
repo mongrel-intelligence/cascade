@@ -10,6 +10,45 @@ vi.mock('../../../src/trello/client.js', () => ({
 	),
 }));
 
+// Mocks required for PM integration registration (integrations/bootstrap.js side-effect)
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredential: vi.fn().mockResolvedValue('mock-cred'),
+	getIntegrationCredentialOrNull: vi.fn().mockResolvedValue(null),
+	loadProjectConfigByBoardId: vi.fn().mockResolvedValue(null),
+	loadProjectConfigByJiraProjectKey: vi.fn().mockResolvedValue(null),
+	findProjectById: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/jira/client.js', () => ({
+	withJiraCredentials: vi.fn((_creds: unknown, fn: () => unknown) => fn()),
+	jiraClient: {},
+}));
+
+vi.mock('../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
+	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn().mockResolvedValue(null),
+	deleteTrelloAck: vi.fn().mockResolvedValue(undefined),
+	resolveTrelloBotMemberId: vi.fn().mockResolvedValue(null),
+	postJiraAck: vi.fn().mockResolvedValue(null),
+	deleteJiraAck: vi.fn().mockResolvedValue(undefined),
+	resolveJiraBotAccountId: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+
+// Register PM integrations in the registry via the canonical bootstrap path
+import '../../../src/integrations/bootstrap.js';
+
 import { CredentialScopedCommand } from '../../../src/cli/base.js';
 import { withGitHubToken } from '../../../src/github/client.js';
 import { withTrelloCredentials } from '../../../src/trello/client.js';

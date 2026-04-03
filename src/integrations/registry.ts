@@ -74,5 +74,5 @@ export class IntegrationRegistry {
 	}
 }
 
-/** Singleton registry, populated at import time by each integration module */
+/** Singleton registry, populated at bootstrap time by src/integrations/bootstrap.ts */
 export const integrationRegistry = new IntegrationRegistry();

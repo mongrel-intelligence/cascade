@@ -3,9 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mock dependencies before imports
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn().mockResolvedValue('mock-cred'),
+	getIntegrationCredentialOrNull: vi.fn().mockResolvedValue(null),
 	loadProjectConfigByBoardId: vi.fn().mockResolvedValue(null),
 	loadProjectConfigByJiraProjectKey: vi.fn().mockResolvedValue(null),
 	findProjectById: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../../src/trello/client.js', () => ({
@@ -18,13 +23,35 @@ vi.mock('../../../src/jira/client.js', () => ({
 	jiraClient: {},
 }));
 
+vi.mock('../../../src/github/client.js', () => ({
+	withGitHubToken: vi.fn((_token, fn) => fn()),
+}));
+
+vi.mock('../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
+	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../../../src/router/acknowledgments.js', () => ({
+	postTrelloAck: vi.fn().mockResolvedValue(null),
+	deleteTrelloAck: vi.fn().mockResolvedValue(undefined),
+	resolveTrelloBotMemberId: vi.fn().mockResolvedValue(null),
+	postJiraAck: vi.fn().mockResolvedValue(null),
+	deleteJiraAck: vi.fn().mockResolvedValue(undefined),
+	resolveJiraBotAccountId: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/router/reactions.js', () => ({
+	sendAcknowledgeReaction: vi.fn(),
+}));
+
 vi.mock('../../../src/utils/safeOperation.js', () => ({
 	safeOperation: vi.fn((fn) => fn()),
 	silentOperation: vi.fn((fn) => fn()),
 }));
 
-// Import after mocks — side-effect import registers integrations with pmRegistry
-import '../../../src/pm/index.js';
+// Import after mocks — bootstrap registers integrations with pmRegistry via the canonical path
+import '../../../src/integrations/bootstrap.js';
 import {
 	PMLifecycleManager,
 	type ProjectPMConfig,

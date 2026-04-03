@@ -1,8 +1,8 @@
 /**
  * PMIntegrationRegistry — singleton that holds all registered PM integrations.
  *
- * Populated at import time by each integration module. The router, worker,
- * and shared infrastructure use `pmRegistry.get(type)` to obtain the
+ * Populated at bootstrap time by `src/integrations/bootstrap.ts`. The router,
+ * worker, and shared infrastructure use `pmRegistry.get(type)` to obtain the
  * integration instance without provider-specific branching.
  */
 
@@ -49,5 +49,5 @@ class PMIntegrationRegistry {
 	}
 }
 
-/** Singleton registry, populated at import time */
+/** Singleton registry, populated at bootstrap time by `src/integrations/bootstrap.ts` */
 export const pmRegistry = new PMIntegrationRegistry();

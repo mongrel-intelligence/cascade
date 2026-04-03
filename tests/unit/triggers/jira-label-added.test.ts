@@ -12,15 +12,25 @@ import {
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
-// Mocks required for PM integration registration (pm/index.js side-effect)
+// Mocks required for PM integration registration (integrations/bootstrap.js side-effect)
 vi.mock('../../../src/config/provider.js', () => mockConfigProvider);
+vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue(null),
+}));
 vi.mock('../../../src/trello/client.js', () => mockTrelloClientModule);
 vi.mock('../../../src/jira/client.js', () => mockJiraClientModule);
+vi.mock('../../../src/github/client.js', () => ({
+	withGitHubToken: vi.fn((_token: unknown, fn: () => unknown) => fn()),
+}));
+vi.mock('../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
+	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
+}));
 vi.mock('../../../src/router/acknowledgments.js', () => mockAcknowledgmentsModule);
 vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 
-// Register PM integrations in the registry
-import '../../../src/pm/index.js';
+// Register PM integrations in the registry via the canonical bootstrap path
+import '../../../src/integrations/bootstrap.js';
 
 import { JiraReadyToProcessLabelTrigger } from '../../../src/triggers/jira/label-added.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
