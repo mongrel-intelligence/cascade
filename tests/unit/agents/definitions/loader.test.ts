@@ -3,6 +3,7 @@ import {
 	deriveIntegrations,
 	getSdkToolsFromCapabilities,
 } from '../../../../src/agents/capabilities/resolver.js';
+import { getAgentCapabilities } from '../../../../src/agents/definitions/index.js';
 import {
 	clearDefinitionCache,
 	getBuiltinAgentTypes,
@@ -11,7 +12,6 @@ import {
 	loadBuiltinDefinition,
 } from '../../../../src/agents/definitions/loader.js';
 import { CONTEXT_STEP_REGISTRY } from '../../../../src/agents/definitions/strategies.js';
-import { getAgentCapabilities } from '../../../../src/agents/shared/capabilities.js';
 
 const ALL_AGENT_TYPES = [
 	'alerting',
@@ -302,11 +302,11 @@ describe('YAML agent definitions loader', () => {
 		it('implementation agent has full capabilities and stop hooks', async () => {
 			const def = loadBuiltinDefinition('implementation');
 			const caps = await getAgentCapabilities('implementation');
+			const allCaps = [...caps.required, ...caps.optional];
 
-			expect(caps.canEditFiles).toBe(true);
-			expect(caps.canCreatePR).toBe(true);
-			expect(caps.canUpdateChecklists).toBe(true);
-			expect(caps.isReadOnly).toBe(false);
+			expect(allCaps.includes('fs:write')).toBe(true);
+			expect(allCaps.includes('scm:pr')).toBe(true);
+			expect(allCaps.includes('pm:checklist')).toBe(true);
 			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
@@ -314,9 +314,9 @@ describe('YAML agent definitions loader', () => {
 		it('review agent is read-only', async () => {
 			const def = loadBuiltinDefinition('review');
 			const caps = await getAgentCapabilities('review');
+			const allCaps = [...caps.required, ...caps.optional];
 
-			expect(caps.canEditFiles).toBe(false);
-			expect(caps.isReadOnly).toBe(true);
+			expect(allCaps.includes('fs:write')).toBe(false);
 			expect(def.hooks?.finish?.scm?.requiresReview).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
@@ -324,8 +324,9 @@ describe('YAML agent definitions loader', () => {
 		it('respond-to-ci agent requires scm integration', async () => {
 			const def = loadBuiltinDefinition('respond-to-ci');
 			const caps = await getAgentCapabilities('respond-to-ci');
+			const allCaps = [...caps.required, ...caps.optional];
 
-			expect(caps.canEditFiles).toBe(true);
+			expect(allCaps.includes('fs:write')).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
 
@@ -333,32 +334,18 @@ describe('YAML agent definitions loader', () => {
 			for (const agentType of ALL_AGENT_TYPES) {
 				const def = loadBuiltinDefinition(agentType);
 				const caps = await getAgentCapabilities(agentType);
-				const allCaps = [...def.capabilities.required, ...def.capabilities.optional];
+				const allCaps = [...caps.required, ...caps.optional];
+				const defAllCaps = [...def.capabilities.required, ...def.capabilities.optional];
 
-				// canEditFiles = has fs:write
-				expect(caps.canEditFiles).toBe(allCaps.includes('fs:write'));
-
-				// canCreatePR = has scm:pr
-				expect(caps.canCreatePR).toBe(allCaps.includes('scm:pr'));
-
-				// canUpdateChecklists = has pm:checklist
-				expect(caps.canUpdateChecklists).toBe(allCaps.includes('pm:checklist'));
-
-				// isReadOnly = no fs:write
-				expect(caps.isReadOnly).toBe(!allCaps.includes('fs:write'));
+				// capabilities should match the definition
+				expect(allCaps).toEqual(defAllCaps);
 			}
 		});
 	});
 
 	describe('unknown agent type fallbacks', () => {
-		it('getAgentCapabilities returns full-access defaults for unknown type', async () => {
-			const caps = await getAgentCapabilities('nonexistent-agent-type');
-			expect(caps).toEqual({
-				canEditFiles: true,
-				canCreatePR: true,
-				canUpdateChecklists: true,
-				isReadOnly: false,
-			});
+		it('getAgentCapabilities throws for unknown agent type', async () => {
+			await expect(getAgentCapabilities('nonexistent-agent-type')).rejects.toThrow();
 		});
 	});
 
