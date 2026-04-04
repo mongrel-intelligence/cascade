@@ -14,7 +14,7 @@ import { initSessionState, type SessionHooks, setReadOnlyFs } from '../../gadget
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { IProgressMonitor } from '../contracts/index.js';
-import { getAgentCapabilities } from '../shared/capabilities.js';
+import { getAgentCapabilities } from '../definitions/index.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
 import type { TrackingContext } from '../utils/tracking.js';
 
@@ -104,7 +104,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 
 		// Mark session as read-only if agent lacks fs:write capability
 		const caps = await getAgentCapabilities(agentType);
-		if (caps.isReadOnly) {
+		if (![...caps.required, ...caps.optional].includes('fs:write')) {
 			setReadOnlyFs(true);
 		}
 	}
