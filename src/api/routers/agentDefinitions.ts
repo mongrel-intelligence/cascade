@@ -2,10 +2,10 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { CAPABILITIES } from '../../agents/capabilities/index.js';
 import {
-	getKnownAgentTypes,
+	getBuiltinAgentTypes,
 	invalidateDefinitionCache,
 	isBuiltinAgentType,
-	loadAgentDefinition,
+	loadBuiltinDefinition,
 	resolveAgentDefinition,
 	resolveKnownAgentTypes,
 } from '../../agents/definitions/loader.js';
@@ -60,10 +60,10 @@ export const agentDefinitionsRouter = router({
 	 * resolveAllAgentDefinitions() which would issue its own redundant listAgentDefinitions() call.
 	 */
 	list: superAdminProcedure.query(async () => {
-		// Intentional: getKnownAgentTypes() (deprecated) is used here to enumerate YAML types
-		// for the merge loop below. resolveKnownAgentTypes() also hits the DB, which we already
-		// cover via listAgentDefinitions(); calling both would be redundant.
-		const yamlTypes = getKnownAgentTypes();
+		// getBuiltinAgentTypes() enumerates YAML types for the merge loop below.
+		// resolveKnownAgentTypes() also hits the DB, which we already cover via
+		// listAgentDefinitions(); calling both would be redundant.
+		const yamlTypes = getBuiltinAgentTypes();
 		const result: Array<{ agentType: string; definition: AgentDefinition; isBuiltin: boolean }> =
 			[];
 
@@ -84,15 +84,15 @@ export const agentDefinitionsRouter = router({
 			seen.add(row.agentType);
 		}
 
-		// Fill in YAML-only types not present in DB
-		// Intentional: loadAgentDefinition() (deprecated) is used here because this is a
-		// synchronous fallback path — we already have the YAML type list and just need the
-		// raw definition content; the async resolveAgentDefinition() would add DB round-trips.
+		// Fill in YAML-only types not present in DB.
+		// loadBuiltinDefinition() is used here because this is a synchronous fallback path —
+		// we already have the YAML type list and just need the raw definition content;
+		// the async resolveAgentDefinition() would add unnecessary DB round-trips.
 		for (const agentType of yamlTypes) {
 			if (!seen.has(agentType)) {
 				result.push({
 					agentType,
-					definition: loadAgentDefinition(agentType),
+					definition: loadBuiltinDefinition(agentType),
 					isBuiltin: true, // YAML-only types are always builtin
 				});
 			}
@@ -232,11 +232,11 @@ export const agentDefinitionsRouter = router({
 			}
 
 			// Re-read the YAML (bypass cache).
-			// Intentional: loadAgentDefinition() (deprecated) is used here because this endpoint
-			// explicitly needs the raw YAML definition — the purpose of reset is to bypass any DB
-			// override and restore the hard-coded YAML defaults.
+			// loadBuiltinDefinition() is used here because this endpoint explicitly needs the
+			// raw YAML definition — the purpose of reset is to bypass any DB override and
+			// restore the hard-coded YAML defaults.
 			invalidateDefinitionCache();
-			const yamlDefinition = loadAgentDefinition(input.agentType);
+			const yamlDefinition = loadBuiltinDefinition(input.agentType);
 			await upsertAgentDefinition(input.agentType, yamlDefinition, true);
 			invalidateDefinitionCache();
 			return { agentType: input.agentType };
@@ -311,7 +311,7 @@ export const agentDefinitionsRouter = router({
 			// Load YAML defaults and use its prompts section
 			let yamlDefault: AgentDefinition;
 			try {
-				yamlDefault = loadAgentDefinition(input.agentType);
+				yamlDefault = loadBuiltinDefinition(input.agentType);
 			} catch {
 				throw new TRPCError({
 					code: 'NOT_FOUND',

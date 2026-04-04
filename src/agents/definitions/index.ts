@@ -19,11 +19,11 @@ export {
 export type { FetchContextParams } from './contextSteps.js';
 export {
 	clearDefinitionCache,
-	getKnownAgentTypes,
+	getBuiltinAgentTypes,
 	invalidateDefinitionCache,
+	isBuiltinAgentType,
 	isPMFocusedAgent,
-	loadAgentDefinition,
-	loadAllAgentDefinitions,
+	loadBuiltinDefinition,
 	resolveAgentDefinition,
 	resolveAllAgentDefinitions,
 	resolveKnownAgentTypes,

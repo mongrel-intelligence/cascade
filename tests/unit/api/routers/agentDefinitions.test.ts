@@ -8,10 +8,10 @@ import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarne
 // ---------------------------------------------------------------------------
 
 const {
-	mockGetKnownAgentTypes,
+	mockGetBuiltinAgentTypes,
 	mockIsBuiltinAgentType,
 	mockInvalidateDefinitionCache,
-	mockLoadAgentDefinition,
+	mockLoadBuiltinDefinition,
 	mockResolveAgentDefinition,
 	mockResolveKnownAgentTypes,
 	mockListAgentDefinitions,
@@ -22,10 +22,10 @@ const {
 	mockValidateTemplate,
 	mockLoadPartials,
 } = vi.hoisted(() => ({
-	mockGetKnownAgentTypes: vi.fn<() => string[]>(),
+	mockGetBuiltinAgentTypes: vi.fn<() => string[]>(),
 	mockIsBuiltinAgentType: vi.fn<(agentType: string) => boolean>(),
 	mockInvalidateDefinitionCache: vi.fn(),
-	mockLoadAgentDefinition: vi.fn<(agentType: string) => AgentDefinition>(),
+	mockLoadBuiltinDefinition: vi.fn<(agentType: string) => AgentDefinition>(),
 	mockResolveAgentDefinition: vi.fn<(agentType: string) => Promise<AgentDefinition>>(),
 	mockResolveKnownAgentTypes: vi.fn<() => Promise<string[]>>(),
 	mockListAgentDefinitions: vi.fn(),
@@ -38,10 +38,10 @@ const {
 }));
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
-	getKnownAgentTypes: mockGetKnownAgentTypes,
+	getBuiltinAgentTypes: mockGetBuiltinAgentTypes,
 	isBuiltinAgentType: mockIsBuiltinAgentType,
 	invalidateDefinitionCache: mockInvalidateDefinitionCache,
-	loadAgentDefinition: mockLoadAgentDefinition,
+	loadBuiltinDefinition: mockLoadBuiltinDefinition,
 	resolveAgentDefinition: mockResolveAgentDefinition,
 	resolveKnownAgentTypes: mockResolveKnownAgentTypes,
 }));
@@ -111,7 +111,7 @@ function createMockDefinition(overrides?: Partial<AgentDefinition>): AgentDefini
 
 describe('agentDefinitionsRouter', () => {
 	beforeEach(() => {
-		mockGetKnownAgentTypes.mockReturnValue(['implementation', 'review']);
+		mockGetBuiltinAgentTypes.mockReturnValue(['implementation', 'review']);
 		mockIsBuiltinAgentType.mockImplementation((agentType: string) =>
 			['implementation', 'review'].includes(agentType),
 		);
@@ -129,7 +129,7 @@ describe('agentDefinitionsRouter', () => {
 				{ agentType: 'implementation', definition: dbDef, isBuiltin: true },
 			]);
 			const yamlDef = createMockDefinition({ hint: 'from yaml' });
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.list();
@@ -152,7 +152,7 @@ describe('agentDefinitionsRouter', () => {
 		it('falls back to YAML only when DB fails', async () => {
 			mockListAgentDefinitions.mockRejectedValue(new Error('DB down'));
 			const yamlDef = createMockDefinition();
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.list();
@@ -169,7 +169,7 @@ describe('agentDefinitionsRouter', () => {
 				{ agentType: 'custom-agent', definition: customDef, isBuiltin: false },
 			]);
 			const yamlDef = createMockDefinition();
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.list();
@@ -184,7 +184,7 @@ describe('agentDefinitionsRouter', () => {
 
 		it('does not call listAgentDefinitions twice (no redundant DB query)', async () => {
 			mockListAgentDefinitions.mockResolvedValue([]);
-			mockLoadAgentDefinition.mockReturnValue(createMockDefinition());
+			mockLoadBuiltinDefinition.mockReturnValue(createMockDefinition());
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			await caller.list();
@@ -349,7 +349,7 @@ describe('agentDefinitionsRouter', () => {
 	describe('delete', () => {
 		it('deletes a non-builtin definition (superadmin)', async () => {
 			mockGetAgentDefinition.mockResolvedValue(createMockDefinition());
-			mockGetKnownAgentTypes.mockReturnValue(['implementation', 'review']); // custom-agent is NOT in this list
+			mockGetBuiltinAgentTypes.mockReturnValue(['implementation', 'review']); // custom-agent is NOT in this list
 			mockDeleteAgentDefinition.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
@@ -397,14 +397,14 @@ describe('agentDefinitionsRouter', () => {
 	describe('reset', () => {
 		it('resets a builtin definition to YAML default (superadmin)', async () => {
 			const yamlDef = createMockDefinition({ hint: 'yaml default' });
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 			mockUpsertAgentDefinition.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
 			const result = await caller.reset({ agentType: 'implementation' });
 
 			expect(result).toEqual({ agentType: 'implementation' });
-			expect(mockLoadAgentDefinition).toHaveBeenCalledWith('implementation');
+			expect(mockLoadBuiltinDefinition).toHaveBeenCalledWith('implementation');
 			expect(mockUpsertAgentDefinition).toHaveBeenCalledWith('implementation', yamlDef, true);
 			// Cache should be invalidated twice (before YAML reload and after upsert)
 			expect(mockInvalidateDefinitionCache).toHaveBeenCalledTimes(2);
@@ -564,7 +564,7 @@ describe('agentDefinitionsRouter', () => {
 			});
 			mockResolveAgentDefinition.mockResolvedValue(current);
 			const yamlDef = createMockDefinition({ prompts: { taskPrompt: 'yaml task' } });
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 			mockGetRawTemplate.mockReturnValue('## System prompt from .eta');
 			mockUpsertAgentDefinition.mockResolvedValue(undefined);
 
@@ -590,7 +590,7 @@ describe('agentDefinitionsRouter', () => {
 			const yamlDef = createMockDefinition({
 				prompts: { taskPrompt: 'yaml task', systemPrompt: 'yaml system' },
 			});
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 			mockUpsertAgentDefinition.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
@@ -610,7 +610,7 @@ describe('agentDefinitionsRouter', () => {
 			const current = createMockDefinition();
 			mockResolveAgentDefinition.mockResolvedValue(current);
 			const yamlDef = createMockDefinition({ prompts: { taskPrompt: 'yaml task' } });
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 			mockGetRawTemplate.mockImplementation(() => {
 				throw new Error('no .eta file');
 			});
@@ -640,7 +640,7 @@ describe('agentDefinitionsRouter', () => {
 		it('throws NOT_FOUND when YAML default does not exist', async () => {
 			const current = createMockDefinition();
 			mockResolveAgentDefinition.mockResolvedValue(current);
-			mockLoadAgentDefinition.mockImplementation(() => {
+			mockLoadBuiltinDefinition.mockImplementation(() => {
 				throw new Error('yaml not found');
 			});
 
@@ -667,7 +667,7 @@ describe('agentDefinitionsRouter', () => {
 			const current = createMockDefinition();
 			mockResolveAgentDefinition.mockResolvedValue(current);
 			const yamlDef = createMockDefinition({ prompts: { taskPrompt: 'yaml task' } });
-			mockLoadAgentDefinition.mockReturnValue(yamlDef);
+			mockLoadBuiltinDefinition.mockReturnValue(yamlDef);
 			mockGetRawTemplate.mockReturnValue('system prompt');
 			mockUpsertAgentDefinition.mockResolvedValue(undefined);
 

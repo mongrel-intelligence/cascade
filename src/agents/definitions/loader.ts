@@ -18,12 +18,14 @@ const cache = new Map<string, AgentDefinition>();
 let knownTypes: string[] | null = null;
 
 /**
- * Load and validate a single agent definition from YAML.
+ * Load and validate a single built-in agent definition from YAML.
  * Results are cached after first load.
  *
- * @deprecated Use `resolveAgentDefinition()` instead (checks cache → DB → YAML).
+ * Use this in sync contexts that genuinely need YAML-only access (seed scripts,
+ * reset operations, internal fallbacks). For general use prefer `resolveAgentDefinition()`
+ * which checks the in-memory cache, then the database, then falls back to YAML.
  */
-export function loadAgentDefinition(agentType: string): AgentDefinition {
+export function loadBuiltinDefinition(agentType: string): AgentDefinition {
 	const cached = cache.get(agentType);
 	if (cached) return cached;
 
@@ -47,25 +49,13 @@ export function loadAgentDefinition(agentType: string): AgentDefinition {
 }
 
 /**
- * Load all agent definitions discovered from YAML files in the definitions directory.
+ * Return the list of built-in agent types (derived from YAML filenames).
  *
- * @deprecated Use `resolveAllAgentDefinitions()` instead (checks DB with YAML fallback).
+ * Use this in sync contexts that genuinely need YAML-only type enumeration.
+ * For general use prefer `resolveKnownAgentTypes()` which also includes
+ * custom types stored only in the database.
  */
-export function loadAllAgentDefinitions(): Map<string, AgentDefinition> {
-	const types = getKnownAgentTypes();
-	const result = new Map<string, AgentDefinition>();
-	for (const agentType of types) {
-		result.set(agentType, loadAgentDefinition(agentType));
-	}
-	return result;
-}
-
-/**
- * Return the list of known agent types (derived from YAML filenames).
- *
- * @deprecated Use `resolveKnownAgentTypes()` instead (returns types from both DB and YAML).
- */
-export function getKnownAgentTypes(): string[] {
+export function getBuiltinAgentTypes(): string[] {
 	if (knownTypes) return knownTypes;
 
 	const entries = readdirSync(__dirname);
@@ -86,11 +76,11 @@ export function clearDefinitionCache(): void {
 
 /**
  * Returns true if the given agentType has a backing YAML file (i.e. is a built-in type).
- * Wraps `getKnownAgentTypes().includes()` to avoid repeated deprecated-function calls at each
- * call site.
+ * Wraps `getBuiltinAgentTypes().includes()` to avoid repeated deprecated-function calls at
+ * each call site.
  */
 export function isBuiltinAgentType(agentType: string): boolean {
-	return getKnownAgentTypes().includes(agentType);
+	return getBuiltinAgentTypes().includes(agentType);
 }
 
 // ============================================================================
@@ -123,7 +113,7 @@ export async function resolveAgentDefinition(agentType: string): Promise<AgentDe
 	}
 
 	// 3. YAML fallback
-	return loadAgentDefinition(agentType);
+	return loadBuiltinDefinition(agentType);
 }
 
 /**
@@ -133,7 +123,7 @@ export async function resolveAgentDefinition(agentType: string): Promise<AgentDe
  * Returns a `Map<agentType, AgentDefinition>` covering all known agent types.
  */
 export async function resolveAllAgentDefinitions(): Promise<Map<string, AgentDefinition>> {
-	const yamlTypes = getKnownAgentTypes();
+	const yamlTypes = getBuiltinAgentTypes();
 	const result = new Map<string, AgentDefinition>();
 
 	// Fetch all DB entries first
@@ -155,7 +145,7 @@ export async function resolveAllAgentDefinitions(): Promise<Map<string, AgentDef
 	// Fill missing types from YAML
 	for (const agentType of yamlTypes) {
 		if (!result.has(agentType)) {
-			result.set(agentType, loadAgentDefinition(agentType));
+			result.set(agentType, loadBuiltinDefinition(agentType));
 		}
 	}
 
@@ -166,7 +156,7 @@ export async function resolveAllAgentDefinitions(): Promise<Map<string, AgentDef
  * Return all known agent types, combining DB-registered types with YAML-discovered types.
  */
 export async function resolveKnownAgentTypes(): Promise<string[]> {
-	const yamlTypes = new Set(getKnownAgentTypes());
+	const yamlTypes = new Set(getBuiltinAgentTypes());
 
 	try {
 		const { listAgentDefinitions } = await import(

@@ -33,7 +33,7 @@ const {
 	mockLoadPartials: vi.fn(),
 	mockResolveAgentDefinition: vi.fn(),
 	mockGetRawTemplate: vi.fn(),
-	mockGetDefaultTaskPrompt: vi.fn().mockReturnValue(null),
+	mockGetDefaultTaskPrompt: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
@@ -612,7 +612,7 @@ describe('agentConfigsRouter', () => {
 				},
 			});
 			mockGetRawTemplate.mockReturnValue('raw disk template content');
-			mockGetDefaultTaskPrompt.mockReturnValue('yaml default task prompt');
+			mockGetDefaultTaskPrompt.mockResolvedValue('yaml default task prompt');
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			const result = await caller.getPrompts({ projectId: 'proj-1', agentType: 'implementation' });

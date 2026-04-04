@@ -3,8 +3,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Eta } from 'eta';
 
-import { resolveKnownAgentTypes } from '../definitions/index.js';
-import { loadAgentDefinition } from '../definitions/loader.js';
+import { resolveAgentDefinition, resolveKnownAgentTypes } from '../definitions/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = join(__dirname, 'templates');
@@ -236,13 +235,13 @@ export function renderInlineTaskPrompt(
 }
 
 /**
- * Returns the YAML-defined taskPrompt for an agent type (the factory default).
- * Does not require initPrompts() — reads directly from YAML.
+ * Returns the taskPrompt for an agent type (the factory default).
+ * Checks the database (with YAML fallback) via `resolveAgentDefinition()`.
  * Returns null if the agent type is unknown or has no taskPrompt defined.
  */
-export function getDefaultTaskPrompt(agentType: string): string | null {
+export async function getDefaultTaskPrompt(agentType: string): Promise<string | null> {
 	try {
-		const definition = loadAgentDefinition(agentType);
+		const definition = await resolveAgentDefinition(agentType);
 		return definition.prompts.taskPrompt ?? null;
 	} catch {
 		return null;

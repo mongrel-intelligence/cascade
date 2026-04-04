@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { getKnownAgentTypes, loadAgentDefinition } from '../../agents/definitions/loader.js';
+import { getBuiltinAgentTypes, loadBuiltinDefinition } from '../../agents/definitions/loader.js';
 import type {
 	AgentDefinition,
 	SupportedTrigger,
@@ -220,7 +220,7 @@ export const agentTriggerConfigsRouter = router({
 			const enabledAgentTypes = new Set(projectAgentConfigs.map((c) => c.agentType));
 
 			// Build a combined list of definitions (DB + YAML)
-			const yamlTypes = getKnownAgentTypes();
+			const yamlTypes = getBuiltinAgentTypes();
 			const definitions: Array<{ agentType: string; definition: AgentDefinition }> = [];
 			const seen = new Set<string>();
 
@@ -234,7 +234,7 @@ export const agentTriggerConfigsRouter = router({
 			for (const agentType of yamlTypes) {
 				if (!seen.has(agentType)) {
 					try {
-						definitions.push({ agentType, definition: loadAgentDefinition(agentType) });
+						definitions.push({ agentType, definition: loadBuiltinDefinition(agentType) });
 					} catch (err) {
 						logger.warn('Failed to load agent definition from YAML', { agentType, error: err });
 					}
