@@ -44,7 +44,7 @@ vi.mock('../../../../src/agents/definitions/loader.js', () => ({
 			'respond-to-planning-comment',
 			'debug',
 		]),
-	getKnownAgentTypes: vi.fn().mockReturnValue([]),
+	getBuiltinAgentTypes: vi.fn().mockReturnValue([]),
 }));
 
 // Also mock the index re-export
@@ -63,7 +63,7 @@ vi.mock('../../../../src/agents/definitions/index.js', () => ({
 			'respond-to-planning-comment',
 			'debug',
 		]),
-	getKnownAgentTypes: vi.fn().mockReturnValue([]),
+	getBuiltinAgentTypes: vi.fn().mockReturnValue([]),
 }));
 
 // Mock getAgentConfigPrompts (project-level prompt lookup)

@@ -196,8 +196,8 @@ export const agentConfigsRouter = router({
 				// No .eta template on disk — skip gracefully
 			}
 
-			// 4. YAML-defined task prompt (factory default)
-			const defaultTaskPrompt = getDefaultTaskPrompt(input.agentType);
+			// 4. Task prompt factory default (checks DB then YAML fallback)
+			const defaultTaskPrompt = await getDefaultTaskPrompt(input.agentType);
 
 			return {
 				projectSystemPrompt,

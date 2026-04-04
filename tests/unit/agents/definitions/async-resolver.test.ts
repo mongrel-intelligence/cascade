@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	clearDefinitionCache,
 	invalidateDefinitionCache,
-	loadAgentDefinition,
+	loadBuiltinDefinition,
 	resolveAgentDefinition,
 	resolveAllAgentDefinitions,
 	resolveKnownAgentTypes,
@@ -51,7 +51,7 @@ describe('resolveAgentDefinition', () => {
 
 	it('returns from in-memory cache when already loaded', async () => {
 		// Prime the cache via the sync loader
-		const fromYaml = loadAgentDefinition('implementation');
+		const fromYaml = loadBuiltinDefinition('implementation');
 		const { getAgentDefinition } = await getDbMocks();
 
 		// resolveAgentDefinition should return the cached value without hitting DB
@@ -62,7 +62,7 @@ describe('resolveAgentDefinition', () => {
 
 	it('fetches from DB when cache is empty and DB has the definition', async () => {
 		const { getAgentDefinition } = await getDbMocks();
-		const dbDef = loadAgentDefinition('planning');
+		const dbDef = loadBuiltinDefinition('planning');
 		clearDefinitionCache();
 
 		getAgentDefinition.mockResolvedValue(dbDef);
@@ -77,7 +77,7 @@ describe('resolveAgentDefinition', () => {
 		getAgentDefinition.mockResolvedValue(null);
 
 		const result = await resolveAgentDefinition('splitting');
-		const expected = loadAgentDefinition('splitting');
+		const expected = loadBuiltinDefinition('splitting');
 		expect(result).toEqual(expected);
 	});
 
@@ -86,13 +86,13 @@ describe('resolveAgentDefinition', () => {
 		getAgentDefinition.mockRejectedValue(new Error('DB connection failed'));
 
 		const result = await resolveAgentDefinition('review');
-		const expected = loadAgentDefinition('review');
+		const expected = loadBuiltinDefinition('review');
 		expect(result).toEqual(expected);
 	});
 
 	it('caches DB result so subsequent calls skip DB', async () => {
 		const { getAgentDefinition } = await getDbMocks();
-		const dbDef = loadAgentDefinition('debug');
+		const dbDef = loadBuiltinDefinition('debug');
 		clearDefinitionCache();
 		getAgentDefinition.mockResolvedValue(dbDef);
 
@@ -127,7 +127,7 @@ describe('resolveAllAgentDefinitions', () => {
 
 	it('prefers DB definitions over YAML when present in DB', async () => {
 		const { listAgentDefinitions } = await getDbMocks();
-		const dbDef = loadAgentDefinition('implementation');
+		const dbDef = loadBuiltinDefinition('implementation');
 		clearDefinitionCache();
 
 		// Simulate DB having only "implementation"
@@ -172,7 +172,7 @@ describe('resolveKnownAgentTypes', () => {
 
 	it('merges DB-only types with YAML types', async () => {
 		const { listAgentDefinitions } = await getDbMocks();
-		const customDef = loadAgentDefinition('implementation');
+		const customDef = loadBuiltinDefinition('implementation');
 		clearDefinitionCache();
 
 		listAgentDefinitions.mockResolvedValue([
@@ -213,8 +213,8 @@ describe('invalidateDefinitionCache', () => {
 
 	it('clears the in-memory cache so next resolve hits DB', async () => {
 		const { getAgentDefinition } = await getDbMocks();
-		const dbDef = loadAgentDefinition('planning');
-		// Clear cache after priming via loadAgentDefinition so resolveAgentDefinition hits DB
+		const dbDef = loadBuiltinDefinition('planning');
+		// Clear cache after priming via loadBuiltinDefinition so resolveAgentDefinition hits DB
 		clearDefinitionCache();
 		getAgentDefinition.mockResolvedValue(dbDef);
 
@@ -229,10 +229,10 @@ describe('invalidateDefinitionCache', () => {
 	});
 
 	it('behaves identically to clearDefinitionCache for the sync path', () => {
-		loadAgentDefinition('splitting'); // prime cache
+		loadBuiltinDefinition('splitting'); // prime cache
 		invalidateDefinitionCache();
 		// Sync load still works (reads fresh from YAML)
-		expect(() => loadAgentDefinition('splitting')).not.toThrow();
+		expect(() => loadBuiltinDefinition('splitting')).not.toThrow();
 	});
 });
 

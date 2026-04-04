@@ -8,17 +8,17 @@
  *   npx tsx src/db/seeds/seedAgentDefinitions.ts
  */
 
-import { getKnownAgentTypes, loadAgentDefinition } from '../../agents/definitions/loader.js';
+import { getBuiltinAgentTypes, loadBuiltinDefinition } from '../../agents/definitions/loader.js';
 import { readTemplateFileSync } from '../../agents/prompts/index.js';
 import { upsertAgentDefinition } from '../repositories/agentDefinitionsRepository.js';
 
 export async function seedAgentDefinitions(): Promise<void> {
-	const agentTypes = getKnownAgentTypes();
+	const agentTypes = getBuiltinAgentTypes();
 
 	console.log(`Seeding ${agentTypes.length} agent definitions...`);
 
 	for (const agentType of agentTypes) {
-		const definition = loadAgentDefinition(agentType);
+		const definition = loadBuiltinDefinition(agentType);
 		const systemPrompt = readTemplateFileSync(agentType);
 		const enriched = systemPrompt
 			? { ...definition, prompts: { ...definition.prompts, systemPrompt } }

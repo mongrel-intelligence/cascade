@@ -10,16 +10,16 @@ const {
 	mockListAgentDefinitions,
 	mockGetTriggerConfigsByProject,
 	mockListProjectIntegrations,
-	mockGetKnownAgentTypes,
-	mockLoadAgentDefinition,
+	mockGetBuiltinAgentTypes,
+	mockLoadBuiltinDefinition,
 	mockListAgentConfigs,
 	mockVerifyProjectOrgAccess,
 } = vi.hoisted(() => ({
 	mockListAgentDefinitions: vi.fn(),
 	mockGetTriggerConfigsByProject: vi.fn(),
 	mockListProjectIntegrations: vi.fn(),
-	mockGetKnownAgentTypes: vi.fn(),
-	mockLoadAgentDefinition: vi.fn(),
+	mockGetBuiltinAgentTypes: vi.fn(),
+	mockLoadBuiltinDefinition: vi.fn(),
 	mockListAgentConfigs: vi.fn(),
 	mockVerifyProjectOrgAccess: vi.fn(),
 }));
@@ -48,8 +48,8 @@ vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
 }));
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
-	getKnownAgentTypes: mockGetKnownAgentTypes,
-	loadAgentDefinition: mockLoadAgentDefinition,
+	getBuiltinAgentTypes: mockGetBuiltinAgentTypes,
+	loadBuiltinDefinition: mockLoadBuiltinDefinition,
 }));
 
 vi.mock('../../../../src/api/routers/_shared/projectAccess.js', () => ({
@@ -97,8 +97,8 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		mockGetTriggerConfigsByProject.mockResolvedValue([]);
 		mockListProjectIntegrations.mockResolvedValue([]);
 		mockListAgentDefinitions.mockResolvedValue([]);
-		mockGetKnownAgentTypes.mockReturnValue([]);
-		mockLoadAgentDefinition.mockReturnValue(makeAgentDefinition());
+		mockGetBuiltinAgentTypes.mockReturnValue([]);
+		mockLoadBuiltinDefinition.mockReturnValue(makeAgentDefinition());
 		// Default: no agent configs (all agents are unconfigured / available)
 		mockListAgentConfigs.mockResolvedValue([]);
 	});
@@ -286,8 +286,8 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 	it('is resilient to DB failure when loading agent definitions', async () => {
 		mockListAgentDefinitions.mockRejectedValue(new Error('DB connection failed'));
 		// Falls back to YAML — need some types for that
-		mockGetKnownAgentTypes.mockReturnValue(['implementation']);
-		mockLoadAgentDefinition.mockReturnValue(makeAgentDefinition());
+		mockGetBuiltinAgentTypes.mockReturnValue(['implementation']);
+		mockLoadBuiltinDefinition.mockReturnValue(makeAgentDefinition());
 		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
@@ -302,7 +302,7 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 		const definition = makeAgentDefinition();
 		mockListAgentDefinitions.mockResolvedValue([{ agentType: 'implementation', definition }]);
 		// YAML also has 'implementation'
-		mockGetKnownAgentTypes.mockReturnValue(['implementation']);
+		mockGetBuiltinAgentTypes.mockReturnValue(['implementation']);
 		mockListAgentConfigs.mockResolvedValue([{ agentType: 'implementation', id: 1 }]);
 
 		const caller = createCaller(mockCtx);
@@ -314,8 +314,8 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 
 	it('enabled agents appear in enabledAgents; unconfigured appear in availableAgents', async () => {
 		mockListAgentDefinitions.mockResolvedValue([]); // no DB definitions
-		mockGetKnownAgentTypes.mockReturnValue(['splitting', 'planning']);
-		mockLoadAgentDefinition.mockReturnValue(makeAgentDefinition());
+		mockGetBuiltinAgentTypes.mockReturnValue(['splitting', 'planning']);
+		mockLoadBuiltinDefinition.mockReturnValue(makeAgentDefinition());
 		// Only 'splitting' is enabled
 		mockListAgentConfigs.mockResolvedValue([{ agentType: 'splitting', id: 1 }]);
 
@@ -329,8 +329,8 @@ describe('agentTriggerConfigsRouter — getProjectTriggersView', () => {
 	});
 
 	it('handles YAML load failure gracefully (skips that agent)', async () => {
-		mockGetKnownAgentTypes.mockReturnValue(['implementation', 'failing-agent']);
-		mockLoadAgentDefinition
+		mockGetBuiltinAgentTypes.mockReturnValue(['implementation', 'failing-agent']);
+		mockLoadBuiltinDefinition
 			.mockReturnValueOnce(makeAgentDefinition())
 			.mockImplementationOnce(() => {
 				throw new Error('YAML parse error');

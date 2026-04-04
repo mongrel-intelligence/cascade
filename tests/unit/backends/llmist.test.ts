@@ -15,7 +15,7 @@ vi.mock('../../../src/agents/capabilities/index.js', () => ({
 // backends/llmist → definitions → strategies → gadgets → pm/ → webhook-handler
 // → triggers/agent-execution → agents/registry → new LlmistEngine() (still loading)
 vi.mock('../../../src/agents/definitions/index.js', () => ({
-	loadAgentDefinition: vi.fn(() => ({ engine: {} })),
+	loadBuiltinDefinition: vi.fn(() => ({ engine: {} })),
 	resolveAgentDefinition: vi.fn(async () => ({ engine: {} })),
 }));
 
