@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
+import { createMockUser } from '../../../helpers/factories.js';
 import {
 	createCallerFor,
 	expectTRPCError,
@@ -75,7 +75,7 @@ import { webhooksRouter } from '../../../../src/api/routers/webhooks.js';
 
 const createCaller = createCallerFor(webhooksRouter);
 
-const mockUser = createMockSuperAdmin();
+const mockUser = createMockUser();
 
 const mockProject = {
 	id: 'my-project',
@@ -220,9 +220,25 @@ describe('webhooksRouter', () => {
 			await expectTRPCError(caller.list({ projectId: 'my-project' }), 'UNAUTHORIZED');
 		});
 
-		it('throws FORBIDDEN for admin role (not superadmin)', async () => {
+		it('allows admin role to list webhooks', async () => {
+			setupProjectContext();
+
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: () => Promise.resolve([]),
+			});
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
 			const adminUser = createMockUser({ role: 'admin' });
 			const caller = createCaller({ user: adminUser, effectiveOrgId: adminUser.orgId });
+			const result = await caller.list({ projectId: 'my-project' });
+			expect(result.trello).toEqual([]);
+			expect(result.github).toEqual([]);
+		});
+
+		it('throws FORBIDDEN for member role', async () => {
+			const memberUser = createMockUser({ role: 'member' });
+			const caller = createCaller({ user: memberUser, effectiveOrgId: memberUser.orgId });
 			await expectTRPCError(caller.list({ projectId: 'my-project' }), 'FORBIDDEN');
 		});
 
