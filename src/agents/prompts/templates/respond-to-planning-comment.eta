@@ -18,13 +18,8 @@ You are running in a cloned copy of the project repository. Before updating the 
 
 1. **Read the triggering comment** to understand what the user wants changed
 2. **Read the current <%= it.workItemNoun || 'card' %>** to understand the existing plan
-<% if (it.squintEnabled) { %>3. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the requested changes
-4. **Use the Squint Codebase Intelligence Protocol (below)** to explore features, flows, and modules before reading any files
-5. **THEN read specific files** — only files Squint identified as relevant
-6. **Understand existing patterns** — how does the codebase already solve similar problems?<% } else { %>3. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to understand the relevant areas.
-4. **Understand existing patterns** — how does the codebase already solve similar problems?<% } %>
-
-<%~ include("partials/squint-exploration") %>
+3. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to understand the relevant areas.
+4. **Understand existing patterns** — how does the codebase already solve similar problems?
 
 ## Comment Classification
 

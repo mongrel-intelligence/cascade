@@ -117,13 +117,6 @@ describe('open-source readiness', () => {
 		});
 	});
 
-	describe('.gitignore', () => {
-		it('ignores .squint.db', () => {
-			const content = readRoot('.gitignore');
-			expect(content).toContain('.squint.db');
-		});
-	});
-
 	describe('config/projects.json', () => {
 		const config = JSON.parse(readRoot('config/projects.json'));
 
@@ -154,10 +147,6 @@ describe('open-source readiness', () => {
 	});
 
 	describe('committed artifacts are removed', () => {
-		it('.squint.db is not present', () => {
-			expect(existsSync(path.join(ROOT, '.squint.db'))).toBe(false);
-		});
-
 		it('tmp-test.sh is not present', () => {
 			expect(existsSync(path.join(ROOT, 'tmp-test.sh'))).toBe(false);
 		});

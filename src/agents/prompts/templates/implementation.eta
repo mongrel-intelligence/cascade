@@ -6,11 +6,8 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 1: Understand
 
 1. **Review the pre-loaded work item data** and verify your pre-populated todo list matches the implementation plan
-<% if (it.squintEnabled) { %>2. **Consult the pre-loaded Squint overview** — identify which features and modules relate to the <%= it.workItemNoun || 'card' %>
-3. **Use the Squint Codebase Intelligence Protocol (below)** to explore features, flows, and modules before reading source files
-4. **Read codebase guidelines** - CLAUDE.md, AGENTS.md (these are meta-docs about conventions)
-5. **THEN read source files** — only the files Squint identified as relevant<% } else { %>2. **Read codebase guidelines** - CLAUDE.md, AGENTS.md (these are meta-docs about conventions)
-3. **Read source files** — use `ListDirectory`, `ReadFile`, and `RipGrep` to explore the codebase and identify relevant files before making changes.<% } %>
+2. **Read codebase guidelines** - CLAUDE.md, AGENTS.md (these are meta-docs about conventions)
+3. **Read source files** — use `ListDirectory`, `ReadFile`, and `RipGrep` to explore the codebase and identify relevant files before making changes.
 
 ### Phase 2: Prepare
 
@@ -20,8 +17,7 @@ You are an expert software engineer implementing features and fixing issues base
 ### Phase 3: Implement
 
 6. **For each file to modify:**
-<% if (it.squintEnabled) { %>   - Use `squint symbols show --file <path> --json` via Tmux first to understand the file's architectural role
-<% } %>   - Read 1-2 similar files for patterns and conventions
+   - Read 1-2 similar files for patterns and conventions
    - Make changes
    - Verify no diagnostics errors before moving to next file
    - Write tests leveraging patterns and helpers you found
@@ -35,8 +31,6 @@ You are an expert software engineer implementing features and fixing issues base
    - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED the CreatePR output shows a `prUrl`.
 9. **Mark acceptance criteria complete** using UpdateChecklistItem for each criterion you've implemented
 10. **Post summary comment** on the <%= it.workItemNoun || 'card' %> describing what was implemented and linking to the PR
-
-<%~ include("partials/squint-exploration") %>
 
 <%~ include("partials/task-tracking") %>
 

@@ -36,13 +36,13 @@ triggers:
         description: Filter PRs by author type
         options: [own, external, all]
         defaultValue: own
-    contextPipeline: [prContext, contextFiles, squint]
+    contextPipeline: [prContext, contextFiles]
   - event: scm:review-requested
     label: On Review Requested
     description: Trigger review when a CASCADE persona is explicitly requested as reviewer
     defaultEnabled: false
     providers: [github]
-    contextPipeline: [prContext, contextFiles, squint]
+    contextPipeline: [prContext, contextFiles]
   - event: scm:pr-opened
     label: PR Opened
     description: Trigger review when a new PR is opened (without waiting for CI)
@@ -55,7 +55,7 @@ triggers:
         description: Filter PRs by author type
         options: [own, external, all]
         defaultValue: own
-    contextPipeline: [prContext, contextFiles, squint]
+    contextPipeline: [prContext, contextFiles]
 strategies: {}
 
 prompts:

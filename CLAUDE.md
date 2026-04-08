@@ -217,7 +217,7 @@ CASCADE stores all project configuration in PostgreSQL. The `config/projects.jso
 ### Schema
 
 - `organizations` - Organization definitions (multi-tenant support)
-- `projects` - Per-project config (repo, base branch, budget, engine, and per-project overrides for model, iterations, timeouts, progress model/interval, `squint_db_url`, `run_links_enabled`, `max_in_flight_items`)
+- `projects` - Per-project config (repo, base branch, budget, engine, and per-project overrides for model, iterations, timeouts, progress model/interval, `run_links_enabled`, `max_in_flight_items`)
 - `project_integrations` - Integration configs per project with `category` (pm/scm), `provider` (trello/jira/github), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
 - `project_credentials` - Project-scoped credentials keyed by `(projectId, envVarKey)`. Stores all credential types (GitHub tokens, Trello keys, JIRA tokens, LLM API keys). Encrypted at rest when `CREDENTIAL_MASTER_KEY` is set
 - `agent_configs` - Per-agent-type overrides (model, iterations, engine, `agent_engine_settings`, max_concurrency, `system_prompt`, `task_prompt`), project-scoped only (`project_id NOT NULL`)

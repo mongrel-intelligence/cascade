@@ -25,10 +25,6 @@ vi.mock('../../../../src/utils/lifecycle.js', () => ({
 	clearWatchdogCleanup: vi.fn(),
 }));
 
-vi.mock('../../../../src/utils/squintDb.js', () => ({
-	setupRemoteSquintDb: vi.fn().mockResolvedValue(null),
-}));
-
 vi.mock('../../../../src/utils/logging.js', () => ({
 	logger: {
 		info: vi.fn(),
@@ -63,7 +59,6 @@ import {
 import { clearWatchdogCleanup, setWatchdogCleanup } from '../../../../src/utils/lifecycle.js';
 import { logger } from '../../../../src/utils/logging.js';
 import { cleanupTempDir } from '../../../../src/utils/repo.js';
-import { setupRemoteSquintDb } from '../../../../src/utils/squintDb.js';
 
 const mockCreateFileLogger = vi.mocked(createFileLogger);
 const mockCreateAgentLogger = vi.mocked(createAgentLogger);
@@ -74,7 +69,6 @@ const mockCleanupLogFile = vi.mocked(cleanupLogFile);
 const mockCleanupLogDirectory = vi.mocked(cleanupLogDirectory);
 const mockClearWatchdogCleanup = vi.mocked(clearWatchdogCleanup);
 const mockSetWatchdogCleanup = vi.mocked(setWatchdogCleanup);
-const mockSetupRemoteSquintDb = vi.mocked(setupRemoteSquintDb);
 
 function setupMocks() {
 	const mockLoggerInstance = {
@@ -88,7 +82,6 @@ function setupMocks() {
 	mockCreateFileLogger.mockReturnValue(mockLoggerInstance as never);
 	mockCreateAgentLogger.mockReturnValue({ info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never);
 	mockLoadCascadeEnv.mockReturnValue({});
-	mockSetupRemoteSquintDb.mockResolvedValue(null);
 	return mockLoggerInstance;
 }
 

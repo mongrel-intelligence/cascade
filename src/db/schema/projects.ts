@@ -23,7 +23,6 @@ export const projects = pgTable(
 		agentEngineSettings: jsonb('agent_engine_settings').$type<EngineSettings>(),
 		progressModel: text('progress_model'),
 		progressIntervalMinutes: numeric('progress_interval_minutes', { precision: 5, scale: 1 }),
-		squintDbUrl: text('squint_db_url'),
 		runLinksEnabled: boolean('run_links_enabled').default(false).notNull(),
 		maxInFlightItems: integer('max_in_flight_items'),
 

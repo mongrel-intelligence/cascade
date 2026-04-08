@@ -69,9 +69,6 @@ export interface PromptContext {
 	// Capacity / pipeline management
 	maxInFlightItems?: number;
 
-	// Squint codebase intelligence
-	squintEnabled?: boolean;
-
 	// Future extensibility
 	[key: string]: unknown;
 }
@@ -341,11 +338,6 @@ export function getTemplateVariables(): Array<{
 			name: 'maxInFlightItems',
 			group: 'Capacity',
 			description: 'Maximum number of items allowed in the active pipeline at once (default: 1)',
-		},
-		{
-			name: 'squintEnabled',
-			group: 'Squint',
-			description: 'Whether the repository has a Squint database (.squint.db) available',
 		},
 	];
 }

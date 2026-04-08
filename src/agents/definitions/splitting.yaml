@@ -33,7 +33,7 @@ triggers:
         label: Target Status
         options: [splitting]
         defaultValue: splitting
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, workItem]
   - event: pm:label-added
     label: Ready to Process Label
     description: Trigger when Ready to Process label added to a card in Splitting list
@@ -44,7 +44,7 @@ triggers:
         label: Target List
         options: [splitting]
         defaultValue: splitting
-    contextPipeline: [directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [directoryListing, contextFiles, workItem]
 
 strategies: {}
 

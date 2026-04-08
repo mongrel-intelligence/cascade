@@ -48,8 +48,6 @@ export async function executeWithEngine(
 
 		skipRepoDeletion: Boolean(input.logDir),
 
-		squintDbUrl: input.project.squintDbUrl,
-
 		finalizeRun: (runId, fileLogger, outcome) =>
 			finalizeEngineRun(runId, fileLogger, {
 				status: outcome.status,

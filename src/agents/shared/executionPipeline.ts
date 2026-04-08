@@ -4,7 +4,6 @@ import { loadCascadeEnv, unloadCascadeEnv } from '../../utils/cascadeEnv.js';
 import { createFileLogger } from '../../utils/fileLogger.js';
 import { setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
-import { setupRemoteSquintDb } from '../../utils/squintDb.js';
 import { createAgentLogger } from '../utils/logging.js';
 import { cleanupAgentResources } from './cleanup.js';
 import type { RunTrackingInput } from './runTracking.js';
@@ -91,11 +90,6 @@ export interface AgentPipelineOptions {
 	runTracking?: RunTrackingInput & { model?: string; maxIterations?: number };
 
 	/**
-	 * Remote Squint DB URL for projects that don't commit .squint.db.
-	 */
-	squintDbUrl?: string;
-
-	/**
 	 * Whether the repoDir was pre-existing (skip deletion on cleanup).
 	 * When true, skips temp dir deletion in cleanup.
 	 */
@@ -145,7 +139,7 @@ export interface FinalizeRunOutcome {
  * Shared agent execution scaffold used by both the llmist lifecycle and
  * the Claude Code backend adapter.
  *
- * Handles: FileLogger → Watchdog → Repo setup → Env snapshot → Squint DB →
+ * Handles: FileLogger → Watchdog → Repo setup → Env snapshot →
  * Run tracking → CWD change → Execute → Restore CWD → Finalize run → Cleanup.
  *
  * The only divergent step is the `execute` callback.
@@ -178,11 +172,6 @@ export async function executeAgentPipeline(options: AgentPipelineOptions): Promi
 	try {
 		repoDir = await options.setupRepoDir(log);
 		const envSnapshot = loadCascadeEnv(repoDir, log);
-		const squintCleanup = await setupRemoteSquintDb(
-			repoDir,
-			{ squintDbUrl: options.squintDbUrl },
-			log,
-		);
 
 		if (options.runTracking) {
 			runId = await tryCreateRun(
@@ -208,7 +197,6 @@ export async function executeAgentPipeline(options: AgentPipelineOptions): Promi
 			});
 		} finally {
 			process.chdir(originalCwd);
-			squintCleanup?.();
 			unloadCascadeEnv(envSnapshot);
 		}
 

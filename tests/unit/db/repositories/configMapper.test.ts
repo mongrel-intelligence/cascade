@@ -27,7 +27,6 @@ const baseProjectRow = {
 	workItemBudgetUsd: null,
 	progressModel: null,
 	progressIntervalMinutes: null,
-	squintDbUrl: null,
 	agentEngine: null,
 	agentEngineSettings: null,
 	runLinksEnabled: false,
@@ -326,13 +325,6 @@ describe('mapProjectRow', () => {
 			makeInput({ row: { ...baseProjectRow, workItemBudgetUsd: '7.50' } }),
 		);
 		expect(result.workItemBudgetUsd).toBe(7.5);
-	});
-
-	it('includes squintDbUrl when set', () => {
-		const result = mapProjectRow(
-			makeInput({ row: { ...baseProjectRow, squintDbUrl: 'file://.squint.db' } }),
-		);
-		expect(result.squintDbUrl).toBe('file://.squint.db');
 	});
 
 	it('does not include prompts field (prompts are now in agent definitions)', () => {

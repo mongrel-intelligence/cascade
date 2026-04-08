@@ -38,8 +38,6 @@ A user @mentioned you in a PR comment. Read their request and do exactly what th
 
 <%~ include("partials/task-tracking") %>
 
-<%~ include("partials/squint-exploration") %>
-
 <%~ include("partials/pattern-discovery") %>
 
 <%~ include("partials/environment") %>

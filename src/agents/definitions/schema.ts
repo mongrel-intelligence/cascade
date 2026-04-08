@@ -75,7 +75,6 @@ export const TriggerParameterSchema = z
 export const CONTEXT_STEP_NAMES = [
 	'directoryListing',
 	'contextFiles',
-	'squint',
 	'workItem',
 	'prepopulateTodos',
 	'prContext',

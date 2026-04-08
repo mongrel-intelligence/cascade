@@ -30,7 +30,7 @@ triggers:
     description: Trigger when a PR has merge conflicts with the base branch
     defaultEnabled: false
     providers: [github]
-    contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [prContext, directoryListing, contextFiles, workItem]
 
 strategies: {}
 

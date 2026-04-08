@@ -30,7 +30,7 @@ triggers:
     description: Trigger when a review with changes requested or comments is submitted
     defaultEnabled: false
     providers: [github]
-    contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
+    contextPipeline: [prContext, prConversation, directoryListing, contextFiles]
 
 strategies:
   gadgetOptions:

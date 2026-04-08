@@ -15,8 +15,8 @@ RUN npm run build
 FROM node:22-bookworm AS production
 WORKDIR /app
 
-# Install pnpm and squint globally (some repos use pnpm, squint for codebase analysis)
-RUN npm install -g pnpm @zbigniewsobiecki/squint@^1.10.2 --force
+# Install pnpm globally (some repos use pnpm)
+RUN npm install -g pnpm --force
 
 # Install system packages needed by agent runtime
 RUN apt-get update && apt-get install -y \

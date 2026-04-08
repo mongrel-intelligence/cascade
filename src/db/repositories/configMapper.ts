@@ -82,7 +82,6 @@ export interface ProjectConfigRaw {
 	progressModel?: string;
 	progressIntervalMinutes?: number;
 	workItemBudgetUsd?: number;
-	squintDbUrl?: string;
 	engineSettings?: EngineSettings;
 	/** Per-agent engine settings overrides keyed by agent type. */
 	agentEngineSettings?: Record<string, EngineSettings>;
@@ -127,7 +126,6 @@ type ProjectRow = {
 	workItemBudgetUsd: string | null;
 	progressModel: string | null;
 	progressIntervalMinutes: string | null;
-	squintDbUrl: string | null;
 	agentEngine: string | null;
 	agentEngineSettings: EngineSettings | null;
 	runLinksEnabled: boolean;
@@ -210,7 +208,6 @@ function buildBaseProjectFields(row: ProjectRow, pmType: 'trello' | 'jira'): Pro
 		progressIntervalMinutes: numericOrUndefined(row.progressIntervalMinutes),
 		workItemBudgetUsd: numericOrUndefined(row.workItemBudgetUsd),
 		engineSettings: row.agentEngineSettings ?? undefined,
-		squintDbUrl: row.squintDbUrl ?? undefined,
 		runLinksEnabled: row.runLinksEnabled ?? false,
 		maxInFlightItems: row.maxInFlightItems ?? undefined,
 		snapshotEnabled: row.snapshotEnabled ?? undefined,

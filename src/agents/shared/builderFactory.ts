@@ -12,7 +12,6 @@ import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState, type SessionHooks, setReadOnlyFs } from '../../gadgets/sessionState.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
-import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { IProgressMonitor } from '../contracts/index.js';
 import { getAgentCapabilities } from '../definitions/index.js';
 import { type AccumulatedLlmCall, createObserverHooks } from '../utils/hooks.js';
@@ -57,10 +56,6 @@ export interface CreateBuilderOptions {
 }
 
 const MAX_GADGETS_PER_RESPONSE = 25;
-
-export function isSquintEnabled(repoDir: string): boolean {
-	return resolveSquintDbPath(repoDir) !== null;
-}
 
 export async function createConfiguredBuilder(options: CreateBuilderOptions): Promise<BuilderType> {
 	const {

@@ -1,7 +1,6 @@
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProviderOrNull } from '../../pm/index.js';
 import type { ProjectConfig } from '../../types/index.js';
-import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { PromptContext } from '../prompts/index.js';
 
 function getListIds(project: ProjectConfig) {
@@ -52,12 +51,10 @@ export function buildPromptContext(
 		originalWorkItemUrl: string;
 		detectedAgentType: string;
 	},
-	repoDir?: string,
 ): PromptContext {
 	const pmProvider = getPMProviderOrNull();
 	const listIds = getListIds(project);
 	const terminology = getPromptTerminology(pmProvider?.type);
-	const squintEnabled = repoDir ? resolveSquintDbPath(repoDir) !== null : false;
 
 	return {
 		workItemId,
@@ -68,7 +65,6 @@ export function buildPromptContext(
 		pmType: pmProvider?.type,
 		...terminology,
 		maxInFlightItems: project.maxInFlightItems ?? 1,
-		squintEnabled,
 		...(prContext && {
 			prNumber: prContext.prNumber,
 			prBranch: prContext.prBranch,

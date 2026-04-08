@@ -17,7 +17,6 @@ import {
 	fetchPipelineSnapshotStep,
 	fetchPRContextStep,
 	fetchPRConversationStep,
-	fetchSquintStep,
 	fetchWorkItemStep,
 	prepopulateTodosStep,
 } from './contextSteps.js';
@@ -32,7 +31,6 @@ export const CONTEXT_STEP_REGISTRY: Record<
 > = {
 	directoryListing: fetchDirectoryListingStep,
 	contextFiles: fetchContextFilesStep,
-	squint: fetchSquintStep,
 	workItem: fetchWorkItemStep,
 	prepopulateTodos: prepopulateTodosStep,
 	prContext: fetchPRContextStep,

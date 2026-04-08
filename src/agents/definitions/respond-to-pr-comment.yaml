@@ -29,7 +29,7 @@ triggers:
     description: Trigger when the implementer bot is @mentioned in a PR comment
     defaultEnabled: false
     providers: [github]
-    contextPipeline: [prContext, prConversation, directoryListing, contextFiles, squint]
+    contextPipeline: [prContext, prConversation, directoryListing, contextFiles]
 
 strategies:
   gadgetOptions:

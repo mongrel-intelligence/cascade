@@ -337,6 +337,13 @@
 			"when": 1782000000000,
 			"tag": "0047_add_alerting_integration",
 			"breakpoints": false
+		},
+		{
+			"idx": 48,
+			"version": "7",
+			"when": 1783000000000,
+			"tag": "0048_remove_squint_db_url",
+			"breakpoints": false
 		}
 	]
 }

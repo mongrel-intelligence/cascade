@@ -157,7 +157,6 @@ describe('YAML agent definitions loader', () => {
 			expect(statusChangedTrigger?.contextPipeline).toEqual([
 				'directoryListing',
 				'contextFiles',
-				'squint',
 				'workItem',
 				'prepopulateTodos',
 			]);
@@ -166,7 +165,7 @@ describe('YAML agent definitions loader', () => {
 		it('review agent triggers use PR context pipeline', () => {
 			const def = loadBuiltinDefinition('review');
 			const ciPassedTrigger = def.triggers.find((t) => t.event === 'scm:check-suite-success');
-			expect(ciPassedTrigger?.contextPipeline).toEqual(['prContext', 'contextFiles', 'squint']);
+			expect(ciPassedTrigger?.contextPipeline).toEqual(['prContext', 'contextFiles']);
 		});
 
 		it('planning agent does not have pm:comment-mention trigger (routed to respond-to-planning-comment)', () => {
@@ -190,7 +189,6 @@ describe('YAML agent definitions loader', () => {
 				'prContext',
 				'directoryListing',
 				'contextFiles',
-				'squint',
 				'workItem',
 			]);
 		});
@@ -203,7 +201,6 @@ describe('YAML agent definitions loader', () => {
 				'prConversation',
 				'directoryListing',
 				'contextFiles',
-				'squint',
 			]);
 		});
 

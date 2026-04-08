@@ -5,7 +5,6 @@
  * These are the building blocks composed by the YAML contextPipeline arrays.
  */
 
-import { execFileSync } from 'node:child_process';
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import { readWorkItem, readWorkItemWithMedia } from '../../gadgets/pm/core/readWorkItem.js';
@@ -23,7 +22,6 @@ import { getPMProviderOrNull, MAX_IMAGES_PER_WORK_ITEM } from '../../pm/index.js
 import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { resolveSquintDbPath } from '../../utils/squintDb.js';
 import type { ContextInjection, LogWriter } from '../contracts/index.js';
 import {
 	formatPRComments,
@@ -79,33 +77,6 @@ export function fetchContextFilesStep(params: FetchContextParams): ContextInject
 		result: file.content,
 		description: `Pre-fetched ${file.path}`,
 	}));
-}
-
-export function fetchSquintStep(params: FetchContextParams): ContextInjection[] {
-	const squintDb = resolveSquintDbPath(params.repoDir);
-	if (!squintDb) return [];
-
-	try {
-		const output = execFileSync('squint', ['overview', '-d', squintDb], {
-			encoding: 'utf-8',
-			timeout: 30_000,
-		});
-		if (!output?.trim()) return [];
-
-		return [
-			{
-				toolName: 'SquintOverview',
-				params: {
-					comment: 'Pre-fetching Squint codebase overview for context',
-					database: squintDb,
-				},
-				result: output,
-				description: 'Pre-fetched Squint codebase overview',
-			},
-		];
-	} catch {
-		return [];
-	}
 }
 
 export async function fetchWorkItemStep(params: FetchContextParams): Promise<ContextInjection[]> {

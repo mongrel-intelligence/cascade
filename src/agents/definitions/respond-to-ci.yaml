@@ -31,7 +31,7 @@ triggers:
     description: Trigger when CI checks fail
     defaultEnabled: false
     providers: [github]
-    contextPipeline: [prContext, directoryListing, contextFiles, squint, workItem]
+    contextPipeline: [prContext, directoryListing, contextFiles, workItem]
 
 strategies: {}
 

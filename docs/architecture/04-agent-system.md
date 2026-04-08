@@ -42,7 +42,7 @@ triggers:
         type: select
         options: [todo]
         defaultValue: todo
-    contextPipeline: [directoryListing, contextFiles, squint, workItem, prepopulateTodos]
+    contextPipeline: [directoryListing, contextFiles, workItem, prepopulateTodos]
 
 prompts:
   taskPrompt: |

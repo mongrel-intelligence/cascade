@@ -34,9 +34,6 @@ npm-debug.log*
 tmp-*.ts
 tmp-*.sh
 
-# Generated databases
-.squint.db
-
 # Local agent workspace (repos, logs)
 workspace/
 

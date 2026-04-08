@@ -83,7 +83,6 @@ export const ProjectConfigSchema = z.object({
 	 * Used by buildExecutionPlan() to merge into the execution plan's engineSettings.
 	 */
 	agentEngineSettings: z.record(z.string(), EngineSettingsSchema).optional(),
-	squintDbUrl: z.string().url().optional(),
 	runLinksEnabled: z.boolean().default(false),
 	maxInFlightItems: z.number().int().positive().optional(),
 	snapshotEnabled: z.boolean().optional(),

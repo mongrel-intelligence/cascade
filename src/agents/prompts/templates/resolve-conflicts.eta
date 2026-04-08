@@ -73,8 +73,6 @@ Always commit and push before calling Finish!
 
 <%~ include("partials/task-tracking") %>
 
-<%~ include("partials/squint-exploration") %>
-
 <%~ include("partials/pattern-discovery") %>
 
 <%~ include("partials/environment") %>

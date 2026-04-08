@@ -143,7 +143,6 @@ Each trigger in a YAML agent definition can declare a `contextPipeline` — an o
 |------|---------|
 | `directoryListing` | List repository file structure |
 | `contextFiles` | Read key project files (README, etc.) |
-| `squint` | Query Squint semantic index |
 | `workItem` | Fetch work item details from PM tool |
 | `prepopulateTodos` | Pre-populate todo list from work item checklists |
 | `prContext` | Fetch PR details, diff, reviews |

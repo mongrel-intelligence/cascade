@@ -7,7 +7,6 @@ describe.concurrent('CONTEXT_STEP_REGISTRY', () => {
 		const expectedKeys = [
 			'directoryListing',
 			'contextFiles',
-			'squint',
 			'workItem',
 			'prepopulateTodos',
 			'prContext',
@@ -31,7 +30,6 @@ describe.concurrent('CONTEXT_STEP_REGISTRY', () => {
 		const expectedKeys = [
 			'directoryListing',
 			'contextFiles',
-			'squint',
 			'workItem',
 			'prepopulateTodos',
 			'prContext',
@@ -50,10 +48,6 @@ describe.concurrent('CONTEXT_STEP_REGISTRY', () => {
 
 	it('contextFiles entry is a function', () => {
 		expect(typeof CONTEXT_STEP_REGISTRY.contextFiles).toBe('function');
-	});
-
-	it('squint entry is a function', () => {
-		expect(typeof CONTEXT_STEP_REGISTRY.squint).toBe('function');
 	});
 
 	it('workItem entry is a function', () => {
