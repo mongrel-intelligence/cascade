@@ -113,9 +113,6 @@ export const ALLOWED_ENV_EXACT = new Set([
 
   // My Engine auth
   'MY_ENGINE_API_KEY',
-
-  // Squint (pass through so agents can use AST tooling)
-  'SQUINT_DB_PATH',
 ]);
 ```
 

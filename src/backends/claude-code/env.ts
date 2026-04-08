@@ -21,9 +21,6 @@ export const ALLOWED_ENV_EXACT = new Set([
 	// Claude auth
 	'CLAUDE_CODE_OAUTH_TOKEN',
 	'ANTHROPIC_API_KEY',
-
-	// Squint
-	'SQUINT_DB_PATH',
 ]);
 
 /** Prefix patterns — any var starting with one of these passes through. */

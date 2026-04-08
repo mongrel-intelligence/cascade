@@ -17,9 +17,6 @@ const ALLOWED_ENV_EXACT = new Set([
 
 	// Codex auth
 	'OPENAI_API_KEY',
-
-	// Squint
-	'SQUINT_DB_PATH',
 ]);
 
 export function buildEnv(

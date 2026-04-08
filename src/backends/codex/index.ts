@@ -358,8 +358,6 @@ export class CodexEngine extends NativeToolEngine {
 			...SHARED_ALLOWED_ENV_EXACT,
 			// Codex auth
 			'OPENAI_API_KEY',
-			// Squint
-			'SQUINT_DB_PATH',
 		]);
 	}
 

@@ -19,9 +19,6 @@ const ALLOWED_ENV_EXACT = new Set([
 	'OPENAI_API_KEY',
 	'ANTHROPIC_API_KEY',
 	'OPENROUTER_API_KEY',
-
-	// Squint
-	'SQUINT_DB_PATH',
 ]);
 
 export function buildEnv(
