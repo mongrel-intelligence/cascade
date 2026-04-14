@@ -57,6 +57,71 @@ function CopyButton({ text }: { text: string }) {
 	);
 }
 
+// ============================================================================
+// LinearWebhookInfoPanel
+// ============================================================================
+
+export function LinearWebhookInfoPanel({ webhookUrl }: { webhookUrl: string }) {
+	return (
+		<div className="space-y-4">
+			<div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900/50 dark:bg-blue-900/20">
+				<div className="flex items-start gap-2">
+					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+					<div className="space-y-2">
+						<p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+							Manual Webhook Setup Required
+						</p>
+						<p className="text-xs text-blue-600 dark:text-blue-400">
+							Linear webhooks must be configured manually in your Linear team settings. CASCADE
+							cannot create them programmatically.
+						</p>
+					</div>
+				</div>
+			</div>
+
+			<div className="space-y-2">
+				<Label>Your CASCADE Webhook URL</Label>
+				<div className="flex items-center gap-2 rounded-md border bg-muted px-3 py-2">
+					<span className="flex-1 font-mono text-xs break-all">{webhookUrl}</span>
+					<CopyButton text={webhookUrl} />
+				</div>
+			</div>
+
+			<div className="space-y-2">
+				<p className="text-xs text-muted-foreground font-medium">Setup instructions:</p>
+				<ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground pl-1">
+					<li>
+						Go to{' '}
+						<a
+							href="https://linear.app/settings/api"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="underline hover:text-foreground"
+						>
+							linear.app/settings/api
+						</a>{' '}
+						and navigate to <strong>Webhooks</strong>
+					</li>
+					<li>Click &quot;New webhook&quot; and enter the URL above</li>
+					<li>
+						Enable events: <strong>Issues</strong> (created, updated, removed)
+					</li>
+					<li>Select your team and save — webhooks are team-scoped in Linear</li>
+					<li>
+						Optionally set a webhook secret and store it as{' '}
+						<code className="bg-muted-foreground/20 px-1 rounded">LINEAR_WEBHOOK_SECRET</code> in
+						project credentials
+					</li>
+				</ol>
+			</div>
+		</div>
+	);
+}
+
+// ============================================================================
+// WebhookStep
+// ============================================================================
+
 export function WebhookStep({
 	state,
 	webhooksQuery,
@@ -64,6 +129,7 @@ export function WebhookStep({
 	callbackBaseUrl,
 	createWebhookMutation,
 	deleteWebhookMutation,
+	linearWebhookUrl,
 }: {
 	state: WizardState;
 	webhooksQuery: WebhooksQueryProps;
@@ -71,7 +137,17 @@ export function WebhookStep({
 	callbackBaseUrl: string;
 	createWebhookMutation: UseMutationResult<unknown, Error, void, unknown>;
 	deleteWebhookMutation: UseMutationResult<unknown, Error, string, unknown>;
+	linearWebhookUrl?: string;
 }) {
+	// Linear uses a display-only panel — no create/delete buttons
+	if (state.provider === 'linear') {
+		return (
+			<LinearWebhookInfoPanel
+				webhookUrl={linearWebhookUrl ?? `${callbackBaseUrl}/linear/webhook`}
+			/>
+		);
+	}
+
 	const isTrello = state.provider === 'trello';
 	const providerName = isTrello ? 'Trello' : 'JIRA';
 

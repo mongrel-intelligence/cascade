@@ -7,7 +7,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import type { WizardAction, WizardState } from './pm-wizard-state.js';
+import type {
+	LinearTeamDetails,
+	LinearTeamOption,
+	WizardAction,
+	WizardState,
+} from './pm-wizard-state.js';
 
 // ============================================================================
 // Trello Discovery
@@ -188,6 +193,99 @@ export function useJiraDiscovery(
 }
 
 // ============================================================================
+// Linear Discovery
+// ============================================================================
+
+export function useLinearDiscovery(
+	state: WizardState,
+	dispatch: React.Dispatch<WizardAction>,
+	advanceToStep: (step: number) => void,
+	projectId: string,
+) {
+	const linearTeamsMutation = useMutation({
+		mutationFn: () => {
+			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
+				return trpcClient.integrationsDiscovery.linearTeamsByProject.mutate({ projectId });
+			}
+			if (!state.linearApiKey) {
+				throw new Error('Enter your API key before fetching teams');
+			}
+			return trpcClient.integrationsDiscovery.linearTeams.mutate({
+				apiKey: state.linearApiKey,
+			});
+		},
+		onSuccess: (teams) =>
+			dispatch({
+				type: 'SET_LINEAR_TEAMS',
+				teams: teams as LinearTeamOption[],
+			}),
+	});
+
+	const linearDetailsMutation = useMutation({
+		mutationFn: (teamId: string) => {
+			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
+				return trpcClient.integrationsDiscovery.linearTeamDetailsByProject.mutate({
+					projectId,
+					teamId,
+				});
+			}
+			if (!state.linearApiKey) {
+				throw new Error('Enter your API key before fetching team details');
+			}
+			return trpcClient.integrationsDiscovery.linearTeamDetails.mutate({
+				apiKey: state.linearApiKey,
+				teamId,
+			});
+		},
+		onSuccess: (details) => {
+			dispatch({
+				type: 'SET_LINEAR_TEAM_DETAILS',
+				details: details as LinearTeamDetails,
+			});
+			advanceToStep(4);
+		},
+	});
+
+	const handleTeamSelect = (teamId: string) => {
+		dispatch({ type: 'SET_LINEAR_TEAM_ID', id: teamId });
+		if (teamId) {
+			linearDetailsMutation.mutate(teamId);
+		}
+	};
+
+	// Auto-fetch teams when verification result changes
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on verification result change
+	useEffect(() => {
+		if (!state.verificationResult || state.provider !== 'linear') return;
+		if (state.linearTeams.length === 0 && !linearTeamsMutation.isPending) {
+			linearTeamsMutation.mutate();
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [state.verificationResult]);
+
+	// In edit mode, auto-fetch team list and details
+	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
+	useEffect(() => {
+		if (!state.isEditing || state.provider !== 'linear') return;
+		const canFetch = state.linearApiKey ? true : state.hasStoredCredentials;
+		if (canFetch && state.linearTeams.length === 0 && !linearTeamsMutation.isPending) {
+			linearTeamsMutation.mutate();
+		}
+		if (
+			state.linearTeamId &&
+			!state.linearTeamDetails &&
+			canFetch &&
+			!linearDetailsMutation.isPending
+		) {
+			linearDetailsMutation.mutate(state.linearTeamId);
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [state.isEditing, state.linearTeamId, state.hasStoredCredentials]);
+
+	return { linearTeamsMutation, linearDetailsMutation, handleTeamSelect };
+}
+
+// ============================================================================
 // Verification
 // ============================================================================
 
@@ -209,6 +307,15 @@ export function useVerification(
 				});
 				return { provider: 'trello' as const, result };
 			}
+			if (provider === 'linear') {
+				if (!state.linearApiKey) {
+					throw new Error('Enter your API key before verifying');
+				}
+				const result = await trpcClient.integrationsDiscovery.verifyLinear.mutate({
+					apiKey: state.linearApiKey,
+				});
+				return { provider: 'linear' as const, result };
+			}
 			if (!state.jiraEmail || !state.jiraApiToken) {
 				throw new Error('Enter both credentials before verifying');
 			}
@@ -227,6 +334,12 @@ export function useVerification(
 				dispatch({
 					type: 'SET_VERIFICATION',
 					result: { provider: 'trello', display: `@${r.username} (${r.fullName})` },
+				});
+			} else if (provider === 'linear') {
+				const r = result as { name: string; displayName: string };
+				dispatch({
+					type: 'SET_VERIFICATION',
+					result: { provider: 'linear', display: r.displayName || r.name },
 				});
 			} else {
 				const r = result as { displayName: string; emailAddress: string };
@@ -294,6 +407,22 @@ export function useWebhookManagement(projectId: string, state: WizardState) {
 		createWebhookMutation,
 		deleteWebhookMutation,
 	};
+}
+
+// ============================================================================
+// Linear Webhook Info (display-only)
+// ============================================================================
+
+export function useLinearWebhookInfo() {
+	const callbackBaseUrl =
+		API_URL ||
+		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+	const webhookUrl = callbackBaseUrl
+		? `${callbackBaseUrl}/linear/webhook`
+		: '<YOUR_CASCADE_HOST>/linear/webhook';
+
+	return { webhookUrl };
 }
 
 // ============================================================================
@@ -454,7 +583,7 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 	const queryClient = useQueryClient();
 
 	const saveMutation = useMutation({
-		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: handles two provider types + credential persisting
+		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: handles three provider types + credential persisting
 		mutationFn: async () => {
 			let config: Record<string, unknown>;
 			if (state.provider === 'trello') {
@@ -463,6 +592,12 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 					lists: state.trelloListMappings,
 					labels: state.trelloLabelMappings,
 					...(state.trelloCostFieldId ? { customFields: { cost: state.trelloCostFieldId } } : {}),
+				};
+			} else if (state.provider === 'linear') {
+				config = {
+					teamId: state.linearTeamId,
+					statuses: state.linearStatusMappings,
+					...(Object.keys(state.linearLabels).length > 0 ? { labels: state.linearLabels } : {}),
 				};
 			} else {
 				config = {
@@ -500,6 +635,15 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 						envVarKey: 'TRELLO_TOKEN',
 						value: state.trelloToken,
 						name: 'Trello Token',
+					});
+				}
+			} else if (state.provider === 'linear') {
+				if (state.linearApiKey) {
+					await trpcClient.projects.credentials.set.mutate({
+						projectId,
+						envVarKey: 'LINEAR_API_KEY',
+						value: state.linearApiKey,
+						name: 'Linear API Key',
 					});
 				}
 			} else {

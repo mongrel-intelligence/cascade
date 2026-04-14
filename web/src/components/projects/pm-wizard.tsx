@@ -7,6 +7,8 @@ import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
 import {
 	useJiraCustomFieldCreation,
 	useJiraDiscovery,
+	useLinearDiscovery,
+	useLinearWebhookInfo,
 	useSaveMutation,
 	useTrelloCustomFieldCreation,
 	useTrelloDiscovery,
@@ -19,6 +21,11 @@ import {
 	JiraFieldMappingStep,
 	JiraProjectStep,
 } from './pm-wizard-jira-steps.js';
+import {
+	LinearCredentialsStep,
+	LinearFieldMappingStep,
+	LinearTeamStep,
+} from './pm-wizard-linear-steps.js';
 import {
 	areCredentialsReady,
 	buildEditState,
@@ -122,6 +129,12 @@ export function PMWizard({
 		advanceToStep,
 		projectId,
 	);
+	const { linearTeamsMutation, linearDetailsMutation, handleTeamSelect } = useLinearDiscovery(
+		state,
+		dispatch,
+		advanceToStep,
+		projectId,
+	);
 	const { createLabelMutation, createMissingLabelsMutation } = useTrelloLabelCreation(
 		state,
 		dispatch,
@@ -129,6 +142,7 @@ export function PMWizard({
 	const { createCustomFieldMutation } = useTrelloCustomFieldCreation(state, dispatch);
 	const { createJiraCustomFieldMutation } = useJiraCustomFieldCreation(state, dispatch);
 	const webhookManagement = useWebhookManagement(projectId, state);
+	const { webhookUrl: linearWebhookUrl } = useLinearWebhookInfo();
 	const { saveMutation } = useSaveMutation(projectId, state);
 
 	// ---- Label creation handlers ----
@@ -198,11 +212,13 @@ export function PMWizard({
 					url: w.callbackURL,
 					active: w.active,
 				}))
-			: (webhooksQuery.data?.jira ?? []).map((w) => ({
-					id: String(w.id),
-					url: w.url,
-					active: w.enabled,
-				}));
+			: state.provider === 'jira'
+				? (webhooksQuery.data?.jira ?? []).map((w) => ({
+						id: String(w.id),
+						url: w.url,
+						active: w.enabled,
+					}))
+				: []; // Linear: webhooks are configured manually
 
 	// ---- Render ----
 
@@ -219,7 +235,7 @@ export function PMWizard({
 				<div className="space-y-2">
 					<Label>Provider</Label>
 					<div className="flex gap-2">
-						{(['trello', 'jira'] as const).map((p) => (
+						{(['trello', 'jira', 'linear'] as const).map((p) => (
 							<button
 								key={p}
 								type="button"
@@ -234,7 +250,7 @@ export function PMWizard({
 										: 'border-input text-muted-foreground hover:text-foreground hover:bg-accent/50'
 								} ${state.isEditing ? 'cursor-not-allowed opacity-60' : ''}`}
 							>
-								{p === 'trello' ? 'Trello' : 'JIRA'}
+								{p === 'trello' ? 'Trello' : p === 'jira' ? 'JIRA' : 'Linear'}
 							</button>
 						))}
 					</div>
@@ -251,6 +267,8 @@ export function PMWizard({
 			>
 				{state.provider === 'trello' ? (
 					<TrelloCredentialsStep state={state} dispatch={dispatch} />
+				) : state.provider === 'linear' ? (
+					<LinearCredentialsStep state={state} dispatch={dispatch} />
 				) : (
 					<JiraCredentialsStep state={state} dispatch={dispatch} />
 				)}
@@ -301,6 +319,13 @@ export function PMWizard({
 						boardsMutation={boardsMutation}
 						boardDetailsMutation={boardDetailsMutation}
 					/>
+				) : state.provider === 'linear' ? (
+					<LinearTeamStep
+						state={state}
+						onTeamSelect={handleTeamSelect}
+						linearTeamsMutation={linearTeamsMutation}
+						linearDetailsMutation={linearDetailsMutation}
+					/>
 				) : (
 					<JiraProjectStep
 						state={state}
@@ -329,6 +354,8 @@ export function PMWizard({
 						creatingSlot={creatingSlot}
 						creatingCostField={creatingCostField}
 					/>
+				) : state.provider === 'linear' ? (
+					<LinearFieldMappingStep state={state} dispatch={dispatch} />
 				) : (
 					<JiraFieldMappingStep
 						state={state}
@@ -351,6 +378,7 @@ export function PMWizard({
 					state={state}
 					webhooksQuery={webhooksQuery}
 					activeWebhooks={activeWebhooks}
+					linearWebhookUrl={linearWebhookUrl}
 					{...webhookManagement}
 				/>
 			</WizardStep>
