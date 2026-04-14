@@ -32,6 +32,12 @@ export interface SentryWebhookInfo {
 	note: string;
 }
 
+export interface LinearWebhookInfo {
+	url: string;
+	webhookSecretSet: boolean;
+	note: string;
+}
+
 export interface ProjectContext {
 	projectId: string;
 	orgId: string;
@@ -49,4 +55,6 @@ export interface ProjectContext {
 	webhookSecret?: string;
 	sentryConfigured?: boolean;
 	sentryWebhookSecretSet?: boolean;
+	linearApiKey?: string;
+	linearWebhookSecretSet?: boolean;
 }

@@ -7,6 +7,7 @@ import { getJiraConfig, getTrelloConfig } from '../../../pm/config.js';
 import { verifyProjectOrgAccess } from '../_shared/projectAccess.js';
 import type { ProjectContext } from './types.js';
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-provider credential resolution
 export async function resolveProjectContext(
 	projectId: string,
 	userOrgId: string,
@@ -55,6 +56,8 @@ export async function resolveProjectContext(
 		webhookSecret: creds.GITHUB_WEBHOOK_SECRET ?? undefined,
 		sentryConfigured,
 		sentryWebhookSecretSet: !!creds.SENTRY_WEBHOOK_SECRET,
+		linearApiKey: creds.LINEAR_API_KEY ?? undefined,
+		linearWebhookSecretSet: !!creds.LINEAR_WEBHOOK_SECRET,
 	};
 }
 
@@ -65,6 +68,7 @@ export const oneTimeTokensSchema = z
 		trelloToken: z.string().optional(),
 		jiraEmail: z.string().optional(),
 		jiraApiToken: z.string().optional(),
+		linearApiKey: z.string().optional(),
 	})
 	.optional();
 
@@ -77,4 +81,5 @@ export function applyOneTimeTokens(pctx: ProjectContext, tokens: OneTimeTokens):
 	if (tokens.trelloToken) pctx.trelloToken = tokens.trelloToken;
 	if (tokens.jiraEmail) pctx.jiraEmail = tokens.jiraEmail;
 	if (tokens.jiraApiToken) pctx.jiraApiToken = tokens.jiraApiToken;
+	if (tokens.linearApiKey) pctx.linearApiKey = tokens.linearApiKey;
 }

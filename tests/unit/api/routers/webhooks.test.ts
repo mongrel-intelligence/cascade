@@ -102,6 +102,17 @@ const mockJiraProject = {
 	},
 };
 
+const mockLinearProject = {
+	id: 'linear-project',
+	orgId: 'org-1',
+	repo: 'owner/linear-repo',
+	pm: { type: 'linear' },
+	linear: {
+		teamId: 'TEAM-123',
+		statuses: { todo: 'Todo', inProgress: 'In Progress' },
+	},
+};
+
 function setupJiraProjectContext() {
 	mockDbSelect.mockReturnValue({ from: mockDbFrom });
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
@@ -113,6 +124,24 @@ function setupJiraProjectContext() {
 		JIRA_API_TOKEN: 'jira-token-123',
 		GITHUB_TOKEN_IMPLEMENTER: 'ghp_test123',
 	});
+}
+
+function setupLinearProjectContext(opts?: { noLinearApiKey?: boolean; webhookSecret?: boolean }) {
+	mockDbSelect.mockReturnValue({ from: mockDbFrom });
+	mockDbFrom.mockReturnValue({ where: mockDbWhere });
+	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+	mockFindProjectByIdFromDb.mockResolvedValue(mockLinearProject);
+	mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+	const creds: Record<string, string> = {
+		GITHUB_TOKEN_IMPLEMENTER: 'ghp_test123',
+	};
+	if (!opts?.noLinearApiKey) {
+		creds.LINEAR_API_KEY = 'lin_api_test123';
+	}
+	if (opts?.webhookSecret) {
+		creds.LINEAR_WEBHOOK_SECRET = 'linear-secret-abc';
+	}
+	mockGetAllProjectCredentials.mockResolvedValue(creds);
 }
 
 function setupProjectContext(opts?: {
@@ -709,6 +738,7 @@ describe('webhooksRouter', () => {
 				trello: null,
 				github: null,
 				jira: null,
+				linear: null,
 			});
 		});
 
@@ -913,6 +943,172 @@ describe('webhooksRouter', () => {
 			expect(result.errors.trello).toBeNull();
 			expect(result.errors.github).toBeNull();
 			expect(result.errors.jira).toBeNull();
+		});
+
+		it('list uses linearApiKey oneTimeToken to show Linear webhook info', async () => {
+			setupLinearProjectContext({ noLinearApiKey: true });
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+				oneTimeTokens: { linearApiKey: 'lin_api_onetime' },
+			});
+
+			expect(result.linear).not.toBeNull();
+			expect(result.linear?.url).toBe('https://cascade.example.com/linear/webhook');
+		});
+	});
+
+	describe('Linear webhook info', () => {
+		it('list returns linear webhook info when project uses Linear PM and has linearApiKey', async () => {
+			setupLinearProjectContext();
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.linear).not.toBeNull();
+			expect(result.linear?.url).toBe('https://cascade.example.com/linear/webhook');
+			expect(result.linear?.webhookSecretSet).toBe(false);
+			expect(result.linear?.note).toContain('Linear');
+		});
+
+		it('list returns linear webhook info with webhookSecretSet true when LINEAR_WEBHOOK_SECRET is set', async () => {
+			setupLinearProjectContext({ webhookSecret: true });
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.linear?.webhookSecretSet).toBe(true);
+		});
+
+		it('list returns null linear when project uses Linear PM but no linearApiKey', async () => {
+			setupLinearProjectContext({ noLinearApiKey: true });
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.linear).toBeNull();
+		});
+
+		it('list returns null linear when no callbackBaseUrl is provided', async () => {
+			setupLinearProjectContext();
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'linear-project',
+			});
+
+			expect(result.linear).toBeNull();
+		});
+
+		it('list errors object includes linear: null', async () => {
+			setupLinearProjectContext();
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.errors.linear).toBeNull();
+		});
+
+		it('create returns linear webhook info for Linear PM projects', async () => {
+			setupLinearProjectContext();
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 1,
+					config: { url: 'http://example.com/github/webhook' },
+					events: [],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.linear).not.toBeUndefined();
+			expect(result.linear?.url).toBe('https://cascade.example.com/linear/webhook');
+			expect(result.linear?.webhookSecretSet).toBe(false);
+			expect(result.linear?.note).toContain('Linear');
+		});
+
+		it('create returns linear webhook info with webhookSecretSet true when LINEAR_WEBHOOK_SECRET is set', async () => {
+			setupLinearProjectContext({ webhookSecret: true });
+
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 1,
+					config: { url: 'http://example.com/github/webhook' },
+					events: [],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'linear-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.linear?.webhookSecretSet).toBe(true);
+		});
+
+		it('create does not return linear info for non-Linear PM projects', async () => {
+			setupProjectContext();
+
+			mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve([]) });
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: {
+					id: 1,
+					config: { url: 'http://example.com/github/webhook' },
+					events: [],
+					active: true,
+				},
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'my-project',
+				callbackBaseUrl: 'https://cascade.example.com',
+			});
+
+			expect(result.linear).toBeUndefined();
 		});
 	});
 });

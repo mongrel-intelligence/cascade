@@ -92,6 +92,16 @@ export default class WebhooksList extends DashboardCommand {
 			} else {
 				this.log('  (not configured)');
 			}
+
+			this.log('');
+			this.log('Linear webhook:');
+			if (result.linear) {
+				this.log(`  URL: ${result.linear.url}`);
+				this.log(`  Webhook secret: ${result.linear.webhookSecretSet ? 'configured' : 'not set'}`);
+				this.log(`  ${result.linear.note}`);
+			} else {
+				this.log('  (not configured)');
+			}
 		} catch (err) {
 			this.handleError(err);
 		}

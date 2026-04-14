@@ -16,11 +16,12 @@ import { trelloCreateWebhook, trelloDeleteWebhook, trelloListWebhooks } from './
 import type {
 	GitHubWebhook,
 	JiraWebhookInfo,
+	LinearWebhookInfo,
 	SentryWebhookInfo,
 	TrelloWebhook,
 } from './webhooks/types.js';
 
-export type { GitHubWebhook, JiraWebhookInfo, SentryWebhookInfo, TrelloWebhook };
+export type { GitHubWebhook, JiraWebhookInfo, LinearWebhookInfo, SentryWebhookInfo, TrelloWebhook };
 
 export const webhooksRouter = router({
 	list: adminProcedure
@@ -52,15 +53,28 @@ export const webhooksRouter = router({
 				};
 			}
 
+			// Linear — informational only (webhooks must be configured in Linear team settings)
+			let linear: LinearWebhookInfo | null = null;
+			if (input.callbackBaseUrl && pctx.pmType === 'linear' && pctx.linearApiKey) {
+				const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
+				linear = {
+					url: `${baseUrl}/linear/webhook`,
+					webhookSecretSet: pctx.linearWebhookSecretSet ?? false,
+					note: 'Configure this URL in your Linear team settings under API > Webhooks.',
+				};
+			}
+
 			return {
 				trello: trelloResult.status === 'fulfilled' ? trelloResult.value : [],
 				github: githubResult.status === 'fulfilled' ? githubResult.value : [],
 				jira: jiraResult.status === 'fulfilled' ? jiraResult.value : [],
 				sentry,
+				linear,
 				errors: {
 					trello: trelloResult.status === 'rejected' ? String(trelloResult.reason) : null,
 					github: githubResult.status === 'rejected' ? String(githubResult.reason) : null,
 					jira: jiraResult.status === 'rejected' ? String(jiraResult.reason) : null,
+					linear: null,
 				},
 			};
 		}),
@@ -85,6 +99,7 @@ export const webhooksRouter = router({
 				github?: GitHubWebhook | string;
 				jira?: JiraWebhookInfo | string;
 				sentry?: SentryWebhookInfo;
+				linear?: LinearWebhookInfo;
 				labelsEnsured?: string[];
 			} = {};
 
@@ -155,6 +170,15 @@ export const webhooksRouter = router({
 					url: `${baseUrl}/sentry/webhook/${input.projectId}`,
 					webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
 					note: 'Configure this URL manually in your Sentry Internal Integration webhook settings.',
+				};
+			}
+
+			// Linear — display-only (cannot create programmatically)
+			if (pctx.pmType === 'linear' && pctx.linearApiKey) {
+				results.linear = {
+					url: `${baseUrl}/linear/webhook`,
+					webhookSecretSet: pctx.linearWebhookSecretSet ?? false,
+					note: 'Configure this URL manually in your Linear team settings under API > Webhooks.',
 				};
 			}
 

@@ -53,11 +53,14 @@ interface ProjectContext {
 	projectId: string;
 	orgId: string;
 	repo: string | null;
+	pmType: string;
 	boardId: string;
 	trelloApiKey: string;
 	trelloToken: string;
 	githubToken: string;
 	webhookSecret?: string;
+	linearApiKey?: string;
+	linearWebhookSecretSet: boolean;
 }
 
 async function resolveProjectContext(projectId: string): Promise<ProjectContext> {
@@ -73,8 +76,9 @@ async function resolveProjectContext(projectId: string): Promise<ProjectContext>
 	const trelloApiKey = credMap.TRELLO_API_KEY;
 	const trelloToken = credMap.TRELLO_TOKEN;
 	const githubToken = credMap.GITHUB_TOKEN_IMPLEMENTER ?? credMap.GITHUB_TOKEN;
+	const pmType = project.pm?.type ?? 'trello';
 
-	if (!trelloApiKey || !trelloToken) {
+	if (pmType === 'trello' && (!trelloApiKey || !trelloToken)) {
 		console.warn(
 			'Warning: TRELLO_API_KEY or TRELLO_TOKEN not found — Trello operations will be skipped',
 		);
@@ -87,11 +91,14 @@ async function resolveProjectContext(projectId: string): Promise<ProjectContext>
 		projectId,
 		orgId: project.orgId,
 		repo: project.repo ?? null,
-		boardId: project.trello.boardId,
+		pmType,
+		boardId: project.trello?.boardId ?? '',
 		trelloApiKey: trelloApiKey ?? '',
 		trelloToken: trelloToken ?? '',
 		githubToken: githubToken ?? '',
 		webhookSecret: credMap.GITHUB_WEBHOOK_SECRET ?? undefined,
+		linearApiKey: credMap.LINEAR_API_KEY ?? undefined,
+		linearWebhookSecretSet: !!credMap.LINEAR_WEBHOOK_SECRET,
 	};
 }
 
@@ -240,6 +247,7 @@ function printGitHubWebhooks(webhooks: GitHubWebhook[]): void {
 
 // --- Command handlers ---
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-provider webhook listing
 async function handleList(args: string[]): Promise<void> {
 	const projectId = args[1];
 	if (!projectId) {
@@ -254,10 +262,13 @@ async function handleList(args: string[]): Promise<void> {
 
 	console.log(`Project: ${ctx.projectId} (org: ${ctx.orgId})`);
 	console.log(`Repo: ${ctx.repo ?? '(none - email-only project)'}`);
-	console.log(`Trello board: ${ctx.boardId}`);
+	console.log(`PM type: ${ctx.pmType}`);
+	if (ctx.pmType === 'trello') {
+		console.log(`Trello board: ${ctx.boardId}`);
+	}
 	console.log('');
 
-	if (!githubOnly && ctx.trelloApiKey && ctx.trelloToken) {
+	if (!githubOnly && ctx.trelloApiKey && ctx.trelloToken && ctx.pmType === 'trello') {
 		printTrelloWebhooks(await trelloListWebhooks(ctx));
 	}
 
@@ -265,6 +276,28 @@ async function handleList(args: string[]): Promise<void> {
 		printGitHubWebhooks(await githubListWebhooks(ctx));
 	} else if (!trelloOnly && !ctx.repo) {
 		console.log('GitHub webhooks: (skipped - no repo configured)');
+		console.log('');
+	}
+
+	// Linear — informational only (webhooks must be configured in Linear team settings)
+	if (ctx.pmType === 'linear') {
+		console.log('Linear webhook:');
+		if (ctx.linearApiKey) {
+			const callbackBaseUrl = process.env.WEBHOOK_CALLBACK_BASE_URL;
+			if (callbackBaseUrl) {
+				const baseUrl = callbackBaseUrl.replace(/\/$/, '');
+				console.log(`  Webhook URL: ${baseUrl}/linear/webhook`);
+				console.log(`  Webhook secret: ${ctx.linearWebhookSecretSet ? 'configured' : 'not set'}`);
+			} else {
+				console.log(
+					'  Webhook URL: <WEBHOOK_CALLBACK_BASE_URL>/linear/webhook (set WEBHOOK_CALLBACK_BASE_URL to see full URL)',
+				);
+				console.log(`  Webhook secret: ${ctx.linearWebhookSecretSet ? 'configured' : 'not set'}`);
+			}
+			console.log('  Note: Configure this URL in your Linear team settings under API > Webhooks.');
+		} else {
+			console.log('  (LINEAR_API_KEY not configured)');
+		}
 		console.log('');
 	}
 }
@@ -317,7 +350,7 @@ async function handleCreate(args: string[]): Promise<void> {
 	const baseUrl = callbackBaseUrl.replace(/\/$/, '');
 
 	// Trello webhook
-	if (!githubOnly && ctx.trelloApiKey && ctx.trelloToken) {
+	if (!githubOnly && ctx.trelloApiKey && ctx.trelloToken && ctx.pmType === 'trello') {
 		await createTrelloWebhookIfNeeded(ctx, `${baseUrl}/webhook/trello`);
 	}
 
@@ -326,6 +359,22 @@ async function handleCreate(args: string[]): Promise<void> {
 		await createGitHubWebhookIfNeeded(ctx, `${baseUrl}/webhook/github`);
 	} else if (!trelloOnly && !ctx.repo) {
 		console.log('Skipping GitHub webhook: no repo configured for this project');
+	}
+
+	// Linear — display-only (cannot create programmatically)
+	if (ctx.pmType === 'linear' && ctx.linearApiKey) {
+		console.log('');
+		console.log('Linear (manual setup required):');
+		console.log(`  Webhook URL: ${baseUrl}/linear/webhook`);
+		console.log(`  Webhook secret: ${ctx.linearWebhookSecretSet ? 'configured' : 'not set'}`);
+		console.log('  Steps:');
+		console.log('    1. Go to Linear > Settings > API > Webhooks');
+		console.log('    2. Click "New webhook"');
+		console.log('    3. Set the URL to the Webhook URL above');
+		console.log('    4. Select the desired event types (e.g. Issues, Comments)');
+		if (!ctx.linearWebhookSecretSet) {
+			console.log('    5. Copy the signing secret and save it as LINEAR_WEBHOOK_SECRET credential');
+		}
 	}
 }
 

@@ -93,6 +93,23 @@ export default class WebhooksCreate extends DashboardCommand {
 					this.log('    5. Copy the Client Secret and save it as SENTRY_WEBHOOK_SECRET credential');
 				}
 			}
+
+			if (result.linear) {
+				this.log('');
+				this.log('Linear (manual setup required):');
+				this.log(`  Webhook URL: ${result.linear.url}`);
+				this.log(`  Webhook secret: ${result.linear.webhookSecretSet ? 'configured' : 'not set'}`);
+				this.log('  Steps:');
+				this.log('    1. Go to Linear > Settings > API > Webhooks');
+				this.log('    2. Click "New webhook"');
+				this.log('    3. Set the URL to the Webhook URL above');
+				this.log('    4. Select the desired event types (e.g. Issues, Comments)');
+				if (!result.linear.webhookSecretSet) {
+					this.log(
+						'    5. Copy the signing secret and save it as LINEAR_WEBHOOK_SECRET credential',
+					);
+				}
+			}
 		} catch (err) {
 			this.handleError(err);
 		}
