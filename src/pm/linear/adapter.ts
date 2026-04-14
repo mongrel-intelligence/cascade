@@ -9,6 +9,7 @@
 
 import { linearClient } from '../../linear/client.js';
 import { logger } from '../../utils/logging.js';
+import type { LinearConfig } from '../config.js';
 import type {
 	Attachment,
 	Checklist,
@@ -20,13 +21,6 @@ import type {
 	WorkItemComment,
 	WorkItemLabel,
 } from '../types.js';
-
-interface LinearConfig {
-	teamId: string;
-	statuses: Record<string, string>;
-	labels?: Record<string, string>;
-	customFields?: { cost?: string };
-}
 
 export class LinearPMProvider implements PMProvider {
 	readonly type = 'linear' as const;
@@ -93,7 +87,7 @@ export class LinearPMProvider implements PMProvider {
 			...(config.labels?.length
 				? {
 						labelIds: config.labels
-							.map((name) => this.config.labels?.[name])
+							.map((name) => (this.config.labels as Record<string, string> | undefined)?.[name])
 							.filter((id): id is string => !!id),
 					}
 				: {}),
@@ -157,12 +151,14 @@ export class LinearPMProvider implements PMProvider {
 
 	async addLabel(id: string, labelIdOrName: string): Promise<void> {
 		// Resolve name → ID via config if possible
-		const labelId = this.config.labels?.[labelIdOrName] ?? labelIdOrName;
+		const labelId =
+			(this.config.labels as Record<string, string> | undefined)?.[labelIdOrName] ?? labelIdOrName;
 		await linearClient.addLabel(id, labelId);
 	}
 
 	async removeLabel(id: string, labelIdOrName: string): Promise<void> {
-		const labelId = this.config.labels?.[labelIdOrName] ?? labelIdOrName;
+		const labelId =
+			(this.config.labels as Record<string, string> | undefined)?.[labelIdOrName] ?? labelIdOrName;
 		await linearClient.removeLabel(id, labelId);
 	}
 
@@ -223,10 +219,8 @@ export class LinearPMProvider implements PMProvider {
 			teamId: this.config.teamId,
 			title: name,
 			description,
+			parentId,
 		});
-		// Note: Linear sub-issue (parent) assignment is done via parentId in IssueCreateInput.
-		// The linearClient.createIssue accepts the full IssueCreateInput which supports parentId.
-		// We create a separate issue and rely on the parent ID matching.
 		logger.debug('[Linear] addChecklistItem — created sub-issue', { parentId, title: name });
 	}
 

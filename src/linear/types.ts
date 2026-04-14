@@ -80,6 +80,7 @@ export interface LinearCreateIssueInput {
 	title: string;
 	description?: string;
 	teamId: string;
+	parentId?: string;
 	assigneeId?: string;
 	stateId?: string;
 	priority?: number;

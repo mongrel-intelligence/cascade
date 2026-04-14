@@ -130,7 +130,7 @@ export class LinearIntegration implements PMIntegration {
 		};
 	}
 
-	async isSelfAuthored(event: PMWebhookEvent, _projectId: string): Promise<boolean> {
+	async isSelfAuthored(event: PMWebhookEvent, projectId: string): Promise<boolean> {
 		// For comment events, check if the comment was authored by the bot user.
 		// Linear comments have a userId in the data.
 		if (!event.eventType.startsWith('Comment.')) return false;
@@ -141,11 +141,10 @@ export class LinearIntegration implements PMIntegration {
 		if (!commentUserId) return false;
 
 		try {
-			// Get the authenticated user to compare
-			const { withLinearCredentials: _withCreds, linearClient } = await import(
-				'../../linear/client.js'
-			);
-			const me = await linearClient.getMe();
+			// Get the authenticated user to compare — credentials must be in scope.
+			const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+			const { linearClient } = await import('../../linear/client.js');
+			const me = await withLinearCredentials({ apiKey }, () => linearClient.getMe());
 			return me.id === commentUserId;
 		} catch {
 			return false;
@@ -192,17 +191,9 @@ export class LinearIntegration implements PMIntegration {
 		}
 	}
 
-	async sendReaction(_projectId: string, event: PMWebhookEvent): Promise<void> {
-		// Linear supports reactions on comments. For now, we skip since Linear
-		// reactions require a comment ID (not available at the issue level).
-		// This is a no-op — reactions are optional in the PMIntegration interface.
-		const p = event.raw as Record<string, unknown>;
-		const data = p.data as Record<string, unknown> | undefined;
-		const commentId = data?.id as string | undefined;
-		if (!commentId || !event.eventType.startsWith('Comment.')) return;
-
-		// We'd need project credentials to call the API here, but this is a
-		// best-effort operation so we skip if no comment ID is available.
+	async sendReaction(_projectId: string, _event: PMWebhookEvent): Promise<void> {
+		// Linear reactions require a dedicated API call with credentials.
+		// Reactions are optional in the PMIntegration interface — no-op for now.
 	}
 
 	async lookupProject(

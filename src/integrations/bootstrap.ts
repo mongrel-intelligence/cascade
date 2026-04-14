@@ -1,9 +1,10 @@
 /**
  * Unified integration bootstrap — canonical registration point for all integrations.
  *
- * Registers all 4 built-in integrations into the `integrationRegistry`:
+ * Registers all 5 built-in integrations into the `integrationRegistry`:
  *   - TrelloIntegration   (PM)
  *   - JiraIntegration     (PM)
+ *   - LinearIntegration   (PM)
  *   - GitHubSCMIntegration (SCM)
  *   - SentryAlertingIntegration (Alerting)
  *
@@ -26,6 +27,7 @@
 import { GitHubSCMIntegration } from '../github/scm-integration.js';
 import { integrationRegistry } from '../integrations/registry.js';
 import { JiraIntegration } from '../pm/jira/integration.js';
+import { LinearIntegration } from '../pm/linear/integration.js';
 import { pmRegistry } from '../pm/registry.js';
 import { TrelloIntegration } from '../pm/trello/integration.js';
 import { SentryAlertingIntegration } from '../sentry/alerting-integration.js';
@@ -39,6 +41,11 @@ if (!pmRegistry.getOrNull('jira')) {
 	const jira = new JiraIntegration();
 	pmRegistry.register(jira);
 	if (!integrationRegistry.getOrNull('jira')) integrationRegistry.register(jira);
+}
+if (!pmRegistry.getOrNull('linear')) {
+	const linear = new LinearIntegration();
+	pmRegistry.register(linear);
+	if (!integrationRegistry.getOrNull('linear')) integrationRegistry.register(linear);
 }
 if (!integrationRegistry.getOrNull('github')) {
 	integrationRegistry.register(new GitHubSCMIntegration());
