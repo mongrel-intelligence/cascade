@@ -11,9 +11,11 @@
 export {
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
+	resolveLinearCredentials,
 	resolveTrelloCredentials,
 } from './credentials.js';
 export { GitHubPlatformClient } from './github.js';
 export { _resetJiraCloudIdCache, JiraPlatformClient } from './jira.js';
+export { LinearPlatformClient } from './linear.js';
 export { TrelloPlatformClient } from './trello.js';
 export type { JiraCredentialsWithAuth, PlatformCommentClient, TrelloCredentials } from './types.js';

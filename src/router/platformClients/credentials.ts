@@ -11,6 +11,7 @@ import {
 	getIntegrationCredential,
 	getIntegrationCredentialOrNull,
 } from '../../config/provider.js';
+import type { LinearCredentials } from '../../linear/types.js';
 import { getJiraConfig } from '../../pm/config.js';
 import type { JiraCredentialsWithAuth, TrelloCredentials } from './types.js';
 
@@ -52,6 +53,21 @@ export async function resolveJiraCredentials(
 }
 
 /**
+ * Resolve Linear credentials for a project.
+ * Returns `{ apiKey }` or `null` if credentials are missing.
+ */
+export async function resolveLinearCredentials(
+	projectId: string,
+): Promise<LinearCredentials | null> {
+	try {
+		const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+		return { apiKey };
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Resolve the webhook secret for a given provider and project.
  *
  * - `'github'`: resolves the `webhook_secret` credential from the SCM integration.
@@ -59,12 +75,13 @@ export async function resolveJiraCredentials(
  *   Trello computes webhook HMAC signatures using the API Secret (shown below the
  *   API Key at https://trello.com/app-key), not the public API Key.
  * - `'jira'`: resolves the `webhook_secret` credential from the PM integration.
+ * - `'linear'`: resolves the `webhook_secret` credential from the PM integration.
  *
  * Returns `null` if the credential is not configured.
  */
 export async function resolveWebhookSecret(
 	projectId: string,
-	provider: 'github' | 'trello' | 'jira' | 'sentry',
+	provider: 'github' | 'trello' | 'jira' | 'sentry' | 'linear',
 ): Promise<string | null> {
 	if (provider === 'github') {
 		return getIntegrationCredentialOrNull(projectId, 'scm', 'webhook_secret');
@@ -74,6 +91,9 @@ export async function resolveWebhookSecret(
 	}
 	if (provider === 'sentry') {
 		return getIntegrationCredentialOrNull(projectId, 'alerting', 'webhook_secret');
+	}
+	if (provider === 'linear') {
+		return getIntegrationCredentialOrNull(projectId, 'pm', 'webhook_secret');
 	}
 	// Trello signs webhook payloads with the API Secret, not the public API Key.
 	return getIntegrationCredentialOrNull(projectId, 'pm', 'api_secret');

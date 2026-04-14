@@ -112,3 +112,27 @@ export async function parseJiraPayload(c: Context): Promise<ParseResult> {
 		return { ok: false, error: String(err) };
 	}
 }
+
+/**
+ * Parse a Linear webhook request (plain JSON).
+ * Extracts `{action}/{type}` as the event type (e.g. `create/Issue`, `update/Issue`).
+ * Linear sends the action in `action` and the resource type in `type`.
+ */
+export async function parseLinearPayload(c: Context): Promise<ParseResult> {
+	try {
+		const rawBody = await c.req.text();
+		const payload = JSON.parse(rawBody);
+		const p = payload as Record<string, unknown>;
+		const action = p?.action as string | undefined;
+		const type = p?.type as string | undefined;
+		const eventType = action && type ? `${action}/${type}` : (action ?? type ?? 'unknown');
+		logger.info('Received Linear webhook', {
+			action,
+			type,
+			eventType,
+		});
+		return { ok: true, payload, eventType, rawBody };
+	} catch (err) {
+		return { ok: false, error: String(err) };
+	}
+}

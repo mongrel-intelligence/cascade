@@ -160,6 +160,32 @@ export function extractJiraContext(payload: unknown): string {
 	return truncate(parts.join('\n'));
 }
 
+/**
+ * Extract context from a Linear webhook payload.
+ * Pulls issue title and optional comment body.
+ */
+export function extractLinearContext(payload: unknown): string {
+	if (!payload || typeof payload !== 'object') return '';
+
+	const p = payload as Record<string, unknown>;
+	const parts: string[] = [];
+
+	const data = p.data as Record<string, unknown> | undefined;
+	if (!data) return '';
+
+	// Issue title (present for Issue and Comment events)
+	if (data.title) {
+		parts.push(`Issue: ${data.title as string}`);
+	}
+
+	// Comment body (present for Comment events)
+	if (data.body) {
+		parts.push(`Comment: ${data.body as string}`);
+	}
+
+	return truncate(parts.join('\n'));
+}
+
 // ---------------------------------------------------------------------------
 // Core generator
 // ---------------------------------------------------------------------------

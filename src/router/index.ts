@@ -15,11 +15,13 @@ import {
 	createWebhookHandler,
 	parseGitHubPayload,
 	parseJiraPayload,
+	parseLinearPayload,
 	parseSentryPayload,
 	parseTrelloPayload,
 } from '../webhook/webhookHandlers.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
+import { LinearRouterAdapter } from './adapters/linear.js';
 import { SentryRouterAdapter } from './adapters/sentry.js';
 import { TrelloRouterAdapter } from './adapters/trello.js';
 import { startCancelListener, stopCancelListener } from './cancel-listener.js';
@@ -28,6 +30,7 @@ import { processRouterWebhook } from './webhook-processor.js';
 import {
 	verifyGitHubWebhookSignature,
 	verifyJiraWebhookSignature,
+	verifyLinearWebhookSignature,
 	verifySentryWebhookSignature,
 	verifyTrelloWebhookSignature,
 } from './webhookVerification.js';
@@ -157,6 +160,30 @@ app.post(
 		verifySignature: verifySentryWebhookSignature,
 		processWebhook: async (payload) => {
 			const adapter = new SentryRouterAdapter();
+			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
+			return {
+				processed: result.shouldProcess,
+				projectId: result.projectId,
+				decisionReason: result.decisionReason,
+			};
+		},
+	}),
+);
+
+// Linear webhook verification
+app.get('/linear/webhook', (c) => {
+	return c.text('OK', 200);
+});
+
+// Linear webhook handler
+app.post(
+	'/linear/webhook',
+	createWebhookHandler({
+		source: 'linear',
+		parsePayload: parseLinearPayload,
+		verifySignature: verifyLinearWebhookSignature,
+		processWebhook: async (payload) => {
+			const adapter = new LinearRouterAdapter();
 			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
 			return {
 				processed: result.shouldProcess,

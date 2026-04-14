@@ -13,6 +13,7 @@
 import {
 	GitHubPlatformClient,
 	JiraPlatformClient,
+	LinearPlatformClient,
 	TrelloPlatformClient,
 } from './platformClients/index.js';
 
@@ -88,6 +89,29 @@ export async function deleteJiraAck(
 ): Promise<void> {
 	const client = new JiraPlatformClient(projectId);
 	await client.deleteComment(issueKey, commentId);
+}
+
+// ---------------------------------------------------------------------------
+// Linear — delegates to LinearPlatformClient
+// ---------------------------------------------------------------------------
+
+export async function postLinearAck(
+	projectId: string,
+	issueId: string,
+	message: string,
+): Promise<string | null> {
+	const client = new LinearPlatformClient(projectId);
+	const result = await client.postComment(issueId, message);
+	return typeof result === 'string' ? result : null;
+}
+
+export async function deleteLinearAck(
+	projectId: string,
+	issueId: string,
+	commentId: string,
+): Promise<void> {
+	const client = new LinearPlatformClient(projectId);
+	await client.deleteComment(issueId, commentId);
 }
 
 // ---------------------------------------------------------------------------

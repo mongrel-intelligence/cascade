@@ -125,9 +125,11 @@ import {
 	buildTrelloCallbackUrl,
 	createWebhookVerifier,
 	extractJiraProjectKey,
+	extractLinearTeamId,
 	extractTrelloBoardId,
 	verifyGitHubWebhookSignature,
 	verifyJiraWebhookSignature,
+	verifyLinearWebhookSignature,
 	verifyTrelloWebhookSignature,
 } from '../../../src/router/webhookVerification.js';
 import { logger } from '../../../src/utils/logging.js';
@@ -180,9 +182,19 @@ const JIRA_PROJECT = {
 	},
 };
 
+const LINEAR_PROJECT = {
+	id: 'proj-linear',
+	repo: 'owner/repo',
+	pmType: 'linear' as const,
+	linear: {
+		teamId: 'team-abc-123',
+	},
+};
+
 const GITHUB_SECRET = 'my-github-webhook-secret';
 const TRELLO_SECRET = 'my-trello-api-secret';
 const JIRA_SECRET = 'my-jira-webhook-secret';
+const LINEAR_SECRET = 'my-linear-webhook-secret';
 const TRELLO_CALLBACK_URL = 'https://example.com/trello/webhook';
 
 // ---------------------------------------------------------------------------
@@ -428,6 +440,119 @@ describe('verifyTrelloWebhookSignature — direct function tests', () => {
 	it('returns null (skip) when board ID is missing from payload', async () => {
 		const body = JSON.stringify({ action: { type: 'createCard' } });
 		const result = await verifyTrelloWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: extractLinearTeamId
+// ---------------------------------------------------------------------------
+
+describe('extractLinearTeamId', () => {
+	it('extracts teamId from data.teamId', () => {
+		const body = JSON.stringify({
+			action: 'create',
+			type: 'Issue',
+			data: { id: 'issue-abc', teamId: 'team-abc-123' },
+		});
+		expect(extractLinearTeamId(body)).toBe('team-abc-123');
+	});
+
+	it('returns undefined when data.teamId is missing', () => {
+		const body = JSON.stringify({ action: 'create', type: 'Issue', data: {} });
+		expect(extractLinearTeamId(body)).toBeUndefined();
+	});
+
+	it('returns undefined for invalid JSON', () => {
+		expect(extractLinearTeamId('not json')).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: verifyLinearWebhookSignature (function directly)
+// ---------------------------------------------------------------------------
+
+describe('verifyLinearWebhookSignature — direct function tests', () => {
+	beforeEach(() => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [LINEAR_PROJECT] });
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(LINEAR_SECRET);
+	});
+
+	function makeContext(headers: Record<string, string> = {}) {
+		return {
+			req: {
+				header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
+			},
+		} as unknown as import('hono').Context;
+	}
+
+	function linearSignature(body: string, secret: string): string {
+		return createHmac('sha256', secret).update(body, 'utf8').digest('hex');
+	}
+
+	it('returns { valid: true } when signature is correct', async () => {
+		const body = JSON.stringify({
+			action: 'create',
+			type: 'Issue',
+			data: { id: 'issue-abc', teamId: 'team-abc-123' },
+		});
+		const sig = linearSignature(body, LINEAR_SECRET);
+		const result = await verifyLinearWebhookSignature(
+			makeContext({ 'Linear-Signature': sig }),
+			body,
+		);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } when signature is wrong', async () => {
+		const body = JSON.stringify({
+			action: 'create',
+			type: 'Issue',
+			data: { id: 'issue-abc', teamId: 'team-abc-123' },
+		});
+		const badSig = linearSignature(body, 'wrong-secret');
+		const result = await verifyLinearWebhookSignature(
+			makeContext({ 'Linear-Signature': badSig }),
+			body,
+		);
+		expect(result).toEqual({ valid: false, reason: 'Linear signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } when header absent but secret configured', async () => {
+		const body = JSON.stringify({
+			action: 'create',
+			type: 'Issue',
+			data: { id: 'issue-abc', teamId: 'team-abc-123' },
+		});
+		const result = await verifyLinearWebhookSignature(makeContext({}), body);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
+
+	it('returns null (skip) when no secret configured', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const body = JSON.stringify({
+			action: 'create',
+			type: 'Issue',
+			data: { id: 'issue-abc', teamId: 'team-abc-123' },
+		});
+		const result = await verifyLinearWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project not found for teamId', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [] });
+		const body = JSON.stringify({
+			action: 'create',
+			type: 'Issue',
+			data: { id: 'issue-abc', teamId: 'unknown-team' },
+		});
+		const result = await verifyLinearWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when teamId is missing from payload', async () => {
+		const body = JSON.stringify({ action: 'create', type: 'Issue', data: {} });
+		const result = await verifyLinearWebhookSignature(makeContext({}), body);
 		expect(result).toBeNull();
 	});
 });

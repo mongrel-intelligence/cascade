@@ -165,3 +165,24 @@ export function verifyJiraSignature(rawBody: string, signature: string, secret: 
 		prefix: 'sha256=',
 	});
 }
+
+/**
+ * Verify a Linear webhook signature.
+ *
+ * Linear signs payloads with HMAC-SHA256 and sends the result as a raw hex
+ * digest in the `Linear-Signature` header (no prefix).
+ *
+ * @param rawBody - The raw request body string.
+ * @param signature - The value of the `Linear-Signature` header.
+ * @param secret - The LINEAR_WEBHOOK_SECRET configured for the webhook.
+ * @returns `true` if the signature is valid, `false` otherwise.
+ */
+export function verifyLinearSignature(rawBody: string, signature: string, secret: string): boolean {
+	return verifyHmac({
+		algorithm: 'sha256',
+		data: rawBody,
+		secret,
+		signature,
+		encoding: 'hex',
+	});
+}

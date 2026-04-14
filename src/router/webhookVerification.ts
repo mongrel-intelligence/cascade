@@ -10,6 +10,7 @@ import { logger } from '../utils/logging.js';
 import {
 	verifyGitHubSignature,
 	verifyJiraSignature,
+	verifyLinearSignature,
 	verifySentrySignature,
 	verifyTrelloSignature,
 } from '../webhook/signatureVerification.js';
@@ -17,7 +18,7 @@ import { loadProjectConfig, routerConfig } from './config.js';
 import { resolveWebhookSecret } from './platformClients/credentials.js';
 
 /** The set of platforms that have a webhook secret in {@link resolveWebhookSecret}. */
-type WebhookPlatform = 'github' | 'trello' | 'jira' | 'sentry';
+type WebhookPlatform = 'github' | 'trello' | 'jira' | 'sentry' | 'linear';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -267,4 +268,37 @@ export const verifyJiraWebhookSignature = createWebhookVerifier({
 			(p) => (p.jira as Record<string, unknown> | undefined)?.projectKey === jiraProjectKey,
 		) as { id: string } | undefined,
 	verify: (rawBody, sig, secret) => verifyJiraSignature(rawBody, sig, secret),
+});
+
+/**
+ * Extract the Linear team ID from a raw webhook payload.
+ * Linear sends the team ID nested in `data.teamId` for Issue events.
+ */
+export function extractLinearTeamId(rawBody: string): string | undefined {
+	try {
+		const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+		const data = parsed?.data as Record<string, unknown> | undefined;
+		return data?.teamId as string | undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * verifySignature callback for the Linear webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ *
+ * Linear sends the signature as a raw HMAC-SHA256 hex digest in the
+ * `Linear-Signature` header (no prefix).
+ */
+export const verifyLinearWebhookSignature = createWebhookVerifier({
+	headerName: 'Linear-Signature',
+	platform: 'linear',
+	platformLabel: 'Linear',
+	extractIdentifier: (_c, rawBody) => extractLinearTeamId(rawBody),
+	findProject: (teamId, projects) =>
+		projects.find((p) => (p.linear as Record<string, unknown> | undefined)?.teamId === teamId) as
+			| { id: string }
+			| undefined,
+	verify: (rawBody, sig, secret) => verifyLinearSignature(rawBody, sig, secret),
 });
