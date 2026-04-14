@@ -36,6 +36,25 @@ const JiraConfigSchema = z.object({
 		.optional(),
 });
 
+const LinearConfigSchema = z.object({
+	teamId: z.string().min(1),
+	statuses: z.record(z.string()), // CASCADE status names → Linear state IDs
+	labels: z
+		.object({
+			processing: z.string().optional(),
+			processed: z.string().optional(),
+			error: z.string().optional(),
+			readyToProcess: z.string().optional(),
+			auto: z.string().optional(),
+		})
+		.optional(),
+	customFields: z
+		.object({
+			cost: z.string().optional(),
+		})
+		.optional(),
+});
+
 export const ProjectConfigSchema = z.object({
 	id: z.string().min(1),
 	orgId: z.string().min(1),
@@ -49,7 +68,7 @@ export const ProjectConfigSchema = z.object({
 
 	pm: z
 		.object({
-			type: z.enum(['trello', 'jira']).default('trello'),
+			type: z.enum(['trello', 'jira', 'linear']).default('trello'),
 		})
 		.default({ type: 'trello' }),
 
@@ -67,6 +86,8 @@ export const ProjectConfigSchema = z.object({
 		.optional(),
 
 	jira: JiraConfigSchema.optional(),
+
+	linear: LinearConfigSchema.optional(),
 
 	model: z.string().default(PROJECT_DEFAULTS.model),
 	agentModels: z.record(z.string()).optional(),

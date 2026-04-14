@@ -4,6 +4,7 @@ export type { PMIntegration, PMWebhookEvent } from './integration.js';
 export { JiraPMProvider } from './jira/adapter.js';
 export type { ProjectPMConfig } from './lifecycle.js';
 export { hasAutoLabel, PMLifecycleManager, resolveProjectPMConfig } from './lifecycle.js';
+export { LinearPMProvider } from './linear/adapter.js';
 export {
 	extractMarkdownImages,
 	filterImageMedia,

@@ -36,7 +36,7 @@ export interface ProjectContext {
 	projectId: string;
 	orgId: string;
 	repo?: string;
-	pmType: 'trello' | 'jira';
+	pmType: 'trello' | 'jira' | 'linear';
 	boardId?: string;
 	jiraBaseUrl?: string;
 	jiraProjectKey?: string;

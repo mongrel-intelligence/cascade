@@ -6,7 +6,7 @@ import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 export interface RouterProjectConfig {
 	id: string;
 	repo?: string; // owner/repo format (optional for projects without SCM integration)
-	pmType: 'trello' | 'jira';
+	pmType: 'trello' | 'jira' | 'linear';
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;

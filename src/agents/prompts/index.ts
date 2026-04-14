@@ -34,7 +34,7 @@ export interface PromptContext {
 	projectId?: string;
 
 	// PM vocabulary (computed from pmType)
-	pmType?: 'trello' | 'jira';
+	pmType?: 'trello' | 'jira' | 'linear';
 	workItemNoun?: string; // "card" or "issue"
 	workItemNounPlural?: string; // "cards" or "issues"
 	workItemNounCap?: string; // "Card" or "Issue"

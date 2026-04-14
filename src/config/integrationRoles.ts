@@ -1,5 +1,5 @@
 export type IntegrationCategory = 'pm' | 'scm' | 'alerting';
-export type IntegrationProvider = 'trello' | 'jira' | 'github' | 'sentry';
+export type IntegrationProvider = 'trello' | 'jira' | 'linear' | 'github' | 'sentry';
 
 export interface CredentialRoleDef {
 	role: string;
@@ -31,6 +31,18 @@ const _rolesRegistry = new Map<string, CredentialRoleDef[]>([
 				role: 'webhook_secret',
 				label: 'Webhook Secret',
 				envVarKey: 'JIRA_WEBHOOK_SECRET',
+				optional: true,
+			},
+		],
+	],
+	[
+		'linear',
+		[
+			{ role: 'api_key', label: 'API Key', envVarKey: 'LINEAR_API_KEY' },
+			{
+				role: 'webhook_secret',
+				label: 'Webhook Secret',
+				envVarKey: 'LINEAR_WEBHOOK_SECRET',
 				optional: true,
 			},
 		],
@@ -69,6 +81,7 @@ const _rolesRegistry = new Map<string, CredentialRoleDef[]>([
 const _categoryRegistry = new Map<string, IntegrationCategory>([
 	['trello', 'pm'],
 	['jira', 'pm'],
+	['linear', 'pm'],
 	['github', 'scm'],
 	['sentry', 'alerting'],
 ]);

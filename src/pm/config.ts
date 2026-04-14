@@ -53,12 +53,38 @@ export function getJiraConfig(project: ProjectConfig): JiraConfig | undefined {
 	return project.jira as JiraConfig | undefined;
 }
 
+/** Linear-specific configuration (from project_integrations JSONB) */
+export interface LinearConfig {
+	teamId: string;
+	statuses: Record<string, string>;
+	labels?: {
+		processing?: string;
+		processed?: string;
+		error?: string;
+		readyToProcess?: string;
+		auto?: string;
+	};
+	customFields?: { cost?: string };
+}
+
+/**
+ * Get the Linear config for a project.
+ * Returns the config or undefined if this is not a Linear project.
+ */
+export function getLinearConfig(project: ProjectConfig): LinearConfig | undefined {
+	if (project.pm?.type !== 'linear') return undefined;
+	return project.linear as LinearConfig | undefined;
+}
+
 /**
  * Get the cost custom field ID for a project, regardless of PM type.
  */
 export function getCostFieldId(project: ProjectConfig): string | undefined {
 	if (project.pm?.type === 'jira') {
 		return getJiraConfig(project)?.customFields?.cost;
+	}
+	if (project.pm?.type === 'linear') {
+		return getLinearConfig(project)?.customFields?.cost;
 	}
 	return getTrelloConfig(project)?.customFields?.cost;
 }

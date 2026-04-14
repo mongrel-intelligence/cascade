@@ -3,7 +3,7 @@
  * future project-management integrations must implement.
  */
 
-export type PMType = 'trello' | 'jira';
+export type PMType = 'trello' | 'jira' | 'linear';
 
 /**
  * A reference to an inline media item (image, etc.) embedded in a work item
