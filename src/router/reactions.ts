@@ -9,7 +9,9 @@
  */
 
 import { getProjectGitHubToken } from '../config/projects.js';
+import { getIntegrationCredential } from '../config/provider.js';
 import { isCascadeBot, type PersonaIdentities } from '../github/personas.js';
+import { linearClient, withLinearCredentials } from '../linear/client.js';
 import { trelloClient, withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
@@ -160,10 +162,31 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 	await client.postReaction('', { issueId, commentId });
 }
 
-async function sendLinearReaction(_projectId: string, _payload: unknown): Promise<void> {
-	// Linear does not support emoji reactions on comments via the same API pattern
-	// as Trello/JIRA. This is a no-op placeholder for API consistency.
-	logger.info('[Reactions] Linear reaction skipped (not supported via webhook API)');
+async function sendLinearReaction(projectId: string, payload: unknown): Promise<void> {
+	// Only react to Comment.create events
+	const p = payload as Record<string, unknown>;
+	if (p.type !== 'Comment' || p.action !== 'create') return;
+
+	const data = p.data as Record<string, unknown> | undefined;
+	const commentId = data?.id as string | undefined;
+	if (!commentId) return;
+
+	let apiKey: string;
+	try {
+		apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+	} catch {
+		logger.warn('[Reactions] Missing Linear credentials, skipping reaction');
+		return;
+	}
+
+	try {
+		await withLinearCredentials({ apiKey }, async () => {
+			await linearClient.createReaction(commentId, '👀');
+		});
+		logger.info('[Reactions] Linear reaction sent for comment:', commentId);
+	} catch (err) {
+		logger.warn('[Reactions] Linear reaction failed:', String(err));
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +195,7 @@ async function sendLinearReaction(_projectId: string, _payload: unknown): Promis
 
 /**
  * Send an acknowledgment reaction for an incoming webhook.
- * Dispatches to Trello (👀), GitHub (👀), JIRA (💭), or Linear (no-op) based on source.
+ * Dispatches to Trello (👀), GitHub (👀), JIRA (💭), or Linear (👀) based on source.
  *
  * For GitHub, pass `repoFullName` as the `projectId` parameter, along with
  * `personaIdentities` and the already-resolved `project`. The reaction is

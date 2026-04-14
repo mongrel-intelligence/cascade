@@ -33,6 +33,14 @@ vi.mock('../../../src/trello/client.js', () => ({
 	},
 }));
 
+// Mock linear client
+vi.mock('../../../src/linear/client.js', () => ({
+	withLinearCredentials: vi.fn(async (_creds: unknown, fn: () => Promise<unknown>) => fn()),
+	linearClient: {
+		createReaction: vi.fn(),
+	},
+}));
+
 // Mock logger
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
@@ -50,6 +58,7 @@ import {
 	getIntegrationCredential,
 } from '../../../src/config/provider.js';
 import type { PersonaIdentities } from '../../../src/github/personas.js';
+import { linearClient, withLinearCredentials } from '../../../src/linear/client.js';
 import { _resetJiraCloudIdCache, sendAcknowledgeReaction } from '../../../src/router/reactions.js';
 import { trelloClient, withTrelloCredentials } from '../../../src/trello/client.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
@@ -61,6 +70,8 @@ const mockFindProjectByRepo = vi.mocked(findProjectByRepo);
 const mockFindProjectById = vi.mocked(findProjectById);
 const mockAddActionReaction = vi.mocked(trelloClient.addActionReaction);
 const mockWithTrelloCredentials = vi.mocked(withTrelloCredentials);
+const mockCreateReaction = vi.mocked(linearClient.createReaction);
+const mockWithLinearCredentials = vi.mocked(withLinearCredentials);
 const mockLogger = vi.mocked(logger);
 
 // Mock global fetch
@@ -146,6 +157,9 @@ describe('sendAcknowledgeReaction', () => {
 		mockAddActionReaction.mockReset();
 		mockWithTrelloCredentials.mockReset();
 		mockWithTrelloCredentials.mockImplementation(async (_creds, fn) => fn());
+		mockCreateReaction.mockReset();
+		mockWithLinearCredentials.mockReset();
+		mockWithLinearCredentials.mockImplementation(async (_creds, fn) => fn());
 		_resetJiraCloudIdCache();
 		mockLogger.info.mockReset();
 		mockLogger.warn.mockReset();
@@ -598,6 +612,88 @@ describe('sendAcknowledgeReaction', () => {
 			await expect(
 				sendAcknowledgeReaction('jira', PROJECT_ID, JIRA_COMMENT_PAYLOAD),
 			).resolves.toBeUndefined();
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// Linear
+	// -------------------------------------------------------------------------
+
+	describe('Linear reactions', () => {
+		const LINEAR_COMMENT_PAYLOAD = {
+			type: 'Comment',
+			action: 'create',
+			data: { id: 'comment-linear-123' },
+		};
+
+		it('sends 👀 reaction for Comment.create event', async () => {
+			mockCreateReaction.mockResolvedValueOnce({
+				id: 'reaction-1',
+				emoji: '👀',
+				user: null,
+				createdAt: '2026-01-01T00:00:00Z',
+			});
+
+			await sendAcknowledgeReaction('linear', PROJECT_ID, LINEAR_COMMENT_PAYLOAD);
+
+			expect(mockCreateReaction).toHaveBeenCalledOnce();
+			expect(mockCreateReaction).toHaveBeenCalledWith('comment-linear-123', '👀');
+		});
+
+		it('skips reaction for non-comment Linear events (e.g. Issue.update)', async () => {
+			const payload = { type: 'Issue', action: 'update', data: { id: 'issue-abc' } };
+
+			await sendAcknowledgeReaction('linear', PROJECT_ID, payload);
+
+			expect(mockCreateReaction).not.toHaveBeenCalled();
+		});
+
+		it('skips reaction for Comment events that are not create (e.g. Comment.update)', async () => {
+			const payload = { type: 'Comment', action: 'update', data: { id: 'comment-xyz' } };
+
+			await sendAcknowledgeReaction('linear', PROJECT_ID, payload);
+
+			expect(mockCreateReaction).not.toHaveBeenCalled();
+		});
+
+		it('skips reaction when Linear credentials are missing and logs warning', async () => {
+			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
+
+			await sendAcknowledgeReaction('linear', PROJECT_ID, LINEAR_COMMENT_PAYLOAD);
+
+			expect(mockCreateReaction).not.toHaveBeenCalled();
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Missing Linear credentials'),
+			);
+		});
+
+		it('does not throw when Linear credentials are missing', async () => {
+			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
+
+			await expect(
+				sendAcknowledgeReaction('linear', PROJECT_ID, LINEAR_COMMENT_PAYLOAD),
+			).resolves.toBeUndefined();
+		});
+
+		it('logs warning on Linear API error but does not throw', async () => {
+			mockCreateReaction.mockRejectedValueOnce(new Error('Linear API error: 403'));
+
+			await expect(
+				sendAcknowledgeReaction('linear', PROJECT_ID, LINEAR_COMMENT_PAYLOAD),
+			).resolves.toBeUndefined();
+
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Linear reaction failed'),
+				expect.stringContaining('403'),
+			);
+		});
+
+		it('skips reaction when comment id is missing from payload data', async () => {
+			const payload = { type: 'Comment', action: 'create', data: {} };
+
+			await sendAcknowledgeReaction('linear', PROJECT_ID, payload);
+
+			expect(mockCreateReaction).not.toHaveBeenCalled();
 		});
 	});
 
