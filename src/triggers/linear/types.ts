@@ -77,18 +77,4 @@ export interface LinearWebhookTriggerPayload {
 // Constants
 // ---------------------------------------------------------------------------
 
-/**
- * Maps CASCADE status keys to agent types.
- *
- * Project config maps CASCADE status names to Linear state names, e.g.:
- *   { splitting: "Splitting", planning: "Planning", todo: "To Do" }
- *
- * We invert that mapping at runtime: if the issue transitioned to "Splitting",
- * we look up `splitting` → `splitting` agent.
- */
-export const STATUS_TO_AGENT: Record<string, string> = {
-	splitting: 'splitting',
-	planning: 'planning',
-	todo: 'implementation',
-	backlog: 'backlog-manager',
-};
+export { STATUS_TO_AGENT } from '../shared/status-to-agent.js';

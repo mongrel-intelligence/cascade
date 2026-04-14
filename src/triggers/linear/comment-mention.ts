@@ -12,7 +12,7 @@
  *   data.issue.identifier: the issue identifier (e.g. TEAM-123)
  */
 
-import { resolveLinearCredentials } from '../../router/platformClients/index.js';
+import { resolveLinearBotUserId } from '../../router/bot-identity-resolvers.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
@@ -20,15 +20,11 @@ import type { LinearWebhookCommentTriggerData, LinearWebhookTriggerPayload } fro
 
 /**
  * Check if a Linear comment body contains an @mention for the given user ID.
- * Linear uses @[username](user:userId) markdown mention syntax.
- * We check for the userId in the mention pattern.
+ * Linear uses @[Display Name](userId) markdown mention syntax, where userId is
+ * a UUID. Checking for userId as a substring is sufficient and safe in practice.
  */
 function hasMention(body: string, userId: string): boolean {
-	// Linear mentions use format: @[Display Name](userId)
-	// The userId may appear inside a markdown link
-	if (body.includes(userId)) return true;
-	// Also check plain @username patterns (some clients may use simpler format)
-	return false;
+	return body.includes(userId);
 }
 
 export class LinearCommentMentionTrigger implements TriggerHandler {
@@ -79,42 +75,17 @@ export class LinearCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve the bot's Linear user ID
-		const creds = await resolveLinearCredentials(ctx.project.id);
-		if (!creds) {
-			logger.warn('Linear comment trigger: missing Linear credentials, skipping', {
+		// Resolve the bot's Linear user ID via the shared cached resolver
+		const botUserId = await resolveLinearBotUserId(ctx.project.id);
+
+		if (!botUserId) {
+			logger.warn('Linear comment trigger: could not resolve bot user ID, skipping', {
 				projectId: ctx.project.id,
 			});
 			return null;
 		}
 
-		// Fetch bot identity via viewer query
-		const response = await fetch('https://api.linear.app/graphql', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${creds.apiKey}`,
-			},
-			body: JSON.stringify({ query: '{ viewer { id displayName } }' }),
-		}).catch(() => null);
-
-		if (!response?.ok) {
-			logger.warn('Linear comment trigger: failed to resolve bot identity, skipping');
-			return null;
-		}
-
-		const identityData = (await response.json()) as {
-			data?: { viewer?: { id?: string; displayName?: string } };
-		};
-		const botUserId = identityData.data?.viewer?.id;
-		const botDisplayName = identityData.data?.viewer?.displayName;
-
-		if (!botUserId) {
-			logger.warn('Linear comment trigger: could not resolve bot user ID, skipping');
-			return null;
-		}
-
-		logger.info('Linear bot identity resolved', { botUserId, botDisplayName });
+		logger.info('Linear bot identity resolved', { botUserId });
 
 		// Skip self-authored comments to prevent infinite loops
 		if (commentAuthorId === botUserId) {
