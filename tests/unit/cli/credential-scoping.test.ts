@@ -67,10 +67,13 @@ describe('CredentialScopedCommand', () => {
 	const originalEnv = process.env;
 
 	beforeEach(() => {
+		vi.clearAllMocks();
 		process.env = { ...originalEnv };
-		process.env.GITHUB_TOKEN = undefined;
-		process.env.TRELLO_API_KEY = undefined;
-		process.env.TRELLO_TOKEN = undefined;
+		delete process.env.GITHUB_TOKEN;
+		delete process.env.GITHUB_TOKEN_IMPLEMENTER;
+		delete process.env.GITHUB_TOKEN_REVIEWER;
+		delete process.env.TRELLO_API_KEY;
+		delete process.env.TRELLO_TOKEN;
 	});
 
 	afterEach(() => {
