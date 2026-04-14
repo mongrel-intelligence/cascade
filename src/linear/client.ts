@@ -18,8 +18,10 @@ import type {
 	LinearIssue,
 	LinearLabel,
 	LinearReaction,
+	LinearTeam,
 	LinearUpdateIssueInput,
 	LinearUser,
+	LinearWorkflowState,
 } from './types.js';
 
 const LINEAR_API_URL = 'https://api.linear.app/graphql';
@@ -578,6 +580,74 @@ export const linearClient = {
 			user: mapUser(r.user),
 			createdAt: r.createdAt ?? '',
 		};
+	},
+
+	// ===== Discovery =====
+
+	async getTeams(): Promise<LinearTeam[]> {
+		logger.debug('Fetching Linear teams');
+		const data = await linearGraphQL<{ teams: { nodes: unknown[] } }>(
+			`query GetTeams {
+				teams {
+					nodes {
+						${TEAM_FIELDS}
+					}
+				}
+			}`,
+		);
+		return (data.teams.nodes as RawIssue['team'][]).map(mapTeam);
+	},
+
+	async getTeamWorkflowStates(teamId: string): Promise<LinearWorkflowState[]> {
+		logger.debug('Fetching Linear team workflow states', { teamId });
+		const data = await linearGraphQL<{
+			team: { states: { nodes: unknown[] } };
+		}>(
+			`query GetTeamWorkflowStates($id: String!) {
+				team(id: $id) {
+					states {
+						nodes {
+							${STATE_FIELDS}
+						}
+					}
+				}
+			}`,
+			{ id: teamId },
+		);
+		return (
+			data.team.states.nodes as Array<{
+				id?: string;
+				name?: string;
+				type?: string;
+				color?: string;
+			}>
+		).map(mapState);
+	},
+
+	async getTeamLabels(teamId: string): Promise<LinearLabel[]> {
+		logger.debug('Fetching Linear team labels', { teamId });
+		const data = await linearGraphQL<{
+			team: { labels: { nodes: unknown[] } };
+		}>(
+			`query GetTeamLabels($id: String!) {
+				team(id: $id) {
+					labels {
+						nodes {
+							${LABEL_FIELDS}
+						}
+					}
+				}
+			}`,
+			{ id: teamId },
+		);
+		return (
+			data.team.labels.nodes as Array<{
+				id?: string;
+				name?: string;
+				color?: string;
+				description?: string | null;
+			}>
+		).map(mapLabel);
 	},
 
 	// ===== User =====
