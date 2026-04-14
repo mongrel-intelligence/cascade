@@ -92,6 +92,7 @@ export interface LinearUpdateIssueInput {
 	assigneeId?: string | null;
 	stateId?: string;
 	priority?: number;
+	labelIds?: string[];
 }
 
 // Webhook payload types

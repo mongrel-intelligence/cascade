@@ -406,7 +406,7 @@ export const linearClient = {
 
 	async deleteComment(commentId: string): Promise<void> {
 		logger.debug('Deleting Linear comment', { commentId });
-		await linearGraphQL<{ commentDelete: { success: boolean } }>(
+		const data = await linearGraphQL<{ commentDelete: { success: boolean } }>(
 			`mutation DeleteComment($id: String!) {
 				commentDelete(id: $id) {
 					success
@@ -414,46 +414,36 @@ export const linearClient = {
 			}`,
 			{ id: commentId },
 		);
+		if (!data.commentDelete.success) {
+			throw new Error(`Linear API: failed to delete comment ${commentId}`);
+		}
 	},
 
 	// ===== Labels =====
 
 	async addLabel(issueId: string, labelId: string): Promise<LinearIssue> {
 		logger.debug('Adding label to Linear issue', { issueId, labelId });
-		// Fetch current label IDs and add the new one
+		// NOTE: Linear's API has no atomic add-label endpoint, so we use a
+		// read-then-update pattern. This is subject to a TOCTOU race: two
+		// concurrent addLabel/removeLabel calls on the same issue can overwrite
+		// each other's changes. This is a known API limitation.
 		const issue = await linearClient.getIssue(issueId);
 		const currentLabelIds = issue.labels.map((l) => l.id);
 		if (currentLabelIds.includes(labelId)) {
 			return issue;
 		}
-		const data = await linearGraphQL<{ issueUpdate: { issue: unknown } }>(
-			`mutation UpdateIssueLabels($id: String!, $input: IssueUpdateInput!) {
-				issueUpdate(id: $id, input: $input) {
-					issue {
-						${ISSUE_FIELDS}
-					}
-				}
-			}`,
-			{ id: issueId, input: { labelIds: [...currentLabelIds, labelId] } },
-		);
-		return mapIssue(data.issueUpdate.issue as RawIssue);
+		return linearClient.updateIssue(issueId, { labelIds: [...currentLabelIds, labelId] });
 	},
 
 	async removeLabel(issueId: string, labelId: string): Promise<LinearIssue> {
 		logger.debug('Removing label from Linear issue', { issueId, labelId });
+		// NOTE: Linear's API has no atomic remove-label endpoint, so we use a
+		// read-then-update pattern. This is subject to a TOCTOU race: two
+		// concurrent addLabel/removeLabel calls on the same issue can overwrite
+		// each other's changes. This is a known API limitation.
 		const issue = await linearClient.getIssue(issueId);
 		const updatedLabelIds = issue.labels.map((l) => l.id).filter((id) => id !== labelId);
-		const data = await linearGraphQL<{ issueUpdate: { issue: unknown } }>(
-			`mutation UpdateIssueLabels($id: String!, $input: IssueUpdateInput!) {
-				issueUpdate(id: $id, input: $input) {
-					issue {
-						${ISSUE_FIELDS}
-					}
-				}
-			}`,
-			{ id: issueId, input: { labelIds: updatedLabelIds } },
-		);
-		return mapIssue(data.issueUpdate.issue as RawIssue);
+		return linearClient.updateIssue(issueId, { labelIds: updatedLabelIds });
 	},
 
 	// ===== Attachments =====
