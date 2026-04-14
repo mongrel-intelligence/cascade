@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getIntegrationCredentialOrNull } from '../../config/provider.js';
 import { getIntegrationByProjectAndCategory } from '../../db/repositories/integrationsRepository.js';
 import { jiraClient, withJiraCredentials } from '../../jira/client.js';
+import { linearClient, withLinearCredentials } from '../../linear/client.js';
 import { trelloClient, withTrelloCredentials } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router } from '../trpc.js';
@@ -27,6 +28,10 @@ const jiraCredsInput = z.object({
 	baseUrl: z.string().url(),
 });
 
+const linearCredsInput = z.object({
+	apiKey: z.string().min(1),
+});
+
 async function withTrelloCreds<T>(
 	input: z.infer<typeof trelloCredsInput>,
 	label: string,
@@ -43,6 +48,14 @@ async function withJiraCreds<T>(
 	return wrapIntegrationCall(label, () =>
 		fn({ email: input.email, apiToken: input.apiToken, baseUrl: input.baseUrl }),
 	);
+}
+
+async function withLinearCreds<T>(
+	input: z.infer<typeof linearCredsInput>,
+	label: string,
+	fn: (creds: { apiKey: string }) => Promise<T>,
+): Promise<T> {
+	return wrapIntegrationCall(label, () => fn({ apiKey: input.apiKey }));
 }
 
 export const integrationsDiscoveryRouter = router({
@@ -428,5 +441,109 @@ export const integrationsDiscoveryRouter = router({
 					slug: data.slug ?? '',
 				};
 			});
+		}),
+
+	/**
+	 * Verify a raw Linear API key.
+	 * Accepts a plaintext API key from the form and calls getMe() to verify it.
+	 * Returns the authenticated user's id, name, and displayName.
+	 */
+	verifyLinear: protectedProcedure.input(linearCredsInput).mutation(async ({ ctx, input }) => {
+		logger.debug('integrationsDiscovery.verifyLinear called', { orgId: ctx.effectiveOrgId });
+		return withLinearCreds(input, 'Failed to verify Linear credentials', (creds) =>
+			withLinearCredentials(creds, () =>
+				linearClient.getMe().then((me) => ({
+					id: me.id,
+					name: me.name,
+					displayName: me.displayName,
+				})),
+			),
+		);
+	}),
+
+	/**
+	 * Fetch Linear teams using raw API key credentials.
+	 * Returns all teams accessible by the provided API key.
+	 */
+	linearTeams: protectedProcedure.input(linearCredsInput).mutation(async ({ ctx, input }) => {
+		logger.debug('integrationsDiscovery.linearTeams called', { orgId: ctx.effectiveOrgId });
+		return withLinearCreds(input, 'Failed to fetch Linear teams', (creds) =>
+			withLinearCredentials(creds, () => linearClient.getTeams()),
+		);
+	}),
+
+	/**
+	 * Fetch Linear teams using stored project credentials.
+	 * Resolves the API key from the project's stored credentials and returns all teams.
+	 */
+	linearTeamsByProject: protectedProcedure
+		.input(z.object({ projectId: z.string() }))
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.linearTeamsByProject called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+			});
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
+			if (!apiKey) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Linear credentials not configured',
+				});
+			}
+			return wrapIntegrationCall('Failed to fetch Linear teams', () =>
+				withLinearCredentials({ apiKey }, () => linearClient.getTeams()),
+			);
+		}),
+
+	/**
+	 * Fetch Linear team workflow states and labels using raw API key credentials.
+	 * Returns both states and labels for the given teamId.
+	 */
+	linearTeamDetails: protectedProcedure
+		.input(linearCredsInput.extend({ teamId: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.linearTeamDetails called', {
+				orgId: ctx.effectiveOrgId,
+				teamId: input.teamId,
+			});
+			return withLinearCreds(input, 'Failed to fetch Linear team details', (creds) =>
+				withLinearCredentials(creds, () =>
+					Promise.all([
+						linearClient.getTeamWorkflowStates(input.teamId),
+						linearClient.getTeamLabels(input.teamId),
+					]).then(([states, labels]) => ({ states, labels })),
+				),
+			);
+		}),
+
+	/**
+	 * Fetch Linear team workflow states and labels using stored project credentials.
+	 * Resolves the API key from stored credentials and returns states and labels for the team.
+	 */
+	linearTeamDetailsByProject: protectedProcedure
+		.input(z.object({ projectId: z.string(), teamId: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			logger.debug('integrationsDiscovery.linearTeamDetailsByProject called', {
+				orgId: ctx.effectiveOrgId,
+				projectId: input.projectId,
+				teamId: input.teamId,
+			});
+			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
+			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
+			if (!apiKey) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Linear credentials not configured',
+				});
+			}
+			return wrapIntegrationCall('Failed to fetch Linear team details', () =>
+				withLinearCredentials({ apiKey }, () =>
+					Promise.all([
+						linearClient.getTeamWorkflowStates(input.teamId),
+						linearClient.getTeamLabels(input.teamId),
+					]).then(([states, labels]) => ({ states, labels })),
+				),
+			);
 		}),
 });
