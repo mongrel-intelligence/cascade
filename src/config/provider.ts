@@ -2,10 +2,12 @@ import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
+	findProjectByLinearTeamIdFromDb,
 	findProjectByRepoFromDb,
 	findProjectWithConfigByBoardId,
 	findProjectWithConfigById,
 	findProjectWithConfigByJiraProjectKey,
+	findProjectWithConfigByLinearTeamId,
 	findProjectWithConfigByRepo,
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
@@ -55,6 +57,17 @@ export async function findProjectByJiraProjectKey(
 	return project;
 }
 
+export async function findProjectByLinearTeamId(
+	teamId: string,
+): Promise<ProjectConfig | undefined> {
+	const cached = configCache.getProjectByLinearTeamId(teamId);
+	if (cached !== null) return cached;
+
+	const project = await findProjectByLinearTeamIdFromDb(teamId);
+	configCache.setProjectByLinearTeamId(teamId, project);
+	return project;
+}
+
 export async function findProjectById(id: string): Promise<ProjectConfig | undefined> {
 	// No cache for by-id lookups (less frequent, PK is fast)
 	return findProjectByIdFromDb(id);
@@ -80,6 +93,12 @@ export async function loadProjectConfigByJiraProjectKey(
 	projectKey: string,
 ): Promise<ProjectWithConfig | undefined> {
 	return findProjectWithConfigByJiraProjectKey(projectKey);
+}
+
+export async function loadProjectConfigByLinearTeamId(
+	teamId: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigByLinearTeamId(teamId);
 }
 
 export async function loadProjectConfigById(id: string): Promise<ProjectWithConfig | undefined> {

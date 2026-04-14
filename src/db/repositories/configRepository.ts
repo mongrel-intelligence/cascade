@@ -38,12 +38,14 @@ function buildRawConfig({
 	return {
 		projects: projectRows.map((row) => {
 			const integrations = integrationsByProject.get(row.id) ?? [];
-			const { trelloConfig, jiraConfig, githubConfig } = extractIntegrationConfigs(integrations);
+			const { trelloConfig, jiraConfig, linearConfig, githubConfig } =
+				extractIntegrationConfigs(integrations);
 			return mapProjectRow({
 				row,
 				projectAgentConfigs: projectAgentConfigsMap.get(row.id) ?? [],
 				trelloConfig,
 				jiraConfig,
+				linearConfig,
 				githubConfig,
 			});
 		}),
@@ -126,6 +128,13 @@ const jiraProjectKeyWhereClause = (projectKey: string) =>
 		AND ${projectIntegrations.config}->>'projectKey' = ${projectKey}
 	)`;
 
+const linearTeamIdWhereClause = (teamId: string) =>
+	sql`${projects.id} IN (
+		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+		WHERE ${projectIntegrations.provider} = 'linear'
+		AND ${projectIntegrations.config}->>'teamId' = ${teamId}
+	)`;
+
 export function findProjectByBoardIdFromDb(boardId: string): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(boardIdWhereClause(boardId));
 }
@@ -142,6 +151,12 @@ export function findProjectByJiraProjectKeyFromDb(
 	projectKey: string,
 ): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(jiraProjectKeyWhereClause(projectKey));
+}
+
+export function findProjectByLinearTeamIdFromDb(
+	teamId: string,
+): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(linearTeamIdWhereClause(teamId));
 }
 
 // WithConfig variants — return both the project and its org-scoped CascadeConfig
@@ -164,4 +179,10 @@ export function findProjectWithConfigByJiraProjectKey(
 	projectKey: string,
 ): Promise<ProjectWithConfig | undefined> {
 	return findProjectConfigFromDb(jiraProjectKeyWhereClause(projectKey));
+}
+
+export function findProjectWithConfigByLinearTeamId(
+	teamId: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(linearTeamIdWhereClause(teamId));
 }

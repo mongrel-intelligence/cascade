@@ -6,6 +6,7 @@ vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
+	findProjectByLinearTeamIdFromDb,
 	findProjectByRepoFromDb,
 	loadConfigFromDb,
 } from '../../../../src/db/repositories/configRepository.js';
@@ -62,6 +63,21 @@ const jiraIntegration = {
 		baseUrl: 'https://test.atlassian.net',
 		statuses: { splitting: 'Splitting', planning: 'Planning', todo: 'To Do' },
 		labels: { processing: 'my-proc', readyToProcess: 'my-ready' },
+	},
+	triggers: {},
+	createdAt: new Date(),
+	updatedAt: new Date(),
+};
+
+const linearIntegration = {
+	id: 4,
+	projectId: 'proj1',
+	category: 'pm' as const,
+	provider: 'linear' as const,
+	config: {
+		teamId: 'team-abc123',
+		statuses: { todo: 'Todo', inProgress: 'In Progress' },
+		labels: { processing: 'cascade-processing', readyToProcess: 'cascade-ready' },
 	},
 	triggers: {},
 	createdAt: new Date(),
@@ -505,6 +521,50 @@ describe('configRepository', () => {
 			const proj = config.projects[0];
 			expect(proj.snapshotEnabled).toBe(false);
 			expect(proj.snapshotTtlMs).toBeUndefined();
+		});
+	});
+
+	describe('Linear integration', () => {
+		it('loads config with Linear integration from project_integrations', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [linearIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			expect(config.projects).toHaveLength(1);
+			const proj = config.projects[0];
+			expect(proj.pm?.type).toBe('linear');
+			expect(proj.linear?.teamId).toBe('team-abc123');
+			expect(proj.linear?.statuses).toEqual({ todo: 'Todo', inProgress: 'In Progress' });
+			expect(proj.linear?.labels?.processing).toBe('cascade-processing');
+			expect(proj.linear?.labels?.readyToProcess).toBe('cascade-ready');
+		});
+	});
+
+	describe('findProjectByLinearTeamIdFromDb', () => {
+		it('returns project found via integrations teamId subquery', async () => {
+			const mockDb = createSequentialMockDb([
+				[projectRow], // subquery finds project
+				[],
+				[linearIntegration],
+			]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByLinearTeamIdFromDb('team-abc123');
+
+			expect(result).toBeDefined();
+			expect(result?.id).toBe('proj1');
+			expect(result?.linear?.teamId).toBe('team-abc123');
+			expect(result?.pm?.type).toBe('linear');
+		});
+
+		it('returns undefined when no project has matching Linear team ID', async () => {
+			const mockDb = createSequentialMockDb([[]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByLinearTeamIdFromDb('nonexistent-team');
+
+			expect(result).toBeUndefined();
 		});
 	});
 });

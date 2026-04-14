@@ -6,7 +6,9 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 	findProjectByBoardIdFromDb: vi.fn(),
 	findProjectByRepoFromDb: vi.fn(),
 	findProjectByJiraProjectKeyFromDb: vi.fn(),
+	findProjectByLinearTeamIdFromDb: vi.fn(),
 	findProjectByIdFromDb: vi.fn(),
+	findProjectWithConfigByLinearTeamId: vi.fn(),
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
@@ -25,6 +27,8 @@ vi.mock('../../../src/config/configCache.js', () => ({
 		setProjectByRepo: vi.fn(),
 		getProjectByJiraKey: vi.fn(),
 		setProjectByJiraKey: vi.fn(),
+		getProjectByLinearTeamId: vi.fn(),
+		setProjectByLinearTeamId: vi.fn(),
 		getOrgIdForProject: vi.fn(),
 		setOrgIdForProject: vi.fn(),
 		invalidate: vi.fn(),
@@ -38,6 +42,7 @@ import {
 	findProjectByBoardId,
 	findProjectById,
 	findProjectByJiraProjectKey,
+	findProjectByLinearTeamId,
 	findProjectByRepo,
 	getAllProjectCredentials,
 	getIntegrationCredential,
@@ -51,6 +56,7 @@ import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
+	findProjectByLinearTeamIdFromDb,
 	findProjectByRepoFromDb,
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
@@ -250,6 +256,41 @@ describe('config/provider', () => {
 
 			expect(result).toBeUndefined();
 			expect(configCache.setProjectByJiraKey).toHaveBeenCalledWith('NONEXIST', undefined);
+		});
+	});
+
+	describe('findProjectByLinearTeamId', () => {
+		it('returns cached project when available', async () => {
+			vi.mocked(configCache.getProjectByLinearTeamId).mockReturnValue(mockProject);
+
+			const result = await findProjectByLinearTeamId('team-abc123');
+
+			expect(result).toBe(mockProject);
+			expect(findProjectByLinearTeamIdFromDb).not.toHaveBeenCalled();
+		});
+
+		it('loads project from DB when not cached', async () => {
+			vi.mocked(configCache.getProjectByLinearTeamId).mockReturnValue(null);
+			vi.mocked(findProjectByLinearTeamIdFromDb).mockResolvedValue(mockProject);
+
+			const result = await findProjectByLinearTeamId('team-abc123');
+
+			expect(result).toBe(mockProject);
+			expect(findProjectByLinearTeamIdFromDb).toHaveBeenCalledWith('team-abc123');
+			expect(configCache.setProjectByLinearTeamId).toHaveBeenCalledWith('team-abc123', mockProject);
+		});
+
+		it('caches undefined when project not found', async () => {
+			vi.mocked(configCache.getProjectByLinearTeamId).mockReturnValue(null);
+			vi.mocked(findProjectByLinearTeamIdFromDb).mockResolvedValue(undefined);
+
+			const result = await findProjectByLinearTeamId('nonexistent-team');
+
+			expect(result).toBeUndefined();
+			expect(configCache.setProjectByLinearTeamId).toHaveBeenCalledWith(
+				'nonexistent-team',
+				undefined,
+			);
 		});
 	});
 

@@ -68,6 +68,19 @@ const githubIntegrationRow: IntegrationRow = {
 	config: {},
 };
 
+const linearConfig = {
+	teamId: 'team-abc123',
+	statuses: { todo: 'Todo', inProgress: 'In Progress', done: 'Done' },
+	labels: { processing: 'label-processing', readyToProcess: 'label-ready' },
+};
+
+const linearIntegrationRow: IntegrationRow = {
+	projectId: 'proj1',
+	category: 'pm',
+	provider: 'linear',
+	config: linearConfig,
+};
+
 // ---------------------------------------------------------------------------
 // orUndefined
 // ---------------------------------------------------------------------------
@@ -212,10 +225,18 @@ describe('extractIntegrationConfigs', () => {
 		expect(result.githubConfig).toEqual({});
 	});
 
+	it('extracts linear config from integration rows', () => {
+		const result = extractIntegrationConfigs([linearIntegrationRow]);
+		expect(result.linearConfig).toEqual(linearConfig);
+		expect(result.trelloConfig).toBeUndefined();
+		expect(result.jiraConfig).toBeUndefined();
+	});
+
 	it('handles empty integration list', () => {
 		const result = extractIntegrationConfigs([]);
 		expect(result.trelloConfig).toBeUndefined();
 		expect(result.jiraConfig).toBeUndefined();
+		expect(result.linearConfig).toBeUndefined();
 		expect(result.githubConfig).toBeUndefined();
 	});
 
@@ -225,6 +246,7 @@ describe('extractIntegrationConfigs', () => {
 		expect(result.trelloConfig).toEqual(trelloConfig);
 		expect(result.githubConfig).toEqual({});
 		expect(result.jiraConfig).toBeUndefined();
+		expect(result.linearConfig).toBeUndefined();
 	});
 });
 
@@ -272,6 +294,11 @@ describe('mapProjectRow', () => {
 		expect(result.pm.type).toBe('jira');
 	});
 
+	it('sets pm.type to linear when linearConfig is provided', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, linearConfig }));
+		expect(result.pm.type).toBe('linear');
+	});
+
 	it('builds trello config with boardId, lists, labels', () => {
 		const result = mapProjectRow(makeInput());
 		expect(result.trello?.boardId).toBe('board123');
@@ -284,6 +311,25 @@ describe('mapProjectRow', () => {
 		expect(result.jira?.projectKey).toBe('PROJ');
 		expect(result.jira?.baseUrl).toBe('https://test.atlassian.net');
 		expect(result.jira?.statuses).toEqual({ splitting: 'Briefing', todo: 'To Do' });
+	});
+
+	it('builds linear config with teamId, statuses, and labels', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, linearConfig }));
+		expect(result.linear?.teamId).toBe('team-abc123');
+		expect(result.linear?.statuses).toEqual({
+			todo: 'Todo',
+			inProgress: 'In Progress',
+			done: 'Done',
+		});
+		expect(result.linear?.labels).toEqual({
+			processing: 'label-processing',
+			readyToProcess: 'label-ready',
+		});
+	});
+
+	it('does not include linear field when linearConfig is not provided', () => {
+		const result = mapProjectRow(makeInput());
+		expect(result.linear).toBeUndefined();
 	});
 
 	it('omits agentEngine when neither row.agentEngine nor agent overrides are set', () => {

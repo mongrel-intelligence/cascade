@@ -12,6 +12,7 @@ class ConfigCache {
 	private projectByBoardId = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByRepo = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByJiraKey = new Map<string, CacheEntry<ProjectConfig | undefined>>();
+	private projectByLinearTeamId = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private orgIdByProject = new Map<string, CacheEntry<string>>();
 	private ttlMs: number;
 
@@ -62,6 +63,15 @@ class ConfigCache {
 		this.projectByJiraKey.set(projectKey, this.makeEntry(project));
 	}
 
+	getProjectByLinearTeamId(teamId: string): ProjectConfig | undefined | null {
+		const entry = this.projectByLinearTeamId.get(teamId);
+		return this.isValid(entry) ? entry.data : null;
+	}
+
+	setProjectByLinearTeamId(teamId: string, project: ProjectConfig | undefined): void {
+		this.projectByLinearTeamId.set(teamId, this.makeEntry(project));
+	}
+
 	getOrgIdForProject(projectId: string): string | null {
 		const entry = this.orgIdByProject.get(projectId);
 		return this.isValid(entry) ? entry.data : null;
@@ -76,6 +86,7 @@ class ConfigCache {
 		this.projectByBoardId.clear();
 		this.projectByRepo.clear();
 		this.projectByJiraKey.clear();
+		this.projectByLinearTeamId.clear();
 		this.orgIdByProject.clear();
 	}
 }
