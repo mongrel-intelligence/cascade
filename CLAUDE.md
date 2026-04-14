@@ -26,12 +26,12 @@ CASCADE runs as three services (no monolithic server mode):
 The extensible trigger system routes events to agents:
 
 ```
-Trello/JIRA/Sentry/GitHub Webhook → Router → Redis/BullMQ → Worker → TriggerRegistry → Agent → Code Changes → PR
+Trello/JIRA/Linear/Sentry/GitHub Webhook → Router → Redis/BullMQ → Worker → TriggerRegistry → Agent → Code Changes → PR
 ```
 
 - `src/router/` - Webhook receiver (enqueues jobs to Redis)
 - `src/webhook/` - Shared webhook handler factory, parsers, and logging
-- `src/triggers/` - Event handlers (Trello/JIRA card moves, labels, GitHub PRs, Sentry alerts)
+- `src/triggers/` - Event handlers (Trello/JIRA/Linear issue moves, labels, GitHub PRs, Sentry alerts)
 - `src/agents/` - AI agents (splitting, planning, implementation, review, debug, alerting, backlog-manager, resolve-conflicts)
 - `src/gadgets/` - Tools agents can use (PM/SCM/alerting operations, Tmux, Todo, file system)
 
@@ -123,6 +123,7 @@ Lefthook runs pre-commit (lint, typecheck) and pre-push (unit tests, integration
 - `src/github/` - GitHub client, dual-persona model (personas.ts)
 - `src/trello/` - Trello API client
 - `src/jira/` - JIRA API client
+- `src/linear/` - Linear API client
 - `src/sentry/` - Sentry API client and integration
 - `src/utils/` - Utilities (logging, repo cloning, lifecycle)
 - `web/` - Dashboard frontend (React 19, Vite, Tailwind v4, TanStack Router)
@@ -140,7 +141,7 @@ provider-specific branching.
 
 | Category | Interface | Example providers |
 |----------|-----------|-------------------|
-| `pm` | `PMIntegration` (extends `IntegrationModule`) | Trello, JIRA |
+| `pm` | `PMIntegration` (extends `IntegrationModule`) | Trello, JIRA, Linear |
 | `scm` | `SCMIntegration` (extends `IntegrationModule`) | GitHub |
 | `alerting` | `AlertingIntegration` (extends `IntegrationModule`) | Sentry |
 
@@ -178,7 +179,7 @@ for `hasIntegration()` to return `true`.
 
 ### Bootstrap
 
-`src/integrations/bootstrap.ts` is the single registration point for all four built-in
+`src/integrations/bootstrap.ts` is the single registration point for all five built-in
 integrations. It is safe to import from both the router and worker — it does not pull in the
 agent execution pipeline or template files.
 
@@ -208,7 +209,7 @@ Optional (infrastructure):
 - `SENTRY_RELEASE` - Release identifier for source maps (e.g., git SHA)
 - `SENTRY_TRACES_SAMPLE_RATE` - Trace sampling rate 0.0-1.0 (default: 0.1)
 
-**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, LLM API keys) are stored in the `project_credentials` table — project-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set. All credentials (integration tokens and LLM keys) use the same `project_credentials` table keyed by `(projectId, envVarKey)`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
+**Project credentials** (`GITHUB_TOKEN_IMPLEMENTER`, `GITHUB_TOKEN_REVIEWER`, `TRELLO_API_KEY`, `TRELLO_TOKEN`, `LINEAR_API_KEY`, `LINEAR_WEBHOOK_SECRET`, LLM API keys) are stored in the `project_credentials` table — project-scoped, encrypted at rest when `CREDENTIAL_MASTER_KEY` is set. All credentials (integration tokens and LLM keys) use the same `project_credentials` table keyed by `(projectId, envVarKey)`. There is no env var fallback — the database is the sole source of truth for project-scoped secrets.
 
 ## Database Configuration
 
@@ -218,8 +219,8 @@ CASCADE stores all project configuration in PostgreSQL. The `config/projects.jso
 
 - `organizations` - Organization definitions (multi-tenant support)
 - `projects` - Per-project config (repo, base branch, budget, engine, and per-project overrides for model, iterations, timeouts, progress model/interval, `run_links_enabled`, `max_in_flight_items`)
-- `project_integrations` - Integration configs per project with `category` (pm/scm), `provider` (trello/jira/github), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
-- `project_credentials` - Project-scoped credentials keyed by `(projectId, envVarKey)`. Stores all credential types (GitHub tokens, Trello keys, JIRA tokens, LLM API keys). Encrypted at rest when `CREDENTIAL_MASTER_KEY` is set
+- `project_integrations` - Integration configs per project with `category` (pm/scm), `provider` (trello/jira/linear/github), `config` JSONB, and `triggers` JSONB. One PM + one SCM per project (enforced by unique constraint)
+- `project_credentials` - Project-scoped credentials keyed by `(projectId, envVarKey)`. Stores all credential types (GitHub tokens, Trello keys, JIRA tokens, Linear API keys, LLM API keys). Encrypted at rest when `CREDENTIAL_MASTER_KEY` is set
 - `agent_configs` - Per-agent-type overrides (model, iterations, engine, `agent_engine_settings`, max_concurrency, `system_prompt`, `task_prompt`), project-scoped only (`project_id NOT NULL`)
 - `agent_definitions` - Agent YAML definitions (built-in and custom). Each row stores the full definition JSONB, keyed by `agent_type`
 - `agent_trigger_configs` - Configured trigger events per project/agent pair (replaces legacy `project_integrations.triggers`)
@@ -380,7 +381,7 @@ cascade projects trigger-set <project-id> --agent review --event scm:review-requ
 
 | Event | Providers | Description |
 |-------|-----------|-------------|
-| `pm:status-changed` | Trello, JIRA | Trigger when card/issue moves to agent's target status |
+| `pm:status-changed` | Trello, JIRA, Linear | Trigger when card/issue moves to agent's target status |
 | `pm:label-added` | All | Trigger when Ready to Process label is added |
 
 ```bash
@@ -452,6 +453,44 @@ cascade projects update <project-id> --agent-engine opencode
 ```
 
 The OpenCode engine is implemented in `src/backends/opencode/`. Configure with `cascade agents create --engine opencode` or via the Agent Configs tab in the dashboard.
+
+## Linear Integration
+
+CASCADE supports Linear as a PM provider. When Linear issues change state or labels are applied, they are routed to the appropriate agents.
+
+- **Linear client**: `src/linear/` — API client and type definitions
+- **PM integration**: `src/pm/linear/integration.ts` — implements `PMIntegration`
+- **Triggers**: `src/triggers/linear/` — `status-changed.ts`, `label-added.ts`, `comment-mention.ts`
+- **Webhook route**: `/linear/webhook` in `src/router/index.ts`
+
+### Credentials
+
+Store Linear credentials via the dashboard (Project Settings > Credentials tab) or CLI:
+
+```bash
+cascade projects credentials-set <project-id> --key LINEAR_API_KEY --value lin_api_...
+cascade projects credentials-set <project-id> --key LINEAR_WEBHOOK_SECRET --value <secret>  # optional
+```
+
+### Configuration
+
+Configure a project to use Linear as its PM provider:
+
+```bash
+cascade projects integration-set <project-id> --category pm --provider linear \
+  --config '{"teamId":"TEAM_ID","statuses":{"todo":"Todo","inProgress":"In Progress","inReview":"In Review","done":"Done"}}'
+```
+
+Linear uses **issue identifiers** (`TEAM-123` format) as work item IDs. Issues belong to **teams** (equivalent to Trello boards or JIRA projects).
+
+### Webhook Setup
+
+Register your CASCADE webhook URL with Linear in your team settings:
+```
+https://<your-cascade-host>/linear/webhook
+```
+
+If `LINEAR_WEBHOOK_SECRET` is configured, the router verifies the `Linear-Signature` header on incoming payloads.
 
 ## Sentry / Alerting Integration
 

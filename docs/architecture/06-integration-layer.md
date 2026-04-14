@@ -10,7 +10,7 @@ The base contract for all integrations:
 
 ```typescript
 interface IntegrationModule {
-  readonly type: string;              // 'trello', 'jira', 'github', 'sentry'
+  readonly type: string;              // 'trello', 'jira', 'linear', 'github', 'sentry'
   readonly category: IntegrationCategory; // 'pm' | 'scm' | 'alerting'
 
   withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T>;
@@ -74,12 +74,13 @@ const integrationRegistry: IntegrationRegistry;  // singleton
 
 `src/integrations/bootstrap.ts`
 
-Single, idempotent registration point for all four built-in integrations. Safe to import from router, worker, and dashboard — it does not pull in the agent execution pipeline or template files.
+Single, idempotent registration point for all five built-in integrations. Safe to import from router, worker, and dashboard — it does not pull in the agent execution pipeline or template files.
 
 ```
-TrelloIntegration   → integrationRegistry + pmRegistry
-JiraIntegration     → integrationRegistry + pmRegistry
-GitHubSCMIntegration → integrationRegistry
+TrelloIntegration         → integrationRegistry + pmRegistry
+JiraIntegration           → integrationRegistry + pmRegistry
+LinearIntegration         → integrationRegistry + pmRegistry
+GitHubSCMIntegration      → integrationRegistry
 SentryAlertingIntegration → integrationRegistry
 ```
 
@@ -93,6 +94,7 @@ Each provider declares its credential roles — the mapping from logical role na
 |----------|----------|---------------|----------------|
 | Trello | pm | `api_key` → `TRELLO_API_KEY`, `token` → `TRELLO_TOKEN` | `api_secret` |
 | JIRA | pm | `email` → `JIRA_EMAIL`, `api_token` → `JIRA_API_TOKEN` | `webhook_secret` |
+| Linear | pm | `api_key` → `LINEAR_API_KEY` | `webhook_secret` → `LINEAR_WEBHOOK_SECRET` |
 | GitHub | scm | `implementer_token` → `GITHUB_TOKEN_IMPLEMENTER`, `reviewer_token` → `GITHUB_TOKEN_REVIEWER` | `webhook_secret` |
 | Sentry | alerting | `api_token` → `SENTRY_API_TOKEN` | `webhook_secret` |
 
@@ -114,6 +116,15 @@ Each provider declares its credential roles — the mapping from logical role na
 - ADF (Atlassian Document Format) ↔ markdown conversion (`src/pm/jira/adf.ts`)
 - Status transitions via JIRA transition ID lookup
 - Issue key extraction via regex: `[A-Z][A-Z0-9]+-\d+`
+
+### Linear (`src/pm/linear/`, `src/linear/`)
+
+- `LinearIntegration` implements `PMIntegration`
+- `LinearPMProvider` implements `PMProvider` (issue CRUD, comments, labels, state transitions)
+- `linearClient` — GraphQL/REST client with AsyncLocalStorage credential scoping
+- Status transitions via Linear state ID lookup
+- Issue identifier extraction via regex: `[A-Z][A-Z0-9]*-\d+` (e.g. `TEAM-123`)
+- Work item URL format: `https://linear.app/<org>/issue/<identifier>`
 
 ### GitHub (`src/github/`)
 

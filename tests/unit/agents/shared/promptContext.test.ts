@@ -199,6 +199,90 @@ describe('buildPromptContext', () => {
 		});
 	});
 
+	describe('with Linear provider', () => {
+		beforeEach(() => {
+			const mockProvider = createMockPMProvider();
+			mockProvider.type = 'linear' as never;
+			mockProvider.getWorkItemUrl = vi.fn((id: string) => `https://linear.app/myorg/issue/${id}`);
+			mockGetPMProvider.mockReturnValue(mockProvider);
+		});
+
+		it('sets workItemNoun to "issue" for Linear', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.workItemNoun).toBe('issue');
+		});
+
+		it('sets workItemNounPlural to "issues" for Linear', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.workItemNounPlural).toBe('issues');
+		});
+
+		it('sets workItemNounCap to "Issue" for Linear', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.workItemNounCap).toBe('Issue');
+		});
+
+		it('sets workItemNounPluralCap to "Issues" for Linear', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.workItemNounPluralCap).toBe('Issues');
+		});
+
+		it('sets pmName to "Linear"', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.pmName).toBe('Linear');
+		});
+
+		it('sets pmType to "linear"', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.pmType).toBe('linear');
+		});
+
+		it('generates workItemUrl from provider using Linear issue URL format', () => {
+			const ctx = buildPromptContext('TEAM-123', makeProject() as never);
+			expect(ctx.workItemUrl).toBe('https://linear.app/myorg/issue/TEAM-123');
+		});
+
+		it('sets pipeline list IDs from Linear statuses', () => {
+			const linearProject = makeProject({
+				trello: undefined,
+				pm: { type: 'linear' },
+				linear: {
+					teamId: 'team-abc',
+					statuses: {
+						backlog: 'Backlog',
+						todo: 'Todo',
+						inProgress: 'In Progress',
+						inReview: 'In Review',
+						done: 'Done',
+						merged: 'Merged',
+					},
+				},
+			});
+			const ctx = buildPromptContext('TEAM-1', linearProject as never);
+			expect(ctx.backlogListId).toBe('Backlog');
+			expect(ctx.todoListId).toBe('Todo');
+			expect(ctx.inProgressListId).toBe('In Progress');
+			expect(ctx.inReviewListId).toBe('In Review');
+			expect(ctx.mergedListId).toBe('Merged');
+		});
+
+		it('leaves pipeline list IDs undefined when Linear statuses are missing', () => {
+			const linearProject = makeProject({
+				trello: undefined,
+				pm: { type: 'linear' },
+				linear: {
+					teamId: 'team-abc',
+					statuses: {},
+				},
+			});
+			const ctx = buildPromptContext('TEAM-1', linearProject as never);
+			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.todoListId).toBeUndefined();
+			expect(ctx.inProgressListId).toBeUndefined();
+			expect(ctx.inReviewListId).toBeUndefined();
+		});
+	});
+
 	describe('with prContext', () => {
 		beforeEach(() => {
 			const mockProvider = createMockPMProvider();
