@@ -13,7 +13,11 @@ import {
 	PROVIDER_CREDENTIAL_ROLES,
 	registerCredentialRoles,
 } from '../../config/integrationRoles.js';
-import { getIntegrationCredential, getIntegrationCredentialOrNull } from '../../config/provider.js';
+import {
+	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
+	loadProjectConfigByLinearTeamId,
+} from '../../config/provider.js';
 import { getIntegrationProvider } from '../../db/repositories/credentialsRepository.js';
 import { withLinearCredentials } from '../../linear/client.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
@@ -197,12 +201,9 @@ export class LinearIntegration implements PMIntegration {
 	}
 
 	async lookupProject(
-		_identifier: string,
+		identifier: string,
 	): Promise<{ project: ProjectConfig; config: CascadeConfig } | null> {
-		// Linear project lookup by teamId is not yet implemented in the config
-		// repository (separate story). Return null to fall through to other lookup
-		// mechanisms.
-		return null;
+		return (await loadProjectConfigByLinearTeamId(identifier)) ?? null;
 	}
 
 	extractWorkItemId(text: string): string | null {

@@ -6,11 +6,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockGetIntegrationCredential = vi.fn();
 const mockGetIntegrationCredentialOrNull = vi.fn();
+const mockLoadProjectConfigByLinearTeamId = vi.fn();
 
 vi.mock('../../../../src/config/provider.js', () => ({
 	getIntegrationCredential: (...args: unknown[]) => mockGetIntegrationCredential(...args),
 	getIntegrationCredentialOrNull: (...args: unknown[]) =>
 		mockGetIntegrationCredentialOrNull(...args),
+	loadProjectConfigByLinearTeamId: (...args: unknown[]) =>
+		mockLoadProjectConfigByLinearTeamId(...args),
 }));
 
 const mockGetIntegrationProvider = vi.fn();
@@ -366,8 +369,23 @@ describe('LinearIntegration', () => {
 	// lookupProject
 	// =========================================================================
 	describe('lookupProject', () => {
-		it('returns null (not yet implemented)', async () => {
+		it('returns the project+config when a matching Linear teamId is found', async () => {
+			const project = makeProject();
+			const config = { version: 1, agents: [] };
+			mockLoadProjectConfigByLinearTeamId.mockResolvedValueOnce({ project, config });
+
 			const result = await integration.lookupProject('team-abc');
+
+			expect(mockLoadProjectConfigByLinearTeamId).toHaveBeenCalledWith('team-abc');
+			expect(result).toEqual({ project, config });
+		});
+
+		it('returns null when no project matches the given teamId', async () => {
+			mockLoadProjectConfigByLinearTeamId.mockResolvedValueOnce(undefined);
+
+			const result = await integration.lookupProject('unknown-team');
+
+			expect(mockLoadProjectConfigByLinearTeamId).toHaveBeenCalledWith('unknown-team');
 			expect(result).toBeNull();
 		});
 	});
