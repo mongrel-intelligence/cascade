@@ -160,13 +160,19 @@ async function sendJiraReaction(projectId: string, payload: unknown): Promise<vo
 	await client.postReaction('', { issueId, commentId });
 }
 
+async function sendLinearReaction(_projectId: string, _payload: unknown): Promise<void> {
+	// Linear does not support emoji reactions on comments via the same API pattern
+	// as Trello/JIRA. This is a no-op placeholder for API consistency.
+	logger.info('[Reactions] Linear reaction skipped (not supported via webhook API)');
+}
+
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------
 
 /**
  * Send an acknowledgment reaction for an incoming webhook.
- * Dispatches to Trello (👀), GitHub (👀), or JIRA (💭) based on source.
+ * Dispatches to Trello (👀), GitHub (👀), JIRA (💭), or Linear (no-op) based on source.
  *
  * For GitHub, pass `repoFullName` as the `projectId` parameter, along with
  * `personaIdentities` and the already-resolved `project`. The reaction is
@@ -189,6 +195,8 @@ export async function sendAcknowledgeReaction(
 			await sendGitHubReaction(projectId, payload, personaIdentities, project);
 		} else if (source === 'jira') {
 			await sendJiraReaction(projectId, payload);
+		} else if (source === 'linear') {
+			await sendLinearReaction(projectId, payload);
 		}
 	} catch (err) {
 		logger.error('[Reactions] Unexpected error sending reaction:', String(err));

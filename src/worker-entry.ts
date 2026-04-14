@@ -27,6 +27,7 @@ import {
 	registerBuiltInTriggers,
 	type TriggerRegistry,
 } from './triggers/index.js';
+import { processLinearWebhook } from './triggers/linear/webhook-handler.js';
 import { processSentryWebhook } from './triggers/sentry/webhook-handler.js';
 import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import type { TriggerResult } from './types/index.js';
@@ -80,6 +81,19 @@ export interface SentryJobData {
 	triggerResult?: TriggerResult;
 }
 
+export interface LinearJobData {
+	type: 'linear';
+	source: 'linear';
+	payload: unknown;
+	projectId: string;
+	workItemId?: string;
+	/** Linear event type: e.g. 'create/Issue', 'update/Issue', 'create/Comment' */
+	eventType: string;
+	receivedAt: string;
+	ackCommentId?: string;
+	triggerResult?: TriggerResult;
+}
+
 export interface ManualRunJobData {
 	type: 'manual-run';
 	projectId: string;
@@ -113,6 +127,7 @@ export type JobData =
 	| GitHubJobData
 	| JiraJobData
 	| SentryJobData
+	| LinearJobData
 	| DashboardJobData;
 
 export async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
@@ -223,6 +238,22 @@ export async function dispatchJob(
 				jobData.payload,
 				jobData.projectId,
 				triggerRegistry,
+				jobData.triggerResult,
+			);
+			break;
+		case 'linear':
+			logger.info('[Worker] Processing Linear job', {
+				jobId,
+				projectId: jobData.projectId,
+				workItemId: jobData.workItemId,
+				eventType: jobData.eventType,
+				ackCommentId: jobData.ackCommentId,
+				hasTriggerResult: !!jobData.triggerResult,
+			});
+			await processLinearWebhook(
+				jobData.payload,
+				triggerRegistry,
+				jobData.ackCommentId,
 				jobData.triggerResult,
 			);
 			break;

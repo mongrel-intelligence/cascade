@@ -62,6 +62,20 @@ vi.mock('../../../src/triggers/sentry/alerting-metric.js', () => ({
 	SentryMetricAlertTrigger: vi.fn().mockImplementation(() => ({ name: 'sentry-metric-alert' })),
 }));
 
+vi.mock('../../../src/triggers/linear/comment-mention.js', () => ({
+	LinearCommentMentionTrigger: vi
+		.fn()
+		.mockImplementation(() => ({ name: 'linear-comment-mention' })),
+}));
+vi.mock('../../../src/triggers/linear/status-changed.js', () => ({
+	LinearStatusChangedTrigger: vi.fn().mockImplementation(() => ({ name: 'linear-status-changed' })),
+}));
+vi.mock('../../../src/triggers/linear/label-added.js', () => ({
+	LinearReadyToProcessLabelTrigger: vi
+		.fn()
+		.mockImplementation(() => ({ name: 'linear-ready-to-process-label-added' })),
+}));
+
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
 		debug: vi.fn(),
@@ -88,8 +102,8 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 21 built-in triggers (19 + 2 Sentry alerting triggers)
-		expect(registry.register).toHaveBeenCalledTimes(21);
+		// Should have registered all 24 built-in triggers (19 + 2 Sentry alerting + 3 Linear triggers)
+		expect(registry.register).toHaveBeenCalledTimes(24);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {
@@ -140,6 +154,17 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('jira-comment-mention');
 		expect(registeredNames).toContain('jira-status-changed');
 		expect(registeredNames).toContain('jira-label-added');
+	});
+
+	it('registers Linear triggers', () => {
+		const registry = createMockRegistry();
+
+		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
+
+		const registeredNames = registry.handlers.map((h: object) => (h as { name: string }).name);
+		expect(registeredNames).toContain('linear-comment-mention');
+		expect(registeredNames).toContain('linear-status-changed');
+		expect(registeredNames).toContain('linear-ready-to-process-label-added');
 	});
 
 	it('registers Sentry alerting triggers', () => {
