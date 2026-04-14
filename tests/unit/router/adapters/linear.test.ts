@@ -17,6 +17,7 @@ vi.mock('../../../../src/router/queue.js', () => ({
 }));
 vi.mock('../../../../src/router/acknowledgments.js', () => ({
 	postLinearAck: vi.fn(),
+	resolveLinearBotUserId: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 	extractLinearContext: vi.fn().mockReturnValue('Issue: Fix the bug'),
@@ -35,7 +36,7 @@ vi.mock('../../../../src/linear/client.js', () => ({
 	withLinearCredentials: vi.fn().mockImplementation((_creds: unknown, fn: () => unknown) => fn()),
 }));
 
-import { postLinearAck } from '../../../../src/router/acknowledgments.js';
+import { postLinearAck, resolveLinearBotUserId } from '../../../../src/router/acknowledgments.js';
 import { LinearRouterAdapter } from '../../../../src/router/adapters/linear.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
@@ -183,10 +184,63 @@ describe('LinearRouterAdapter', () => {
 	});
 
 	describe('isSelfAuthored', () => {
-		it('always returns false (no bot persona in Linear)', async () => {
+		it('returns false for non-comment events', async () => {
+			const result = await adapter.isSelfAuthored(
+				{ projectIdentifier: 'team-abc-123', eventType: 'create/Issue', isCommentEvent: false },
+				{ data: { id: 'issue-abc', teamId: 'team-abc-123' } },
+			);
+			expect(result).toBe(false);
+		});
+
+		it('returns false when comment has no userId', async () => {
 			const result = await adapter.isSelfAuthored(
 				{ projectIdentifier: 'team-abc-123', eventType: 'create/Comment', isCommentEvent: true },
-				{},
+				{ data: { id: 'comment-xyz', body: 'Hello' } },
+			);
+			expect(result).toBe(false);
+		});
+
+		it('returns false when bot userId cannot be resolved', async () => {
+			vi.mocked(resolveLinearBotUserId).mockResolvedValueOnce(null);
+			const result = await adapter.isSelfAuthored(
+				{
+					projectIdentifier: 'team-abc-123',
+					eventType: 'create/Comment',
+					isCommentEvent: true,
+					// @ts-expect-error extended field
+					projectId: 'p1',
+				},
+				{ data: { id: 'comment-xyz', body: 'Hello', userId: 'user-bot-id' } },
+			);
+			expect(result).toBe(false);
+		});
+
+		it('returns true when comment userId matches bot userId', async () => {
+			vi.mocked(resolveLinearBotUserId).mockResolvedValueOnce('user-bot-id');
+			const result = await adapter.isSelfAuthored(
+				{
+					projectIdentifier: 'team-abc-123',
+					eventType: 'create/Comment',
+					isCommentEvent: true,
+					// @ts-expect-error extended field
+					projectId: 'p1',
+				},
+				{ data: { id: 'comment-xyz', body: 'Hello', userId: 'user-bot-id' } },
+			);
+			expect(result).toBe(true);
+		});
+
+		it('returns false when comment userId does not match bot userId', async () => {
+			vi.mocked(resolveLinearBotUserId).mockResolvedValueOnce('user-bot-id');
+			const result = await adapter.isSelfAuthored(
+				{
+					projectIdentifier: 'team-abc-123',
+					eventType: 'create/Comment',
+					isCommentEvent: true,
+					// @ts-expect-error extended field
+					projectId: 'p1',
+				},
+				{ data: { id: 'comment-xyz', body: 'Hello', userId: 'user-other-id' } },
 			);
 			expect(result).toBe(false);
 		});

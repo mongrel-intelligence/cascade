@@ -8,7 +8,11 @@
  */
 
 import { BotIdentityCache } from './bot-identity.js';
-import { resolveJiraCredentials, resolveTrelloCredentials } from './platformClients/index.js';
+import {
+	resolveJiraCredentials,
+	resolveLinearCredentials,
+	resolveTrelloCredentials,
+} from './platformClients/index.js';
 
 // ---------------------------------------------------------------------------
 // JIRA bot identity
@@ -69,4 +73,40 @@ export async function resolveTrelloBotMemberId(projectId: string): Promise<strin
 /** @internal Visible for testing only */
 export function _resetTrelloBotCache(): void {
 	trelloBotIdentityCache._reset();
+}
+
+// ---------------------------------------------------------------------------
+// Linear bot identity
+// ---------------------------------------------------------------------------
+
+const linearBotIdentityCache = new BotIdentityCache<string>('userId');
+
+/**
+ * Resolve the Linear user ID for the bot credentials linked to a project.
+ * Uses the `viewer` query to fetch the authenticated user's ID.
+ * Cached per-project with 60s TTL. Returns null on any failure.
+ */
+export async function resolveLinearBotUserId(projectId: string): Promise<string | null> {
+	return linearBotIdentityCache.resolve(projectId, async () => {
+		const creds = await resolveLinearCredentials(projectId);
+		if (!creds) return null;
+
+		const response = await fetch('https://api.linear.app/graphql', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${creds.apiKey}`,
+			},
+			body: JSON.stringify({ query: '{ viewer { id } }' }),
+		});
+		if (!response.ok) return null;
+
+		const data = (await response.json()) as { data?: { viewer?: { id?: string } } };
+		return data.data?.viewer?.id ?? null;
+	});
+}
+
+/** @internal Visible for testing only */
+export function _resetLinearBotCache(): void {
+	linearBotIdentityCache._reset();
 }

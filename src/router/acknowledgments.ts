@@ -121,8 +121,10 @@ export async function deleteLinearAck(
 
 export {
 	_resetJiraBotCache,
+	_resetLinearBotCache,
 	_resetTrelloBotCache,
 	resolveJiraBotAccountId,
+	resolveLinearBotUserId,
 	resolveTrelloBotMemberId,
 } from './bot-identity-resolvers.js';
 

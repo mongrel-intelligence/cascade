@@ -14,7 +14,7 @@ import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractLinearContext, generateAckMessage } from '../ackMessageGenerator.js';
-import { postLinearAck } from '../acknowledgments.js';
+import { postLinearAck, resolveLinearBotUserId } from '../acknowledgments.js';
 import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveLinearCredentials } from '../platformClients/index.js';
@@ -95,10 +95,18 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 		return PROCESSABLE_TYPES.some((t) => event.eventType.endsWith(`/${t}`));
 	}
 
-	async isSelfAuthored(_event: ParsedWebhookEvent, _payload: unknown): Promise<boolean> {
-		// Linear comment self-authoring detection could be added here later.
-		// For now, Linear has no bot persona concept — always return false.
-		return false;
+	async isSelfAuthored(event: ParsedWebhookEvent, payload: unknown): Promise<boolean> {
+		if (!event.isCommentEvent) return false;
+		const data = (payload as Record<string, unknown>)?.data as Record<string, unknown> | undefined;
+		const commentAuthorId = data?.userId as string | undefined;
+		if (!commentAuthorId) return false;
+		try {
+			const projectId = (event as LinearParsedEvent).projectId;
+			const botId = await resolveLinearBotUserId(projectId);
+			return !!botId && commentAuthorId === botId;
+		} catch {
+			return false;
+		}
 	}
 
 	sendReaction(_event: ParsedWebhookEvent, _payload: unknown): void {
