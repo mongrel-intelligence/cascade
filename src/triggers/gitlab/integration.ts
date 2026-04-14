@@ -6,8 +6,8 @@
  */
 
 import { loadProjectConfigByRepo } from '../../config/provider.js';
-import { withGitHubToken } from '../../github/client.js';
-import { getPersonaToken } from '../../github/personas.js';
+import { withGitLabToken } from '../../gitlab/client.js';
+import { getPersonaToken } from '../../gitlab/personas.js';
 import type { PMIntegration, PMWebhookEvent } from '../../pm/integration.js';
 import type { ProjectPMConfig } from '../../pm/lifecycle.js';
 import type { PMProvider } from '../../pm/types.js';
@@ -31,8 +31,8 @@ export class GitLabWebhookIntegration implements PMIntegration {
 	}
 
 	async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-		const githubToken = await getPersonaToken(projectId, 'implementation');
-		return withGitHubToken(githubToken, fn);
+		const gitlabToken = await getPersonaToken(projectId, 'implementation');
+		return withGitLabToken(gitlabToken, fn);
 	}
 
 	resolveLifecycleConfig(_project: ProjectConfig): ProjectPMConfig {

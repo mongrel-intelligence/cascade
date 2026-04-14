@@ -290,6 +290,40 @@ async function fetchGitLabMRContextStep(
 		description: 'Pre-fetched MR diff',
 	});
 
+	// Fetch pipeline status for the MR head SHA
+	try {
+		const pipelines = await gitlabClient.listPipelines(
+			projectPath,
+			mrDetails.sha || mrDetails.sourceBranch,
+		);
+		const latestPipeline = pipelines[0] ?? null;
+		const pipelineFormatted = latestPipeline
+			? [
+					`Pipeline #${latestPipeline.id}: ${latestPipeline.status}`,
+					`Ref: ${latestPipeline.ref}`,
+					`SHA: ${latestPipeline.sha}`,
+					`URL: ${latestPipeline.webUrl}`,
+				].join('\n')
+			: 'No pipeline found for this MR';
+
+		injections.push({
+			toolName: 'GetPipelineStatus',
+			params: {
+				comment: 'Pre-fetching CI pipeline status for MR',
+				projectPath,
+				mrIid,
+			},
+			result: pipelineFormatted,
+			description: 'Pre-fetched CI pipeline status',
+		});
+	} catch (err) {
+		params.logWriter('WARN', 'fetchGitLabMRContextStep: failed to fetch pipeline status', {
+			projectPath,
+			mrIid,
+			error: err instanceof Error ? err.message : String(err),
+		});
+	}
+
 	// Read full contents of changed files from the local repo
 	const prDiffCompat = mrDiff.map((f) => ({
 		filename: f.newPath,
