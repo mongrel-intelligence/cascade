@@ -6,7 +6,7 @@ plan_slug: checkout-and-pagination
 level: plan
 parent_spec: docs/specs/001-pr-review-correctness.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 001/1: Checkout Correctness & Pagination
