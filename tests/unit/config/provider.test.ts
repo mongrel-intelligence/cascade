@@ -9,6 +9,8 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 	findProjectByLinearTeamIdFromDb: vi.fn(),
 	findProjectByIdFromDb: vi.fn(),
 	findProjectWithConfigByLinearTeamId: vi.fn(),
+	findProjectByPMIdentifierFromDb: vi.fn(),
+	findProjectWithConfigByPMIdentifierFromDb: vi.fn(),
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
@@ -29,6 +31,8 @@ vi.mock('../../../src/config/configCache.js', () => ({
 		setProjectByJiraKey: vi.fn(),
 		getProjectByLinearTeamId: vi.fn(),
 		setProjectByLinearTeamId: vi.fn(),
+		getProjectByPMIdentifier: vi.fn(),
+		setProjectByPMIdentifier: vi.fn(),
 		getOrgIdForProject: vi.fn(),
 		setOrgIdForProject: vi.fn(),
 		invalidate: vi.fn(),
@@ -43,6 +47,7 @@ import {
 	findProjectById,
 	findProjectByJiraProjectKey,
 	findProjectByLinearTeamId,
+	findProjectByPMIdentifier,
 	findProjectByRepo,
 	getAllProjectCredentials,
 	getIntegrationCredential,
@@ -50,6 +55,7 @@ import {
 	getOrgCredential,
 	invalidateConfigCache,
 	loadConfig,
+	loadProjectConfigByPMIdentifier,
 	setCredentialResolver,
 } from '../../../src/config/provider.js';
 import {
@@ -57,7 +63,9 @@ import {
 	findProjectByIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
 	findProjectByLinearTeamIdFromDb,
+	findProjectByPMIdentifierFromDb,
 	findProjectByRepoFromDb,
+	findProjectWithConfigByPMIdentifierFromDb,
 	loadConfigFromDb,
 } from '../../../src/db/repositories/configRepository.js';
 import {
@@ -644,6 +652,110 @@ describe('config/provider', () => {
 			const result = await resolver.resolveAll('proj1');
 
 			expect(result).toEqual({ KEY_A: 'val-a', KEY_B: 'val-b' });
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// findProjectByPMIdentifier (unified cache + DB lookup)
+	// ---------------------------------------------------------------------------
+
+	describe('findProjectByPMIdentifier', () => {
+		it('returns cached project when available (cache hit)', async () => {
+			vi.mocked(configCache.getProjectByPMIdentifier).mockReturnValue(mockProject);
+
+			const result = await findProjectByPMIdentifier('trello', 'board123');
+
+			expect(result).toBe(mockProject);
+			expect(findProjectByPMIdentifierFromDb).not.toHaveBeenCalled();
+			expect(configCache.setProjectByPMIdentifier).not.toHaveBeenCalled();
+		});
+
+		it('returns cached undefined when explicitly cached as not found', async () => {
+			vi.mocked(configCache.getProjectByPMIdentifier).mockReturnValue(undefined);
+
+			const result = await findProjectByPMIdentifier('jira', 'NONEXISTENT');
+
+			expect(result).toBeUndefined();
+			expect(findProjectByPMIdentifierFromDb).not.toHaveBeenCalled();
+		});
+
+		it('loads project from DB when not cached (cache miss)', async () => {
+			vi.mocked(configCache.getProjectByPMIdentifier).mockReturnValue(null);
+			vi.mocked(findProjectByPMIdentifierFromDb).mockResolvedValue(mockProject);
+
+			const result = await findProjectByPMIdentifier('trello', 'board123');
+
+			expect(result).toBe(mockProject);
+			expect(findProjectByPMIdentifierFromDb).toHaveBeenCalledWith('trello', 'board123');
+			expect(configCache.setProjectByPMIdentifier).toHaveBeenCalledWith(
+				'trello',
+				'board123',
+				mockProject,
+			);
+		});
+
+		it('caches undefined (negative cache) when project not found in DB', async () => {
+			vi.mocked(configCache.getProjectByPMIdentifier).mockReturnValue(null);
+			vi.mocked(findProjectByPMIdentifierFromDb).mockResolvedValue(undefined);
+
+			const result = await findProjectByPMIdentifier('jira', 'NOTFOUND');
+
+			expect(result).toBeUndefined();
+			expect(configCache.setProjectByPMIdentifier).toHaveBeenCalledWith(
+				'jira',
+				'NOTFOUND',
+				undefined,
+			);
+		});
+
+		it('works for linear provider', async () => {
+			vi.mocked(configCache.getProjectByPMIdentifier).mockReturnValue(null);
+			vi.mocked(findProjectByPMIdentifierFromDb).mockResolvedValue(mockProject);
+
+			const result = await findProjectByPMIdentifier('linear', 'team-abc');
+
+			expect(result).toBe(mockProject);
+			expect(findProjectByPMIdentifierFromDb).toHaveBeenCalledWith('linear', 'team-abc');
+			expect(configCache.setProjectByPMIdentifier).toHaveBeenCalledWith(
+				'linear',
+				'team-abc',
+				mockProject,
+			);
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// loadProjectConfigByPMIdentifier (delegates to DB, no caching)
+	// ---------------------------------------------------------------------------
+
+	describe('loadProjectConfigByPMIdentifier', () => {
+		it('returns project + config when found', async () => {
+			const mockResult = { project: mockProject, config: mockConfig };
+			vi.mocked(findProjectWithConfigByPMIdentifierFromDb).mockResolvedValue(mockResult as never);
+
+			const result = await loadProjectConfigByPMIdentifier('trello', 'board123');
+
+			expect(result).toBe(mockResult);
+			expect(findProjectWithConfigByPMIdentifierFromDb).toHaveBeenCalledWith('trello', 'board123');
+		});
+
+		it('returns undefined when project not found', async () => {
+			vi.mocked(findProjectWithConfigByPMIdentifierFromDb).mockResolvedValue(undefined);
+
+			const result = await loadProjectConfigByPMIdentifier('jira', 'NOTFOUND');
+
+			expect(result).toBeUndefined();
+			expect(findProjectWithConfigByPMIdentifierFromDb).toHaveBeenCalledWith('jira', 'NOTFOUND');
+		});
+
+		it('delegates directly to DB without using cache', async () => {
+			vi.mocked(findProjectWithConfigByPMIdentifierFromDb).mockResolvedValue(undefined);
+
+			await loadProjectConfigByPMIdentifier('linear', 'team-1');
+
+			// Does not consult the configCache (no caching for loadProjectConfig* functions)
+			expect(configCache.getProjectByPMIdentifier).not.toHaveBeenCalled();
+			expect(configCache.setProjectByPMIdentifier).not.toHaveBeenCalled();
 		});
 	});
 });

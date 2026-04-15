@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mock config provider
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
+	getIntegrationCredentialOrNull: vi.fn(),
 	findProjectById: vi.fn(),
 }));
 
@@ -29,7 +30,12 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
+import {
+	findProjectById,
+	getIntegrationCredential,
+	getIntegrationCredentialOrNull,
+} from '../../../src/config/provider.js';
+import { resolveWebhookSecret } from '../../../src/router/platformClients/credentials.js';
 import {
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
@@ -41,6 +47,7 @@ import { logger } from '../../../src/utils/logging.js';
 const mockLogger = vi.mocked(logger);
 
 const mockGetIntegrationCredential = vi.mocked(getIntegrationCredential);
+const mockGetIntegrationCredentialOrNull = vi.mocked(getIntegrationCredentialOrNull);
 const mockFindProjectById = vi.mocked(findProjectById);
 
 // Mock global fetch
@@ -298,5 +305,91 @@ describe('TrelloPlatformClient', () => {
 				expect.any(String),
 			);
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveWebhookSecret — direct tests for each provider branch
+// ---------------------------------------------------------------------------
+
+describe('resolveWebhookSecret', () => {
+	beforeEach(() => {
+		mockGetIntegrationCredentialOrNull.mockReset();
+	});
+
+	it('resolves github webhook_secret from scm integration', async () => {
+		mockGetIntegrationCredentialOrNull.mockResolvedValue('github-secret');
+
+		const result = await resolveWebhookSecret('proj1', 'github');
+
+		expect(result).toBe('github-secret');
+		expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+			'proj1',
+			'scm',
+			'webhook_secret',
+		);
+	});
+
+	it('resolves jira webhook_secret from pm integration', async () => {
+		mockGetIntegrationCredentialOrNull.mockResolvedValue('jira-secret');
+
+		const result = await resolveWebhookSecret('proj1', 'jira');
+
+		expect(result).toBe('jira-secret');
+		expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+			'proj1',
+			'pm',
+			'webhook_secret',
+		);
+	});
+
+	it('resolves sentry webhook_secret from alerting integration', async () => {
+		mockGetIntegrationCredentialOrNull.mockResolvedValue('sentry-secret');
+
+		const result = await resolveWebhookSecret('proj1', 'sentry');
+
+		expect(result).toBe('sentry-secret');
+		expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+			'proj1',
+			'alerting',
+			'webhook_secret',
+		);
+	});
+
+	it('resolves linear webhook_secret from pm integration', async () => {
+		mockGetIntegrationCredentialOrNull.mockResolvedValue('linear-secret');
+
+		const result = await resolveWebhookSecret('proj1', 'linear');
+
+		expect(result).toBe('linear-secret');
+		expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+			'proj1',
+			'pm',
+			'webhook_secret',
+		);
+	});
+
+	it('resolves trello api_secret from pm integration', async () => {
+		mockGetIntegrationCredentialOrNull.mockResolvedValue('trello-api-secret');
+
+		const result = await resolveWebhookSecret('proj1', 'trello');
+
+		expect(result).toBe('trello-api-secret');
+		expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj1', 'pm', 'api_secret');
+	});
+
+	it('returns null for unknown provider without fetching any credential', async () => {
+		const result = await resolveWebhookSecret('proj1', 'unknown-provider');
+
+		expect(result).toBeNull();
+		expect(mockGetIntegrationCredentialOrNull).not.toHaveBeenCalled();
+	});
+
+	it('returns null when credential is not configured (getIntegrationCredentialOrNull returns null)', async () => {
+		mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
+
+		const result = await resolveWebhookSecret('proj1', 'github');
+
+		expect(result).toBeNull();
 	});
 });

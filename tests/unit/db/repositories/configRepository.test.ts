@@ -7,7 +7,9 @@ import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
 	findProjectByLinearTeamIdFromDb,
+	findProjectByPMIdentifierFromDb,
 	findProjectByRepoFromDb,
+	findProjectWithConfigByPMIdentifierFromDb,
 	loadConfigFromDb,
 } from '../../../../src/db/repositories/configRepository.js';
 
@@ -563,6 +565,98 @@ describe('configRepository', () => {
 			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByLinearTeamIdFromDb('nonexistent-team');
+
+			expect(result).toBeUndefined();
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// findProjectByPMIdentifierFromDb (generic PM identifier lookup)
+	// ---------------------------------------------------------------------------
+
+	describe('findProjectByPMIdentifierFromDb', () => {
+		it('returns project for trello boardId via generic PM identifier lookup', async () => {
+			const mockDb = createSequentialMockDb([
+				[projectRow], // subquery finds project
+				[],
+				[trelloIntegration],
+			]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByPMIdentifierFromDb('trello', 'board123');
+
+			expect(result).toBeDefined();
+			expect(result?.id).toBe('proj1');
+			expect(result?.trello?.boardId).toBe('board123');
+			expect(result?.pm?.type).toBe('trello');
+		});
+
+		it('returns project for jira projectKey via generic PM identifier lookup', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [jiraIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByPMIdentifierFromDb('jira', 'PROJ');
+
+			expect(result).toBeDefined();
+			expect(result?.id).toBe('proj1');
+			expect(result?.jira?.projectKey).toBe('PROJ');
+			expect(result?.pm?.type).toBe('jira');
+		});
+
+		it('returns project for linear teamId via generic PM identifier lookup', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [linearIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByPMIdentifierFromDb('linear', 'team-abc123');
+
+			expect(result).toBeDefined();
+			expect(result?.id).toBe('proj1');
+			expect(result?.linear?.teamId).toBe('team-abc123');
+			expect(result?.pm?.type).toBe('linear');
+		});
+
+		it('returns undefined when no project matches the identifier', async () => {
+			const mockDb = createSequentialMockDb([[]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByPMIdentifierFromDb('trello', 'nonexistent-board');
+
+			expect(result).toBeUndefined();
+		});
+
+		it('returns undefined for unknown provider (sql false condition)', async () => {
+			// Unknown provider → pmIdentifierWhereClause returns sql`false` → no rows
+			const mockDb = createSequentialMockDb([[]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByPMIdentifierFromDb('unknown-provider', 'some-id');
+
+			expect(result).toBeUndefined();
+		});
+	});
+
+	// ---------------------------------------------------------------------------
+	// findProjectWithConfigByPMIdentifierFromDb (project + full CascadeConfig)
+	// ---------------------------------------------------------------------------
+
+	describe('findProjectWithConfigByPMIdentifierFromDb', () => {
+		it('returns project and config for trello boardId', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [trelloIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectWithConfigByPMIdentifierFromDb('trello', 'board123');
+
+			expect(result).toBeDefined();
+			expect(result?.project.id).toBe('proj1');
+			expect(result?.project.trello?.boardId).toBe('board123');
+			expect(result?.config.projects).toHaveLength(1);
+		});
+
+		it('returns undefined when no project matches', async () => {
+			const mockDb = createSequentialMockDb([[]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectWithConfigByPMIdentifierFromDb('jira', 'NOTFOUND');
 
 			expect(result).toBeUndefined();
 		});

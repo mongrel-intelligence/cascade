@@ -79,12 +79,30 @@ vi.mock('../../src/agents/prompts/index.js', () => ({
 	initPrompts: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../src/triggers/linear/webhook-handler.js', () => ({
+	processLinearWebhook: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../src/pm/webhook-handler.js', () => ({
+	processPMWebhook: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../src/pm/index.js', () => ({
+	pmRegistry: {
+		getOrNull: vi.fn(),
+		all: vi.fn().mockReturnValue([]),
+	},
+}));
+
 // ── Imports (after vi.mock calls) ─────────────────────────────────────────────
 
 import { loadProjectConfigById } from '../../src/config/provider.js';
 import { getRunById } from '../../src/db/repositories/runsRepository.js';
+import { pmRegistry } from '../../src/pm/index.js';
+import { processPMWebhook } from '../../src/pm/webhook-handler.js';
 import { captureException, flush } from '../../src/sentry.js';
 import { processGitHubWebhook, processJiraWebhook } from '../../src/triggers/index.js';
+import { processLinearWebhook } from '../../src/triggers/linear/webhook-handler.js';
 import { processSentryWebhook } from '../../src/triggers/sentry/webhook-handler.js';
 import { triggerDebugAnalysis } from '../../src/triggers/shared/debug-runner.js';
 import { triggerManualRun, triggerRetryRun } from '../../src/triggers/shared/manual-runner.js';
@@ -94,8 +112,10 @@ import {
 	dispatchJob,
 	type GitHubJobData,
 	type JiraJobData,
+	type LinearJobData,
 	type ManualRunJobData,
 	main,
+	type PMJobData,
 	processDashboardJob,
 	type RetryRunJobData,
 	type SentryJobData,
@@ -210,6 +230,83 @@ describe('dispatchJob routing', () => {
 			'proj-sentry',
 			mockRegistry,
 			triggerResult,
+		);
+	});
+
+	it('routes linear job to processLinearWebhook with payload, registry, ackCommentId, triggerResult', async () => {
+		const mockRegistry = {};
+		const jobPayload = { type: 'Issue', action: 'create', data: { id: 'issue-1' } };
+		const triggerResult = { matched: true, agentType: 'implementation' } as never;
+
+		const jobData: LinearJobData = {
+			type: 'linear',
+			source: 'linear',
+			payload: jobPayload,
+			projectId: 'proj-linear',
+			workItemId: 'issue-1',
+			eventType: 'create/Issue',
+			receivedAt: '2024-01-01T00:00:00Z',
+			ackCommentId: 'linear-comment-abc',
+			triggerResult,
+		};
+
+		await dispatchJob('job-linear-1', jobData, mockRegistry as never);
+
+		expect(processLinearWebhook).toHaveBeenCalledWith(
+			jobPayload,
+			mockRegistry,
+			'linear-comment-abc',
+			triggerResult,
+		);
+	});
+
+	it('routes unified pm job to processPMWebhook via pmRegistry lookup', async () => {
+		const mockRegistry = {};
+		const mockIntegration = { type: 'trello' };
+		vi.mocked(pmRegistry.getOrNull).mockReturnValue(mockIntegration as never);
+
+		const jobPayload = { action: { type: 'commentCard' } };
+		const triggerResult = { matched: true, agentType: 'implementation' } as never;
+
+		const jobData: PMJobData = {
+			type: 'pm',
+			source: 'trello',
+			payload: jobPayload,
+			projectId: 'proj-pm',
+			workItemId: 'card-pm',
+			eventType: 'commentCard',
+			receivedAt: '2024-01-01T00:00:00Z',
+			ackCommentId: 'pm-ack-123',
+			triggerResult,
+		};
+
+		await dispatchJob('job-pm-1', jobData, mockRegistry as never);
+
+		expect(pmRegistry.getOrNull).toHaveBeenCalledWith('trello');
+		expect(processPMWebhook).toHaveBeenCalledWith(
+			mockIntegration,
+			jobPayload,
+			mockRegistry,
+			'pm-ack-123',
+			triggerResult,
+		);
+	});
+
+	it('throws when pm job source is not registered in pmRegistry', async () => {
+		vi.mocked(pmRegistry.getOrNull).mockReturnValue(null);
+		vi.mocked(pmRegistry.all).mockReturnValue([{ type: 'trello' } as never]);
+
+		const jobData: PMJobData = {
+			type: 'pm',
+			source: 'unknown-provider',
+			payload: {},
+			projectId: 'proj-1',
+			eventType: 'test',
+			receivedAt: '2024-01-01T00:00:00Z',
+		};
+
+		await expect(dispatchJob('job-pm-unknown', jobData, {} as never)).rejects.toThrow(
+			"Unknown PM provider 'unknown-provider' in unified PMJob",
 		);
 	});
 
