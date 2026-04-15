@@ -79,6 +79,9 @@ export class JiraIntegration implements PMIntegration {
 			},
 			statuses: {
 				backlog: jiraConfig?.statuses?.backlog,
+				splitting: jiraConfig?.statuses?.splitting,
+				planning: jiraConfig?.statuses?.planning,
+				todo: jiraConfig?.statuses?.todo,
 				inProgress: jiraConfig?.statuses?.inProgress,
 				inReview: jiraConfig?.statuses?.inReview,
 				done: jiraConfig?.statuses?.done,

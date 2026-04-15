@@ -13,7 +13,16 @@ import { FieldMappingRow, SearchableSelect } from './wizard-shared.js';
 // Slot definitions
 // ============================================================================
 
-const LINEAR_STATUS_SLOTS = ['backlog', 'inProgress', 'inReview', 'done'];
+const LINEAR_STATUS_SLOTS = [
+	'backlog',
+	'splitting',
+	'planning',
+	'todo',
+	'inProgress',
+	'inReview',
+	'done',
+	'merged',
+] as const;
 
 const LINEAR_LABEL_SLOTS = ['processing', 'processed', 'error', 'readyToProcess', 'auto'];
 

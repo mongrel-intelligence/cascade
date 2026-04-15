@@ -25,10 +25,14 @@ export interface ProjectPMConfig {
 	};
 	statuses: {
 		backlog?: string;
+		splitting?: string;
+		planning?: string;
+		todo?: string;
 		inProgress?: string;
 		inReview?: string;
 		done?: string;
 		merged?: string;
+		debug?: string;
 	};
 }
 
