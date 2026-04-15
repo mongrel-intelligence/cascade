@@ -1,0 +1,242 @@
+---
+id: 001
+slug: pr-review-correctness
+plan: 1
+plan_slug: checkout-and-pagination
+level: plan
+parent_spec: docs/specs/001-pr-review-correctness.md
+depends_on: []
+status: pending
+---
+
+# 001/1: Checkout Correctness & Pagination
+
+> Part 1 of 2 in the 001-pr-review-correctness plan. See [parent spec](../../specs/001-pr-review-correctness.md).
+
+## Summary
+
+This plan delivers the foundation: the worker correctly places the working tree at the PR head commit for **every** PR (internal or external-fork), it surfaces every step failure as a failed run instead of silently continuing, and it enumerates **every** changed file in the PR rather than the first 100. It also paginates every other GitHub endpoint that the review setup pipeline touches, so we don't carry the same latent bug class forward.
+
+After this plan ships, the specific PR #1092 hallucination class is substantially blocked even before plan 2 lands: with the working tree on the correct commit, any `Read` the agent does to "verify" a claim returns the actual PR-branch content, and the file enumeration is no longer truncated. What plan 1 does **not** fix is the 25K-token full-file-contents cap on the agent's pre-fetched view — that's plan 2.
+
+**Components delivered:**
+- New `fetchAndCheckoutPR` helper in `src/agents/shared/repository.ts` using `+refs/pull/N/head:refs/remotes/pr/N` fetch spec, detached checkout, and `git rev-parse HEAD` SHA verification against the PR's head SHA.
+- `setupRepository` and `refreshSnapshotWorkspace` reworked to call the helper when `prNumber` is set; both now throw on any non-zero git exit code.
+- `SetupRepositoryOptions` and `AgentInput` extended with `prNumber` and `prHeadSha` (`prBranch` retained for human-readable logging only).
+- `AgentInput` populated with `prHeadSha` at every trigger handler that constructs it for review runs.
+- All seven `per_page: 100` call sites in `src/github/client.ts` converted to paginate to completion.
+- New structured log fields: `Fetched PR ref`, `Resolved HEAD SHA`, `Total changed files`.
+
+**Deferred to plan 2:**
+- Pre-fetch swap from full file contents to compact diffs.
+- Skipped-file structured contract with the agent.
+- Agent prompt template updates for the new context shape.
+- Logging for `included / skipped + per-skip reason` (plan 1 only logs total file count from pagination).
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (External-fork → working tree at PR head) — **full**
+- Spec AC #2 (>100 files → all enumerated) — **full**
+- Spec AC #3 (Setup failure → run failed) — **full**
+- Spec AC #4 (HEAD SHA mismatch → run failed before review) — **full**
+- Spec AC #7 (Other paginated endpoints read to completion) — **full**
+- Spec AC #8 (Operator log visibility) — **partial** (this plan adds: ref fetched, resolved HEAD SHA, total changed-file count; plan 2 adds: included vs skipped counts with per-skip reasons)
+- Spec AC #9 (PR #1092 reproduction case produces no fabrications) — **partial** (this plan delivers correct working tree + complete file enumeration; plan 2 delivers the diff-shape that prevents partial-context hallucinations on very large PRs)
+
+---
+
+## Depends On
+
+- _None._ This is the foundation plan.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Type extensions
+
+**Tests first** (`tests/unit/types/agentInput.test.ts` — new file):
+- `AgentInput accepts prNumber, prBranch, prHeadSha as optional` — type-only test using `expectTypeOf` from vitest.
+- `SetupRepositoryOptions accepts prNumber and prHeadSha` — type-only test.
+
+**Implementation** (`src/types/index.ts`):
+- Extend `AgentInput` interface: add `prHeadSha?: string` alongside existing `prNumber?: number` and `prBranch?: string`. Keep `prBranch` for logging — no consumers should use it for checkout.
+
+**Implementation** (`src/agents/shared/repository.ts`):
+- Extend `SetupRepositoryOptions` interface: add `prNumber?: number` and `prHeadSha?: string`.
+
+### 2. Helper: `fetchAndCheckoutPR`
+
+**Tests first** (`tests/unit/agents/shared/repository.test.ts` — extend existing 528-line file):
+- `fetchAndCheckoutPR fetches refs/pull/N/head with the + force-update prefix` — mock `runCommand`; assert the first call's args are `['fetch', 'origin', '+refs/pull/1092/head:refs/remotes/pr/1092']`.
+- `fetchAndCheckoutPR checks out detached pr/N after fetch` — assert second call: `['checkout', '--detach', 'pr/1092']`.
+- `fetchAndCheckoutPR throws when fetch returns non-zero exit code` — mock fetch to return `{exitCode: 128, stderr: 'fatal: ...'}`; expect rejection with stderr substring in message.
+- `fetchAndCheckoutPR throws when checkout returns non-zero exit code` — mock fetch ok, checkout fail; expect rejection.
+- `fetchAndCheckoutPR verifies HEAD SHA matches expected when prHeadSha provided` — mock `git rev-parse HEAD` to return matching SHA; expect resolution.
+- `fetchAndCheckoutPR throws on HEAD SHA mismatch` — `rev-parse` returns different SHA; expect rejection with both SHAs in message.
+- `fetchAndCheckoutPR skips SHA check when prHeadSha is undefined` — no `rev-parse` call should occur; resolves cleanly.
+- `fetchAndCheckoutPR logs fetched ref and resolved HEAD SHA on success` — assert `log.info` was called with both fields.
+
+**Implementation** (`src/agents/shared/repository.ts`):
+- New `async function fetchAndCheckoutPR(repoDir: string, prNumber: number, prHeadSha: string | undefined, scmProvider: 'github' | 'gitlab' | undefined, log: AgentLogger): Promise<void>`.
+- Sequence: `git fetch origin <refspec>` → `git checkout --detach pr/${prNumber}` → optionally `git rev-parse HEAD` → compare with `prHeadSha`.
+- The `<refspec>` is provider-aware: GitHub → `+refs/pull/${prNumber}/head:refs/remotes/pr/${prNumber}`. The GitLab branch is **out of scope this plan** (depends on PR #1092 landing); for now, when `scmProvider !== 'github'`, throw an explicit `Error('fetchAndCheckoutPR: only GitHub is currently supported; GitLab support follows PR #1092 merge')`. The provider parameter is in the signature so the GitLab extension is a one-line follow-up.
+- Each step: check `result.exitCode !== 0`, throw `new Error(...)` with stderr (last 500 chars).
+- On HEAD SHA mismatch: throw `new Error(\`HEAD SHA mismatch after PR checkout: expected ${prHeadSha}, got ${actualSha}\`)`.
+- On success: `log.info('PR checked out', { prNumber, ref: 'refs/pull/${prNumber}/head', headSha: prHeadSha ?? '(unverified)' })`.
+
+### 3. `setupRepository` cold-start path rework
+
+**Tests first** (extend `tests/unit/agents/shared/repository.test.ts`):
+- `setupRepository calls fetchAndCheckoutPR when prNumber is set` — mock the helper; verify it's called with the right args.
+- `setupRepository does not call git checkout <prBranch>` — verify no `runCommand` call with args matching `['checkout', 'claude/cranky-johnson']` or similar.
+- `setupRepository propagates fetchAndCheckoutPR errors` — helper throws; expect `setupRepository` to reject.
+- `setupRepository works when prNumber is not set (non-PR runs)` — uses base branch from clone, no PR-ref fetch.
+
+**Implementation** (`src/agents/shared/repository.ts:151-155`):
+- Replace the existing `if (prBranch) { ... await runCommand('git', ['checkout', prBranch], ...) }` block with `if (prNumber) { await fetchAndCheckoutPR(repoDir, prNumber, prHeadSha, log) }`.
+- Update destructuring at line 111: `const { project, log, agentType, prNumber, prHeadSha, warmTsCache } = options;` (drop `prBranch` from active use; can still log it earlier if present).
+
+### 4. `refreshSnapshotWorkspace` (snapshot-reuse path) rework
+
+**Tests first** (extend `tests/unit/agents/shared/repository.test.ts`):
+- `refreshSnapshotWorkspace fetches origin then PR ref when prNumber is set` — mock `runCommand`; assert sequence.
+- `refreshSnapshotWorkspace throws on non-zero git fetch exit (no warn-and-continue)` — assert rejection, not warning.
+- `refreshSnapshotWorkspace throws on non-zero git reset exit` — assert rejection.
+- `refreshSnapshotWorkspace uses fetchAndCheckoutPR when prNumber is set instead of branch checkout` — assert helper is called.
+- `refreshSnapshotWorkspace works for non-PR runs (uses baseBranch fetch + reset)` — assert legacy path.
+
+**Implementation** (`src/agents/shared/repository.ts:49-88`):
+- Change all three "warn and continue" blocks (lines 62-67, 71-76, 80-85) to throw on non-zero exit code with the stderr in the error message.
+- When `prNumber` is set, call `fetchAndCheckoutPR(repoDir, prNumber, prHeadSha, log)` instead of the existing `git reset --hard origin/${branch}` + `git checkout branch` pair.
+- When `prNumber` is not set (non-PR runs), keep existing behavior but with throw-on-failure semantics.
+- Pass `prHeadSha` through `refreshSnapshotWorkspace`'s signature.
+
+### 5. Plumb `prNumber` + `prHeadSha` through `setupRepository` callers
+
+**Tests first** (extend `tests/unit/backends/adapter.test.ts` if it exists, else create):
+- `executeWithEngine forwards prNumber and prHeadSha from input to setupRepository` — mock `setupRepository`; verify call args include both fields.
+
+**Implementation** (`src/backends/adapter.ts:27-33`):
+- Update the `setupRepository({ ... })` call to forward `prNumber: input.prNumber` and `prHeadSha: input.prHeadSha`.
+
+### 6. Populate `prHeadSha` on `AgentInput` at trigger sites
+
+**Tests first** (extend per-trigger test files in `tests/unit/triggers/github/`):
+- For each trigger handler that constructs `AgentInput` with a `prNumber`: verify it also includes `prHeadSha`, sourced from the webhook payload's `pull_request.head.sha` (or equivalent).
+- Add one test per affected trigger: `mr-opened.test.ts` equivalents under `tests/unit/triggers/github/` (e.g., `pr-opened.test.ts`, `check-suite-success.test.ts`, etc.).
+
+**Implementation**:
+- `grep -rn "prNumber:" src/triggers/` — for every site that sets `prNumber` on an `AgentInput`-shaped object, add `prHeadSha: <webhook payload field>`.
+- The webhook payload exposes `pull_request.head.sha`. Trigger handlers already have access to the parsed payload — surface the SHA.
+- Affected files (preliminary; verify via grep during implementation): `src/triggers/github/check-suite-success.ts`, `src/triggers/github/pr-opened.ts`, `src/triggers/github/pr-review-submitted.ts`, `src/triggers/github/review-requested.ts`, `src/triggers/github/pr-comment-mention.ts`, `src/triggers/github/check-suite-failure.ts`, plus any GitLab equivalents under `src/triggers/gitlab/` if PR #1092 has merged by then.
+
+### 7. Pagination of all paginated GitHub client endpoints
+
+**Tests first** (`tests/unit/github/client.test.ts` — new file if absent, else extend):
+- `getPRDiff paginates beyond 100 files` — stub Octokit to return 100 on page 1, 29 on page 2, `[]` on page 3; assert returned array has 129 entries.
+- `getPRDiff stops when a page returns fewer than per_page` — stub to return 100, then 50; assert exactly 2 page requests, 150 total entries.
+- `getPRReviewComments paginates to completion` — analogous test.
+- `getPRIssueComments paginates to completion` — analogous test.
+- `getPRReviews paginates to completion` — analogous test.
+- `getCheckSuiteStatus paginates listWorkflowRunsForRepo` — stub multiple pages; assert all runs returned.
+- `getCheckSuiteStatus paginates listJobsForWorkflowRun for each run` — assert per-run jobs list is complete.
+- `getFailedWorkflowJobs paginates listWorkflowRunsForRepo and listJobsForWorkflowRun` — analogous.
+
+**Implementation** (`src/github/client.ts`):
+- Replace each `const { data } = await getClient().<endpoint>({ ..., per_page: 100 })` with the Octokit `paginate` helper: `const data = await getClient().paginate(getClient().<endpoint>, { ..., per_page: 100 })`.
+- Affected lines (per Phase 5 reconnaissance): 151 (`getPRReviewComments`), 272 (`getPRIssueComments`), 295 + 305 (`getCheckSuiteStatus` — 2 sites), 342 (`getPRDiff`), 428 + 446 (`getFailedWorkflowJobs` — 2 sites). Also page through `getPRReviews` at line 243-style call (verify exact line during implementation).
+- For the `Promise.all(runs.map(...))` patterns at lines 299-308 and 439-450, the inner per-run jobs call also needs `paginate`.
+
+### 8. Structured logging for setup observability
+
+**Tests first** (extend `tests/unit/agents/shared/repository.test.ts`):
+- `setupRepository logs fetched-ref, resolved-HEAD-SHA when PR checkout succeeds` — assert log.info call with structured fields.
+
+**Implementation** (`src/agents/shared/repository.ts`, `src/agents/definitions/contextSteps.ts`):
+- After successful `fetchAndCheckoutPR`, log `Fetched PR ref` and `Resolved HEAD SHA` (already covered by helper in step 2).
+- After `getPRDiff` returns the (now complete) file list at `contextSteps.ts:170`, log `Total changed files` with the count. Replace existing `Reading PR file contents { fileCount: prDiff.length }` log message — same field, but now after pagination the count is accurate.
+
+---
+
+## Test Plan
+
+### Unit tests
+
+- [ ] `tests/unit/types/agentInput.test.ts`: 2 type-only tests
+- [ ] `tests/unit/agents/shared/repository.test.ts`: ~14 new tests (`fetchAndCheckoutPR` helper + `setupRepository` + `refreshSnapshotWorkspace`)
+- [ ] `tests/unit/backends/adapter.test.ts`: 1 new test (forwarding prNumber/prHeadSha)
+- [ ] `tests/unit/github/client.test.ts`: ~9 new tests (one per paginated endpoint plus boundary cases)
+- [ ] Per-trigger test files under `tests/unit/triggers/github/`: ~5-7 new tests (one per handler that builds `AgentInput` for PR runs)
+
+### Integration tests
+
+- [ ] _(Optional)_ `tests/integration/agents/external-pr-checkout.test.ts`: stand up a bare git repo with a `refs/pull/42/head` ref pointing to a commit not on any local branch; run `setupRepository` with `prNumber: 42`; assert the working tree HEAD matches the expected SHA.
+
+### Acceptance tests
+
+- [ ] Per-plan AC #1: external-fork PR test repo → checkout succeeds at PR head.
+- [ ] Per-plan AC #2: 129-file fixture PR → `getPRDiff` returns 129 entries.
+- [ ] Per-plan AC #3: stub `runCommand` to fail → run rejects with descriptive error.
+- [ ] Per-plan AC #4: stub `git rev-parse` to return wrong SHA → rejects with both SHAs in error.
+- [ ] Per-plan AC #5: every paginated endpoint test green.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. Given an `AgentInput` with `prNumber: 1092` and `prHeadSha: '96f5136...'`, `setupRepository` produces a working tree whose `git rev-parse HEAD` equals `96f5136...`, regardless of whether `claude/cranky-johnson` exists on `origin`.
+2. Given a PR with 129 changed files, `getPRDiff` returns an array of 129 entries.
+3. Given any non-zero exit code from any git command in the setup pipeline, `setupRepository` rejects with an error message containing the failing command's stderr.
+4. Given a `prHeadSha` that does not match the post-checkout `git rev-parse HEAD` output, `setupRepository` rejects with an error message containing both SHAs.
+5. Each of the seven previously-truncated `per_page: 100` call sites in `src/github/client.ts` returns the full result set across multiple pages when stubbed to return non-trivial multi-page data.
+6. The worker log for a successful PR review setup contains structured entries for: the fetched ref (e.g. `refs/pull/1092/head`), the resolved HEAD SHA, and the total changed-files count.
+7. All new and modified code has corresponding tests.
+8. `npm run build` passes.
+9. `npm test` passes (unit suite).
+10. `npm run lint` and `npm run typecheck` pass.
+11. All documentation listed in Documentation Impact has been updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | Add a paragraph in the "Development" section noting that PR review runs use `refs/pull/N/head` and verify HEAD SHA after checkout; document the fail-loud contract for setup errors. |
+| `CHANGELOG.md` | Entry: `fix(review): correctly check out external-fork PRs and paginate all GitHub list endpoints (#001/1)`. Brief description of behavior change visible in run logs. |
+
+---
+
+## Out of Scope (this plan)
+
+- **GitLab MR ref support in `fetchAndCheckoutPR`** — depends on PR #1092 (suda's GitLab SCM provider) landing. Once it merges, extending the helper to use `refs/merge-requests/N/head` for `scmProvider === 'gitlab'` is a one-line follow-up (the signature already accepts the parameter).
+- Pre-fetch swap from full file contents to compact diffs (→ plan 2).
+- Skipped-file structured contract with the agent (→ plan 2).
+- Agent prompt template updates for the new context shape (→ plan 2).
+- Logging of `included / skipped + per-skip reason` (→ plan 2).
+- Ops-layer detection of historical runs where final HEAD ≠ PR head (spec OOS).
+- Agentic multi-hop context gathering (spec OOS).
+- Codebase-wide indexing (spec OOS).
+- Running review against PR's merge commit instead of head (spec OOS).
+- Multi-agent review orchestration (spec OOS).
+- Changes to the review agent's model, prompt template, or output format (spec OOS — but plan 2 makes minor prompt changes that are scoped there).
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
+- [ ] AC #11

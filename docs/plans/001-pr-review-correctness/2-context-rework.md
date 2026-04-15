@@ -1,0 +1,231 @@
+---
+id: 001
+slug: pr-review-correctness
+plan: 2
+plan_slug: context-rework
+level: plan
+parent_spec: docs/specs/001-pr-review-correctness.md
+depends_on: [1-checkout-and-pagination.md]
+status: pending
+---
+
+# 001/2: Context Pre-Fetch Rework — Compact Diffs & Skipped-File Contract
+
+> Part 2 of 2 in the 001-pr-review-correctness plan. See [parent spec](../../specs/001-pr-review-correctness.md).
+
+## Summary
+
+This plan re-shapes the data the review agent receives. The current pre-fetch echoes **full file contents** of changed files up to a 25K-token cap; this plan replaces it with **compact per-file diffs** (using GitHub's `file.patch` from the now-paginated diff endpoint), which scales with PR size rather than repo size and aligns with industry best practice for LLM code review.
+
+It also delivers the **skipped-file contract**: whenever any changed file's diff or content cannot be included in the agent's context (over budget, deleted, binary, missing patch), the agent receives an explicit, structured list of those filenames with a per-file reason and prompt guidance to fetch them on demand via its existing `Read`, `Grep`, and `Bash` (`gh pr diff`) tools.
+
+After this plan ships, the spec is fully delivered: external-fork PRs of any size produce reviews that reflect the actual change set, and the agent has both the compact view it needs and clear awareness of what it doesn't have.
+
+**Components delivered:**
+- `readPRFileContents` removed; replaced by `extractPRDiffs` that produces per-file compact diffs from `PRDiffFile.patch`.
+- `REVIEW_FILE_CONTENT_TOKEN_LIMIT` (full-file budget) replaced by `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` (compact-diff budget; larger ceiling appropriate for diff content).
+- New `SkippedFile` type and structured "skipped files" injection format.
+- `fetchPRContextStep` rewritten to inject diffs + skipped-file list (instead of the current full-file inclusion loop).
+- `review.yaml` agent definition updated: prompt instructs the agent on the new context shape, names the `SKIPPED FILES` injection, and tells it to fetch those files via `Read` or `gh pr diff` when relevant.
+- `formatPRDiff` enhanced to render compact per-file headers consistent with the new diff context.
+- Logging: `included`, `skipped`, and per-skip `reason` surfaced in the run log.
+
+**Deferred to follow-up specs (already spec OOS):**
+- Agentic multi-hop context gathering (reading dependent files automatically).
+- Codebase-wide indexing.
+- Adaptive diff-vs-full-file based on file size or change ratio.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #5 (Primary view = compact diffs) — **full**
+- Spec AC #6 (Skipped files → structured list + guidance) — **full**
+- Spec AC #8 (Operator log visibility) — **partial** (this plan adds: included vs skipped counts with per-skip reasons; plan 1 already added: ref, HEAD SHA, total changed-file count)
+- Spec AC #9 (PR #1092 reproduction case produces no fabrications) — **partial** (this plan delivers the diff-shape that prevents partial-context hallucinations on very large PRs; plan 1 already delivered correct working tree + complete file enumeration)
+
+---
+
+## Depends On
+
+- Plan 1 (`checkout-and-pagination`) — provides the complete, paginated changed-files list that this plan iterates over to produce compact diffs.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Configuration: replace token-limit constant
+
+**Tests first** (`tests/unit/config/reviewConfig.test.ts` — new file or extend):
+- `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT exists and is a positive number` — sanity import test.
+- `the constant is sized for diff content not full files` — assert it is at least 100_000 (diffs are dense, model is opus 4.6 with 1M-token window).
+
+**Implementation** (`src/config/reviewConfig.ts`):
+- Remove `export const REVIEW_FILE_CONTENT_TOKEN_LIMIT = 25_000;`.
+- Add `export const REVIEW_DIFF_CONTEXT_TOKEN_LIMIT = 200_000;` (number is illustrative; tune via load test in implementation; goal: comfortably fit median PR diff content).
+
+### 2. New types: `SkippedFile` and `PRDiffContext`
+
+**Tests first** (`tests/unit/agents/shared/prFormatting.test.ts` — extend existing 287-line file):
+- `SkippedFile shape includes filename and reason` — type test using `expectTypeOf`.
+- `PRDiffContext shape includes included diffs and skipped list` — type test.
+
+**Implementation** (`src/agents/shared/prFormatting.ts`):
+- Add type:
+  ```typescript
+  export interface SkippedFile {
+      filename: string;
+      reason: 'over-budget' | 'no-patch' | 'binary' | 'deleted' | 'patch-too-large';
+  }
+  export interface PRDiffContext {
+      included: Array<{ path: string; status: PRDiffFile['status']; diff: string }>;
+      skipped: SkippedFile[];
+  }
+  ```
+
+### 3. New function: `extractPRDiffs`
+
+**Tests first** (extend `tests/unit/agents/shared/prFormatting.test.ts`):
+- `extractPRDiffs returns a diff for each PR file with a patch` — input: `[{filename: 'a.ts', patch: '@@ ...'}, {filename: 'b.ts', patch: '@@ ...'}]`; expect both in `included`.
+- `extractPRDiffs marks files with status "removed" as skipped with reason "deleted"` — verify.
+- `extractPRDiffs marks files without a patch (binary, large blob) as skipped with reason "no-patch"` — verify.
+- `extractPRDiffs marks files with a patch larger than per-file cap as skipped with reason "patch-too-large"` — verify.
+- `extractPRDiffs respects total-budget cap; once exceeded, remaining files go to skipped with reason "over-budget"` — verify ordering and cutoff.
+- `extractPRDiffs returns deterministic ordering` — same input → same output (stable sort).
+- `extractPRDiffs handles empty PR diff input` — returns `{included: [], skipped: []}`.
+
+**Implementation** (`src/agents/shared/prFormatting.ts`):
+- Replace `readPRFileContents` with `extractPRDiffs(prDiff: PRDiffFile[]): PRDiffContext`.
+- Iterate over `prDiff`, applying skip rules in order: deleted → no patch → patch over per-file cap → would exceed budget. Otherwise add to `included`.
+- No filesystem reads — operates purely on the API response from `getPRDiff` (which already includes `patch` strings).
+- Per-file compact diff format: a short header (`### {filename} ({status}, +N -M)`) followed by the unified diff hunk(s) from `file.patch`.
+
+### 4. Pre-fetch step rewrite
+
+**Tests first** (extend `tests/unit/agents/definitions/contextSteps.test.ts` if it exists, else create):
+- `fetchPRContextStep injects compact diff context (not full files)` — mock `getPRDiff` to return PR-shaped data; assert one injection labeled "Pre-fetched PR diff context" containing per-file headers.
+- `fetchPRContextStep injects a SKIPPED FILES section when files are skipped` — mock with files exceeding budget; assert injection labeled "Skipped files (fetch via Read or gh pr diff if relevant)" containing the filenames + reasons.
+- `fetchPRContextStep does NOT inject the SKIPPED FILES section when nothing is skipped` — assert only the diff injection is present.
+- `fetchPRContextStep logs included and skipped counts and per-skip reasons` — assert structured `log.info` call.
+
+**Implementation** (`src/agents/definitions/contextSteps.ts:198-204` and surrounding):
+- Remove the `readPRFileContents` call and the loop at lines 206+ that pushes per-file injections.
+- Call `extractPRDiffs(prDiff)` once.
+- Push **one** injection containing the compact diff context (all included diffs in one block, with per-file headers).
+- If `skipped.length > 0`, push a second injection labeled "Skipped files" that lists each filename + reason in a structured format the prompt template can reference.
+- Log: `params.logWriter('INFO', 'PR context prepared', { included: ctx.included.length, skipped: ctx.skipped.length, skipReasons: countByReason(ctx.skipped) })`.
+
+### 5. Agent prompt template updates
+
+**Tests first** (`tests/unit/agents/definitions/review.yaml.test.ts` — new file, or extend existing prompt-validation tests):
+- `review.yaml prompt mentions compact-diff context` — load template, assert it references the diff context name.
+- `review.yaml prompt mentions SKIPPED FILES section and how to fetch` — assert presence of guidance text.
+- `review.yaml prompt does not reference the old "full file contents" pre-fetch` — assert absence.
+
+**Implementation** (`src/agents/definitions/review.yaml`):
+- Update the agent's instructions section to:
+  - Describe the new context shape: "You will receive compact per-file diffs labeled `### {filename}`."
+  - Describe the skipped-file contract: "If a `SKIPPED FILES` injection is present, those files were omitted to keep the context compact. When any of them is relevant to your review, fetch the patch via `gh pr diff <PR_NUMBER> -- <path>` or read the post-PR file content with `Read`."
+  - Remove any text that references "full file contents" pre-fetch (if present).
+- Keep model, output format, and tool list unchanged.
+
+### 6. Cleanup: remove the old `readPRFileContents`
+
+**Tests first**:
+- `readPRFileContents is no longer exported from prFormatting` — type-only test asserts the export is gone.
+- `tests/unit/agents/shared/prFormatting.test.ts` — delete or rewrite the existing tests that exercised `readPRFileContents`; replace with `extractPRDiffs` tests in step 3.
+
+**Implementation**:
+- Remove `readPRFileContents` and `PRFileContents` from `src/agents/shared/prFormatting.ts`.
+- `grep -rn "readPRFileContents\|PRFileContents" src/ tests/` — confirm no remaining references; if any, update them.
+
+### 7. Logging for observability completion
+
+**Tests first** (extend `tests/unit/agents/definitions/contextSteps.test.ts`):
+- `fetchPRContextStep emits a structured log entry containing included, skipped, and skipReasons map` — assert exact structure.
+
+**Implementation** (`src/agents/definitions/contextSteps.ts`):
+- Replace `params.logWriter('INFO', 'File contents loaded', {...})` (the current line ~201) with the new `'PR context prepared'` log entry described in step 4.
+
+---
+
+## Test Plan
+
+### Unit tests
+
+- [ ] `tests/unit/config/reviewConfig.test.ts`: 2 tests
+- [ ] `tests/unit/agents/shared/prFormatting.test.ts`: ~10 new tests (`extractPRDiffs` happy path + each skip reason + budget cutoff + empty input + ordering)
+- [ ] `tests/unit/agents/definitions/contextSteps.test.ts`: 4 new tests (diff injection, skipped-files injection, no-skipped path, logging)
+- [ ] `tests/unit/agents/definitions/review.yaml.test.ts`: 3 prompt-template tests
+- [ ] Existing `prFormatting.test.ts` tests for `readPRFileContents`: deleted (no longer applicable)
+
+### Integration tests
+
+- [ ] _(Optional)_ End-to-end against a fixture PR: paginated diff → `extractPRDiffs` → injection → assert agent context shape includes diff + skipped sections.
+
+### Acceptance tests
+
+- [ ] Per-plan AC #1: 200-file PR fixture → diff injection contains all files that fit; remaining listed as skipped with `over-budget` reason.
+- [ ] Per-plan AC #2: PR with one binary file → skipped with `no-patch` reason.
+- [ ] Per-plan AC #3: load `review.yaml`, assert prompt explicitly names the SKIPPED FILES injection.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. Given a PR with files containing `patch` data, `extractPRDiffs` produces an `included` entry per file containing the patch text, and an empty `skipped` list (assuming the budget is not exceeded).
+2. Given a PR file with `status: 'removed'`, `extractPRDiffs` places it in `skipped` with reason `deleted`.
+3. Given a PR file with no `patch` field, `extractPRDiffs` places it in `skipped` with reason `no-patch`.
+4. Given a sequence of files whose cumulative diff tokens exceed `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT`, `extractPRDiffs` places the overflow into `skipped` with reason `over-budget` in deterministic order.
+5. `fetchPRContextStep` injects exactly one diff context block plus, if-and-only-if any files are skipped, a SKIPPED FILES injection containing each skipped filename and its reason.
+6. `fetchPRContextStep` logs a single `PR context prepared` entry with `included`, `skipped`, and `skipReasons` fields.
+7. `review.yaml`'s prompt text explicitly names the SKIPPED FILES injection and tells the agent to fetch those files via `Read` or `gh pr diff` when relevant.
+8. The symbol `readPRFileContents` is no longer exported from `src/agents/shared/prFormatting.ts`, and no production code references `REVIEW_FILE_CONTENT_TOKEN_LIMIT` or `PRFileContents`.
+9. All new and modified code has corresponding tests.
+10. `npm run build` passes.
+11. `npm test` passes (unit suite).
+12. `npm run lint` and `npm run typecheck` pass.
+13. All documentation listed in Documentation Impact has been updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | Update the "Debugging Production Sessions" section: describe the new compact-diff context shape and the SKIPPED FILES injection. Add a note that the review agent will Read or `gh pr diff` skipped files on demand. |
+| `docs/ARCHITECTURE.md` and/or `docs/architecture/` | Update the trigger → worker → agent context-flow narrative to reflect compact-diff pre-fetch (replacing the prior full-file-contents description). Include the skipped-file contract in the data-flow description. |
+| `docs/adding-engines.md` | If the doc describes the context shape passed to a backend engine, update the section to reference compact diffs + skipped-file injections. If no such section exists, no change. |
+| `CHANGELOG.md` | Entry: `feat(review): swap full-file pre-fetch for compact diffs and add SKIPPED FILES contract (#001/2)`. Brief description of agent-visible behavior change. |
+
+---
+
+## Out of Scope (this plan)
+
+- Adaptive logic that selects diff-vs-full-content per file based on size or change ratio (potential future spec).
+- Agentic multi-hop context gathering (spec OOS).
+- Codebase-wide indexing (spec OOS).
+- Ops-layer detection of historical runs where final HEAD ≠ PR head (spec OOS).
+- Running review against PR's merge commit instead of head (spec OOS).
+- Multi-agent review orchestration (spec OOS).
+- Changes to the review agent's model or output format (spec OOS).
+- Backporting the new context shape to other agent types (`implementation`, `respond-to-review`, etc.) — out of scope unless they share the literal `fetchPRContextStep` (plan must check during implementation; if shared, the cross-agent impact is documented but the prompt updates here apply only to `review.yaml`).
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
+- [ ] AC #11
+- [ ] AC #12
+- [ ] AC #13
