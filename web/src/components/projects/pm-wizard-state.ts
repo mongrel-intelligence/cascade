@@ -455,3 +455,35 @@ export function areCredentialsReady(state: WizardState): boolean {
 		return !!(state.jiraEmail && state.jiraApiToken && state.jiraBaseUrl);
 	return !!state.linearApiKey;
 }
+
+/**
+ * Map the provider's webhook listing into the shape expected by `WebhookStep`.
+ * Linear webhooks are configured manually outside the wizard; Trello/JIRA come
+ * from the corresponding API listing.
+ */
+export function deriveActiveWebhooks(
+	provider: Provider,
+	webhooksData:
+		| {
+				trello?: ReadonlyArray<{ id: string | number; callbackURL: string; active: boolean }>;
+				jira?: ReadonlyArray<{ id: string | number; url: string; enabled: boolean }>;
+		  }
+		| undefined,
+): Array<{ id: string; url: string; active: boolean }> {
+	if (provider === 'trello') {
+		return (webhooksData?.trello ?? []).map((w) => ({
+			id: String(w.id),
+			url: w.callbackURL,
+			active: w.active,
+		}));
+	}
+	if (provider === 'jira') {
+		return (webhooksData?.jira ?? []).map((w) => ({
+			id: String(w.id),
+			url: w.url,
+			active: w.enabled,
+		}));
+	}
+	// Linear: webhooks are configured manually
+	return [];
+}

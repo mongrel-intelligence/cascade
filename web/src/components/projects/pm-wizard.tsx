@@ -30,6 +30,7 @@ import {
 	areCredentialsReady,
 	buildEditState,
 	createInitialState,
+	deriveActiveWebhooks,
 	isStep1Complete,
 	isStep2Complete,
 	isStep3Complete,
@@ -222,20 +223,7 @@ export function PMWizard({
 	}
 
 	// ---- Active webhooks for this provider ----
-	const activeWebhooks =
-		state.provider === 'trello'
-			? (webhooksQuery.data?.trello ?? []).map((w) => ({
-					id: String(w.id),
-					url: w.callbackURL,
-					active: w.active,
-				}))
-			: state.provider === 'jira'
-				? (webhooksQuery.data?.jira ?? []).map((w) => ({
-						id: String(w.id),
-						url: w.url,
-						active: w.enabled,
-					}))
-				: []; // Linear: webhooks are configured manually
+	const activeWebhooks = deriveActiveWebhooks(state.provider, webhooksQuery.data);
 
 	// ---- Render ----
 

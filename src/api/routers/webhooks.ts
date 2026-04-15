@@ -23,6 +23,103 @@ import type {
 
 export type { GitHubWebhook, JiraWebhookInfo, LinearWebhookInfo, SentryWebhookInfo, TrelloWebhook };
 
+type CreateInput = {
+	trelloOnly?: boolean;
+	githubOnly?: boolean;
+	jiraOnly?: boolean;
+};
+type ProjectContext = Awaited<ReturnType<typeof resolveProjectContext>>;
+
+/**
+ * Per-provider create-or-skip helpers. Each:
+ *   - Decides whether this provider should run given the input toggles + context.
+ *   - Detects existing webhooks at the canonical or legacy callback URL.
+ *   - Returns the created webhook, the duplicate marker, or `undefined` to skip.
+ *
+ * Extracted from the `create` mutation to keep that handler within the cognitive
+ * complexity budget — the policy is identical, the per-provider field shapes
+ * differ only in detail (callbackURL vs url vs config.url).
+ */
+
+async function maybeCreateTrelloWebhook(
+	pctx: ProjectContext,
+	input: CreateInput,
+	baseUrl: string,
+): Promise<TrelloWebhook | string | undefined> {
+	if (input.githubOnly || input.jiraOnly) return undefined;
+	if (!pctx.trelloApiKey || !pctx.trelloToken || !pctx.boardId) return undefined;
+
+	const callbackUrl = `${baseUrl}/trello/webhook`;
+	const existing = await trelloListWebhooks(pctx);
+	const duplicate = existing.find(
+		(w) => w.callbackURL === callbackUrl || w.callbackURL === `${baseUrl}/webhook/trello`,
+	);
+	if (duplicate) return `Already exists: ${duplicate.id}`;
+	return trelloCreateWebhook(pctx, callbackUrl);
+}
+
+async function maybeCreateJiraWebhook(
+	pctx: ProjectContext,
+	input: CreateInput,
+	baseUrl: string,
+): Promise<{ jira?: JiraWebhookInfo | string; labelsEnsured?: string[] }> {
+	if (input.trelloOnly || input.githubOnly) return {};
+	if (!pctx.jiraEmail || !pctx.jiraApiToken || !pctx.jiraBaseUrl) return {};
+
+	const callbackUrl = `${baseUrl}/jira/webhook`;
+	const existing = await jiraListWebhooks(pctx);
+	const duplicate = existing.find(
+		(w) => w.url === callbackUrl || w.url === `${baseUrl}/webhook/jira`,
+	);
+	const jira = duplicate
+		? `Already exists: ${duplicate.id}`
+		: await jiraCreateWebhook(pctx, callbackUrl);
+	const labelsEnsured = await jiraEnsureLabels(pctx);
+	return { jira, labelsEnsured };
+}
+
+async function maybeCreateGitHubWebhook(
+	pctx: ProjectContext,
+	input: CreateInput,
+	baseUrl: string,
+): Promise<GitHubWebhook | string | undefined> {
+	if (input.trelloOnly || input.jiraOnly) return undefined;
+	if (!pctx.githubToken) return undefined;
+
+	const callbackUrl = `${baseUrl}/github/webhook`;
+	const existing = await githubListWebhooks(pctx);
+	const duplicate = existing.find(
+		(w) => w.config.url === callbackUrl || w.config.url === `${baseUrl}/webhook/github`,
+	);
+	if (duplicate) return `Already exists: ${duplicate.id}`;
+	return githubCreateWebhook(pctx, callbackUrl);
+}
+
+function buildSentryDisplayInfo(
+	pctx: ProjectContext,
+	projectId: string,
+	baseUrl: string,
+): SentryWebhookInfo | undefined {
+	if (!pctx.sentryConfigured) return undefined;
+	return {
+		url: `${baseUrl}/sentry/webhook/${projectId}`,
+		webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
+		note: 'Configure this URL manually in your Sentry Internal Integration webhook settings.',
+	};
+}
+
+function buildLinearDisplayInfo(
+	pctx: ProjectContext,
+	baseUrl: string,
+): LinearWebhookInfo | undefined {
+	if (pctx.pmType !== 'linear' || !pctx.linearApiKey) return undefined;
+	return {
+		url: `${baseUrl}/linear/webhook`,
+		webhookSecretSet: pctx.linearWebhookSecretSet ?? false,
+		note: 'Configure this URL manually in your Linear team settings under API > Webhooks.',
+	};
+}
+
 export const webhooksRouter = router({
 	list: adminProcedure
 		.input(
@@ -94,6 +191,7 @@ export const webhooksRouter = router({
 			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
 			applyOneTimeTokens(pctx, input.oneTimeTokens);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
+
 			const results: {
 				trello?: TrelloWebhook | string;
 				github?: GitHubWebhook | string;
@@ -103,84 +201,21 @@ export const webhooksRouter = router({
 				labelsEnsured?: string[];
 			} = {};
 
-			// Trello webhook (skip for JIRA-only projects)
-			if (
-				!input.githubOnly &&
-				!input.jiraOnly &&
-				pctx.trelloApiKey &&
-				pctx.trelloToken &&
-				pctx.boardId
-			) {
-				const trelloCallbackUrl = `${baseUrl}/trello/webhook`;
-				const existing = await trelloListWebhooks(pctx);
-				const duplicate = existing.find(
-					(w) =>
-						w.callbackURL === trelloCallbackUrl || w.callbackURL === `${baseUrl}/webhook/trello`,
-				);
+			const trello = await maybeCreateTrelloWebhook(pctx, input, baseUrl);
+			if (trello !== undefined) results.trello = trello;
 
-				if (duplicate) {
-					results.trello = `Already exists: ${duplicate.id}`;
-				} else {
-					results.trello = await trelloCreateWebhook(pctx, trelloCallbackUrl);
-				}
-			}
+			const { jira, labelsEnsured } = await maybeCreateJiraWebhook(pctx, input, baseUrl);
+			if (jira !== undefined) results.jira = jira;
+			if (labelsEnsured !== undefined) results.labelsEnsured = labelsEnsured;
 
-			// JIRA webhook (skip for Trello-only projects)
-			if (
-				!input.trelloOnly &&
-				!input.githubOnly &&
-				pctx.jiraEmail &&
-				pctx.jiraApiToken &&
-				pctx.jiraBaseUrl
-			) {
-				const jiraCallbackUrl = `${baseUrl}/jira/webhook`;
-				const existing = await jiraListWebhooks(pctx);
-				const duplicate = existing.find(
-					(w) => w.url === jiraCallbackUrl || w.url === `${baseUrl}/webhook/jira`,
-				);
+			const github = await maybeCreateGitHubWebhook(pctx, input, baseUrl);
+			if (github !== undefined) results.github = github;
 
-				if (duplicate) {
-					results.jira = `Already exists: ${duplicate.id}`;
-				} else {
-					results.jira = await jiraCreateWebhook(pctx, jiraCallbackUrl);
-				}
+			const sentry = buildSentryDisplayInfo(pctx, input.projectId, baseUrl);
+			if (sentry !== undefined) results.sentry = sentry;
 
-				// Seed CASCADE labels in JIRA autocomplete
-				results.labelsEnsured = await jiraEnsureLabels(pctx);
-			}
-
-			// GitHub webhook
-			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
-				const githubCallbackUrl = `${baseUrl}/github/webhook`;
-				const existing = await githubListWebhooks(pctx);
-				const duplicate = existing.find(
-					(w) => w.config.url === githubCallbackUrl || w.config.url === `${baseUrl}/webhook/github`,
-				);
-
-				if (duplicate) {
-					results.github = `Already exists: ${duplicate.id}`;
-				} else {
-					results.github = await githubCreateWebhook(pctx, githubCallbackUrl);
-				}
-			}
-
-			// Sentry — display-only (cannot create programmatically)
-			if (pctx.sentryConfigured) {
-				results.sentry = {
-					url: `${baseUrl}/sentry/webhook/${input.projectId}`,
-					webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
-					note: 'Configure this URL manually in your Sentry Internal Integration webhook settings.',
-				};
-			}
-
-			// Linear — display-only (cannot create programmatically)
-			if (pctx.pmType === 'linear' && pctx.linearApiKey) {
-				results.linear = {
-					url: `${baseUrl}/linear/webhook`,
-					webhookSecretSet: pctx.linearWebhookSecretSet ?? false,
-					note: 'Configure this URL manually in your Linear team settings under API > Webhooks.',
-				};
-			}
+			const linear = buildLinearDisplayInfo(pctx, baseUrl);
+			if (linear !== undefined) results.linear = linear;
 
 			return results;
 		}),
