@@ -61,13 +61,25 @@ Context to lift from the spec (do not re-argue):
 
 ## Detailed Task List (TDD)
 
+### Testing approach (note on plan divergence 2026-04-15)
+
+`web/` has **no React component-testing infrastructure** — no `@testing-library/react`, no jsdom, no `.test.tsx` files anywhere. Existing web-ui tests (e.g. `tests/unit/web/pm-wizard-state.test.ts`) are Node-side `.test.ts` files that exercise pure reducer/utility code under the root's `unit-core` vitest project.
+
+Rather than add new test infrastructure (out of scope for a UX-polish plan), these plan-2 tests use **`react-dom/server`'s `renderToStaticMarkup`** to render components to an HTML string in plain Node, then assert against the string. This is adequate for the copy / presence / absence assertions the ACs demand; it cannot cover interactive behavior (typing, clicking, mutation firing), which is dropped from the plan here.
+
+**Test locations:**
+- `tests/unit/web/linear-webhook-info-panel.test.ts` — renders `LinearWebhookInfoPanel` with `renderToStaticMarkup`; asserts copy, events list, absence of deprecated bullets, presence of `ProjectSecretField` shape.
+- `tests/unit/web/pm-wizard-webhooks-step.test.ts` — renders `WebhookStep` for each provider (`linear`, `trello`, `jira`); asserts Linear shows the secret field, Trello/JIRA do not.
+
+Interactive behavior (clicking Save, mutation invocation, query invalidation) is **out of scope for automated tests in this plan** — the `ProjectSecretField` component itself is untested today under the same constraint, and re-verifying `ProjectSecretField`'s internals is spec non-goal ("Any modification to `ProjectSecretField` itself — the existing component must be used as-is"). Interactive verification lives in the manual acceptance-tests section below.
+
 ### 1. Update `LinearWebhookInfoPanel` — events list copy
 
-**Tests first** (`web/tests/components/projects/LinearWebhookInfoPanel.test.tsx` — new file; pick the testing stack already used by `web/` — likely `vitest` + `@testing-library/react`, same as other `web/tests/components/**/*.test.tsx` if any, or colocate as `*.test.tsx` alongside the component if the project convention is colocated):
+**Tests first** (`tests/unit/web/linear-webhook-info-panel.test.ts` — new file, Node SSR style):
 
-- `renders a three-item events list: Issues, Comments, Issue Labels` — mount the component with a `webhookUrl`, assert three `<li>` children inside the "Enable events" block with matching `<strong>` labels. Snapshot-free assertions via `getByText`.
-- `each events-list item has a one-line rationale matching a registered trigger` — assert the rendered text contains the phrases "status transitions" (for Issues), "mentions" (for Comments), and "Ready to Process" (for Issue Labels). Enough for a reviewer to confirm the copy traces back to `src/triggers/linear/register.ts`.
-- `does not mention Documents, Emoji reactions, Customer requests, Cycles, Users, Initiatives, Project updates, Projects, Issue SLA, or Issue attachments` — assert none of those strings appear in the rendered panel. Prevents copy drift.
+- `renders a three-item events list: Issues, Comments, Issue Labels` — SSR-render with a `webhookUrl`, assert the HTML contains `<strong>Issues</strong>`, `<strong>Comments</strong>`, `<strong>Issue Labels</strong>` exactly once each.
+- `each events-list item has a one-line rationale matching a registered trigger` — assert the rendered HTML contains the phrases "status transitions" (for Issues), "mention" (for Comments, case-insensitive), and "Ready to Process" (for Issue Labels). Traces back to `src/triggers/linear/register.ts`.
+- `does not mention Documents, Emoji reactions, Customer requests, Cycles, Users, Initiatives, Project updates, Projects, Issue SLA, or Issue attachments` — assert none of those strings appear in the rendered HTML. Prevents copy drift.
 - `keeps the manual-setup-required blue info block` — assert the "Manual Webhook Setup Required" string is still present. Protects against collateral deletion.
 
 **Implementation** (`web/src/components/projects/pm-wizard-common-steps.tsx`, `LinearWebhookInfoPanel`):
@@ -90,10 +102,10 @@ Context to lift from the spec (do not re-argue):
 
 **Tests first** (same test file):
 
-- `renders a signing-secret input labelled "Webhook Signing Secret (optional)"` — mount with `projectId` and a `credential` prop set to `null`, assert an input with placeholder matching `lin_wh_...` is rendered.
-- `shows masked-configured state when a credential is already set` — mount with `credential={{ envVarKey: 'LINEAR_WEBHOOK_SECRET', name: 'Linear Webhook Secret', isConfigured: true, maskedValue: '...abcd' }}`, assert the "Configured" badge and masked value appear.
-- `saves the secret via the existing credential mutation when submitted` — mock `trpcClient.projects.credentials.set.mutate`, submit a value, assert the mutation is called with `{ projectId, envVarKey: 'LINEAR_WEBHOOK_SECRET', value, name: 'Linear Webhook Secret' }` and no other credential-save path is invoked.
-- `does not render the old "store as LINEAR_WEBHOOK_SECRET in project credentials" bullet` — assert the string "in project credentials" is absent from the panel.
+- `renders a signing-secret input labelled "Webhook Signing Secret (optional)"` — SSR-render with `projectId` and no credential; assert the rendered HTML contains the label "Webhook Signing Secret (optional)" and a placeholder matching `lin_wh_`.
+- `shows masked-configured state when a credential is already set` — SSR-render with `credential={{ envVarKey: 'LINEAR_WEBHOOK_SECRET', name: 'Linear Webhook Secret', isConfigured: true, maskedValue: '...abcd' }}`; assert the masked value `...abcd` is present in the HTML.
+- ~~`saves the secret via the existing credential mutation when submitted`~~ — **dropped as plan divergence**: interactive mutation firing requires jsdom + testing-library which the project does not ship. `ProjectSecretField` already calls `trpcClient.projects.credentials.set.mutate({projectId, envVarKey, value, name: label})` — verified by code inspection. Spec AC #4 is met because the inline field composes `ProjectSecretField` with `envVarKey="LINEAR_WEBHOOK_SECRET"` and `label="Webhook Signing Secret (optional)"`, which the component uses as the `name` argument. Manual acceptance test below covers end-to-end firing.
+- `does not render the old "store as LINEAR_WEBHOOK_SECRET in project credentials" bullet` — assert the string "in project credentials" is absent from the rendered HTML.
 
 **Implementation** (`web/src/components/projects/pm-wizard-common-steps.tsx`):
 
@@ -138,12 +150,12 @@ Context to lift from the spec (do not re-argue):
 
 ### 3. Wizard-level wiring
 
-**Tests first** (`web/tests/components/projects/pm-wizard.test.tsx` — augment existing or add a focused test file if absent):
+**Tests first** (`tests/unit/web/pm-wizard-webhooks-step.test.ts` — new file, Node SSR style):
 
-- `when provider is linear and step is webhooks, LinearWebhookInfoPanel receives the project's LINEAR_WEBHOOK_SECRET credential` — mount `PMWizard` with mocked tRPC and a `credentials.list` response containing a `LINEAR_WEBHOOK_SECRET` row; advance to the Webhooks step; assert the masked state appears.
-- `when the user types a new value into the secret field and moves on, credentials.set is called with LINEAR_WEBHOOK_SECRET` — mock the mutation, fire a change event, assert the call.
-- `Trello Webhooks step does not render ProjectSecretField` — switch provider to `trello` and confirm no `LINEAR_WEBHOOK_SECRET` input is present.
-- `JIRA Webhooks step does not render ProjectSecretField` — same for JIRA.
+- `Linear Webhooks step receives and threads a LINEAR_WEBHOOK_SECRET credential into the panel` — SSR-render `WebhookStep` with `state.provider='linear'`, `state.projectId='p1'`, and `linearWebhookSecretCredential={...configured with maskedValue ...abcd}`; assert `...abcd` appears in the rendered HTML.
+- `Trello Webhooks step does not render a LINEAR_WEBHOOK_SECRET input` — SSR-render with `state.provider='trello'`; assert `LINEAR_WEBHOOK_SECRET` string and `Webhook Signing Secret` label do not appear.
+- `JIRA Webhooks step does not render a LINEAR_WEBHOOK_SECRET input` — same for `jira`.
+- ~~`user types and credentials.set is called`~~ — interactive, dropped (see divergence note).
 
 **Implementation** (`web/src/components/projects/pm-wizard.tsx`):
 
@@ -152,10 +164,10 @@ Context to lift from the spec (do not re-argue):
 
 ### 4. Cross-check no regression for Trello and JIRA
 
-**Tests first** (same test file or `web/tests/components/projects/pm-wizard-webhooks-trello.test.tsx`):
+**Tests first** (same test file, `tests/unit/web/pm-wizard-webhooks-step.test.ts`):
 
-- `Trello Webhooks step UI matches pre-change snapshot` — given provider `trello` and no active webhooks, assert the "No Trello webhooks configured" message, the "Create Webhook" button, and the curl-command `<details>` block are all present unchanged. No secret field.
-- `JIRA Webhooks step UI matches pre-change snapshot` — same structure for JIRA.
+- `Trello Webhooks step still renders curl command block` — SSR-render with `state.provider='trello'`; assert the rendered HTML contains `curl -X POST` and `api.trello.com`.
+- `JIRA Webhooks step still renders curl command block` — SSR-render with `state.provider='jira'`; assert HTML contains `curl -X POST` and `/rest/webhooks/1.0/webhook`.
 
 **Implementation:** No code change unless tests fail. If they fail, investigate the prop drilling in task 3 to ensure Linear-only props aren't leaking into other provider branches.
 
@@ -175,8 +187,8 @@ Context to lift from the spec (do not re-argue):
 ## Test Plan
 
 ### Unit tests
-- [ ] `web/tests/components/projects/LinearWebhookInfoPanel.test.tsx` (or colocated `.test.tsx`): 8 tests covering events-list copy, secret-field presence, masked state, save mutation, absence of deprecated bullet, preservation of manual-setup block, and four absence assertions.
-- [ ] `web/tests/components/projects/pm-wizard.test.tsx` additions: 4 tests covering credential threading and Trello/JIRA non-regression.
+- [ ] `tests/unit/web/linear-webhook-info-panel.test.ts` (Node SSR): ~7 tests covering events-list copy, secret-field presence, masked state, absence of deprecated bullet, preservation of manual-setup block, absence assertions.
+- [ ] `tests/unit/web/pm-wizard-webhooks-step.test.ts` (Node SSR): ~5 tests covering Linear credential threading, Trello/JIRA non-regression.
 
 ### Integration tests
 - [ ] None added in this plan — plan 1 already covers the backend save path with integration tests. The wizard-to-save integration happens via the manual end-to-end step below.
