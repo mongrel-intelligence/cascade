@@ -94,9 +94,15 @@ Context to lift from the spec (do not re-argue):
 5. If the error is a PG constraint violation, cross-reference `src/db/schema/integrations.ts` for the relevant column or constraint. If it is a Zod input validation error surfaced as 500, cross-reference `src/api/routers/projects.ts`'s `upsert` input schema.
 6. Do not guess. Do not patch without a named error. Exit this step with a one-line statement of the root cause.
 
-**Diagnosis** (fill in after running the spike):
+**Diagnosis** (populated 2026-04-15 during /implement):
 
-> _(populated during /implement; left blank at plan authoring time)_
+> **Root cause:** CHECK constraint violation (`23514`) on `chk_integration_category_provider`.
+>
+> The constraint, defined originally in `0047_add_alerting_integration.sql`, allows `pm` × `{trello, jira}` only — **`linear` is not in the allowed set**. When Linear support landed (PRs #1107/#1108/#1112), the corresponding migration was never shipped. Any `INSERT` with `category='pm', provider='linear'` fails on this constraint, surfacing as HTTP 500 from `projects.integrations.upsert`.
+>
+> Verified on dev by querying Supabase from inside `cascade-dashboard-dev` (org `mongrel`, project `llmist` exists; `project_integrations` already has rows with `provider='trello'` and `provider='github'` — the constraint is genuinely blocking `linear`).
+>
+> **Fix:** ship migration `0049_allow_linear_pm_provider.sql` that drops and re-creates the check constraint with `linear` added to the `pm` branch. Forward-only; no data migration needed.
 
 Pre-commit guidance for `/implement`: the most likely culprits, ranked, are —
 1. FK violation on `project_id` (project `llmist` may not exist in `projects` table under org `mongrel`).

@@ -187,6 +187,39 @@ describe('integrationsRepository (integration)', () => {
 			expect(row?.category).toBe('scm');
 			expect(row?.provider).toBe('github');
 		});
+
+		it('accepts provider=linear under category=pm (Linear is a first-class PM provider)', async () => {
+			const row = await upsertProjectIntegration('test-project', 'pm', 'linear', {
+				teamId: '310c41fe-eee4-4b3f-a56d-f992b85d9568',
+				statuses: { backlog: 'Backlog', inProgress: 'In Progress' },
+				labels: { processing: 'cascade-processing' },
+			});
+
+			expect(row).not.toBeNull();
+			expect(row?.provider).toBe('linear');
+			expect(row?.category).toBe('pm');
+			expect((row?.config as Record<string, unknown>)?.teamId).toBe(
+				'310c41fe-eee4-4b3f-a56d-f992b85d9568',
+			);
+		});
+
+		it('updates an existing pm integration from trello to linear without conflict', async () => {
+			await upsertProjectIntegration('test-project', 'pm', 'trello', {
+				boardId: 'board-1',
+				lists: {},
+				labels: {},
+			});
+
+			await upsertProjectIntegration('test-project', 'pm', 'linear', {
+				teamId: 'team-xyz',
+				statuses: {},
+				labels: {},
+			});
+
+			const result = await getIntegrationByProjectAndCategory('test-project', 'pm');
+			expect(result?.provider).toBe('linear');
+			expect((result?.config as Record<string, unknown>)?.teamId).toBe('team-xyz');
+		});
 	});
 
 	// =========================================================================
