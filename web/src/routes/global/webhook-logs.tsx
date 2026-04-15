@@ -56,7 +56,7 @@ function WebhookLogsPage() {
 				<select
 					value={source}
 					onChange={(e) => updateSearch({ source: e.target.value || undefined })}
-					className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm sm:w-auto"
+					className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm dark:bg-card dark:text-foreground [&_option]:bg-card sm:w-auto"
 				>
 					<option value="">All sources</option>
 					<option value="trello">Trello</option>

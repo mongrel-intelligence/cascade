@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
-import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { agentTypeLabel } from '@/lib/chart-colors.js';
+import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatCostSummary } from '@/lib/utils.js';
 import { WorkItemDurationBar } from './work-item-duration-bar.js';
 
@@ -234,6 +235,7 @@ export function ProjectWorkTable({
 	onPageChange,
 	projectAvgDurationMs,
 }: ProjectWorkTableProps) {
+	const getAgentColor = useChartColors();
 	const total = items.length;
 	const totalPages = Math.ceil(total / limit);
 	const currentPage = Math.floor(offset / limit) + 1;

@@ -145,7 +145,7 @@ export function ProjectsTable({
 						<AlertDialogCancel>Cancel</AlertDialogCancel>
 						<AlertDialogAction
 							onClick={() => deleteId && deleteMutation.mutate(deleteId)}
-							className="bg-destructive text-white hover:bg-destructive/90"
+							variant="destructive"
 						>
 							Delete
 						</AlertDialogAction>

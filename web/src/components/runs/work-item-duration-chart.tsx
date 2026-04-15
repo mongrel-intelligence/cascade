@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
-import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { agentTypeLabel } from '@/lib/chart-colors.js';
+import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatDuration } from '@/lib/utils.js';
 
 interface WorkItemRun {
@@ -29,6 +30,7 @@ interface SegmentEntry {
 }
 
 export function WorkItemDurationChart({ runs }: WorkItemDurationChartProps) {
+	const getAgentColor = useChartColors();
 	const runsWithDuration = runs.filter((r) => r.durationMs != null && r.durationMs > 0);
 
 	if (runsWithDuration.length === 0) {

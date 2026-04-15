@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatDuration } from '@/lib/utils.js';
 
 interface AgentTypeBreakdown {
@@ -34,7 +35,11 @@ interface ChartEntry {
 	color: string;
 }
 
-export function buildDurationChartData(byAgentType: AgentTypeBreakdown[]): ChartEntry[] {
+export function buildDurationChartData(
+	byAgentType: AgentTypeBreakdown[],
+	colorFn?: (agentType: string) => string,
+): ChartEntry[] {
+	const resolveColor = colorFn ?? getAgentColor;
 	return byAgentType
 		.filter((breakdown) => breakdown.totalDurationMs > 0)
 		.map((breakdown) => ({
@@ -43,13 +48,14 @@ export function buildDurationChartData(byAgentType: AgentTypeBreakdown[]): Chart
 			totalDurationMs: breakdown.totalDurationMs,
 			runCount: breakdown.runCount,
 			avgDurationMs: breakdown.avgDurationMs ?? 0,
-			color: getAgentColor(breakdown.agentType),
+			color: resolveColor(breakdown.agentType),
 		}))
 		.sort((a, b) => b.totalDurationMs - a.totalDurationMs);
 }
 
 export function ProjectWorkDurationChart({ byAgentType }: ProjectWorkDurationChartProps) {
-	const data: ChartEntry[] = buildDurationChartData(byAgentType);
+	const getColor = useChartColors();
+	const data: ChartEntry[] = buildDurationChartData(byAgentType, getColor);
 
 	if (data.length === 0) {
 		return (
@@ -81,14 +87,24 @@ export function ProjectWorkDurationChart({ byAgentType }: ProjectWorkDurationCha
 						layout="vertical"
 						margin={{ top: 4, right: 24, left: 8, bottom: 4 }}
 					>
-						<CartesianGrid strokeDasharray="3 3" horizontal={false} />
+						<CartesianGrid
+							strokeDasharray="3 3"
+							horizontal={false}
+							stroke="currentColor"
+							strokeOpacity={0.15}
+						/>
 						<XAxis
 							type="number"
 							tickFormatter={formatTick}
-							tick={{ fontSize: 11 }}
+							tick={{ fontSize: 11, fill: 'currentColor' }}
 							domain={[0, 'auto']}
 						/>
-						<YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={140} />
+						<YAxis
+							type="category"
+							dataKey="name"
+							tick={{ fontSize: 11, fill: 'currentColor' }}
+							width={140}
+						/>
 						<Tooltip
 							content={({ active, payload }) => {
 								if (!active || !payload?.length) return null;

@@ -51,7 +51,11 @@ function CopyButton({ text }: { text: string }) {
 			className="inline-flex items-center gap-1 shrink-0 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
 			title="Copy to clipboard"
 		>
-			{copied ? <Check className="h-3 w-3 text-green-600" /> : <Clipboard className="h-3 w-3" />}
+			{copied ? (
+				<Check className="h-3 w-3 text-green-600 dark:text-green-400" />
+			) : (
+				<Clipboard className="h-3 w-3" />
+			)}
 			{copied ? 'Copied' : 'Copy'}
 		</button>
 	);

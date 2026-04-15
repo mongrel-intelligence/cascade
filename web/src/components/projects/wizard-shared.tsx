@@ -143,7 +143,7 @@ export function SearchableSelect<T extends { label: string; value: string; detai
 			<select
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
-				className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+				className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm dark:bg-card dark:text-foreground [&_option]:bg-card"
 			>
 				<option value="">{placeholder}</option>
 				{filtered.map((o) => (
@@ -209,7 +209,7 @@ export function FieldMappingRow({
 					<select
 						value={value}
 						onChange={(e) => onChange(e.target.value)}
-						className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+						className="flex h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm dark:bg-card dark:text-foreground [&_option]:bg-card"
 					>
 						<option value="">-- not set --</option>
 						{options.map((o) => (

@@ -1,4 +1,5 @@
 import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatDuration } from '@/lib/utils.js';
 
 export interface RunSegmentInput {
@@ -20,9 +21,14 @@ export interface DurationSegment {
  * Pure function that converts an array of run breakdowns into display segments
  * suitable for rendering a horizontal stacked bar.
  *
- * Exported for testability.
+ * Exported for testability. Accepts an optional colorFn for theme-aware colors;
+ * falls back to the default light-mode palette when not provided.
  */
-export function buildDurationSegments(runs: RunSegmentInput[]): DurationSegment[] {
+export function buildDurationSegments(
+	runs: RunSegmentInput[],
+	colorFn?: (agentType: string) => string,
+): DurationSegment[] {
+	const resolveColor = colorFn ?? getAgentColor;
 	const runsWithDuration = runs.filter((r) => r.durationMs > 0);
 	if (runsWithDuration.length === 0) return [];
 
@@ -36,7 +42,7 @@ export function buildDurationSegments(runs: RunSegmentInput[]): DurationSegment[
 			agentType: run.agentType,
 			durationMs: run.durationMs,
 			status: run.status,
-			color: getAgentColor(run.agentType),
+			color: resolveColor(run.agentType),
 			pct: totalMs > 0 ? (run.durationMs / totalMs) * 100 : 0,
 			label: `${agentTypeLabel(run.agentType)} #${count}`,
 		};
@@ -53,7 +59,8 @@ interface WorkItemDurationBarProps {
  * Highlights in red when total > 2× project average (outlier).
  */
 export function WorkItemDurationBar({ runs, projectAvgDurationMs }: WorkItemDurationBarProps) {
-	const segments = buildDurationSegments(runs);
+	const getAgentColor = useChartColors();
+	const segments = buildDurationSegments(runs, getAgentColor);
 
 	if (segments.length === 0) {
 		return <span className="text-xs text-muted-foreground">—</span>;
@@ -66,7 +73,7 @@ export function WorkItemDurationBar({ runs, projectAvgDurationMs }: WorkItemDura
 		<div className="flex items-center gap-2 min-w-[120px]">
 			{/* Stacked bar */}
 			<div
-				className={`flex h-4 w-full overflow-hidden rounded-sm ${isOutlier ? 'ring-1 ring-red-500/60' : ''}`}
+				className={`flex h-4 w-full overflow-hidden rounded-sm ${isOutlier ? 'ring-1 ring-red-500/60 dark:ring-red-400/60' : ''}`}
 				style={{ minWidth: 80 }}
 			>
 				{segments.map((seg, i) => (
@@ -82,7 +89,7 @@ export function WorkItemDurationBar({ runs, projectAvgDurationMs }: WorkItemDura
 
 			{/* Total duration label */}
 			<span
-				className={`text-xs tabular-nums whitespace-nowrap ${isOutlier ? 'text-red-500 font-medium' : 'text-muted-foreground'}`}
+				className={`text-xs tabular-nums whitespace-nowrap ${isOutlier ? 'text-red-500 dark:text-red-400 font-medium' : 'text-muted-foreground'}`}
 				title={
 					isOutlier
 						? `Outlier: ${formatDuration(totalMs)} > 2× project avg (${formatDuration(projectAvgDurationMs)})`

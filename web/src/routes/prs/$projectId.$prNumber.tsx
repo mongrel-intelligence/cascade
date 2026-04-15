@@ -63,7 +63,7 @@ function PRRunsPage() {
 					</div>
 					{runningCount > 0 && (
 						<div>
-							<span className="font-medium text-blue-600">{runningCount}</span>
+							<span className="font-medium text-blue-600 dark:text-blue-400">{runningCount}</span>
 							<span className="ml-1 text-muted-foreground">running</span>
 						</div>
 					)}

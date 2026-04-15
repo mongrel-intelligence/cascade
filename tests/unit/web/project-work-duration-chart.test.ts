@@ -22,6 +22,9 @@ vi.mock('@/lib/chart-colors.js', () => ({
 	agentTypeLabel: (t: string) => t,
 	getAgentColor: () => '#000',
 }));
+vi.mock('@/lib/use-chart-colors.js', () => ({
+	useChartColors: () => () => '#000',
+}));
 vi.mock('@/lib/utils.js', () => ({ formatDuration: (ms: number) => `${ms}ms` }));
 
 import { buildDurationChartData } from '../../../web/src/components/runs/project-work-duration-chart.js';

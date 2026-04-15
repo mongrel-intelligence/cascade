@@ -453,10 +453,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						</AlertDialogHeader>
 						<AlertDialogFooter>
 							<AlertDialogCancel>Cancel</AlertDialogCancel>
-							<AlertDialogAction
-								onClick={() => deleteMutation.mutate()}
-								className="bg-destructive text-white hover:bg-destructive/90"
-							>
+							<AlertDialogAction onClick={() => deleteMutation.mutate()} variant="destructive">
 								{deleteMutation.isPending ? 'Deleting...' : 'Delete'}
 							</AlertDialogAction>
 						</AlertDialogFooter>

@@ -1,6 +1,7 @@
 import { Cell, Label, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
-import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { agentTypeLabel } from '@/lib/chart-colors.js';
+import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatCostSummary } from '@/lib/utils.js';
 
 interface WorkItemRun {
@@ -28,7 +29,10 @@ interface CostEntry {
 	color: string;
 }
 
-function buildDataFromRuns(runs: WorkItemRun[]): CostEntry[] {
+function buildDataFromRuns(
+	runs: WorkItemRun[],
+	colorFn: (agentType: string) => string,
+): CostEntry[] {
 	const costByAgent: Record<string, number> = {};
 	for (const run of runs) {
 		if (run.costUsd != null) {
@@ -42,11 +46,14 @@ function buildDataFromRuns(runs: WorkItemRun[]): CostEntry[] {
 		name: agentTypeLabel(agentType),
 		agentType,
 		value,
-		color: getAgentColor(agentType),
+		color: colorFn(agentType),
 	}));
 }
 
-function buildDataFromBreakdown(byAgentType: AgentTypeBreakdown[]): CostEntry[] {
+function buildDataFromBreakdown(
+	byAgentType: AgentTypeBreakdown[],
+	colorFn: (agentType: string) => string,
+): CostEntry[] {
 	return byAgentType
 		.map((breakdown) => {
 			const cost = Number.parseFloat(breakdown.totalCostUsd);
@@ -54,16 +61,17 @@ function buildDataFromBreakdown(byAgentType: AgentTypeBreakdown[]): CostEntry[] 
 				name: agentTypeLabel(breakdown.agentType),
 				agentType: breakdown.agentType,
 				value: Number.isNaN(cost) ? 0 : cost,
-				color: getAgentColor(breakdown.agentType),
+				color: colorFn(breakdown.agentType),
 			};
 		})
 		.filter((entry) => entry.value > 0);
 }
 
 export function WorkItemCostChart({ runs, byAgentType }: WorkItemCostChartProps) {
+	const getAgentColor = useChartColors();
 	const data: CostEntry[] = byAgentType
-		? buildDataFromBreakdown(byAgentType)
-		: buildDataFromRuns(runs ?? []);
+		? buildDataFromBreakdown(byAgentType, getAgentColor)
+		: buildDataFromRuns(runs ?? [], getAgentColor);
 
 	const totalCost = data.reduce((sum, d) => sum + d.value, 0);
 
@@ -125,7 +133,11 @@ export function WorkItemCostChart({ runs, byAgentType }: WorkItemCostChartProps)
 								);
 							}}
 						/>
-						<Legend formatter={(value) => <span style={{ fontSize: 12 }}>{value}</span>} />
+						<Legend
+							formatter={(value) => (
+								<span style={{ fontSize: 12, color: 'currentColor' }}>{value}</span>
+							)}
+						/>
 					</PieChart>
 				</ResponsiveContainer>
 			</CardContent>

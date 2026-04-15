@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-// Mock chart-colors and utils (node environment, no DOM)
+// Mock chart-colors, use-chart-colors, and utils (node environment, no DOM)
 vi.mock('@/lib/chart-colors.js', () => ({
 	agentTypeLabel: (t: string) =>
 		t
@@ -8,6 +8,9 @@ vi.mock('@/lib/chart-colors.js', () => ({
 			.map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
 			.join(' '),
 	getAgentColor: (t: string) => (t === 'implementation' ? '#3aada0' : '#e8642a'),
+}));
+vi.mock('@/lib/use-chart-colors.js', () => ({
+	useChartColors: () => (t: string) => (t === 'implementation' ? '#3aada0' : '#e8642a'),
 }));
 vi.mock('@/lib/utils.js', () => ({
 	formatDuration: (ms: number | null | undefined) => (ms == null ? '-' : `${ms}ms`),

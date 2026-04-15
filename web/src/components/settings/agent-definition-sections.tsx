@@ -165,7 +165,7 @@ export function CapabilitiesSection({
 									<select
 										value={isRequired(cap) ? 'required' : 'optional'}
 										onChange={(e) => toggleCapability(cap, e.target.value === 'required')}
-										className="h-6 rounded border border-input bg-background px-1 text-xs"
+										className="h-6 rounded border border-input bg-background px-1 text-xs dark:bg-card dark:text-foreground [&_option]:bg-card"
 									>
 										<option value="required">required</option>
 										<option value="optional">optional</option>
