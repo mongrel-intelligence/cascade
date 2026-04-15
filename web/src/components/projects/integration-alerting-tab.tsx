@@ -1,13 +1,13 @@
+import { Input } from '@/components/ui/input.js';
+import { Label } from '@/components/ui/label.js';
+import { API_URL } from '@/lib/api.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 /**
  * Alerting (Sentry) integration tab component.
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
-import { Input } from '@/components/ui/input.js';
-import { Label } from '@/components/ui/label.js';
-import { API_URL } from '@/lib/api.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { CopyButton } from './integration-scm-tab.js';
 import { ProjectSecretField } from './project-secret-field.js';
 

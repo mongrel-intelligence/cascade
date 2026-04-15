@@ -4,11 +4,11 @@ import type {
 	WizardState,
 } from '../../../web/src/components/projects/pm-wizard-state.js';
 import {
+	INITIAL_JIRA_LABELS,
 	areCredentialsReady,
 	buildEditState,
 	createInitialState,
 	deriveActiveWebhooks,
-	INITIAL_JIRA_LABELS,
 	isStep1Complete,
 	isStep2Complete,
 	isStep3Complete,

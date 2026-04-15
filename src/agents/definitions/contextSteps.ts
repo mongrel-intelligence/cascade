@@ -5,8 +5,8 @@
  * These are the building blocks composed by the YAML contextPipeline arrays.
  */
 
-import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
+import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { readWorkItem, readWorkItemWithMedia } from '../../gadgets/pm/core/readWorkItem.js';
 import { formatSentryEvent } from '../../gadgets/sentry/core/format.js';
 import type { Todo } from '../../gadgets/todo/storage.js';
@@ -18,7 +18,7 @@ import {
 } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
-import { getPMProviderOrNull, MAX_IMAGES_PER_WORK_ITEM } from '../../pm/index.js';
+import { MAX_IMAGES_PER_WORK_ITEM, getPMProviderOrNull } from '../../pm/index.js';
 import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';

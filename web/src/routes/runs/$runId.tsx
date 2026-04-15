@@ -1,7 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
-import { createRoute, Link } from '@tanstack/react-router';
-import { FileText, GitPullRequest } from 'lucide-react';
-import { useState } from 'react';
 import { DebugAnalysis } from '@/components/debug/debug-analysis.js';
 import { LlmCallList } from '@/components/llm-calls/llm-call-list.js';
 import { LogViewer } from '@/components/logs/log-viewer.js';
@@ -11,6 +7,10 @@ import { RunStatusBadge } from '@/components/runs/run-status-badge.js';
 import { RunSummaryCard } from '@/components/runs/run-summary-card.js';
 import { trpc } from '@/lib/trpc.js';
 import { cn } from '@/lib/utils.js';
+import { useQuery } from '@tanstack/react-query';
+import { Link, createRoute } from '@tanstack/react-router';
+import { FileText, GitPullRequest } from 'lucide-react';
+import { useState } from 'react';
 import { rootRoute } from '../__root.js';
 
 type Tab = 'overview' | 'logs' | 'llm-calls' | 'debug';

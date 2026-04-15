@@ -1,9 +1,3 @@
-/**
- * Agent detail view components: DefinitionAgentSection and AgentDetailView.
- * Renders the tabbed detail panel (Engine / Prompts / Triggers) for a single agent.
- */
-import { ArrowLeft } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
 import {
@@ -21,6 +15,12 @@ import {
 } from '@/components/ui/select.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { AGENT_LABELS, CATEGORY_LABELS } from '@/lib/trigger-agent-mapping.js';
+/**
+ * Agent detail view components: DefinitionAgentSection and AgentDetailView.
+ * Renders the tabbed detail panel (Engine / Prompts / Triggers) for a single agent.
+ */
+import { ArrowLeft } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDetailViewProps, DefinitionAgentSectionProps } from './agent-config-types.js';
 import { AgentPromptOverrides } from './agent-prompt-overrides.js';
 

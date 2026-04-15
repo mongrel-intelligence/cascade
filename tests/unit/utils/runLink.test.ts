@@ -12,7 +12,7 @@ describe('runLink utility', () => {
 
 		afterEach(() => {
 			if (originalEnv === undefined) {
-				process.env.CASCADE_DASHBOARD_URL = undefined;
+				delete process.env.CASCADE_DASHBOARD_URL;
 			} else {
 				process.env.CASCADE_DASHBOARD_URL = originalEnv;
 			}
@@ -24,7 +24,7 @@ describe('runLink utility', () => {
 		});
 
 		it('returns empty string when CASCADE_DASHBOARD_URL is not set', () => {
-			process.env.CASCADE_DASHBOARD_URL = undefined;
+			delete process.env.CASCADE_DASHBOARD_URL;
 			expect(getDashboardUrl()).toBe('');
 		});
 	});
@@ -213,7 +213,7 @@ describe('runLink utility', () => {
 		});
 
 		it('getDashboardUrl returns empty string when unset', () => {
-			process.env.CASCADE_DASHBOARD_URL = undefined;
+			delete process.env.CASCADE_DASHBOARD_URL;
 			expect(getDashboardUrl()).toBe('');
 		});
 	});

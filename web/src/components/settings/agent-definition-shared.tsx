@@ -4,8 +4,6 @@
  * of the import graph — this file must NOT import from any sibling agent-definition-* file.
  */
 
-import type { inferRouterOutputs } from '@trpc/server';
-import { Info } from 'lucide-react';
 import type { AppRouter } from '@/../../src/api/router.js';
 import type { KnownTriggerEvent } from '@/../../src/api/routers/_shared/triggerTypes.js';
 import { Badge } from '@/components/ui/badge.js';
@@ -15,6 +13,8 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from '@/components/ui/tooltip.js';
+import type { inferRouterOutputs } from '@trpc/server';
+import { Info } from 'lucide-react';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Type aliases

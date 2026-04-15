@@ -1,8 +1,8 @@
+import { Label } from '@/components/ui/label.js';
+import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { CheckCircle, Globe, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useReducer, useRef, useState } from 'react';
-import { Label } from '@/components/ui/label.js';
-import { trpc } from '@/lib/trpc.js';
 import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
 import {
 	useJiraCustomFieldCreation,
@@ -69,9 +69,7 @@ function confirmProviderSwitch(
 	to: 'trello' | 'jira' | 'linear',
 ): boolean {
 	return window.confirm(
-		`Switch PM provider from ${PROVIDER_LABELS[from]} to ${PROVIDER_LABELS[to]}?\n\n` +
-			`You'll need to re-enter credentials and re-map fields for ${PROVIDER_LABELS[to]}. ` +
-			`The old provider's credentials will be deleted when you save.`,
+		`Switch PM provider from ${PROVIDER_LABELS[from]} to ${PROVIDER_LABELS[to]}?\n\nYou'll need to re-enter credentials and re-map fields for ${PROVIDER_LABELS[to]}. The old provider's credentials will be deleted when you save.`,
 	);
 }
 

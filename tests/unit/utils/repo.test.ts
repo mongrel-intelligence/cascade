@@ -86,7 +86,7 @@ describe('repo utils', () => {
 		});
 
 		it('returns /workspace as default', () => {
-			process.env.CASCADE_WORKSPACE_DIR = undefined;
+			delete process.env.CASCADE_WORKSPACE_DIR;
 			expect(getWorkspaceDir()).toBe('/workspace');
 		});
 	});

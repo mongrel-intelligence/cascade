@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { extractMessageText, type LLMMessage } from 'llmist';
+import { type LLMMessage, extractMessageText } from 'llmist';
 
 /**
  * Formats LLM messages as plain text for debugging.

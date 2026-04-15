@@ -243,7 +243,7 @@ export async function generateAckMessage(
 		process.env.OPENROUTER_API_KEY = apiKey;
 		restoreEnv = () => {
 			if (previousKey === undefined) {
-				process.env.OPENROUTER_API_KEY = undefined;
+				delete process.env.OPENROUTER_API_KEY;
 			} else {
 				process.env.OPENROUTER_API_KEY = previousKey;
 			}

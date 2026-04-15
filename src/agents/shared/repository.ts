@@ -45,7 +45,7 @@ export async function fetchAndCheckoutPR(
 	const provider = scmProvider ?? 'github';
 	if (provider !== 'github') {
 		throw new Error(
-			`fetchAndCheckoutPR: only GitHub is currently supported; GitLab support follows PR #1092 merge`,
+			'fetchAndCheckoutPR: only GitHub is currently supported; GitLab support follows PR #1092 merge',
 		);
 	}
 

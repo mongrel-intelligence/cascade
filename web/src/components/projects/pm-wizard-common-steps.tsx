@@ -3,6 +3,7 @@
  * WebhookStep and SaveStep.
  */
 
+import { Label } from '@/components/ui/label.js';
 import type { UseMutationResult } from '@tanstack/react-query';
 import {
 	AlertCircle,
@@ -16,7 +17,6 @@ import {
 	Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Label } from '@/components/ui/label.js';
 import type { WizardState } from './pm-wizard-state.js';
 
 // ============================================================================

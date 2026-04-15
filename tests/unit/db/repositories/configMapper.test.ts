@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	type AgentConfigRow,
-	buildAgentMaps,
-	extractIntegrationConfigs,
 	type IntegrationRow,
 	type MapProjectInput,
+	buildAgentMaps,
+	extractIntegrationConfigs,
 	mapProjectRow,
 	orUndefined,
 } from '../../../../src/db/repositories/configMapper.js';

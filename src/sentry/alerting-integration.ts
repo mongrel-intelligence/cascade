@@ -10,7 +10,7 @@
 
 import { getIntegrationCredential } from '../config/provider.js';
 import type { AlertingIntegration } from '../integrations/alerting.js';
-import { getSentryIntegrationConfig, type SentryIntegrationConfig } from './integration.js';
+import { type SentryIntegrationConfig, getSentryIntegrationConfig } from './integration.js';
 
 export class SentryAlertingIntegration implements AlertingIntegration {
 	readonly type = 'sentry';
@@ -45,7 +45,7 @@ export class SentryAlertingIntegration implements AlertingIntegration {
 			return await fn();
 		} finally {
 			if (previous === undefined) {
-				process.env.SENTRY_API_TOKEN = undefined;
+				delete process.env.SENTRY_API_TOKEN;
 			} else {
 				process.env.SENTRY_API_TOKEN = previous;
 			}

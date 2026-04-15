@@ -215,7 +215,7 @@ describe('buildWorkerEnv', () => {
 		process.env.SENTRY_DSN = 'https://sentry.example.com/1';
 		const env = await buildWorkerEnv(makeJob() as never);
 		expect(env).toContain('SENTRY_DSN=https://sentry.example.com/1');
-		process.env.SENTRY_DSN = undefined;
+		delete process.env.SENTRY_DSN;
 	});
 
 	it('forwards CASCADE_DASHBOARD_URL when set', async () => {

@@ -1,8 +1,8 @@
-import { Cell, Label, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
 import { agentTypeLabel } from '@/lib/chart-colors.js';
 import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatCostSummary } from '@/lib/utils.js';
+import { Cell, Label, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface WorkItemRun {
 	id: string;

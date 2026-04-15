@@ -74,14 +74,14 @@ describe('scrubSensitiveEnv', () => {
 		expect(process.env.PORT).toBe('3000');
 
 		// Clean up test-specific vars
-		process.env.MY_APP_API_KEY = undefined;
-		process.env.PORT = undefined;
+		delete process.env.MY_APP_API_KEY;
+		delete process.env.PORT;
 	});
 
 	it('handles keys that were never set (undefined)', () => {
 		// Ensure they are undefined to start
-		process.env.CREDENTIAL_MASTER_KEY = undefined;
-		process.env.DATABASE_URL = undefined;
+		delete process.env.CREDENTIAL_MASTER_KEY;
+		delete process.env.DATABASE_URL;
 
 		// Should not throw
 		expect(() => scrubSensitiveEnv()).not.toThrow();

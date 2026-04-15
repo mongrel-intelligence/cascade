@@ -54,13 +54,13 @@ describe('cleanupAgentResources', () => {
 		mockCleanupLogFile.mockClear();
 		mockCleanupLogDirectory.mockClear();
 		mockClearWatchdogCleanup.mockClear();
-		process.env.CASCADE_LOCAL_MODE = undefined;
-		process.env.CASCADE_SNAPSHOT_ENABLED = undefined;
+		delete process.env.CASCADE_LOCAL_MODE;
+		delete process.env.CASCADE_SNAPSHOT_ENABLED;
 	});
 
 	afterEach(() => {
-		process.env.CASCADE_LOCAL_MODE = undefined;
-		process.env.CASCADE_SNAPSHOT_ENABLED = undefined;
+		delete process.env.CASCADE_LOCAL_MODE;
+		delete process.env.CASCADE_SNAPSHOT_ENABLED;
 	});
 
 	it('deletes workspace and log files on a normal run', () => {

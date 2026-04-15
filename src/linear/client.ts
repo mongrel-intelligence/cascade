@@ -61,7 +61,7 @@ async function linearGraphQL<T>(query: string, variables?: Record<string, unknow
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			Authorization: `Bearer ${apiKey}`,
+			Authorization: apiKey,
 		},
 		body: JSON.stringify({ query, variables }),
 	});

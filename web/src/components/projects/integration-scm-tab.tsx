@@ -1,3 +1,7 @@
+import { Input } from '@/components/ui/input.js';
+import { Label } from '@/components/ui/label.js';
+import { API_URL } from '@/lib/api.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 /**
  * SCM (GitHub) integration tab components.
  * Contains: CopyButton, GitHubCredentialSlots, GitHubWebhookSection, SCMTab.
@@ -16,10 +20,6 @@ import {
 	Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Input } from '@/components/ui/input.js';
-import { Label } from '@/components/ui/label.js';
-import { API_URL } from '@/lib/api.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { ProjectSecretField } from './project-secret-field.js';
 
 // ============================================================================

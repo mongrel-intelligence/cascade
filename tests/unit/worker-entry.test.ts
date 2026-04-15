@@ -91,15 +91,15 @@ import { triggerManualRun, triggerRetryRun } from '../../src/triggers/shared/man
 import { processTrelloWebhook } from '../../src/triggers/trello/webhook-handler.js';
 import {
 	type DebugAnalysisJobData,
-	dispatchJob,
 	type GitHubJobData,
 	type JiraJobData,
 	type ManualRunJobData,
-	main,
-	processDashboardJob,
 	type RetryRunJobData,
 	type SentryJobData,
 	type TrelloJobData,
+	dispatchJob,
+	main,
+	processDashboardJob,
 } from '../../src/worker-entry.js';
 
 // ── dispatchJob routing tests ─────────────────────────────────────────────────

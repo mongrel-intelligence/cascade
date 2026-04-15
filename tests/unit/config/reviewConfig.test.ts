@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-	estimateTokens,
 	REVIEW_DIFF_CONTEXT_TOKEN_LIMIT,
+	estimateTokens,
 } from '../../../src/config/reviewConfig.js';
 
 describe.concurrent('config/reviewConfig', () => {

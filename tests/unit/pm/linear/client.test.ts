@@ -134,7 +134,7 @@ describe('linearClient discovery methods', () => {
 				'https://api.linear.app/graphql',
 				expect.objectContaining({
 					headers: expect.objectContaining({
-						Authorization: 'Bearer test-api-key',
+						Authorization: 'test-api-key',
 					}),
 				}),
 			);
@@ -319,6 +319,78 @@ describe('linearClient discovery methods', () => {
 			await expect(
 				withLinearCredentials(TEST_CREDS, () => linearClient.getTeamLabels('team-1')),
 			).rejects.toThrow('Linear API HTTP error 403');
+		});
+	});
+
+	// =========================================================================
+	// getMe
+	// =========================================================================
+	describe('getMe', () => {
+		it('returns the authenticated user', async () => {
+			mockFetch.mockResolvedValue(
+				makeGraphQLResponse({
+					viewer: {
+						id: 'user-1',
+						name: 'Alice',
+						email: 'alice@example.com',
+						displayName: 'alice',
+						avatarUrl: null,
+						active: true,
+					},
+				}),
+			);
+
+			const result = await withLinearCredentials(TEST_CREDS, () => linearClient.getMe());
+
+			expect(result).toEqual({
+				id: 'user-1',
+				name: 'Alice',
+				email: 'alice@example.com',
+				displayName: 'alice',
+				avatarUrl: null,
+				active: true,
+			});
+		});
+
+		it('sends the API key without Bearer prefix', async () => {
+			mockFetch.mockResolvedValue(
+				makeGraphQLResponse({ viewer: { id: 'u', name: 'u', email: 'u@u.com', displayName: 'u' } }),
+			);
+
+			await withLinearCredentials(TEST_CREDS, () => linearClient.getMe());
+
+			expect(mockFetch).toHaveBeenCalledWith(
+				'https://api.linear.app/graphql',
+				expect.objectContaining({
+					headers: expect.objectContaining({
+						Authorization: 'test-api-key',
+					}),
+				}),
+			);
+		});
+
+		it('throws on GraphQL errors', async () => {
+			mockFetch.mockResolvedValue(makeGraphQLErrorResponse('Authentication required'));
+
+			await expect(withLinearCredentials(TEST_CREDS, () => linearClient.getMe())).rejects.toThrow(
+				'Linear API error: Authentication required',
+			);
+		});
+
+		it('throws on HTTP errors', async () => {
+			mockFetch.mockResolvedValue(makeHttpErrorResponse(401));
+
+			await expect(withLinearCredentials(TEST_CREDS, () => linearClient.getMe())).rejects.toThrow(
+				'Linear API HTTP error 401',
+			);
+		});
+
+		it('throws when viewer returns null', async () => {
+			mockFetch.mockResolvedValue(makeGraphQLResponse({ viewer: null }));
+
+			await expect(withLinearCredentials(TEST_CREDS, () => linearClient.getMe())).rejects.toThrow(
+				'Linear viewer returned null',
+			);
 		});
 	});
 });

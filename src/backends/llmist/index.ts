@@ -1,6 +1,6 @@
 import os from 'node:os';
 
-import { createLogger, LLMist, type ModelSpec } from 'llmist';
+import { LLMist, type ModelSpec, createLogger } from 'llmist';
 
 import { createIntegrationChecker } from '../../agents/capabilities/index.js';
 import { getAgentProfile } from '../../agents/definitions/profiles.js';

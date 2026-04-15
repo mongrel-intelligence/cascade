@@ -36,8 +36,8 @@ vi.mock('../../../src/utils/logging.js', () => ({
 }));
 
 import {
-	buildPermissionConfig,
 	OpenCodeEngine,
+	buildPermissionConfig,
 	resolveOpenCodeModel,
 } from '../../../src/backends/opencode/index.js';
 import { DEFAULT_OPENCODE_MODEL } from '../../../src/backends/opencode/models.js';

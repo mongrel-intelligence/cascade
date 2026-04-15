@@ -1,4 +1,5 @@
 import { TRPCError } from '@trpc/server';
+import { logger } from '../../../utils/logging.js';
 
 /**
  * Wraps an async callback in a try/catch that converts errors to TRPCError
@@ -12,9 +13,11 @@ export async function wrapIntegrationCall<T>(label: string, fn: () => Promise<T>
 		return await fn();
 	} catch (err) {
 		if (err instanceof TRPCError) throw err;
+		const message = err instanceof Error ? err.message : String(err);
+		logger.error(label, { error: message });
 		throw new TRPCError({
 			code: 'BAD_REQUEST',
-			message: `${label}: ${err instanceof Error ? err.message : String(err)}`,
+			message: `${label}: ${message}`,
 		});
 	}
 }

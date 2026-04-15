@@ -155,12 +155,12 @@ describe('SentryAlertingIntegration', () => {
 			expect(process.env.SENTRY_API_TOKEN).toBe(previousToken);
 
 			// Cleanup
-			process.env.SENTRY_API_TOKEN = undefined;
+			delete process.env.SENTRY_API_TOKEN;
 		});
 
 		it('clears SENTRY_API_TOKEN from process.env when it was not set before', async () => {
 			// Ensure the env var is not set (following codebase pattern)
-			process.env.SENTRY_API_TOKEN = undefined;
+			delete process.env.SENTRY_API_TOKEN;
 			const previousState = process.env.SENTRY_API_TOKEN;
 
 			mockGetIntegrationCredential.mockResolvedValue('sentry-token-123');
@@ -184,11 +184,11 @@ describe('SentryAlertingIntegration', () => {
 			expect(process.env.SENTRY_API_TOKEN).toBe(previousToken);
 
 			// Cleanup
-			process.env.SENTRY_API_TOKEN = undefined;
+			delete process.env.SENTRY_API_TOKEN;
 		});
 
 		it('propagates errors from credential resolution without setting env', async () => {
-			process.env.SENTRY_API_TOKEN = undefined;
+			delete process.env.SENTRY_API_TOKEN;
 			mockGetIntegrationCredential.mockRejectedValue(new Error('Credential not found'));
 
 			const fn = vi.fn();

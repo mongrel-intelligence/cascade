@@ -24,8 +24,8 @@ describe('config', () => {
 
 	beforeEach(() => {
 		process.env = { ...originalEnv };
-		process.env.CASCADE_SERVER_URL = undefined;
-		process.env.CASCADE_SESSION_TOKEN = undefined;
+		delete process.env.CASCADE_SERVER_URL;
+		delete process.env.CASCADE_SESSION_TOKEN;
 	});
 
 	afterEach(() => {

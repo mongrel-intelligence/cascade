@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, readFileSync } from 'node:fs';
+import { constants, accessSync, existsSync, readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {

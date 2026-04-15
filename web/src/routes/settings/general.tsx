@@ -1,5 +1,5 @@
-import { createRoute } from '@tanstack/react-router';
 import { OrgForm } from '@/components/settings/org-form.js';
+import { createRoute } from '@tanstack/react-router';
 import { rootRoute } from '../__root.js';
 
 function GeneralSettingsPage() {

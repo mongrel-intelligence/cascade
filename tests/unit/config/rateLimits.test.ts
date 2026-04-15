@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getRateLimitForModel, MODEL_RATE_LIMITS } from '../../../src/config/rateLimits.js';
+import { MODEL_RATE_LIMITS, getRateLimitForModel } from '../../../src/config/rateLimits.js';
 
 describe.concurrent('config/rateLimits', () => {
 	describe('getRateLimitForModel', () => {

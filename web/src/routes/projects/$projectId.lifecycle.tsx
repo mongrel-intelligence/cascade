@@ -1,5 +1,5 @@
-import { createRoute } from '@tanstack/react-router';
 import { ProjectLifecycleAutomations } from '@/components/projects/project-lifecycle-automations.js';
+import { createRoute } from '@tanstack/react-router';
 import { projectDetailRoute } from './$projectId.js';
 
 function ProjectLifecyclePage() {

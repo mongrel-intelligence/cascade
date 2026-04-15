@@ -1,8 +1,8 @@
+import { Badge } from '@/components/ui/badge.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { Badge } from '@/components/ui/badge.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 
 interface PromptEditorProps {
 	target: { name: string };

@@ -97,10 +97,10 @@ import { authRouter } from '../../../src/api/routers/auth.js';
 import { organizationRouter } from '../../../src/api/routers/organization.js';
 import { projectsRouter } from '../../../src/api/routers/projects.js';
 import {
+	type TRPCContext,
 	adminProcedure,
 	protectedProcedure,
 	router,
-	type TRPCContext,
 } from '../../../src/api/trpc.js';
 import { createMockUser } from '../../helpers/factories.js';
 

@@ -1,7 +1,3 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
-import { FolderGit2, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -22,6 +18,10 @@ import {
 	TableRow,
 } from '@/components/ui/table.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
+import { FolderGit2, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 interface Project {
 	id: string;

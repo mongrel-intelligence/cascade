@@ -8,8 +8,8 @@ import {
 	COMPLETED_TASKS_MAX,
 	ProgressAccumulator,
 	RING_BUFFER_MAX,
-	summarizeToolParams,
 	TEXT_SNIPPETS_MAX,
+	summarizeToolParams,
 } from '../../../src/backends/progressState/accumulator.js';
 import { loadTodos } from '../../../src/gadgets/todo/storage.js';
 

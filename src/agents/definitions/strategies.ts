@@ -14,9 +14,9 @@ import {
 	fetchAlertingIssueStep,
 	fetchContextFilesStep,
 	fetchDirectoryListingStep,
-	fetchPipelineSnapshotStep,
 	fetchPRContextStep,
 	fetchPRConversationStep,
+	fetchPipelineSnapshotStep,
 	fetchWorkItemStep,
 	prepopulateTodosStep,
 } from './contextSteps.js';

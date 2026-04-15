@@ -1,11 +1,13 @@
 {
-	"$schema": "https://biomejs.dev/schemas/2.4.10/schema.json",
+	"$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
 	"vcs": {
 		"enabled": true,
 		"clientKind": "git",
 		"useIgnoreFile": true
 	},
-	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"organizeImports": {
+		"enabled": true
+	},
 	"linter": {
 		"enabled": true,
 		"rules": {
@@ -32,13 +34,18 @@
 		}
 	},
 	"files": {
-		"includes": [
-			"**",
-			"!**/node_modules",
-			"!**/dist",
-			"!**/coverage",
-			"!**/*.json",
-			"!web/src/index.css"
-		]
-	}
+		"ignore": ["node_modules", "dist", "coverage", "**/*.json", "web/src/index.css"]
+	},
+	"overrides": [
+		{
+			"include": ["tests/**", "src/**"],
+			"linter": {
+				"rules": {
+					"performance": {
+						"noDelete": "off"
+					}
+				}
+			}
+		}
+	]
 }

@@ -47,7 +47,7 @@ describe('cleanupAgentResources', () => {
 	const originalEnv = process.env.CASCADE_LOCAL_MODE;
 
 	beforeEach(() => {
-		process.env.CASCADE_LOCAL_MODE = undefined;
+		delete process.env.CASCADE_LOCAL_MODE;
 	});
 
 	afterEach(() => {
