@@ -100,21 +100,13 @@ export function getPMConfig(project: ProjectConfig): Record<string, unknown> | u
 
 /**
  * Get the cost custom field ID for a project, regardless of PM type.
- * Uses getPMConfig() for a provider-agnostic lookup when possible.
+ *
+ * Delegates to getPMConfig() which already handles both the unified pmConfig
+ * field and the per-provider fallback (trello/jira/linear), so no additional
+ * branching is needed here.
  */
 export function getCostFieldId(project: ProjectConfig): string | undefined {
-	// Use the generic pmConfig if available (no per-provider branching needed)
 	const pmConfig = getPMConfig(project);
-	if (pmConfig) {
-		const customFields = pmConfig.customFields as { cost?: string } | undefined;
-		return customFields?.cost;
-	}
-	// Fallback to per-provider accessors for backward compatibility
-	if (project.pm?.type === 'jira') {
-		return getJiraConfig(project)?.customFields?.cost;
-	}
-	if (project.pm?.type === 'linear') {
-		return getLinearConfig(project)?.customFields?.cost;
-	}
-	return getTrelloConfig(project)?.customFields?.cost;
+	const customFields = pmConfig?.customFields as { cost?: string } | undefined;
+	return customFields?.cost;
 }

@@ -1,5 +1,6 @@
 import { eq, type SQL, sql } from 'drizzle-orm';
 import { validateConfig } from '../../config/schema.js';
+import { PM_IDENTIFIER_KEYS } from '../../pm/constants.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
 import { agentConfigs, projectIntegrations, projects } from '../schema/index.js';
@@ -190,16 +191,6 @@ export function findProjectWithConfigByLinearTeamId(
 // ---------------------------------------------------------------------------
 // Generic PM identifier lookup (Step 2 of PM refactor)
 // ---------------------------------------------------------------------------
-
-/**
- * PM identifier config key map — maps provider to the JSONB field that
- * uniquely identifies a project in that provider.
- */
-const PM_IDENTIFIER_KEYS: Record<string, string> = {
-	trello: 'boardId',
-	jira: 'projectKey',
-	linear: 'teamId',
-};
 
 /**
  * Find a project by PM provider + provider-specific identifier string.

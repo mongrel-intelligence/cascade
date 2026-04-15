@@ -1,5 +1,6 @@
 import { loadConfig } from '../config/provider.js';
 import { getJiraConfig, getLinearConfig, getPMConfig, getTrelloConfig } from '../pm/config.js';
+import { PM_IDENTIFIER_KEYS } from '../pm/constants.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 
 // Minimal config types - what router needs for quick filtering
@@ -101,18 +102,13 @@ export async function loadProjectConfig(): Promise<{
 					const linearConfig = getLinearConfig(p);
 					const pmType = p.pm?.type ?? 'trello';
 
-					// Derive the generic pmIdentifier from the active provider's config
-					let pmIdentifier: string | undefined;
+					// Derive the generic pmIdentifier from the active provider's config.
+					// Uses PM_IDENTIFIER_KEYS to map pmType → the config key that holds the
+					// identifier (e.g. trello→boardId, jira→projectKey, linear→teamId).
 					const pmConfig = getPMConfig(p);
-					if (pmConfig) {
-						if (pmType === 'trello') {
-							pmIdentifier = pmConfig.boardId as string | undefined;
-						} else if (pmType === 'jira') {
-							pmIdentifier = pmConfig.projectKey as string | undefined;
-						} else if (pmType === 'linear') {
-							pmIdentifier = pmConfig.teamId as string | undefined;
-						}
-					}
+					const identifierKey = PM_IDENTIFIER_KEYS[pmType];
+					const pmIdentifier: string | undefined =
+						pmConfig && identifierKey ? (pmConfig[identifierKey] as string | undefined) : undefined;
 
 					return {
 						id: p.id,

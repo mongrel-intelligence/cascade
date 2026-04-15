@@ -95,8 +95,12 @@ export async function resolveWebhookSecret(
 	if (provider === 'linear') {
 		return getIntegrationCredentialOrNull(projectId, 'pm', 'webhook_secret');
 	}
-	// Trello signs webhook payloads with the API Secret, not the public API Key.
-	return getIntegrationCredentialOrNull(projectId, 'pm', 'api_secret');
+	if (provider === 'trello') {
+		// Trello signs webhook payloads with the API Secret, not the public API Key.
+		return getIntegrationCredentialOrNull(projectId, 'pm', 'api_secret');
+	}
+	// Unknown provider — return null rather than silently falling back to Trello credentials.
+	return null;
 }
 
 /**
