@@ -6,7 +6,7 @@ plan_slug: disambiguate-role-resolver
 level: plan
 parent_spec: docs/specs/004-credential-role-provider-disambiguation.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 004/1: Disambiguate Credential Role Resolution by Provider
