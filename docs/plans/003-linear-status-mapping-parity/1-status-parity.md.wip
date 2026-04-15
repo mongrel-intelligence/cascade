@@ -1,0 +1,350 @@
+---
+id: 003
+slug: linear-status-mapping-parity
+plan: 1
+plan_slug: status-parity
+level: plan
+parent_spec: docs/specs/003-linear-status-mapping-parity.md
+depends_on: []
+status: pending
+---
+
+# 003/1: Linear + JIRA Status Mapping Parity — Full Stage Vocabulary End-to-End
+
+> Part 1 of 1 in the 003-linear-status-mapping-parity plan. See [parent spec](../../specs/003-linear-status-mapping-parity.md).
+
+## Summary
+
+Single coherent plan that delivers spec 003 in its entirety: widens the canonical `ProjectPMConfig.statuses` type to cover all 9 CASCADE stages; expands the Linear wizard's Field Mapping step from 4 slots to 8 (backlog, splitting, planning, todo, inProgress, inReview, done, merged); extends `LinearIntegration.resolveLifecycleConfig` to pass those 4 new keys through; and fixes `JiraIntegration.resolveLifecycleConfig` to stop silently dropping splitting/planning/todo that its wizard already accepts.
+
+Why one plan, not several: the type widening is 4 additive optional keys and has no downstream that rejects it — splitting would ship dead weight in plan 1 with no consumer. The Linear wizard UI and Linear's `resolveLifecycleConfig` are tightly coupled (both must ship together for a user to actually persist and act on new mappings). JIRA's backend fix is a 3-key add to one object literal and reads naturally alongside Linear's identical change. All of it reviews and reverts as a single logical unit.
+
+**Components delivered:**
+- `src/pm/lifecycle.ts` — widen `ProjectPMConfig.statuses` to the full 9 keys (all optional).
+- `src/pm/linear/integration.ts` — `resolveLifecycleConfig` returns `splitting`, `planning`, `todo`, `merged` in addition to the current four.
+- `src/pm/jira/integration.ts` — `resolveLifecycleConfig` returns `splitting`, `planning`, `todo` in addition to the current five.
+- `web/src/components/projects/pm-wizard-linear-steps.tsx` — `LINEAR_STATUS_SLOTS` grows from 4 to 8 (lifecycle order).
+- `web/src/components/projects/pm-wizard-state.ts` — if `linearStatuses` has a known-narrow-type, widen it to accept the new keys.
+- Tests under `tests/unit/pm/`, `tests/unit/triggers/`, `tests/unit/web/`.
+- `CHANGELOG.md` — one Unreleased entry describing the parity fix.
+
+**Deferred to later plans in this spec:**
+- Nothing. Plan 1 closes out spec 003.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (Linear wizard surface — 8 rows, lifecycle order) — **full**
+- Spec AC #2 (Persistence) — **full**
+- Spec AC #3 (Agent dispatch end-to-end on Linear transitions for the 4 newly-reachable stages) — **full**
+- Spec AC #4 (Canonical type coverage — 9 keys declared) — **full**
+- Spec AC #5 (Trello parity preserved) — **full**
+- Spec AC #6 (JIRA agent dispatch for splitting/planning/todo works) — **full**
+- Spec AC #7 (Existing Linear integrations upgrade cleanly) — **full**
+- Spec AC #8 (No required migration) — **full** (change is type-widening + JSONB-additive)
+- Spec AC #9 (Unmapped transitions are a no-op) — **full**
+- Spec AC #10 (Zod / tRPC validation accepts any subset) — **full**
+- Spec AC #11 (Lint / typecheck / tests green) — **full**
+
+---
+
+## Depends On
+
+- Nothing external. Plan is foundation + target + UI in one hop.
+
+Context to lift from the spec:
+- Linear wizard exposes **8** slots; canonical type declares **9** (`debug` is declared but not UI-surfaced — Strategic decision #2).
+- Manual-only mapping; no auto-discovery (Strategic decision #3).
+- Existing Linear rows upgrade in place — new slots render "not set" (Strategic decision #4).
+- Out of scope: broadening `STATUS_TO_AGENT`, label mappings, Sentry, JIRA wizard UI.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Widen the canonical type
+
+**Tests first** (`tests/unit/pm/lifecycle-config-shape.test.ts` — new file):
+
+- `ProjectPMConfig.statuses accepts all 9 canonical CASCADE stages as optional keys` — type-level assertion: construct an object typed as `ProjectPMConfig` with every one of `backlog, splitting, planning, todo, inProgress, inReview, done, merged, debug` set to a string; assert TypeScript accepts it. (Use `satisfies` or an explicit typed const; compile-time check.)
+- `ProjectPMConfig.statuses accepts an empty object (all keys optional)` — compile-time check.
+- `Every key in STATUS_TO_AGENT is a declared key of ProjectPMConfig.statuses` — runtime check: iterate `Object.keys(STATUS_TO_AGENT)`, assert each is a valid `ProjectPMConfig['statuses']` key (use a helper that treats the keys as a string union).
+
+**Implementation** (`src/pm/lifecycle.ts`, `ProjectPMConfig` interface):
+
+Expand the `statuses` shape from:
+```ts
+statuses: {
+  backlog?: string;
+  inProgress?: string;
+  inReview?: string;
+  done?: string;
+  merged?: string;
+};
+```
+to:
+```ts
+statuses: {
+  backlog?: string;
+  splitting?: string;
+  planning?: string;
+  todo?: string;
+  inProgress?: string;
+  inReview?: string;
+  done?: string;
+  merged?: string;
+  debug?: string;
+};
+```
+
+All new keys optional. Order matches CASCADE lifecycle. No other changes in this file.
+
+**Stale-reference check:** grep for any narrowed type that derives from `ProjectPMConfig.statuses` (e.g. `keyof ProjectPMConfig['statuses']`). If a consumer exhaustively switches on the 5-key union, it needs a `default` case or must add branches — surface before editing.
+
+### 2. Linear resolveLifecycleConfig — pass the new keys through
+
+**Tests first** (`tests/unit/pm/linear-integration.test.ts` — augment existing or new file):
+
+- `resolveLifecycleConfig returns all 8 status keys from pm.config.statuses` — given `project.pm.config.statuses = { backlog: 's-bl', splitting: 's-sp', planning: 's-pl', todo: 's-td', inProgress: 's-ip', inReview: 's-ir', done: 's-dn', merged: 's-mg' }`, assert the returned `ProjectPMConfig.statuses` contains each key with the corresponding value.
+- `resolveLifecycleConfig preserves undefined for keys not provided` — given a partial input (only `inProgress` set), assert only `inProgress` is present on the output, others are `undefined`.
+- `resolveLifecycleConfig does not read or return debug` — Linear UI does not surface `debug`; integration must not write it to the canonical shape from Linear-side config. Assert it's not present on the returned `statuses` object.
+
+**Implementation** (`src/pm/linear/integration.ts`, `resolveLifecycleConfig`):
+
+Expand the `statuses` object from:
+```ts
+statuses: {
+  backlog: linearConfig?.statuses?.backlog,
+  inProgress: linearConfig?.statuses?.inProgress,
+  inReview: linearConfig?.statuses?.inReview,
+  done: linearConfig?.statuses?.done,
+  merged: linearConfig?.statuses?.merged,
+}
+```
+to:
+```ts
+statuses: {
+  backlog: linearConfig?.statuses?.backlog,
+  splitting: linearConfig?.statuses?.splitting,
+  planning: linearConfig?.statuses?.planning,
+  todo: linearConfig?.statuses?.todo,
+  inProgress: linearConfig?.statuses?.inProgress,
+  inReview: linearConfig?.statuses?.inReview,
+  done: linearConfig?.statuses?.done,
+  merged: linearConfig?.statuses?.merged,
+}
+```
+
+Linear's config-shape type (e.g. `LinearConfig.statuses`, likely in `src/types/index.ts` or `src/pm/linear/types.ts`) must permit those keys. Grep for the type before editing; widen it the same way as `ProjectPMConfig.statuses` (optional new keys). No `debug` key on Linear — Linear doesn't surface it.
+
+### 3. JIRA resolveLifecycleConfig — stop dropping splitting/planning/todo
+
+**Tests first** (`tests/unit/pm/jira-integration.test.ts` — augment existing or new file):
+
+- `resolveLifecycleConfig returns splitting, planning, todo when present in jira config` — given `jiraConfig.statuses = { splitting: 'SPL', planning: 'PLAN', todo: 'TODO', inProgress: 'IP', done: 'DN' }`, assert each is present on the returned `ProjectPMConfig.statuses`.
+- `resolveLifecycleConfig still returns backlog / inProgress / inReview / done / merged` — regression guard: the 5 keys that worked pre-spec still work.
+
+**Implementation** (`src/pm/jira/integration.ts`, `resolveLifecycleConfig`):
+
+Expand the `statuses` object from:
+```ts
+statuses: {
+  backlog: jiraConfig?.statuses?.backlog,
+  inProgress: jiraConfig?.statuses?.inProgress,
+  inReview: jiraConfig?.statuses?.inReview,
+  done: jiraConfig?.statuses?.done,
+  merged: jiraConfig?.statuses?.merged,
+}
+```
+to:
+```ts
+statuses: {
+  backlog: jiraConfig?.statuses?.backlog,
+  splitting: jiraConfig?.statuses?.splitting,
+  planning: jiraConfig?.statuses?.planning,
+  todo: jiraConfig?.statuses?.todo,
+  inProgress: jiraConfig?.statuses?.inProgress,
+  inReview: jiraConfig?.statuses?.inReview,
+  done: jiraConfig?.statuses?.done,
+  merged: jiraConfig?.statuses?.merged,
+}
+```
+
+Check `JiraConfig` type (`src/types/index.ts` or `src/pm/jira/types.ts`): its `statuses` shape likely already accepts arbitrary string keys or already includes splitting/planning/todo (since the wizard writes them). If it doesn't, widen it.
+
+### 4. Linear wizard — expand the slot list
+
+**Tests first** (`tests/unit/web/linear-field-mapping-step.test.ts` — new file, Node SSR style, same pattern as `linear-webhook-info-panel.test.ts`):
+
+- `renders 8 status mapping rows in lifecycle order` — SSR-render `LinearFieldMappingStep` with a minimal wizard state containing an `availableStatuses` list. Assert the rendered HTML contains, in order: `backlog`, `splitting`, `planning`, `todo`, `inProgress`, `inReview`, `done`, `merged`. Assert the `inverse` order is not present (guard against alphabetical).
+- `does not render a debug row` — assert the string `debug` is not present among rendered status slot labels.
+- `each row has a dropdown and a manual-entry fallback` — assert that for each of the 8 slots a `<select>` with option elements appears and an accompanying text input or fallback affordance.
+- `persisted mappings are reflected on initial render` — given a state with `linearStatuses = { backlog: 'bl-id', splitting: 'sp-id', planning: undefined, ... }`, assert the `bl-id` and `sp-id` values appear as selected or pre-filled, and the `planning` slot renders as unset.
+
+**Implementation** (`web/src/components/projects/pm-wizard-linear-steps.tsx`):
+
+Expand the `LINEAR_STATUS_SLOTS` array from:
+```ts
+const LINEAR_STATUS_SLOTS = ['backlog', 'inProgress', 'inReview', 'done'];
+```
+to:
+```ts
+const LINEAR_STATUS_SLOTS = [
+  'backlog',
+  'splitting',
+  'planning',
+  'todo',
+  'inProgress',
+  'inReview',
+  'done',
+  'merged',
+] as const;
+```
+
+No other logic change required if the render loop already maps over `LINEAR_STATUS_SLOTS`. Confirm by reading the render block (~lines 130–150 per the exploration).
+
+### 5. Wizard state — thread the new keys through
+
+**Tests first** (augment `tests/unit/web/pm-wizard-state.test.ts` if it exercises the `linearStatuses` shape, or co-locate with task 4):
+
+- `wizardReducer accepts updates to splitting / planning / todo / merged on linearStatuses` — dispatch an action setting each new key; assert the state reflects it; assert existing keys are untouched.
+- `buildEditState populates new keys from pm.config.statuses` — given a Linear integration config with all 8 status keys set, assert the initial wizard state's `linearStatuses` has all 8.
+
+**Implementation** (`web/src/components/projects/pm-wizard-state.ts`):
+
+If `linearStatuses` is typed as `Record<string, string>` or `Partial<Record<'backlog' | 'inProgress' | 'inReview' | 'done', string>>` — widen the union to include the 4 new keys.
+
+If the reducer has a `SET_LINEAR_STATUS` action with a narrow slot-type, widen the slot-type to match `LINEAR_STATUS_SLOTS`.
+
+Exact file paths depend on the current narrow-type shape. Grep first; minimize diff.
+
+### 6. End-to-end trigger dispatch — Linear + JIRA
+
+**Tests first** (`tests/integration/triggers/status-dispatch.test.ts` — new file or augment existing):
+
+- `Linear Issue.update to a state mapped to 'splitting' dispatches the splitting agent` — build a Linear webhook payload where the issue transitioned to a Linear state whose ID equals the project's `linearStatuses.splitting`. Feed through the Linear trigger handler. Assert the returned `TriggerResult.agentType === 'splitting'`.
+- Repeat for `planning` → `planning`, `todo` → `implementation`, `merged` → `backlog-manager`. (Four tests total.)
+- `Linear transition to an unmapped state returns null (no dispatch)` — mapped statuses empty or transition to a state not in any mapping; assert result is `null` or the no-dispatch sentinel.
+- `JIRA issue transition to a status mapped to 'splitting' dispatches the splitting agent` — same pattern for JIRA. Covers spec AC #6.
+- Repeat for JIRA `planning` → `planning`, JIRA `todo` → `implementation`. (Three JIRA tests.)
+
+These tests exercise the full chain: project config → trigger handler's `STATUS_TO_AGENT` lookup → agent dispatch result. They verify the fix with no dependency on running services.
+
+### 7. Documentation
+
+**Implementation** (`CHANGELOG.md`):
+
+Add an entry under `## Unreleased` → `### Fixed` (or `### Added` — choose based on entry orientation):
+
+```
+- **PM status mapping parity across Linear and JIRA.** The Linear wizard's Field
+  Mapping step now exposes the same 8 CASCADE stages as Trello and JIRA
+  (backlog, splitting, planning, todo, inProgress, inReview, done, merged),
+  and the shared `ProjectPMConfig.statuses` type declares the full 9-stage
+  vocabulary (including `debug`, which remains a Trello-only slot until a
+  future trigger handler ships). Also fixes a silent-drop bug in JIRA's
+  `resolveLifecycleConfig` where splitting/planning/todo mappings persisted
+  by the wizard were never surfaced to the trigger layer — those stages
+  now actually dispatch their agents. Existing Linear integrations upgrade
+  in place: new stages show as "not set" on next wizard visit. No migration
+  required. (Spec [003](docs/specs/003-linear-status-mapping-parity.md), plan [1/1](docs/plans/003-linear-status-mapping-parity/1-status-parity.md).)
+```
+
+`src/integrations/README.md` — **not updated**, per plan decision: the README already defers to the wizard as the source of truth for Linear setup; the stage list isn't duplicated there.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/pm/lifecycle-config-shape.test.ts`: 3 tests (type-level + STATUS_TO_AGENT coverage).
+- [ ] `tests/unit/pm/linear-integration.test.ts`: 3 tests on `resolveLifecycleConfig`.
+- [ ] `tests/unit/pm/jira-integration.test.ts`: 2 tests on `resolveLifecycleConfig`.
+- [ ] `tests/unit/web/linear-field-mapping-step.test.ts`: 4 tests (SSR) on the wizard's 8-row render.
+- [ ] `tests/unit/web/pm-wizard-state.test.ts`: 2 tests (augment existing) on `linearStatuses` shape and reducer.
+
+### Integration tests
+- [ ] `tests/integration/triggers/status-dispatch.test.ts`: 7 tests covering Linear and JIRA dispatch to splitting / planning / implementation / backlog-manager agents for the newly-reachable stages.
+
+### Acceptance tests
+- [ ] Manual on `dev` after deploy: open the Linear wizard on an existing Linear integration; confirm 8 slots render with the four pre-existing mappings populated and the new four empty. Map one new slot (e.g. `planning` → some Linear state), save, reload, confirm persistence.
+- [ ] Manual on `dev` after deploy: move a Linear issue into the state mapped to `planning`; confirm a planning-agent run appears in the runs dashboard.
+- [ ] Manual on `dev` after deploy: move a JIRA issue into the state mapped to `splitting` (project with pre-existing JIRA integration); confirm a splitting-agent run appears in the runs dashboard. This is the behavior-change acceptance test for spec AC #6.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `ProjectPMConfig.statuses` declares all 9 canonical CASCADE stage keys (optional), verifiable by the type-level test and by grep.
+2. Every key in `STATUS_TO_AGENT` is present as a key of `ProjectPMConfig.statuses`.
+3. `LinearIntegration.resolveLifecycleConfig` passes 8 keys through (no `debug`), verifiable by unit test.
+4. `JiraIntegration.resolveLifecycleConfig` passes 8 keys through, verifiable by unit test.
+5. `LINEAR_STATUS_SLOTS` contains exactly the 8 stages in lifecycle order, and the Linear Field Mapping step renders 8 rows (verifiable by SSR test).
+6. The Linear wizard does not render a `debug` row.
+7. Saving a Linear integration with any subset of the 8 mappings persists exactly those mappings (no dropped keys, no extra keys), verifiable by integration test against the existing `projects.integrations.upsert` path.
+8. A Linear webhook transitioning to a state mapped to `splitting` / `planning` / `todo` / `merged` dispatches the corresponding agent.
+9. A JIRA webhook transitioning to a state mapped to `splitting` / `planning` / `todo` dispatches the corresponding agent.
+10. A transition to an unmapped state returns no agent dispatch and produces no error.
+11. The Trello Field Mapping step renders byte-identically to its pre-spec state (diff-in-HTML assertion).
+12. The JIRA Field Mapping step's rendered UI is unchanged (diff-in-HTML assertion).
+13. A pre-spec Linear integration (4 mappings set) opened in the wizard after the change renders the 4 pre-existing mappings populated and the 4 new slots empty; saving without filling them does not drop the 4 pre-existing mappings.
+14. All new / modified code has corresponding tests.
+15. `npm run build` passes.
+16. `npm test` passes.
+17. `npm run test:integration` passes.
+18. `npm run lint` passes.
+19. `npm run typecheck` (root) and `cd web && npx tsc -b` (web) pass.
+20. `CHANGELOG.md` has the parity entry under `## Unreleased`.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | One entry under `## Unreleased` describing the 8-stage parity across Linear + JIRA and the silent-drop bug fix for JIRA. |
+
+Explicitly **not touched** in this plan:
+- `src/integrations/README.md` — the README defers to the dashboard wizard; the stage list isn't duplicated there, so nothing needs to change.
+- `CLAUDE.md` — stage vocabulary isn't described there.
+
+---
+
+## Out of Scope (this plan)
+
+- Adding a `debug` stage to any wizard UI (remains Trello-only until a debug trigger handler exists).
+- Broadening `STATUS_TO_AGENT` beyond its current four entries.
+- Auto-discovery of Linear workflow state names.
+- Changes to label mappings (processing, processed, error, readyToProcess, auto).
+- Changes to webhook setup, credentials, or any other wizard step.
+- JIRA wizard UI changes — JIRA is already at 8 slots on the wizard side; only backend normalization widens.
+- Changes to Sentry or Trello setup flows.
+- Schema migrations — there are none; the change is a JSONB-additive widening.
+- Required-field validation — blank mappings remain valid.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 — type declares 9 keys
+- [ ] AC #2 — STATUS_TO_AGENT keys ⊆ ProjectPMConfig.statuses keys
+- [ ] AC #3 — Linear resolveLifecycleConfig passes 8 keys
+- [ ] AC #4 — JIRA resolveLifecycleConfig passes 8 keys
+- [ ] AC #5 — LINEAR_STATUS_SLOTS has 8 stages, wizard renders 8 rows
+- [ ] AC #6 — no debug row in Linear wizard
+- [ ] AC #7 — save persists exact mapping set
+- [ ] AC #8 — Linear dispatch for splitting / planning / todo / merged
+- [ ] AC #9 — JIRA dispatch for splitting / planning / todo
+- [ ] AC #10 — unmapped transition is a no-op
+- [ ] AC #11 — Trello wizard unchanged
+- [ ] AC #12 — JIRA wizard UI unchanged
+- [ ] AC #13 — pre-spec Linear rows upgrade cleanly
+- [ ] AC #14 — all new code has tests
+- [ ] AC #15 — build passes
+- [ ] AC #16 — unit tests pass
+- [ ] AC #17 — integration tests pass
+- [ ] AC #18 — lint passes
+- [ ] AC #19 — typecheck (root + web) passes
+- [ ] AC #20 — CHANGELOG entry present

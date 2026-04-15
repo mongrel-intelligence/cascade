@@ -1,0 +1,140 @@
+---
+id: 003
+slug: linear-status-mapping-parity
+level: spec
+title: PM Status Mapping Parity — Surface the Full CASCADE Stage Vocabulary Across Linear and JIRA
+created: 2026-04-15
+status: draft
+---
+
+# 003: PM Status Mapping Parity — Surface the Full CASCADE Stage Vocabulary Across Linear and JIRA
+
+## Problem & Motivation
+
+CASCADE's trigger pipeline dispatches agents in response to work-item state changes on the PM provider. A CASCADE "stage" (e.g. `splitting`, `planning`, `todo`, `inProgress`) is mapped by the operator to a PM-platform-specific state name, so that when an issue on the PM side moves to `Splitting`, CASCADE knows to fire the splitting agent. This stage → platform-state mapping is the operator's primary knob for wiring agent dispatch.
+
+For Trello, the mapping wizard exposes eight configurable stages that drive real agent dispatch plus one that's reserved for future use: `backlog`, `splitting`, `planning`, `todo`, `inProgress`, `inReview`, `done`, `merged`, and `debug` — nine slots total. For Linear, the same wizard exposes only four: `backlog`, `inProgress`, `inReview`, and `done`. The four missing driveable stages — `splitting`, `planning`, `todo`, and `merged` — cannot be stored against a Linear integration, which means the corresponding agents **never fire** when a Linear-tracked issue transitions: there is no way to say "when my Linear 'Planning' state receives an issue, run the planning agent." Operators using Linear get a strictly degraded experience, and the asymmetry is invisible until they notice their agents never run.
+
+Investigation reveals that the limitation is not merely cosmetic. The Linear wizard hard-codes a 4-entry list; Linear's `resolveLifecycleConfig` only normalizes those four keys; and — more subtly — the repo's shared `ProjectPMConfig.statuses` interface itself declares only five keys (`backlog`, `inProgress`, `inReview`, `done`, `merged`), even though the trigger layer already looks up four keys not in that set (`splitting`, `planning`, `todo`, `backlog`) via the shared `STATUS_TO_AGENT` map. The normalized "canonical" type is out of sync with the actual agent-dispatch vocabulary, and every provider that sidesteps the normalized type drifts from the declared contract. **JIRA has the same shape of bug in a sneakier form**: its wizard already exposes the full 8-stage slot list, but its `resolveLifecycleConfig` drops `splitting`, `planning`, and `todo` on the floor when normalizing — so JIRA operators see and fill in the mappings in the wizard, the values are persisted, and then silently never reach the trigger layer. This spec fixes Linear to match Trello at the UI level, fixes JIRA's silent-drop bug on the backend side, and reconciles the normalized type so future providers have a single declared source of truth.
+
+---
+
+## Goals
+
+1. An operator configuring Linear sees and can map every CASCADE stage that drives agent dispatch today — the same 8 stages the Trello and JIRA wizards already expose (minus `debug`, which has no trigger handler and stays a Trello-only reserved slot).
+2. A Linear or JIRA issue transitioning to a mapped state dispatches the correct agent (splitting, planning, implementation, backlog-manager, or post-merge backlog re-trigger), the same as a Trello card moving to the corresponding list does. In particular, `splitting`, `planning`, and `todo` transitions — which JIRA's wizard accepts but JIRA's backend silently drops today — actually fire their agents.
+3. The shared `ProjectPMConfig.statuses` interface declares the full CASCADE stage vocabulary, so every provider — current and future — has one canonical shape to fill in.
+4. Existing Linear and JIRA integrations on dev and main continue to work without manual intervention; for Linear the new stages show as unmapped on the next wizard visit; for JIRA the already-persisted mappings for splitting/planning/todo start actually driving agents without any operator action.
+5. Trello and Sentry setup flows and agent dispatch behavior are unchanged by this work.
+
+---
+
+## Non-goals
+
+- Auto-discovery or heuristic pre-population of mappings from Linear workflow state names — explicitly rejected. All mappings stay manual, matching Trello and JIRA.
+- Expanding `STATUS_TO_AGENT` to cover additional agent types (`review`, `debug`, etc.). This spec does not add new trigger handlers; it only makes the existing handlers reachable from Linear and JIRA.
+- Adding a `debug` stage to the Linear wizard. `debug` has no trigger handler and remains a Trello-only slot until a future spec introduces a debug trigger.
+- Mandatory mapping of every stage. Operators can leave stages unmapped — the corresponding agent simply won't fire until mapped.
+- Migration of existing PM configs. Linear: the upgrade is a no-op for stored config; the wizard surfaces the new slots as "not set" on next visit. JIRA: pre-existing mappings for splitting/planning/todo already persisted by the JIRA wizard start driving agents the moment the backend change ships — that is the intended behavior change, not a migration.
+- Changes to JIRA's wizard UI. JIRA's Field Mapping step is already at 8 slots; this spec touches only JIRA's backend normalization.
+- Changes to label mappings (processing, processed, error, readyToProcess, auto) — Linear is already at parity with Trello and JIRA for these.
+- Changes to wizard step ordering, visual layout, or the overall PM setup flow.
+
+---
+
+## Constraints
+
+- **TDD-first.** Every behavior and config-shape change is preceded by a failing test.
+- **No hacks, no workarounds.** If the normalized type is wrong, fix it at the declaration, not by per-provider casts.
+- **Backwards-compatible persistence.** Existing `project_integrations` rows (Trello and Linear) continue to load and save unchanged. The new Linear status keys are optional; their absence on an existing row is valid and renders as "not set" in the wizard.
+- **No schema migration required.** The `project_integrations.config` column is JSONB; adding new optional keys to its shape does not require a DB migration.
+- **No breaking change to the tRPC surface.** The Zod input shapes for `projects.integrations.upsert` already accept arbitrary `config: Record<string, unknown>`; narrower per-provider Zod validation (if any) must admit the new keys without rejecting rows that omit them.
+- **No regression to Trello and JIRA wizards.** The change is additive for the type; Trello and JIRA continue to read/write exactly what they read/write today.
+- **UI order matches lifecycle order.** Stages appear in the wizard in the natural work-item lifecycle order (backlog → splitting → planning → todo → inProgress → inReview → done → merged), not alphabetical.
+
+---
+
+## User stories / Requirements
+
+### As an operator wiring Linear to CASCADE
+
+1. **Full stage list visible.** On the Linear Field Mapping step of the PM wizard, I see eight CASCADE stages (backlog, splitting, planning, todo, inProgress, inReview, done, merged) rendered in lifecycle order, each with a dropdown of my Linear team's workflow states and an "enter manually" fallback.
+2. **Save persists all stages.** When I map one or more of the newly-exposed stages and save, the mapping is persisted in the Linear PM integration config and survives a page reload.
+3. **Triggers fire correctly.** When my Linear issue transitions to a state I've mapped (e.g. the Linear state I mapped to CASCADE's `planning` stage), the corresponding agent (planning agent) dispatches exactly as it does today for Trello.
+4. **Existing integration, graceful upgrade.** If I had a Linear integration configured before this change, reopening the wizard shows my prior four mappings (backlog, inProgress, inReview, done) still set and the four new slots (splitting, planning, todo, merged) as "not set" — I can fill them at my pace, and nothing about my existing automation breaks in the meantime.
+
+### As a developer adding a new PM provider later
+
+5. **Single normalized shape.** When I implement `resolveLifecycleConfig`, the target interface (`ProjectPMConfig.statuses`) declares all CASCADE stages — I don't have to guess which stages are "canonical" and which are provider-only fiction.
+6. **Trigger layer alignment.** Every key the shared status-to-agent map references appears on the normalized config interface. There is no hidden second vocabulary to chase.
+
+### As an operator with an existing Trello integration
+
+7. **No visible change.** My Trello wizard, config, and behavior are byte-identical before and after this change.
+
+---
+
+## Research Notes
+
+- Linear's workflow states are team-scoped, not workspace-global. Each team defines its own ordered set of states with type + name + color. High-performing teams per Linear's own guidance typically configure 5–7 states; CASCADE's 8 stages are on the high end of typical, so operators may need to create additional Linear states (or pick the same Linear state for several CASCADE stages) to complete the mapping. Reference: [Linear Docs — Issue status](https://linear.app/docs/configuring-workflows), [Linear App Complete Guide 2026](https://productivitystack.io/guides/linear-app-complete-guide/).
+- Linear's API exposes team workflow states via a standard list query, returning `id`, `name`, `type`, and `color` per state. The existing CASCADE Linear integration already calls this endpoint to populate the wizard's dropdowns (backlog / inProgress / inReview / done today); extending to more dropdowns reuses the same data.
+- The "user-configurable external-state → internal-state mapping" pattern is the standard integration-layer approach for any system that wants to decouple its internal state machine from a user-controlled external one (Jira, Linear, Trello, GitHub Projects, ...). The architectural principle is: the internal vocabulary is fixed; each external integration declares its own mapping; the mapping is an operator concern, not inferred. CASCADE already follows this pattern for Trello — this spec aligns Linear to it. Reference: general-purpose state-machine adapter patterns (Temporal, XState, AWS Step Functions).
+- Auto-inferring a mapping from external state names (e.g. "In Progress" → inProgress) is a known footgun in enterprise integrations: near-matches drift apart over time, and silent miswirings are harder to diagnose than empty mappings. Manual mapping is the conservative default and is what Trello already does.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|------|--------|----------|--------|
+| Linear workflow-states API (already in use) | Populates Linear-side dropdowns in the wizard | **Use** (no change) | Already integrated; extending coverage to more slots is a UI composition change, not a new API call. |
+| No new OSS dependency | — | **Skip** | This is a parity fix composed entirely from existing internal primitives (wizard components, tRPC credential + config routes, existing trigger dispatch). |
+
+---
+
+## Strategic decisions
+
+1. **Parity target is 8 stages on the Linear wizard, not 9.** The `debug` slot Trello exposes has no trigger handler today; surfacing it on Linear would ship dead UI. When a `debug` trigger handler lands in a future spec, both wizards get the slot at the same time.
+2. **Normalized type expands to the full 9-stage vocabulary regardless of UI surface.** `ProjectPMConfig.statuses` becomes the authoritative declaration of CASCADE stages, so `debug` exists as a declared (optional) slot even when no wizard exposes it. This keeps provider drift from recurring.
+3. **No auto-discovery of Linear workflow state names.** Mappings are manual, matching Trello. Avoids silent miswiring; keeps operator intent explicit.
+4. **Existing Linear integrations upgrade in place without migration.** New stages appear as "not set" on next wizard visit. No data touch, no deploy-time script, no warning banners.
+5. **Stages render in lifecycle order, not alphabetical.** Matches Trello's visible order and reflects the natural agent-dispatch flow.
+6. **Blank mappings remain valid.** An unmapped stage means the corresponding agent doesn't fire on that Linear team — same contract as Trello. No required-field validation is added by this spec.
+7. **Out of scope: `STATUS_TO_AGENT` broadening.** Adding agent types to the dispatch map is a separate concern; this spec only makes the existing map reachable from Linear, not wider.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. **Linear wizard surface.** The Linear Field Mapping step renders eight CASCADE stage rows in lifecycle order (backlog, splitting, planning, todo, inProgress, inReview, done, merged), each with a dropdown of the selected Linear team's workflow states and an "enter manually" fallback, visually and functionally equivalent to the Trello equivalent (modulo the `debug` slot Trello reserves).
+2. **Persistence.** Saving any of the eight stages stores the mapping in the project's PM integration config such that a page reload shows the saved values; clearing a stage removes it from storage.
+3. **Agent dispatch.** When a Linear issue transitions to a workflow state that has been mapped to a CASCADE stage whose `STATUS_TO_AGENT` entry exists, the corresponding agent is dispatched end-to-end — verifiable from the triggers + runs dashboards. This explicitly covers the four stages previously unreachable from Linear: `splitting`, `planning`, `todo`, `merged`.
+4. **Canonical type coverage.** The shared normalized config interface for PM statuses declares all nine CASCADE stages (backlog, splitting, planning, todo, inProgress, inReview, done, merged, debug) as optional keys, and every stage referenced by the shared status-to-agent map is a declared key of that interface.
+5. **Trello parity preserved.** The Trello Field Mapping step is visually and behaviorally unchanged. A snapshot or field-by-field comparison before and after the spec lands yields no differences.
+6. **JIRA agent dispatch for splitting / planning / todo works.** When a JIRA issue transitions to a status mapped to `splitting`, `planning`, or `todo` in the JIRA wizard (whose UI already accepts those slots), the corresponding agent dispatches. The JIRA Field Mapping step's UI is unchanged; only the backend normalization widens.
+7. **Existing Linear integrations upgrade cleanly.** A project with a pre-spec Linear integration, opened in the wizard after the spec lands, shows its four pre-existing mappings populated and the four new slots empty. Saving without filling the new slots is accepted and does not drop the old mappings.
+8. **No required migration.** Deploying the change to any environment does not require running a DB migration or ad-hoc backfill script.
+9. **Trigger correctness on unmapped stages.** A Linear issue transition to a state with no corresponding CASCADE stage mapping is a no-op — no agent is dispatched, no error surfaces to the operator.
+10. **Zod / tRPC validation alignment.** The tRPC surface that persists PM integration config accepts rows carrying any subset of the nine canonical status keys without rejection; it also accepts Linear rows that omit the new keys (backward-compat).
+11. **Lint, typecheck, tests all green.** Root and web typechecks pass; biome lint passes; the full unit + integration suite passes with new tests added to cover the expanded wizard, the expanded type, and the Linear trigger dispatch path for each of the four newly-reachable stages.
+
+---
+
+## Documentation Impact (high-level)
+
+- `CHANGELOG.md` — add an entry under Unreleased describing the Linear status-mapping parity (what the operator will see, which agents become reachable, no-migration-needed note).
+- `src/integrations/README.md` — the Linear section already defers to the dashboard wizard as the setup source of truth (from spec 002). Update the one-line pointer to reflect the expanded stage list, or leave it unchanged and let the wizard's own copy carry the delta — plans decide.
+- `CLAUDE.md` — no change expected; stage vocabulary is not described there.
+
+---
+
+## Out of Scope
+
+- Adding any new agent type or trigger handler (e.g. `debug`, `review-from-label`).
+- Broadening the `STATUS_TO_AGENT` map beyond its current four entries.
+- JIRA status mapping parity.
+- Auto-suggesting mappings from Linear workflow state names.
+- Warning banners, required-field validation, or migration scripts for existing integrations.
+- Changes to label mappings, webhook setup, credentials, or any other wizard step.
+- Exposing the `debug` stage on the Linear wizard UI (remains Trello-only until a debug trigger handler exists).
+- Changes to the PM wizard's step ordering, layout, or overall navigation.
