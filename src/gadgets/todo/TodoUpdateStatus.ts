@@ -3,7 +3,7 @@
  * Helps agents track progress through implementation tasks.
  */
 import { Gadget, z } from 'llmist';
-import { type TodoStatus, formatTodoList, loadTodos, saveTodos } from './storage.js';
+import { formatTodoList, loadTodos, saveTodos, type TodoStatus } from './storage.js';
 
 export class TodoUpdateStatus extends Gadget({
 	name: 'TodoUpdateStatus',

@@ -15,7 +15,7 @@ import { logger } from '../../utils/logging.js';
 import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractLinearContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postLinearAck, resolveLinearBotUserId } from '../acknowledgments.js';
-import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
+import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveLinearCredentials } from '../platformClients/index.js';
 import type { CascadeJob, LinearJob } from '../queue.js';

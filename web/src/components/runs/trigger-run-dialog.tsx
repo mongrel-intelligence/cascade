@@ -1,3 +1,5 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useState } from 'react';
 import { Button } from '@/components/ui/button.js';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { Input } from '@/components/ui/input.js';
@@ -10,8 +12,6 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
 
 // Keep in sync with AgentType in src/types/index.ts
 const agentTypes = [

@@ -1,4 +1,4 @@
-import { REVIEW_DIFF_CONTEXT_TOKEN_LIMIT, estimateTokens } from '../../config/reviewConfig.js';
+import { estimateTokens, REVIEW_DIFF_CONTEXT_TOKEN_LIMIT } from '../../config/reviewConfig.js';
 import type { githubClient } from '../../github/client.js';
 
 type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;

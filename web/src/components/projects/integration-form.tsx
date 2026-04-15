@@ -1,6 +1,6 @@
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { trpc } from '@/lib/trpc.js';
 import { AlertingTab } from './integration-alerting-tab.js';
 import { SCMTab } from './integration-scm-tab.js';
 import { PMWizard } from './pm-wizard.js';

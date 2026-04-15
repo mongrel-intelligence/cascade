@@ -1,17 +1,17 @@
 import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
-	Tmux,
-	consumePendingSessionNotices,
-	resolveWorkingDirectory,
-	validateGitCommand,
-} from '../../../src/gadgets/tmux.js';
-import {
 	sanitizeSessionName,
 	sleep,
 	stripAnsi,
 	unescapeOutput,
 } from '../../../src/gadgets/tmux/utils.js';
+import {
+	consumePendingSessionNotices,
+	resolveWorkingDirectory,
+	Tmux,
+	validateGitCommand,
+} from '../../../src/gadgets/tmux.js';
 
 describe('Tmux Gadget', () => {
 	describe('resolveWorkingDirectory', () => {

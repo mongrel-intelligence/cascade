@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type {
+	query,
 	SDKAssistantMessage,
 	SDKResultMessage,
 	SDKResultSuccess,
 	SDKStatusMessage,
 	SDKSystemMessage,
 	SDKUserMessage,
-	query,
 } from '@anthropic-ai/claude-agent-sdk';
 import { calculateCost } from '../../utils/llmMetrics.js';
 import { extractPRUrl } from '../../utils/prUrl.js';

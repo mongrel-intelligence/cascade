@@ -21,11 +21,11 @@ import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
 import { captureException, flush, setTag } from './sentry.js';
 import {
-	type TriggerRegistry,
 	createTriggerRegistry,
 	processGitHubWebhook,
 	processJiraWebhook,
 	registerBuiltInTriggers,
+	type TriggerRegistry,
 } from './triggers/index.js';
 import { processLinearWebhook } from './triggers/linear/webhook-handler.js';
 import { processSentryWebhook } from './triggers/sentry/webhook-handler.js';

@@ -1,8 +1,8 @@
-import { PROJECT_SECTIONS } from '@/lib/project-sections.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { ChevronRight } from 'lucide-react';
+import { PROJECT_SECTIONS } from '@/lib/project-sections.js';
+import { trpc } from '@/lib/trpc.js';
 
 interface Segment {
 	label: string;

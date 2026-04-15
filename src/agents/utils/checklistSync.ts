@@ -5,7 +5,7 @@
  * items as local TODOs are completed.
  */
 
-import { type Todo, loadTodos } from '../../gadgets/todo/storage.js';
+import { loadTodos, type Todo } from '../../gadgets/todo/storage.js';
 import { type ChecklistItem, getPMProvider } from '../../pm/index.js';
 import type { Checklist } from '../../pm/types.js';
 import { logger } from '../../utils/logging.js';

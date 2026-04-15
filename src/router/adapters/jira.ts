@@ -14,7 +14,7 @@ import { logger } from '../../utils/logging.js';
 import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractJiraContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postJiraAck, resolveJiraBotAccountId } from '../acknowledgments.js';
-import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
+import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import { resolveJiraCredentials } from '../platformClients/index.js';
 import type { CascadeJob, JiraJob } from '../queue.js';

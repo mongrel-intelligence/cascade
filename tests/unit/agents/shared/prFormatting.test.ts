@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
-	type PRDiff,
-	type SkippedFile,
 	extractPRDiffs,
 	formatPRComments,
 	formatPRDetails,
 	formatPRDiff,
 	formatPRIssueComments,
 	formatPRReviews,
+	type PRDiff,
+	type SkippedFile,
 } from '../../../../src/agents/shared/prFormatting.js';
 import { REVIEW_DIFF_CONTEXT_TOKEN_LIMIT } from '../../../../src/config/reviewConfig.js';
 

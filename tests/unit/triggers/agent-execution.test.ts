@@ -54,9 +54,9 @@ import { runAgent } from '../../../src/agents/registry.js';
 import { getJiraConfig, getTrelloConfig } from '../../../src/pm/config.js';
 import { getPMProvider } from '../../../src/pm/context.js';
 import {
-	PMLifecycleManager,
 	createPMProvider,
 	hasAutoLabel,
+	PMLifecycleManager,
 	resolveProjectPMConfig,
 } from '../../../src/pm/index.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';

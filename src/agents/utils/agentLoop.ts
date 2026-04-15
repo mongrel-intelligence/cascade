@@ -14,12 +14,12 @@ import {
 } from '../../utils/interactive.js';
 import type { createAgentLogger } from './logging.js';
 import {
-	type TrackingContext,
 	consumeLoopAction,
 	consumeLoopWarning,
 	incrementGadgetCall,
 	isSyntheticCall,
 	recordGadgetCallForLoop,
+	type TrackingContext,
 } from './tracking.js';
 
 // ============================================================================

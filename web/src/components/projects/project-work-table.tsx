@@ -1,8 +1,8 @@
+import { useNavigate } from '@tanstack/react-router';
+import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
 import { agentTypeLabel } from '@/lib/chart-colors.js';
 import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatCostSummary } from '@/lib/utils.js';
-import { useNavigate } from '@tanstack/react-router';
-import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
 import { WorkItemDurationBar } from './work-item-duration-bar.js';
 
 interface WorkItemRun {

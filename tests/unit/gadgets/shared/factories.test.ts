@@ -38,9 +38,9 @@ import {
 	createCLICommand,
 } from '../../../../src/gadgets/shared/cliCommandFactory.js';
 import {
-	type GadgetCoreFn,
 	buildZodSchema,
 	createGadgetClass,
+	type GadgetCoreFn,
 } from '../../../../src/gadgets/shared/gadgetFactory.js';
 import { generateToolManifest } from '../../../../src/gadgets/shared/manifestGenerator.js';
 import type { ToolDefinition } from '../../../../src/gadgets/shared/toolDefinition.js';

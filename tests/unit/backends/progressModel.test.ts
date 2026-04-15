@@ -32,7 +32,7 @@ vi.mock('../../../src/config/agentMessages.js', () => ({
 }));
 
 import { LLMist } from 'llmist';
-import { type ProgressContext, callProgressModel } from '../../../src/backends/progressModel.js';
+import { callProgressModel, type ProgressContext } from '../../../src/backends/progressModel.js';
 
 const MockLLMist = vi.mocked(LLMist);
 

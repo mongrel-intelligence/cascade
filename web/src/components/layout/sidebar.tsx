@@ -1,16 +1,3 @@
-import { ProjectFormDialog } from '@/components/projects/project-form-dialog.js';
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from '@/components/ui/select.js';
-import { Separator } from '@/components/ui/separator.js';
-import { useOrgContext } from '@/lib/org-context.js';
-import { PROJECT_SECTIONS, isProjectActive, isSectionActive } from '@/lib/project-sections.js';
-import { trpc } from '@/lib/trpc.js';
-import { cn } from '@/lib/utils.js';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
@@ -27,6 +14,19 @@ import {
 	Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { ProjectFormDialog } from '@/components/projects/project-form-dialog.js';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select.js';
+import { Separator } from '@/components/ui/separator.js';
+import { useOrgContext } from '@/lib/org-context.js';
+import { isProjectActive, isSectionActive, PROJECT_SECTIONS } from '@/lib/project-sections.js';
+import { trpc } from '@/lib/trpc.js';
+import { cn } from '@/lib/utils.js';
 
 interface SidebarProps {
 	user: { name: string; email: string; role: string } | undefined;

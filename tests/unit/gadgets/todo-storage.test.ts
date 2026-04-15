@@ -13,13 +13,13 @@ vi.mock('../../../src/utils/repo.js', () => ({
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import {
-	type Todo,
 	formatTodoList,
 	getNextId,
 	getSessionId,
 	initTodoSession,
 	loadTodos,
 	saveTodos,
+	type Todo,
 } from '../../../src/gadgets/todo/storage.js';
 
 describe('todo storage', () => {

@@ -1,7 +1,3 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
-import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
-import { useChartColors } from '@/lib/use-chart-colors.js';
-import { formatDuration } from '@/lib/utils.js';
 import {
 	Bar,
 	BarChart,
@@ -13,6 +9,10 @@ import {
 	XAxis,
 	YAxis,
 } from 'recharts';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card.js';
+import { agentTypeLabel, getAgentColor } from '@/lib/chart-colors.js';
+import { useChartColors } from '@/lib/use-chart-colors.js';
+import { formatDuration } from '@/lib/utils.js';
 
 interface AgentTypeBreakdown {
 	agentType: string;

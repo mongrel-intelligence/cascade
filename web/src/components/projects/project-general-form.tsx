@@ -1,3 +1,8 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
+import { HelpCircle } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
 import { OpenRouterModelCombobox } from '@/components/settings/openrouter-model-combobox.js';
@@ -21,11 +26,6 @@ import {
 	TooltipTrigger,
 } from '@/components/ui/tooltip.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
-import { HelpCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
-import { toast } from 'sonner';
 
 interface Project {
 	id: string;

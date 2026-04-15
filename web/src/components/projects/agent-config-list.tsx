@@ -1,3 +1,9 @@
+/**
+ * Agent list view components: AgentRow and AgentListView.
+ * Renders the table of configured agents and the list of available agents to enable.
+ */
+import { AlertTriangle, ChevronRight, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 import {
 	AlertDialog,
 	AlertDialogAction,
@@ -24,12 +30,6 @@ import {
 	TooltipTrigger,
 } from '@/components/ui/tooltip.js';
 import { AGENT_LABELS } from '@/lib/trigger-agent-mapping.js';
-/**
- * Agent list view components: AgentRow and AgentListView.
- * Renders the table of configured agents and the list of available agents to enable.
- */
-import { AlertTriangle, ChevronRight, Trash2 } from 'lucide-react';
-import { useState } from 'react';
 import type { AgentListViewProps, AgentRowProps } from './agent-config-types.js';
 import { countActiveTriggers, engineHasCredentials } from './agent-config-utils.js';
 

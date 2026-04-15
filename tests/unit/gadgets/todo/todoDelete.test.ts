@@ -6,8 +6,8 @@ vi.mock('../../../../src/gadgets/todo/storage.js', () => ({
 	formatTodoList: vi.fn(),
 }));
 
-import { TodoDelete } from '../../../../src/gadgets/todo/TodoDelete.js';
 import { formatTodoList, loadTodos, saveTodos } from '../../../../src/gadgets/todo/storage.js';
+import { TodoDelete } from '../../../../src/gadgets/todo/TodoDelete.js';
 
 const mockLoadTodos = vi.mocked(loadTodos);
 const mockSaveTodos = vi.mocked(saveTodos);

@@ -3,9 +3,9 @@
  * Extracted to eliminate ~250 lines of verbatim duplication.
  */
 
-import { Input } from '@/components/ui/input.js';
 import { AlertCircle, Check, ChevronDown, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
+import { Input } from '@/components/ui/input.js';
 
 // ============================================================================
 // WizardStep Shell

@@ -1,4 +1,4 @@
-import { type ChecklistItemInput, addChecklist } from '../../gadgets/pm/core/addChecklist.js';
+import { addChecklist, type ChecklistItemInput } from '../../gadgets/pm/core/addChecklist.js';
 import { addChecklistDef } from '../../gadgets/pm/definitions.js';
 import { writePMWriteSidecar } from '../../gadgets/session/core/sidecar.js';
 import { PM_WRITE_SIDECAR_ENV_VAR } from '../../gadgets/sessionState.js';

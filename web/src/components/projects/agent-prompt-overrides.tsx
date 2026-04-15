@@ -1,3 +1,5 @@
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
 import {
 	PromptSectionTab,
 	ValidationStatus,
@@ -10,8 +12,6 @@ import { ReferencePanel } from '@/components/settings/prompt-editor.js';
  */
 import { Badge } from '@/components/ui/badge.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
 
 interface AgentPromptOverridesProps {
 	projectId: string;

@@ -1,6 +1,6 @@
-import { type SQL, and, asc, count, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, lte, type SQL, sql } from 'drizzle-orm';
 import { getDb } from '../client.js';
-import { agentRuns, organizations, prWorkItems, projects } from '../schema/index.js';
+import { agentRuns, organizations, projects, prWorkItems } from '../schema/index.js';
 import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
 
 // ============================================================================

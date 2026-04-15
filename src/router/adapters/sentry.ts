@@ -11,7 +11,7 @@ import type { SentryAugmentedPayload } from '../../sentry/types.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { type RouterProjectConfig, loadProjectConfig } from '../config.js';
+import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import type { CascadeJob, SentryJob } from '../queue.js';
 

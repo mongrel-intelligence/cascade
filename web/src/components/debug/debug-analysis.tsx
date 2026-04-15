@@ -1,8 +1,8 @@
-import { Button } from '@/components/ui/button.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Button } from '@/components/ui/button.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 
 interface DebugAnalysisProps {
 	runId: string;

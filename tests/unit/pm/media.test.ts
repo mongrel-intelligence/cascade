@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-	MAX_IMAGES_PER_WORK_ITEM,
-	MAX_IMAGE_SIZE_BYTES,
 	downloadMedia,
 	extractMarkdownImages,
 	filterImageMedia,
 	isImageMimeType,
+	MAX_IMAGE_SIZE_BYTES,
+	MAX_IMAGES_PER_WORK_ITEM,
 	resolveJiraMediaUrls,
 } from '../../../src/pm/media.js';
 import type { MediaReference } from '../../../src/pm/types.js';

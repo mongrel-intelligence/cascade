@@ -1,8 +1,8 @@
-import { useElapsedTime } from '@/lib/useElapsedTime.js';
-import { formatCost, formatDuration } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
 import { useState } from 'react';
+import { useElapsedTime } from '@/lib/useElapsedTime.js';
+import { formatCost, formatDuration } from '@/lib/utils.js';
 
 const OUTPUT_COLLAPSE_THRESHOLD = 500;
 

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-	ENV_VAR_NAME,
 	clearProgressCommentId,
+	ENV_VAR_NAME,
 	readProgressCommentId,
 	writeProgressCommentId,
 } from '../../../src/backends/progressState.js';

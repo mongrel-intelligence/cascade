@@ -13,8 +13,8 @@
  */
 
 import {
-	type CompletionRequirements,
 	applyCompletionEvidence,
+	type CompletionRequirements,
 	getCompletionFailure,
 	readCompletionEvidence,
 } from '../completion.js';

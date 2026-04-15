@@ -41,8 +41,8 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { buildEnv } from '../../../src/backends/codex/env.js';
 import {
-	CodexEngine,
 	buildArgs,
+	CodexEngine,
 	extractErrorMessage,
 	extractTextParts,
 	extractToolCall,

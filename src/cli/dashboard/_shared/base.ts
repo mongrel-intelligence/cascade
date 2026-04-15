@@ -1,7 +1,7 @@
 import { Command, Flags } from '@oclif/core';
 import { TRPCClientError } from '@trpc/client';
 import chalk from 'chalk';
-import { type DashboardClient, createDashboardClient } from './client.js';
+import { createDashboardClient, type DashboardClient } from './client.js';
 import { type CliConfig, loadConfig } from './config.js';
 import { formatActionableError, mapError } from './errors.js';
 import { printCompact, printCsv, printDetail, printTable } from './format.js';

@@ -1,5 +1,5 @@
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 
 type ProjectUpdateInput = Parameters<typeof trpcClient.projects.update.mutate>[0];
 

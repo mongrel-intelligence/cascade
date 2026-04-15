@@ -1,5 +1,5 @@
-import { IntegrationForm } from '@/components/projects/integration-form.js';
 import { createRoute } from '@tanstack/react-router';
+import { IntegrationForm } from '@/components/projects/integration-form.js';
 import { projectDetailRoute } from './$projectId.js';
 
 function ProjectIntegrationsPage() {

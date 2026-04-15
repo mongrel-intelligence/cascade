@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { OpenRouterModelCombobox } from '@/components/settings/openrouter-model-combobox.js';
 import { Input } from '@/components/ui/input.js';
 import {
@@ -8,7 +9,6 @@ import {
 	SelectValue,
 } from '@/components/ui/select.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
 
 interface ModelFieldProps {
 	value: string;

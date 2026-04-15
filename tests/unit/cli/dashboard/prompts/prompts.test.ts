@@ -26,8 +26,8 @@ vi.mock('node:fs', () => ({
 	readFileSync: vi.fn().mockReturnValue('template content'),
 }));
 
-import PromptsDefaultPartial from '../../../../../src/cli/dashboard/prompts/default-partial.js';
 import PromptsDefault from '../../../../../src/cli/dashboard/prompts/default.js';
+import PromptsDefaultPartial from '../../../../../src/cli/dashboard/prompts/default-partial.js';
 import PromptsGetPartial from '../../../../../src/cli/dashboard/prompts/get-partial.js';
 import PromptsListPartials from '../../../../../src/cli/dashboard/prompts/list-partials.js';
 import PromptsResetPartial from '../../../../../src/cli/dashboard/prompts/reset-partial.js';

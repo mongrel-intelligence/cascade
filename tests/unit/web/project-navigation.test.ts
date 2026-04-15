@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
 	DEFAULT_PROJECT_SECTION,
-	PROJECT_SECTIONS,
 	isProjectActive,
 	isSectionActive,
+	PROJECT_SECTIONS,
 	resolveDefaultProjectPath,
 } from '../../../web/src/lib/project-sections.js';
 

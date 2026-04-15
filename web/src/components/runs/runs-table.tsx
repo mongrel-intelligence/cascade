@@ -1,6 +1,6 @@
-import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { Link } from '@tanstack/react-router';
 import { Activity, ExternalLink } from 'lucide-react';
+import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
 import { RetryRunButton } from './retry-run-button.js';

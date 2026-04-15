@@ -1,6 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
 
 interface WebhookLogDetailDialogProps {
 	logId: string | null;

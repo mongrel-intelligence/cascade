@@ -10,10 +10,10 @@
 
 import { buildNativeToolPath } from '../nativeToolRuntime.js';
 import {
+	filterProcessEnv,
 	SHARED_ALLOWED_ENV_EXACT,
 	SHARED_ALLOWED_ENV_PREFIXES,
 	SHARED_BLOCKED_ENV_EXACT,
-	filterProcessEnv,
 } from './envFilter.js';
 
 export interface BuildEngineEnvOptions {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../../src/backends/secretBuilder.js';
 import {
+	filterProcessEnv,
 	SHARED_ALLOWED_ENV_EXACT,
 	SHARED_ALLOWED_ENV_PREFIXES,
 	SHARED_BLOCKED_ENV_EXACT,
-	filterProcessEnv,
 } from '../../../src/backends/shared/envFilter.js';
 
 describe('filterProcessEnv (shared)', () => {

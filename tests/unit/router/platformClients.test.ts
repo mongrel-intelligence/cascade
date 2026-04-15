@@ -31,10 +31,10 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
-	TrelloPlatformClient,
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
+	TrelloPlatformClient,
 } from '../../../src/router/platformClients/index.js';
 import { logger } from '../../../src/utils/logging.js';
 

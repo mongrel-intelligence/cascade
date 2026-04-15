@@ -1,10 +1,10 @@
-import { Breadcrumbs } from '@/components/layout/breadcrumbs.js';
-import { API_URL } from '@/lib/api.js';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { LogOut, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { type ReactNode, useEffect, useState } from 'react';
+import { Breadcrumbs } from '@/components/layout/breadcrumbs.js';
+import { API_URL } from '@/lib/api.js';
 
 interface HeaderProps {
 	user: { name: string; role: string } | undefined;

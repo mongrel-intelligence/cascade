@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+	getCredentialRoles,
 	type IntegrationCategory,
 	type IntegrationProvider,
 	PROVIDER_CATEGORY,
 	PROVIDER_CREDENTIAL_ROLES,
-	getCredentialRoles,
 	registerCredentialRoles,
 } from '../../../src/config/integrationRoles.js';
 

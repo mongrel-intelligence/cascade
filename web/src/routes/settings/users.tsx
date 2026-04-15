@@ -1,9 +1,9 @@
-import { UserFormDialog } from '@/components/settings/user-form-dialog.js';
-import { UsersTable } from '@/components/settings/users-table.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
 import { useState } from 'react';
+import { UserFormDialog } from '@/components/settings/user-form-dialog.js';
+import { UsersTable } from '@/components/settings/users-table.js';
+import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
 function UsersPage() {

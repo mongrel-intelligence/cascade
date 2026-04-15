@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { type MockInstance, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { EXIT_MARKER_PREFIX, EXIT_MARKER_SUFFIX } from '../../../../src/gadgets/tmux/constants.js';
 
 // ─── Mock readline ─────────────────────────────────────────────────────────────

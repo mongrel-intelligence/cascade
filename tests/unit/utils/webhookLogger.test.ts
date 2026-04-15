@@ -13,7 +13,7 @@ import {
 	insertWebhookLog,
 	pruneWebhookLogs,
 } from '../../../src/db/repositories/webhookLogsRepository.js';
-import { type WebhookLogInput, logWebhookCall } from '../../../src/utils/webhookLogger.js';
+import { logWebhookCall, type WebhookLogInput } from '../../../src/utils/webhookLogger.js';
 
 const mockInsertWebhookLog = vi.mocked(insertWebhookLog);
 const mockPruneWebhookLogs = vi.mocked(pruneWebhookLogs);

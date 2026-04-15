@@ -1,9 +1,9 @@
-import type { ResolvedTrigger } from '@/components/shared/definition-trigger-toggles.js';
-import type { TriggerParameterValue } from '@/lib/trigger-agent-mapping.js';
-import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import type { ResolvedTrigger } from '@/components/shared/definition-trigger-toggles.js';
+import type { TriggerParameterValue } from '@/lib/trigger-agent-mapping.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import { AgentDetailView } from './agent-config-detail.js';
 import { AgentListView } from './agent-config-list.js';
 import type {

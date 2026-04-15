@@ -1,13 +1,13 @@
+import { useQuery } from '@tanstack/react-query';
+import { createRootRoute, Outlet, redirect, useRouterState } from '@tanstack/react-router';
+import { Menu } from 'lucide-react';
+import { useState } from 'react';
 import { Header } from '@/components/layout/header.js';
 import { MobileSidebar } from '@/components/layout/mobile-sidebar.js';
 import { Sidebar } from '@/components/layout/sidebar.js';
 import { OrgProvider } from '@/lib/org-context.js';
 import { queryClient } from '@/lib/query-client.js';
 import { trpc } from '@/lib/trpc.js';
-import { useQuery } from '@tanstack/react-query';
-import { Outlet, createRootRoute, redirect, useRouterState } from '@tanstack/react-router';
-import { Menu } from 'lucide-react';
-import { useState } from 'react';
 
 function RootLayout() {
 	const routerState = useRouterState();

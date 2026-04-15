@@ -4,11 +4,11 @@ import { join } from 'node:path';
 
 import type { getAgentProfile } from '../agents/definitions/profiles.js';
 import {
+	clearInitialComment,
 	PM_WRITE_SIDECAR_ENV_VAR,
 	PR_SIDECAR_ENV_VAR,
 	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
-	clearInitialComment,
 	recordPRCreation,
 	recordReviewSubmission,
 } from '../gadgets/sessionState.js';

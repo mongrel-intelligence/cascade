@@ -19,7 +19,7 @@ import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import { calculateCost } from '../../utils/llmMetrics.js';
 import { logger } from '../../utils/logging.js';
 import type { IProgressMonitor, LogWriter } from '../contracts/index.js';
-import { type TrackingContext, checkForLoopAndAdvance, incrementLLMIteration } from './tracking.js';
+import { checkForLoopAndAdvance, incrementLLMIteration, type TrackingContext } from './tracking.js';
 
 // Re-export LogWriter for downstream consumers that imported it from here.
 export type { LogWriter } from '../contracts/index.js';

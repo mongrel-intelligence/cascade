@@ -10,7 +10,7 @@
 
 import { getIntegrationCredential } from '../config/provider.js';
 import type { AlertingIntegration } from '../integrations/alerting.js';
-import { type SentryIntegrationConfig, getSentryIntegrationConfig } from './integration.js';
+import { getSentryIntegrationConfig, type SentryIntegrationConfig } from './integration.js';
 
 export class SentryAlertingIntegration implements AlertingIntegration {
 	readonly type = 'sentry';

@@ -6,9 +6,9 @@ import { updateRunPRNumber } from '../../db/repositories/runsRepository.js';
 import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/context.js';
 import {
-	PMLifecycleManager,
 	createPMProvider,
 	hasAutoLabel,
+	PMLifecycleManager,
 	resolveProjectPMConfig,
 } from '../../pm/index.js';
 import { checkTriggerEnabled } from '../../triggers/shared/trigger-check.js';
@@ -22,8 +22,8 @@ import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
 import { shouldTriggerDebug } from './debug-trigger.js';
 import {
-	type ValidationResult,
 	formatValidationErrors,
+	type ValidationResult,
 	validateIntegrations,
 } from './integration-validation.js';
 

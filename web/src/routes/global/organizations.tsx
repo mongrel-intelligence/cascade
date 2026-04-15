@@ -1,10 +1,10 @@
-import { OrganizationFormDialog } from '@/components/global/organization-form-dialog.js';
-import { OrganizationsTable } from '@/components/global/organizations-table.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
+import { OrganizationFormDialog } from '@/components/global/organization-form-dialog.js';
+import { OrganizationsTable } from '@/components/global/organizations-table.js';
+import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
 interface Organization {

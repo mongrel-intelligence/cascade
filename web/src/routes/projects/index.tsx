@@ -1,9 +1,9 @@
-import { ProjectFormDialog } from '@/components/projects/project-form-dialog.js';
-import { ProjectsTable } from '@/components/projects/projects-table.js';
-import { trpc } from '@/lib/trpc.js';
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
 import { useState } from 'react';
+import { ProjectFormDialog } from '@/components/projects/project-form-dialog.js';
+import { ProjectsTable } from '@/components/projects/projects-table.js';
+import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
 function ProjectsListPage() {

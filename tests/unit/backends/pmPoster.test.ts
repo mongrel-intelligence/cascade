@@ -30,11 +30,11 @@ vi.mock('../../../src/backends/progressState.js', () => ({
 	clearProgressCommentId: vi.fn(),
 }));
 
+import { PMProgressPoster } from '../../../src/backends/progressState/pmPoster.js';
 import {
 	readProgressCommentId,
 	writeProgressCommentId,
 } from '../../../src/backends/progressState.js';
-import { PMProgressPoster } from '../../../src/backends/progressState/pmPoster.js';
 import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProviderOrNull } from '../../../src/pm/index.js';
 

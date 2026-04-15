@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+	agentTypeLabel,
 	CHART_PALETTE_DARK,
 	CHART_PALETTE_LIGHT,
-	agentTypeLabel,
 	getAgentColor,
 } from '../../../web/src/lib/chart-colors.js';
 

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import archiver from 'archiver';
 
-import { type LLMCallLogger, createLLMCallLogger } from './llmLogging.js';
+import { createLLMCallLogger, type LLMCallLogger } from './llmLogging.js';
 import { getWorkspaceDir } from './repo.js';
 
 export interface FileLogger {

@@ -1,5 +1,5 @@
-import { ProjectAgentConfigs } from '@/components/projects/project-agent-configs.js';
 import { createRoute } from '@tanstack/react-router';
+import { ProjectAgentConfigs } from '@/components/projects/project-agent-configs.js';
 import { projectDetailRoute } from './$projectId.js';
 
 function ProjectAgentConfigsPage() {
