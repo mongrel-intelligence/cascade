@@ -62,6 +62,27 @@ prompts:
   taskPrompt: |
     Review PR #<%= it.prNumber %>.
 
+    ## How your context is shaped
+
+    You receive a **compact per-file diff context** — each changed file appears
+    as a section headed `### <filename> (<status>, +N -M)` followed by a unified
+    diff hunk. Only the changed lines are in your context; unchanged parts of
+    a file are not echoed. Use `Read <path>` if you need surrounding code.
+
+    If a **`SKIPPED FILES`** injection is present, those files were omitted from
+    the compact context (because they were deleted, binary, their patch was too
+    large, or the cumulative diff budget was reached). When any skipped file is
+    relevant to your review, fetch it on demand:
+
+      - `gh pr diff <%= it.prNumber %> -- <path>` to read the file's patch
+      - `Read <path>` to read the post-PR file content
+      - `Grep <pattern> <path>` to search inside the file
+
+    You are not expected to review every skipped file — only fetch when the PR
+    description or another file points you at it.
+
+    ## Your task
+
     Examine the code changes carefully and submit your review using CreatePRReview.
 
 hooks:

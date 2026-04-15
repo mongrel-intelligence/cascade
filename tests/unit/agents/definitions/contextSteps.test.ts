@@ -32,16 +32,29 @@ vi.mock('../../../../src/gadgets/pm/core/readWorkItem.js', () => ({
 	readWorkItemWithMedia: vi.fn(),
 }));
 
+vi.mock('../../../../src/github/client.js', () => ({
+	githubClient: {
+		getPR: vi.fn(),
+		getPRDiff: vi.fn(),
+		getCheckSuiteStatus: vi.fn(),
+	},
+}));
+
 import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
 import {
+	fetchPRContextStep,
 	fetchWorkItemStep,
 	prepopulateTodosStep,
 } from '../../../../src/agents/definitions/contextSteps.js';
 import { readWorkItemWithMedia } from '../../../../src/gadgets/pm/core/readWorkItem.js';
 import { initTodoSession, saveTodos } from '../../../../src/gadgets/todo/storage.js';
+import { githubClient } from '../../../../src/github/client.js';
 import { getPMProviderOrNull } from '../../../../src/pm/index.js';
 import type { AgentInput } from '../../../../src/types/index.js';
 
+const mockGetPR = vi.mocked(githubClient.getPR);
+const mockGetPRDiff = vi.mocked(githubClient.getPRDiff);
+const mockGetCheckSuiteStatus = vi.mocked(githubClient.getCheckSuiteStatus);
 const mockGetPMProviderOrNull = vi.mocked(getPMProviderOrNull);
 const mockReadWorkItemWithMedia = vi.mocked(readWorkItemWithMedia);
 const mockInitTodoSession = vi.mocked(initTodoSession);
@@ -377,5 +390,157 @@ describe('fetchWorkItemStep', () => {
 		// MAX_IMAGES_PER_WORK_ITEM is mocked as 10
 		expect(result[0].images).toHaveLength(10);
 		expect(mockTrelloDownload).toHaveBeenCalledTimes(10);
+	});
+});
+
+describe('fetchPRContextStep — compact diffs + SKIPPED FILES contract', () => {
+	beforeEach(() => {
+		mockGetPR.mockResolvedValue({
+			number: 1092,
+			title: 'Test PR',
+			body: 'Description',
+			state: 'open',
+			htmlUrl: 'https://github.com/o/r/pull/1092',
+			headRef: 'claude/cranky',
+			headSha: 'abc123',
+			baseRef: 'dev',
+			merged: false,
+			mergeable: true,
+			user: { login: 'suda' },
+		});
+		mockGetCheckSuiteStatus.mockResolvedValue({
+			totalCount: 0,
+			checkRuns: [],
+			allPassing: false,
+		});
+	});
+
+	function makePRParams(): FetchContextParams {
+		return makeParams({
+			prNumber: 1092,
+			repoFullName: 'o/r',
+		});
+	}
+
+	it('injects compact diff context (not full file contents)', async () => {
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/a.ts',
+				status: 'modified',
+				additions: 5,
+				deletions: 2,
+				changes: 7,
+				patch: '@@ -1,3 +1,5 @@\n context\n+added',
+			},
+			{
+				filename: 'src/b.ts',
+				status: 'added',
+				additions: 10,
+				deletions: 0,
+				changes: 10,
+				patch: '@@ -0,0 +1,10 @@\n+new',
+			},
+		]);
+
+		const injections = await fetchPRContextStep(makePRParams());
+
+		const diffInjection = injections.find((i) => i.description === 'Pre-fetched PR diff context');
+		expect(diffInjection).toBeDefined();
+		expect(diffInjection?.result as string).toContain('### src/a.ts (modified, +5 -2)');
+		expect(diffInjection?.result as string).toContain('### src/b.ts (added, +10 -0)');
+		// No per-file "Pre-fetched <path>" injections — that was the old shape.
+		expect(injections.some((i) => (i.description as string).startsWith('Pre-fetched src/'))).toBe(
+			false,
+		);
+	});
+
+	it('injects a SKIPPED FILES section when any files are skipped', async () => {
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/a.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@ -1 +1 @@\n+x',
+			},
+			{
+				filename: 'legacy.ts',
+				status: 'removed',
+				additions: 0,
+				deletions: 42,
+				changes: 42,
+				patch: undefined,
+			},
+		]);
+
+		const injections = await fetchPRContextStep(makePRParams());
+
+		const skipped = injections.find((i) => i.description === 'Skipped files');
+		expect(skipped).toBeDefined();
+		expect(skipped?.result as string).toContain('legacy.ts');
+		expect(skipped?.result as string).toContain('deleted');
+		expect(skipped?.result as string).toContain('gh pr diff 1092');
+		expect(skipped?.result as string).toContain('Read');
+	});
+
+	it('does NOT inject a SKIPPED FILES section when nothing is skipped', async () => {
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/a.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@ -1 +1 @@\n+x',
+			},
+		]);
+
+		const injections = await fetchPRContextStep(makePRParams());
+
+		const skipped = injections.find((i) => i.description === 'Skipped files');
+		expect(skipped).toBeUndefined();
+	});
+
+	it('logs PR context prepared with included, skipped, and skipReasons map', async () => {
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/a.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@ -1 +1 @@\n+x',
+			},
+			{
+				filename: 'removed.ts',
+				status: 'removed',
+				additions: 0,
+				deletions: 5,
+				changes: 5,
+				patch: undefined,
+			},
+			{
+				filename: 'binary.png',
+				status: 'added',
+				additions: 0,
+				deletions: 0,
+				changes: 0,
+				patch: undefined,
+			},
+		]);
+
+		const params = makePRParams();
+		await fetchPRContextStep(params);
+
+		expect(params.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'PR context prepared',
+			expect.objectContaining({
+				included: 1,
+				skipped: 2,
+				skipReasons: expect.objectContaining({ deleted: 1, 'no-patch': 1 }),
+			}),
+		);
 	});
 });

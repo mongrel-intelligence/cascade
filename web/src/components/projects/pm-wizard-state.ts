@@ -81,6 +81,12 @@ export interface WizardState {
 	// Editing mode
 	isEditing: boolean;
 	hasStoredCredentials: boolean; // true in edit mode when provider credentials exist in project_credentials
+	/**
+	 * Provider that was loaded from the server at INIT_EDIT time. Used by the save flow
+	 * to clean up the prior provider's credentials when the user switches provider
+	 * mid-edit. Undefined on first-time setup.
+	 */
+	previousProvider?: Provider;
 }
 
 export type WizardAction =
@@ -183,9 +189,13 @@ export function createInitialState(): WizardState {
 export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action) => {
 	switch (action.type) {
 		case 'SET_PROVIDER':
+			// Preserve edit-mode flags so a provider switch on an existing integration
+			// still knows which provider to clean up at save time.
 			return {
 				...createInitialState(),
 				provider: action.provider,
+				isEditing: state.isEditing,
+				previousProvider: state.previousProvider,
 			};
 		case 'SET_TRELLO_API_KEY':
 			return {
@@ -302,8 +312,12 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 				...state,
 				linearLabels: { ...state.linearLabels, [action.key]: action.value },
 			};
-		case 'INIT_EDIT':
-			return { ...state, ...action.state, isEditing: true };
+		case 'INIT_EDIT': {
+			const merged = { ...state, ...action.state, isEditing: true };
+			// Snapshot the loaded provider so a later SET_PROVIDER knows what to clean up.
+			merged.previousProvider = merged.provider;
+			return merged;
+		}
 		case 'ADD_TRELLO_BOARD_LABEL':
 			if (!state.trelloBoardDetails) return state;
 			return {

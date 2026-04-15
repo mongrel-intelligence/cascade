@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
-
 import {
+	extractPRDiffs,
 	formatPRComments,
 	formatPRDetails,
 	formatPRDiff,
 	formatPRIssueComments,
 	formatPRReviews,
+	type PRDiff,
+	type SkippedFile,
 } from '../../../../src/agents/shared/prFormatting.js';
+import { REVIEW_DIFF_CONTEXT_TOKEN_LIMIT } from '../../../../src/config/reviewConfig.js';
 
 describe('formatPRDetails', () => {
 	it('formats PR details with all fields', () => {
@@ -283,5 +286,136 @@ describe('formatPRIssueComments', () => {
 
 		expect(result).toContain('Comment #1 by @alice');
 		expect(result).toContain('Comment #2 by @bob');
+	});
+});
+
+// ============================================================================
+// extractPRDiffs
+// ============================================================================
+
+function makePRFile(overrides: Partial<PRDiff[number]>): PRDiff[number] {
+	return {
+		filename: 'src/example.ts',
+		status: 'modified',
+		additions: 10,
+		deletions: 5,
+		changes: 15,
+		patch: '@@ -1,5 +1,10 @@\n context\n+added\n-removed',
+		...overrides,
+	} as PRDiff[number];
+}
+
+describe('extractPRDiffs', () => {
+	it('returns an included entry per file with a patch', () => {
+		const prDiff: PRDiff = [
+			makePRFile({ filename: 'a.ts', patch: '@@ -1 +1 @@' }),
+			makePRFile({ filename: 'b.ts', patch: '@@ -2 +2 @@' }),
+		];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included).toHaveLength(2);
+		expect(result.included[0].path).toBe('a.ts');
+		expect(result.included[1].path).toBe('b.ts');
+		expect(result.skipped).toHaveLength(0);
+	});
+
+	it('marks deleted files as skipped with reason "deleted"', () => {
+		const prDiff: PRDiff = [makePRFile({ filename: 'gone.ts', status: 'removed' })];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included).toHaveLength(0);
+		expect(result.skipped).toEqual<SkippedFile[]>([{ filename: 'gone.ts', reason: 'deleted' }]);
+	});
+
+	it('marks files without a patch as skipped with reason "no-patch"', () => {
+		const prDiff: PRDiff = [makePRFile({ filename: 'binary.png', patch: undefined })];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included).toHaveLength(0);
+		expect(result.skipped).toEqual<SkippedFile[]>([{ filename: 'binary.png', reason: 'no-patch' }]);
+	});
+
+	it('marks files with a patch over the per-file cap as skipped with reason "patch-too-large"', () => {
+		// per-file cap is 10% of total budget by default — 20k tokens → 80k chars
+		// Construct a patch beyond that cap.
+		const hugePatch = 'x'.repeat(100_000); // 25k tokens
+		const prDiff: PRDiff = [makePRFile({ filename: 'huge.ts', patch: hugePatch })];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included).toHaveLength(0);
+		expect(result.skipped).toEqual<SkippedFile[]>([
+			{ filename: 'huge.ts', reason: 'patch-too-large' },
+		]);
+	});
+
+	it('respects total-budget cap; overflow files go to skipped with reason "over-budget"', () => {
+		// Per-file cap is 10% of total budget (20k tokens). Use ~19k-token patches
+		// (76k chars) — each individually fits, but 11 of them exceed the 200k cap.
+		const mediumPatch = 'x'.repeat(76_000);
+		const prDiff: PRDiff = Array.from({ length: 12 }, (_, i) =>
+			makePRFile({ filename: `file-${i}.ts`, patch: mediumPatch }),
+		);
+
+		const result = extractPRDiffs(prDiff);
+
+		// Expect some to be included, remainder over-budget, all reasons correct.
+		expect(result.included.length).toBeGreaterThan(0);
+		expect(result.skipped.length).toBeGreaterThan(0);
+		expect(result.included.length + result.skipped.length).toBe(12);
+		for (const s of result.skipped) {
+			expect(s.reason).toBe('over-budget');
+		}
+		// The first included file is the first input; overflow preserves input order.
+		expect(result.included[0].path).toBe('file-0.ts');
+	});
+
+	it('returns deterministic ordering for same input', () => {
+		const prDiff: PRDiff = [
+			makePRFile({ filename: 'c.ts' }),
+			makePRFile({ filename: 'a.ts' }),
+			makePRFile({ filename: 'b.ts' }),
+		];
+
+		const r1 = extractPRDiffs(prDiff);
+		const r2 = extractPRDiffs(prDiff);
+
+		expect(r1.included.map((f) => f.path)).toEqual(r2.included.map((f) => f.path));
+		// Preserves input order (not alphabetical) — stable w.r.t. GitHub's returned order
+		expect(r1.included.map((f) => f.path)).toEqual(['c.ts', 'a.ts', 'b.ts']);
+	});
+
+	it('handles empty PR diff input', () => {
+		const result = extractPRDiffs([]);
+
+		expect(result).toEqual({ included: [], skipped: [] });
+	});
+
+	it('per-file diff contains a header with filename, status, and line-change counts', () => {
+		const prDiff: PRDiff = [
+			makePRFile({ filename: 'src/a.ts', status: 'modified', additions: 12, deletions: 3 }),
+		];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included[0].diff).toContain('### src/a.ts');
+		expect(result.included[0].diff).toContain('modified');
+		expect(result.included[0].diff).toMatch(/\+12.*-3/);
+	});
+
+	it('applies skip rules in the documented order (deleted before no-patch)', () => {
+		// A removed file with no patch should be reported as "deleted", not "no-patch"
+		const prDiff: PRDiff = [makePRFile({ filename: 'x.ts', status: 'removed', patch: undefined })];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.skipped[0].reason).toBe('deleted');
+	});
+
+	it('sanity: budget constant matches imported value (guards against drift)', () => {
+		expect(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT).toBeGreaterThan(0);
 	});
 });

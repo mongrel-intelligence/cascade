@@ -44,6 +44,7 @@ describe('createInitialState', () => {
 		expect(state.jiraLabels).toEqual(INITIAL_JIRA_LABELS);
 		expect(state.jiraCostFieldId).toBe('');
 		expect(state.isEditing).toBe(false);
+		expect(state.previousProvider).toBeUndefined();
 	});
 });
 
@@ -60,7 +61,7 @@ describe('wizardReducer', () => {
 		return wizardReducer(state, action);
 	}
 
-	it('SET_PROVIDER resets to initial state with new provider', () => {
+	it('SET_PROVIDER (not editing) resets to initial state with new provider', () => {
 		const state = {
 			...initialState(),
 			trelloApiKey: 'my-api-key',
@@ -71,6 +72,57 @@ describe('wizardReducer', () => {
 		// Should have been reset
 		expect(next.trelloApiKey).toBe('');
 		expect(next.trelloBoardId).toBe('');
+		expect(next.isEditing).toBe(false);
+		expect(next.previousProvider).toBeUndefined();
+	});
+
+	it('SET_PROVIDER (editing) preserves isEditing + previousProvider and clears provider-specific fields', () => {
+		const state: WizardState = {
+			...initialState(),
+			provider: 'trello',
+			isEditing: true,
+			previousProvider: 'trello',
+			hasStoredCredentials: true,
+			trelloApiKey: 'key',
+			trelloToken: 'tok',
+			trelloBoardId: 'board-1',
+			trelloListMappings: { todo: 'list-1' },
+			trelloLabelMappings: { processing: 'label-1' },
+			trelloCostFieldId: 'cf-1',
+			verificationResult: { provider: 'trello', display: '@user' },
+			verifyError: null,
+		};
+		const next = dispatch(state, { type: 'SET_PROVIDER', provider: 'linear' });
+
+		// New provider is set, edit mode carries over
+		expect(next.provider).toBe('linear');
+		expect(next.isEditing).toBe(true);
+		expect(next.previousProvider).toBe('trello');
+
+		// Credentials + verification + hasStoredCredentials are cleared
+		expect(next.trelloApiKey).toBe('');
+		expect(next.trelloToken).toBe('');
+		expect(next.linearApiKey).toBe('');
+		expect(next.verificationResult).toBeNull();
+		expect(next.verifyError).toBeNull();
+		expect(next.hasStoredCredentials).toBe(false);
+
+		// Provider-specific fields cleared
+		expect(next.trelloBoardId).toBe('');
+		expect(next.trelloListMappings).toEqual({});
+		expect(next.trelloLabelMappings).toEqual({});
+		expect(next.trelloCostFieldId).toBe('');
+	});
+
+	it('SET_PROVIDER (editing) with no previousProvider set leaves previousProvider undefined', () => {
+		const state: WizardState = {
+			...initialState(),
+			provider: 'trello',
+			isEditing: true,
+		};
+		const next = dispatch(state, { type: 'SET_PROVIDER', provider: 'jira' });
+		expect(next.isEditing).toBe(true);
+		expect(next.previousProvider).toBeUndefined();
 	});
 
 	it('SET_TRELLO_API_KEY clears verification', () => {
@@ -276,6 +328,15 @@ describe('wizardReducer', () => {
 		expect(next.isEditing).toBe(true);
 		expect(next.provider).toBe('jira');
 		expect(next.jiraBaseUrl).toBe('https://example.atlassian.net');
+	});
+
+	it('INIT_EDIT records previousProvider matching the loaded provider', () => {
+		const state = initialState();
+		const next = dispatch(state, {
+			type: 'INIT_EDIT',
+			state: { provider: 'trello', trelloBoardId: 'board-1' },
+		});
+		expect(next.previousProvider).toBe('trello');
 	});
 
 	it('ADD_TRELLO_BOARD_LABEL appends a label to trelloBoardDetails.labels', () => {

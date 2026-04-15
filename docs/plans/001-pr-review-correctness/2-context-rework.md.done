@@ -6,7 +6,7 @@ plan_slug: context-rework
 level: plan
 parent_spec: docs/specs/001-pr-review-correctness.md
 depends_on: [1-checkout-and-pagination.md]
-status: wip
+status: done
 ---
 
 # 001/2: Context Pre-Fetch Rework — Compact Diffs & Skipped-File Contract
@@ -216,16 +216,19 @@ After this plan ships, the spec is fully delivered: external-fork PRs of any siz
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
-- [ ] AC #11
-- [ ] AC #12
-- [ ] AC #13
+- [x] AC #1 — `extractPRDiffs returns an included entry per file with a patch`
+- [x] AC #2 — `marks deleted files as skipped with reason "deleted"`
+- [x] AC #3 — `marks files without a patch as skipped with reason "no-patch"`
+- [x] AC #4 — `respects total-budget cap; overflow files go to skipped with reason "over-budget"`
+- [x] AC #5 — `injects compact diff context (not full files)` + `does NOT inject a SKIPPED FILES section when nothing is skipped`
+- [x] AC #6 — `logs PR context prepared with included, skipped, and skipReasons map`
+- [x] AC #7 — `review.yaml prompt contract` describe block (4 tests)
+- [x] AC #8 — `readPRFileContents`, `PRFileContents`, `REVIEW_FILE_CONTENT_TOKEN_LIMIT` removed; grep confirms no `src/` references
+- [x] AC #9 — TDD discipline; new tests for every behavior change
+- [x] AC #10 — `npm run build` passes
+- [x] AC #11 — `npm test` passes (7533 tests, 0 failures; +20 from plan 1's 7513)
+- [x] AC #12 — `npm run lint` and `npm run typecheck` clean (3 pre-existing complexity warnings in unrelated files)
+- [x] AC #13 — `CLAUDE.md` (Debugging Production Sessions), `CHANGELOG.md` (Unreleased entry), `docs/architecture/03-trigger-system.md` (prContext table row) updated
+
+**Plan-divergence notes from execution:**
+- Cross-agent impact handled inline: the SKIPPED FILES injection payload is self-documenting (lists files + reasons + fetch guidance), so the four other agents that consume `prContext` (respond-to-ci, respond-to-pr-comment, respond-to-review, resolve-conflicts) get the contract automatically without per-YAML prompt edits. Only `review.yaml` was updated explicitly per AC #7.

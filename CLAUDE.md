@@ -771,6 +771,14 @@ CASCADE integrates llmist's resilience features to ensure reliable operation dur
 
 ## Debugging Production Sessions
 
+### Review Agent — Context Shape
+
+The review agent receives a **compact per-file diff context** rather than full file contents. Each changed file appears as a `### <filename> (<status>, +N -M)` section followed by a unified diff hunk. The budget is `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` (200,000 tokens), with a per-file cap of 10% of that.
+
+Files that can't fit (deleted, binary, oversized patch, or budget exhausted) are surfaced via a separate `SKIPPED FILES` injection. The injection is self-documenting: it lists each filename + reason and instructs the agent to fetch on demand using `gh pr diff <PR_NUMBER> -- <path>`, `Read <path>`, or `Grep <pattern> <path>`.
+
+When debugging review-agent output that misses something, check the `PR context prepared` log entry for `included`/`skipped`/`skipReasons` to confirm whether the file was even visible to the agent.
+
 ### Manual Session Download
 
 Download session logs and card data from a Trello card for debugging:

@@ -24,12 +24,15 @@ import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import type { ContextInjection, LogWriter } from '../contracts/index.js';
 import {
+	countSkipsByReason,
+	extractPRDiffs,
 	formatPRComments,
 	formatPRDetails,
 	formatPRDiff,
+	formatPRDiffContext,
 	formatPRIssueComments,
 	formatPRReviews,
-	readPRFileContents,
+	formatSkippedFilesInjection,
 } from '../shared/prFormatting.js';
 import type { ContextFile } from '../utils/setup.js';
 
@@ -197,18 +200,34 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 
 	// Total changed files (now complete — `getPRDiff` paginates beyond the first 100).
 	params.logWriter('INFO', 'Total changed files in PR', { totalChangedFiles: prDiff.length });
-	const fileContents = await readPRFileContents(params.repoDir, prDiff);
-	params.logWriter('INFO', 'File contents loaded', {
-		included: fileContents.included.length,
-		skipped: fileContents.skipped.length,
+
+	// Compact per-file diffs (scales with PR size, not repo size). Files that
+	// don't fit the budget or can't be diffed are surfaced in a separate
+	// SKIPPED FILES injection so the agent can decide whether to fetch them.
+	const diffContext = extractPRDiffs(prDiff);
+	const skipReasons = countSkipsByReason(diffContext.skipped);
+	params.logWriter('INFO', 'PR context prepared', {
+		included: diffContext.included.length,
+		skipped: diffContext.skipped.length,
+		skipReasons,
 	});
 
-	for (const file of fileContents.included) {
+	injections.push({
+		toolName: 'GetPRDiffContext',
+		params: { comment: 'Pre-fetching compact per-file diffs for review', owner, repo, prNumber },
+		result: formatPRDiffContext(diffContext),
+		description: 'Pre-fetched PR diff context',
+	});
+
+	if (diffContext.skipped.length > 0) {
 		injections.push({
-			toolName: 'ReadFile',
-			params: { comment: `Pre-fetching ${file.path} for review`, filePath: file.path },
-			result: `path=${file.path}\n\n${file.content}`,
-			description: `Pre-fetched ${file.path}`,
+			toolName: 'SkippedFiles',
+			params: {
+				comment: 'PR files omitted from the compact context — fetch on demand if relevant',
+				prNumber,
+			},
+			result: formatSkippedFilesInjection(diffContext.skipped, prNumber),
+			description: 'Skipped files',
 		});
 	}
 

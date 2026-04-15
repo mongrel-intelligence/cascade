@@ -8,11 +8,19 @@ vi.mock('../../../src/agents/shared/prFormatting.js', () => ({
 	formatPRComments: vi.fn(() => 'formatted-pr-comments'),
 	formatPRReviews: vi.fn(() => 'formatted-pr-reviews'),
 	formatPRIssueComments: vi.fn(() => 'formatted-pr-issue-comments'),
-	readPRFileContents: vi.fn(() => Promise.resolve({ included: [], skipped: [] })),
+	formatPRDiffContext: vi.fn(() => 'formatted-diff-context'),
+	formatSkippedFilesInjection: vi.fn(() => ''),
+	countSkipsByReason: vi.fn(() => ({
+		deleted: 0,
+		'no-patch': 0,
+		'patch-too-large': 0,
+		'over-budget': 0,
+	})),
+	extractPRDiffs: vi.fn(() => ({ included: [], skipped: [] })),
 }));
 
 vi.mock('../../../src/config/reviewConfig.js', () => ({
-	REVIEW_FILE_CONTENT_TOKEN_LIMIT: 50000,
+	REVIEW_DIFF_CONTEXT_TOKEN_LIMIT: 200_000,
 	estimateTokens: vi.fn(() => 100),
 }));
 
@@ -158,7 +166,6 @@ import {
 	formatPRDiff,
 	formatPRIssueComments,
 	formatPRReviews,
-	readPRFileContents,
 } from '../../../src/agents/shared/prFormatting.js';
 import { readWorkItem, readWorkItemWithMedia } from '../../../src/gadgets/pm/core/readWorkItem.js';
 import { githubClient } from '../../../src/github/client.js';
@@ -708,7 +715,6 @@ describe('fetchReviewContext', () => {
 		mockGithub.getPR.mockResolvedValue({ headSha: 'sha123' } as never);
 		mockGithub.getPRDiff.mockResolvedValue([]);
 		mockGithub.getCheckSuiteStatus.mockResolvedValue({ checks: [] } as never);
-		vi.mocked(readPRFileContents).mockResolvedValue({ included: [], skipped: [] });
 	});
 
 	it('includes PR injections (Details, Diff, Checks)', async () => {
@@ -763,11 +769,7 @@ describe('fetchReviewContext', () => {
 		expect(mockReadWorkItemWithMedia).not.toHaveBeenCalled();
 	});
 
-	it('includes file content injections for included PR files', async () => {
-		vi.mocked(readPRFileContents).mockResolvedValue({
-			included: [{ path: 'src/index.ts', content: 'file content' }],
-			skipped: [],
-		});
+	it('includes a compact GetPRDiffContext injection', async () => {
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
 			triggerEvent: 'scm:check-suite-success',
@@ -779,13 +781,8 @@ describe('fetchReviewContext', () => {
 			params as Parameters<typeof profile.fetchContext>[0],
 		);
 
-		const fileInjections = injections.filter(
-			(i) =>
-				i.toolName === 'ReadFile' &&
-				typeof i.result === 'string' &&
-				i.result.includes('src/index.ts'),
-		);
-		expect(fileInjections).toHaveLength(1);
+		const diffContextInjections = injections.filter((i) => i.toolName === 'GetPRDiffContext');
+		expect(diffContextInjections).toHaveLength(1);
 	});
 
 	it('calls formatting functions', async () => {
@@ -808,7 +805,6 @@ describe('fetchCIContext', () => {
 		mockGithub.getPR.mockResolvedValue({ headSha: 'sha456' } as never);
 		mockGithub.getPRDiff.mockResolvedValue([]);
 		mockGithub.getCheckSuiteStatus.mockResolvedValue({ checks: [] } as never);
-		vi.mocked(readPRFileContents).mockResolvedValue({ included: [], skipped: [] });
 	});
 
 	it('includes PR injections, dirListing, contextFiles, and workItem', async () => {
@@ -861,7 +857,6 @@ describe('fetchPRCommentResponseContext', () => {
 		mockGithub.getPRReviewComments.mockResolvedValue([] as never);
 		mockGithub.getPRReviews.mockResolvedValue([] as never);
 		mockGithub.getPRIssueComments.mockResolvedValue([] as never);
-		vi.mocked(readPRFileContents).mockResolvedValue({ included: [], skipped: [] });
 	});
 
 	it('includes PR injections and 3 conversation injections', async () => {

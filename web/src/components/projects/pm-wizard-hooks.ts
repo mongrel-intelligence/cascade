@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
+import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
 import type {
 	LinearTeamDetails,
 	LinearTeamOption,
@@ -675,6 +676,16 @@ export function useSaveMutation(projectId: string, state: WizardState) {
 						{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
 					],
 				});
+			}
+
+			// If the user switched provider mid-edit, clean up the old provider's credentials.
+			if (state.previousProvider && state.previousProvider !== state.provider) {
+				const oldKeys = getCredentialRoles(state.previousProvider).map((r) => r.envVarKey);
+				await Promise.all(
+					oldKeys.map((envVarKey) =>
+						trpcClient.projects.credentials.delete.mutate({ projectId, envVarKey }),
+					),
+				);
 			}
 
 			return result;

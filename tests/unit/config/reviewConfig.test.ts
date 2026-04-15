@@ -2,21 +2,30 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	estimateTokens,
-	REVIEW_FILE_CONTENT_TOKEN_LIMIT,
+	REVIEW_DIFF_CONTEXT_TOKEN_LIMIT,
 } from '../../../src/config/reviewConfig.js';
 
 describe.concurrent('config/reviewConfig', () => {
-	describe('REVIEW_FILE_CONTENT_TOKEN_LIMIT', () => {
+	describe('REVIEW_DIFF_CONTEXT_TOKEN_LIMIT', () => {
 		it('is defined as a number', () => {
-			expect(typeof REVIEW_FILE_CONTENT_TOKEN_LIMIT).toBe('number');
-		});
-
-		it('is set to 25000 tokens', () => {
-			expect(REVIEW_FILE_CONTENT_TOKEN_LIMIT).toBe(25_000);
+			expect(typeof REVIEW_DIFF_CONTEXT_TOKEN_LIMIT).toBe('number');
 		});
 
 		it('is a positive value', () => {
-			expect(REVIEW_FILE_CONTENT_TOKEN_LIMIT).toBeGreaterThan(0);
+			expect(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT).toBeGreaterThan(0);
+		});
+
+		it('is sized for diff content (not full files) — at least 100k tokens', () => {
+			// Diffs are dense (only changed lines). Combined with claude-opus-4-6's
+			// 1M-token window, the budget should comfortably fit the median PR's
+			// full diff content without forcing skip-for-budget.
+			expect(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT).toBeGreaterThanOrEqual(100_000);
+		});
+
+		it('is not so large that it overwhelms the agent context (< 500k tokens)', () => {
+			// Soft sanity cap: reviews consume additional context (instructions,
+			// conversation history, PR metadata). Leave headroom in the 1M window.
+			expect(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT).toBeLessThan(500_000);
 		});
 	});
 
@@ -127,34 +136,17 @@ This is line 3`;
 
 			expect(longTokens).toBe(shortTokens * 10);
 		});
-
-		it('approximates typical file within limit', () => {
-			// A file with ~100k characters should be ~25k tokens
-			const largeFile = 'x'.repeat(100_000);
-			const tokens = estimateTokens(largeFile);
-
-			expect(tokens).toBe(25_000);
-			expect(tokens).toBe(REVIEW_FILE_CONTENT_TOKEN_LIMIT);
-		});
 	});
 
 	describe('integration', () => {
-		it('can use estimateTokens to check against limit', () => {
-			const smallFile = 'a'.repeat(50_000); // ~12.5k tokens
-			const largeFile = 'a'.repeat(150_000); // ~37.5k tokens
+		it('can use estimateTokens to check against the diff-context limit', () => {
+			// A 400k-char diff ≈ 100k tokens — should fit comfortably under the limit.
+			const mediumDiff = 'a'.repeat(400_000);
+			// A 2M-char diff ≈ 500k tokens — should exceed the 200k limit.
+			const hugeDiff = 'a'.repeat(2_000_000);
 
-			expect(estimateTokens(smallFile)).toBeLessThan(REVIEW_FILE_CONTENT_TOKEN_LIMIT);
-			expect(estimateTokens(largeFile)).toBeGreaterThan(REVIEW_FILE_CONTENT_TOKEN_LIMIT);
-		});
-
-		it('limit allows for reasonable amount of file content', () => {
-			// 25k tokens * 4 chars = 100k characters
-			// This is enough for ~3-5 medium TypeScript files
-			const estimatedChars = REVIEW_FILE_CONTENT_TOKEN_LIMIT * 4;
-
-			expect(estimatedChars).toBe(100_000);
-			expect(estimatedChars).toBeGreaterThan(50_000); // Minimum reasonable
-			expect(estimatedChars).toBeLessThan(200_000); // Maximum to avoid context overflow
+			expect(estimateTokens(mediumDiff)).toBeLessThan(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT);
+			expect(estimateTokens(hugeDiff)).toBeGreaterThan(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT);
 		});
 	});
 });

@@ -145,7 +145,7 @@ Each trigger in a YAML agent definition can declare a `contextPipeline` — an o
 | `contextFiles` | Read key project files (README, etc.) |
 | `workItem` | Fetch work item details from PM tool |
 | `prepopulateTodos` | Pre-populate todo list from work item checklists |
-| `prContext` | Fetch PR details, diff, reviews |
+| `prContext` | Fetch PR details, compact per-file diffs, CI checks; emit a `SKIPPED FILES` injection when files are omitted (over budget, deleted, binary) |
 | `prConversation` | Fetch PR comments and review threads |
 | `pipelineSnapshot` | Fetch CI pipeline status |
 | `alertingIssue` | Fetch Sentry issue and event details |
