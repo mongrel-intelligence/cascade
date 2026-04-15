@@ -57,15 +57,16 @@ After this plan ships, the specific PR #1092 hallucination class is substantiall
 
 ### 1. Type extensions
 
-**Tests first** (`tests/unit/types/agentInput.test.ts` — new file):
-- `AgentInput accepts prNumber, prBranch, prHeadSha as optional` — type-only test using `expectTypeOf` from vitest.
-- `SetupRepositoryOptions accepts prNumber and prHeadSha` — type-only test.
+**Divergence from initial draft**: `AgentInput.headSha` already exists in `src/types/index.ts` and is widely populated by trigger handlers from `payload.pull_request.head.sha`. We reuse it instead of introducing a redundant `prHeadSha` field. Inside the helper signature we name the parameter `prHeadSha` for clarity at call site, fed from `input.headSha`.
 
-**Implementation** (`src/types/index.ts`):
-- Extend `AgentInput` interface: add `prHeadSha?: string` alongside existing `prNumber?: number` and `prBranch?: string`. Keep `prBranch` for logging — no consumers should use it for checkout.
+**Tests first** (extend `tests/unit/agents/shared/repository.test.ts`):
+- `SetupRepositoryOptions accepts prNumber and prHeadSha` — type-only test using `expectTypeOf` from vitest.
 
 **Implementation** (`src/agents/shared/repository.ts`):
 - Extend `SetupRepositoryOptions` interface: add `prNumber?: number` and `prHeadSha?: string`.
+
+**Implementation** (`src/types/index.ts`):
+- Update the comment on `headSha` from "PR context fields for check-failure flow" to "PR's head SHA at trigger time — used for check-failure flow AND for post-checkout HEAD verification". No structural change.
 
 ### 2. Helper: `fetchAndCheckoutPR`
 
@@ -117,21 +118,23 @@ After this plan ships, the specific PR #1092 hallucination class is substantiall
 ### 5. Plumb `prNumber` + `prHeadSha` through `setupRepository` callers
 
 **Tests first** (extend `tests/unit/backends/adapter.test.ts` if it exists, else create):
-- `executeWithEngine forwards prNumber and prHeadSha from input to setupRepository` — mock `setupRepository`; verify call args include both fields.
+- `executeWithEngine forwards prNumber and headSha from input to setupRepository as prHeadSha` — mock `setupRepository`; verify call args include `prNumber: input.prNumber` and `prHeadSha: input.headSha`.
 
 **Implementation** (`src/backends/adapter.ts:27-33`):
-- Update the `setupRepository({ ... })` call to forward `prNumber: input.prNumber` and `prHeadSha: input.prHeadSha`.
+- Update the `setupRepository({ ... })` call to forward `prNumber: input.prNumber` and `prHeadSha: input.headSha`.
 
-### 6. Populate `prHeadSha` on `AgentInput` at trigger sites
+### 6. Verify `headSha` is populated on `AgentInput` at every PR trigger site
+
+**Divergence from initial draft**: since we reuse `headSha` (already populated by most PR triggers), this task narrows to a verification + gap-fill exercise rather than a wholesale field addition.
 
 **Tests first** (extend per-trigger test files in `tests/unit/triggers/github/`):
-- For each trigger handler that constructs `AgentInput` with a `prNumber`: verify it also includes `prHeadSha`, sourced from the webhook payload's `pull_request.head.sha` (or equivalent).
-- Add one test per affected trigger: `mr-opened.test.ts` equivalents under `tests/unit/triggers/github/` (e.g., `pr-opened.test.ts`, `check-suite-success.test.ts`, etc.).
+- For each PR-related trigger handler that constructs an `AgentInput`-shaped result: assert the test asserts `result.agentInput.headSha === payload.pull_request.head.sha` (or equivalent webhook field).
+- Add a test only where the assertion is missing today.
 
 **Implementation**:
-- `grep -rn "prNumber:" src/triggers/` — for every site that sets `prNumber` on an `AgentInput`-shaped object, add `prHeadSha: <webhook payload field>`.
-- The webhook payload exposes `pull_request.head.sha`. Trigger handlers already have access to the parsed payload — surface the SHA.
-- Affected files (preliminary; verify via grep during implementation): `src/triggers/github/check-suite-success.ts`, `src/triggers/github/pr-opened.ts`, `src/triggers/github/pr-review-submitted.ts`, `src/triggers/github/review-requested.ts`, `src/triggers/github/pr-comment-mention.ts`, `src/triggers/github/check-suite-failure.ts`, plus any GitLab equivalents under `src/triggers/gitlab/` if PR #1092 has merged by then.
+- `grep -rn "prNumber:" src/triggers/` — for every site that sets `prNumber` on an `AgentInput`-shaped object, confirm `headSha` is also set (sourced from the webhook payload's `pull_request.head.sha`, `check_suite.head_sha`, or equivalent).
+- Add `headSha` where missing.
+- Preliminary list (verify via grep during implementation): `src/triggers/github/check-suite-success.ts`, `src/triggers/github/pr-opened.ts`, `src/triggers/github/pr-review-submitted.ts`, `src/triggers/github/review-requested.ts`, `src/triggers/github/pr-comment-mention.ts`, `src/triggers/github/check-suite-failure.ts`.
 
 ### 7. Pagination of all paginated GitHub client endpoints
 
