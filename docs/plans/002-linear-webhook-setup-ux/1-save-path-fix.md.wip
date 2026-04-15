@@ -1,0 +1,215 @@
+---
+id: 002
+slug: linear-webhook-setup-ux
+plan: 1
+plan_slug: save-path-fix
+level: plan
+parent_spec: docs/specs/002-linear-webhook-setup-ux.md
+depends_on: []
+status: wip
+---
+
+# 002/1: Linear Wizard Save — Unblock, Diagnose, Harden
+
+> Part 1 of 2 in the 002-linear-webhook-setup-ux plan. See [parent spec](../../specs/002-linear-webhook-setup-ux.md).
+
+## Summary
+
+Plan 1 fixes the `POST /trpc/projects.integrations.upsert` 500 that currently prevents anyone from completing the Linear wizard on the dev environment, and hardens the tRPC / Hono error path so the next failure of this shape is **immediately diagnosable from server logs** instead of invisible behind a generic "Internal Server Error".
+
+The work has three phases in order:
+
+1. **Surface** — change the dashboard server error path (`app.onError` in `src/dashboard.ts`) and the tRPC error formatter so that when a `.mutation(...)` throws a DB error, the server log contains the real message (and, for PG errors, the constraint / detail fields), not just `String(err)`. This must land before step 2 — otherwise we are guessing.
+2. **Diagnose** — once step 1 is deployed to dev, provoke the failing upsert for project `llmist` via the dashboard (or the `ssh satellite` curl path) and read the actual error from dev container logs. This is a short root-cause spike, not a re-architecture.
+3. **Fix** — write the failing test that reproduces the error observed in step 2 against a real PG integration test fixture, then write the code fix in `src/db/repositories/integrationsRepository.ts` (or wherever the surfaced error points) that makes the test pass.
+
+Plan 1 ships **no user-visible UI change**. Its value is: the Linear wizard's Save button stops returning 500 on the dev environment, and any future server-side failure along the credential/integration save path has an actionable log line. Plan 2 (wizard UX) depends on this so it can be verified end-to-end in a browser.
+
+**Components delivered:**
+- Updated Hono `app.onError` handler in `src/dashboard.ts` with structured error logging (message + stack + PG `code`/`detail`/`constraint` when present).
+- Updated tRPC instance in `src/api/trpc.ts` with an `errorFormatter` that preserves server-side diagnostic fields in the server log while returning only a safe message to the client.
+- Whatever specific fix the diagnosis uncovers in `src/db/repositories/integrationsRepository.ts` or `src/api/routers/projects.ts` (exact shape finalized in step 2).
+- Log-hygiene assertion: a test that exercises the upsert and credential-save path and asserts plaintext credentials never land in logs.
+
+**Deferred to later plans in this spec:**
+- All wizard UX changes (events list copy, inline `ProjectSecretField`, step composition) — plan 2.
+- End-to-end browser walk-through of the full wizard flow — plan 2 owns the integration test for that.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #5 (Save succeeds end-to-end on a fresh project) — **full**
+- Spec AC #6 (Save succeeds on re-configuration) — **full**
+- Spec AC #7 (Save failures diagnosable via server log) — **full**
+- Spec AC #8 (No secret leakage in plaintext logs) — **full**
+
+---
+
+## Depends On
+
+- Nothing — plan 1 is the foundation layer.
+
+Context to lift from the spec (do not re-argue):
+- Signing secret stays **optional**; verification behavior is unchanged (Strategic decision #3).
+- No schema change (Constraint: "No breaking change to project credentials, DB schema, or configuration surface.").
+- Root cause is unknown until step 2; do not pre-commit to a guess (Strategic decision #5: "Diagnosability is a first-class outcome.").
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Surface: structured error logging in the tRPC + Hono pipeline
+
+**Tests first** (`tests/unit/api/error-logging.test.ts` — new file):
+
+- `logs full message + stack for thrown Error in mutation` — stub a procedure that throws `new Error('boom')`, assert the `console.error` spy receives an object containing `message: 'boom'` and a `stack` string.
+- `logs PG error code + detail + constraint when Drizzle wraps a pg error` — stub a procedure that throws an object shaped like a PG error (`{ code: '23505', detail: 'Key (x)=(y) already exists.', constraint: 'c', message: '...' }`), assert those fields are present in the logged payload.
+- `does not log credential values when the error references them` — stub a procedure that throws `new Error('failed saving LINEAR_WEBHOOK_SECRET=lin_wh_plaintext')`, assert the `console.error` spy's serialized output never contains `lin_wh_plaintext`. (Implementation: redact known credential-value-shaped fragments, OR — simpler and adequate — never include the raw `stack`/`message` when they contain the env-var value; rely on the stored-credential pipeline not interpolating secrets into errors in the first place, and make this test a tripwire if it ever starts doing so.)
+- `returns a safe client payload when a server error occurs` — assert the tRPC response body for a thrown non-TRPCError contains a generic message (not the raw error) while the log still has the full error.
+
+**Implementation** (`src/dashboard.ts` + `src/api/trpc.ts`):
+
+- In `src/dashboard.ts`, replace the `app.onError((err, c) => { console.error('Unhandled error', { error: String(err), path: c.req.path }); ... })` block. New shape:
+  - Build a `payload` object: `{ path: c.req.path, method: c.req.method, message: err.message, name: err.name, stack: err.stack }`.
+  - If `err` (or `err.cause`) has PG-error-shaped fields (`code: string`, `detail?: string`, `constraint?: string`, `table?: string`, `column?: string`), copy them onto the payload.
+  - Call `console.error('Unhandled error', payload)`.
+  - Continue calling `captureException` as before.
+- In `src/api/trpc.ts`, change `initTRPC.context<TRPCContext>().create()` to pass an `errorFormatter({ shape, error })` callback:
+  - Shape returned to client: unchanged structure; `message` replaced with a generic `'Internal server error'` when `error.code === 'INTERNAL_SERVER_ERROR'` and the cause is not a `TRPCError`. For other tRPC codes (`UNAUTHORIZED`, `NOT_FOUND`, etc.), pass through the original message.
+  - Server-side: `console.error('tRPC error', { code: shape.code, path: shape.data.path, message: error.message, cause: error.cause, stack: error.stack })`. The `cause` unpacking covers Drizzle wrapping a `pg` error — inspect it for the same PG fields as above and include them explicitly.
+- Typescript: define a `PgErrorFields` shape and a narrow `isPgLikeError(e: unknown): e is PgErrorFields` helper co-located in `src/api/trpc.ts` (not exported). No external types.
+
+### 2. Diagnose: root-cause spike
+
+**This step is not a test or code change — it is a procedural step.** Execute in order:
+
+1. Ensure step 1 is merged to `dev` and the `cascade-dashboard-dev` container is rebuilt and serving the new error path.
+2. From a browser signed into the dev dashboard as the org `mongrel`, open project `llmist`, run the PM wizard for Linear through to the Save step, and click "Update Integration".
+3. Capture the server log on `satellite`:
+   ```
+   ssh satellite "docker logs cascade-dashboard-dev --since 2m 2>&1" | grep -A 5 -i 'tRPC error\|Unhandled error'
+   ```
+4. Record the specific error: constraint name, PG code, message, and any referenced column / value. Paste into the plan's "Diagnosis" sub-section below.
+5. If the error is a PG constraint violation, cross-reference `src/db/schema/integrations.ts` for the relevant column or constraint. If it is a Zod input validation error surfaced as 500, cross-reference `src/api/routers/projects.ts`'s `upsert` input schema.
+6. Do not guess. Do not patch without a named error. Exit this step with a one-line statement of the root cause.
+
+**Diagnosis** (fill in after running the spike):
+
+> _(populated during /implement; left blank at plan authoring time)_
+
+Pre-commit guidance for `/implement`: the most likely culprits, ranked, are —
+1. FK violation on `project_id` (project `llmist` may not exist in `projects` table under org `mongrel`).
+2. JSON schema mismatch on `triggers` (column constraint expects specific shape; `{}` is passed).
+3. Zod parsing of `config` rejects something the frontend sends for Linear (e.g. `statuses` nested shape).
+4. Missing migration on dev (new column expected but not yet applied).
+
+The spike resolves which one.
+
+### 3. Fix
+
+**Tests first** (`tests/integration/db/upsertProjectIntegration.test.ts` — new file OR augment an existing one):
+
+Shape depends on root cause. Template:
+
+- `upserts a new Linear PM integration for an existing project` — create a project row, call `upsertProjectIntegration(projectId, 'pm', 'linear', { teamId, statuses, labels })` with no `triggers`, assert a row exists with the right fields and `triggers` defaults to `{}`.
+- `upserts on top of an existing row, preserving triggers when omitted` — seed an integration with `triggers: { foo: true }`, call upsert without triggers, assert `triggers` is still `{ foo: true }`.
+- `upserts on top of an existing row, overwriting triggers when provided` — same seed, call upsert with `triggers: { bar: false }`, assert the row now has `triggers: { bar: false }`.
+- `<the specific reproduction test for the diagnosed bug>` — seeded state that previously triggered the 500 now succeeds. Exact shape pending diagnosis.
+
+**Implementation** (path pending diagnosis, most likely one of):
+
+- `src/db/repositories/integrationsRepository.ts` — adjust `upsertProjectIntegration` if the root cause is data-shape related.
+- `src/api/routers/projects.ts` — adjust the `upsert` input schema if the root cause is overly-strict Zod validation.
+- `src/db/migrations/NNNN_*.sql` + `_journal.json` — add a missing migration if the root cause is schema drift. (Per spec non-goal #6, avoid schema redesign; a conservative forward-only migration to reconcile dev is acceptable.)
+- `web/src/components/projects/pm-wizard-hooks.ts` — adjust the payload the wizard sends if the root cause is a bad shape on the client side.
+
+The fix must:
+- Not introduce a "silently retry with default on error" path. Failure modes should remain loud — just diagnosable.
+- Not broaden the Zod schema to accept inputs that should not be accepted.
+- Not change the `triggers` column type, default, or semantics (spec non-goal).
+
+### 4. Log-hygiene assertion
+
+**Tests first** (`tests/integration/api/no-secret-leakage.test.ts` — new file):
+
+- `credential save path does not log plaintext value` — call `projects.credentials.set` with `envVarKey: 'LINEAR_WEBHOOK_SECRET'` and a sentinel value `'SECRET_SENTINEL_xyz'`; spy on `console.error` and `console.log` during the call; assert neither captured output contains the sentinel.
+- `integration upsert path does not log config contents when successful` — success path should not log the `config` blob at info level. (Debug level logging of config is fine if it's behind an env flag; default should be quiet.)
+- `integration upsert failure path does not leak credential env values` — force a failure (e.g. FK violation), assert the resulting error log payload does not include any known credential env-var value previously set on the project.
+
+**Implementation:**
+
+- No new code unless the tests above fail. If they pass against the step 1 implementation, this is purely an assertion that the new logging path does not regress secrecy. If they fail, redact the offending field in the `app.onError` payload builder.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/api/error-logging.test.ts`: 4 tests covering structured error output (Error, PG-shaped, secret redaction, safe client payload).
+
+### Integration tests
+- [ ] `tests/integration/db/upsertProjectIntegration.test.ts`: 3–4 tests covering new + re-configuration upsert paths and the specific reproduction of the diagnosed bug.
+- [ ] `tests/integration/api/no-secret-leakage.test.ts`: 3 tests covering credential-save, successful-upsert, and failing-upsert log hygiene.
+
+### Acceptance tests
+- [ ] Manual on `dev`: complete the Linear wizard Save step on project `llmist`, confirm HTTP 200 and an integration row in `project_integrations`.
+- [ ] Manual on `dev`: provoke a failure (e.g. temporarily hit upsert with a bogus `projectId`), read `docker logs cascade-dashboard-dev`, confirm the PG / tRPC error details are present.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. Running the Linear wizard to Save on a fresh project returns HTTP 200 and persists a `project_integrations` row with `provider='linear'` and `category='pm'`.
+2. Re-running the Linear wizard on a project that already has a Linear PM integration row succeeds and updates the row (same 200 outcome).
+3. When `projects.integrations.upsert` throws a server-side error, the dashboard server log (stdout of `cascade-dashboard-dev`) contains, in a single structured entry: the request path, the error message, and — when the cause is a PG error — its `code`, `detail`, and `constraint` fields.
+4. When a credential is saved via `projects.credentials.set`, no captured stdout/stderr contains the plaintext value. Verified by a spy-based integration test.
+5. A forced failure of the upsert (bogus `projectId`) produces a server log line with the true DB error (FK violation) and does not produce an entry that reveals any stored credential value for that project.
+6. The client receives a safe, non-leaking error payload — generic `'Internal server error'` for unexpected throws, passed-through message for deliberate `TRPCError` codes.
+7. All new/modified code has corresponding tests.
+8. `npm run build` passes.
+9. `npm test` and `npm run test:integration` pass.
+10. `npm run lint` passes.
+11. `npm run typecheck` passes.
+
+**Partial-state criterion** (dormant UI):
+- No wizard UX changes are shipped in this plan. The Webhooks step still shows the old "Issues (created, updated, removed)" instructions and still directs users to the Credentials tab for `LINEAR_WEBHOOK_SECRET`. Plan 2 replaces those.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | Add a short bullet under the existing "Review agent — context shape" / "Engines" style list: note that unhandled dashboard errors now log full PG fields when available, and that the generic 500 response is accompanied by a structured server log entry operators can grep. |
+| `CHANGELOG.md` | Entry: "fix(dashboard): surface full DB error details in logs for tRPC mutations; unblock Linear wizard Save on dev". |
+
+Not touched in this plan (owned by plan 2):
+- `src/integrations/README.md` — Linear setup instructions.
+
+---
+
+## Out of Scope (this plan)
+
+- Wizard UX copy changes, the new `ProjectSecretField` in the Webhooks step, the events-list rewrite. Plan 2 owns these.
+- New Linear trigger handlers (Reaction / Document / etc.) — spec non-goal.
+- Redesigning the `project_integrations.triggers` column type, default, or semantics — spec non-goal.
+- Automating Linear webhook creation — spec non-goal.
+- Observability beyond `console.error` + existing Sentry capture (no new telemetry pipeline) — spec constraint.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 — Save succeeds, fresh project
+- [ ] AC #2 — Save succeeds, re-configuration
+- [ ] AC #3 — Structured DB error in server log
+- [ ] AC #4 — No plaintext credentials in logs (happy path)
+- [ ] AC #5 — No plaintext credentials in logs (error path)
+- [ ] AC #6 — Safe client error payload
+- [ ] AC #7 — Tests exist for all new/modified code
+- [ ] AC #8 — Build passes
+- [ ] AC #9 — Unit + integration tests pass
+- [ ] AC #10 — Lint passes
+- [ ] AC #11 — Typecheck passes
