@@ -5,11 +5,18 @@ import { defineConfig } from 'vitest/config';
 const isCI = process.env.CI === 'true' || process.env.CI === '1';
 
 const resolve = {
-	alias: {
-		'@': path.resolve(__dirname, './src'),
-		react: path.resolve(__dirname, 'node_modules/react'),
-		'react-dom': path.resolve(__dirname, 'node_modules/react-dom'),
-	},
+	// Order matters: web-side prefixes must come before the catch-all `@`.
+	alias: [
+		{
+			find: /^@\/components\/(.*)/,
+			replacement: path.resolve(__dirname, './web/src/components/$1'),
+		},
+		{ find: /^@\/lib\/(.*)/, replacement: path.resolve(__dirname, './web/src/lib/$1') },
+		{ find: /^@\/hooks\/(.*)/, replacement: path.resolve(__dirname, './web/src/hooks/$1') },
+		{ find: '@', replacement: path.resolve(__dirname, './src') },
+		{ find: 'react', replacement: path.resolve(__dirname, 'node_modules/react') },
+		{ find: 'react-dom', replacement: path.resolve(__dirname, 'node_modules/react-dom') },
+	],
 };
 
 // Shared settings inherited by every unit project

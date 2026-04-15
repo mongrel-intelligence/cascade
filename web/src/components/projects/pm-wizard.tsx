@@ -161,6 +161,10 @@ export function PMWizard({
 	const { webhookUrl: linearWebhookUrl } = useLinearWebhookInfo();
 	const { saveMutation } = useSaveMutation(projectId, state);
 
+	const linearWebhookSecretCredential = credentialsQuery.data?.find(
+		(c) => c.envVarKey === 'LINEAR_WEBHOOK_SECRET',
+	);
+
 	// ---- Label creation handlers ----
 
 	const handleCreateLabel = (slot: string) => {
@@ -383,6 +387,8 @@ export function PMWizard({
 					webhooksQuery={webhooksQuery}
 					activeWebhooks={activeWebhooks}
 					linearWebhookUrl={linearWebhookUrl}
+					projectId={projectId}
+					linearWebhookSecretCredential={linearWebhookSecretCredential}
 					{...webhookManagement}
 				/>
 			</WizardStep>

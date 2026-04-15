@@ -4,6 +4,10 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ## Unreleased
 
+### Added
+
+- **Linear wizard — inline webhook signing-secret field and accurate events list.** The Webhooks step of the Linear PM wizard now renders a `ProjectSecretField` bound to `LINEAR_WEBHOOK_SECRET` directly beneath the webhook URL, so operators can paste Linear's signing secret in place instead of navigating to the Credentials tab. The "Enable events" instructions now list the three event families CASCADE actually consumes — `Issues` (status transitions), `Comments` (bot @mentions), and `Issue Labels` ("Ready to Process") — each with a one-line rationale tracing back to the registered trigger handlers. (Spec [002](docs/specs/002-linear-webhook-setup-ux.md), plan [2/2](docs/plans/002-linear-webhook-setup-ux/2-wizard-webhooks-step.md).)
+
 ### Changed
 
 - **Review-agent context shape: compact diffs instead of full files.** The review agent's pre-fetched PR context now consists of compact per-file diffs (using GitHub's `file.patch`) rather than full file contents. Files that can't fit the budget — deleted, binary, oversized patch, or cumulative budget exhausted — are surfaced in a structured `SKIPPED FILES` injection that names each file with a reason and tells the agent how to fetch it on demand (`gh pr diff`, `Read`, `Grep`). This scales with PR size rather than repo size, mitigates LLM context rot, and ensures the agent is aware of (rather than blind to) the omissions. The context budget is `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` (200k tokens), replacing the prior 25k full-file cap. The `SKIPPED FILES` injection is also delivered to the four other agents that share the PR context pipeline (`respond-to-ci`, `respond-to-pr-comment`, `respond-to-review`, `resolve-conflicts`); explicit prompt guidance is added in `review.yaml` only. (Spec [001](docs/specs/001-pr-review-correctness.md), plan [2/2](docs/plans/001-pr-review-correctness/2-context-rework.md.done).)

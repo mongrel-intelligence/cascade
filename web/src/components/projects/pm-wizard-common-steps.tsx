@@ -18,6 +18,7 @@ import {
 import { useState } from 'react';
 import { Label } from '@/components/ui/label.js';
 import type { WizardState } from './pm-wizard-state.js';
+import { type ProjectCredentialMeta, ProjectSecretField } from './project-secret-field.js';
 
 // ============================================================================
 // WebhookStep
@@ -65,7 +66,15 @@ function CopyButton({ text }: { text: string }) {
 // LinearWebhookInfoPanel
 // ============================================================================
 
-export function LinearWebhookInfoPanel({ webhookUrl }: { webhookUrl: string }) {
+export function LinearWebhookInfoPanel({
+	webhookUrl,
+	projectId,
+	webhookSecretCredential,
+}: {
+	webhookUrl: string;
+	projectId: string;
+	webhookSecretCredential?: ProjectCredentialMeta;
+}) {
 	return (
 		<div className="space-y-4">
 			<div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 dark:border-blue-900/50 dark:bg-blue-900/20">
@@ -91,6 +100,15 @@ export function LinearWebhookInfoPanel({ webhookUrl }: { webhookUrl: string }) {
 				</div>
 			</div>
 
+			<ProjectSecretField
+				projectId={projectId}
+				envVarKey="LINEAR_WEBHOOK_SECRET"
+				label="Webhook Signing Secret (optional)"
+				description="Paste the signing secret from your Linear webhook. CASCADE verifies HMAC-SHA256 on every incoming Linear webhook request when this is set; verification is skipped if left blank."
+				placeholder="lin_wh_..."
+				credential={webhookSecretCredential}
+			/>
+
 			<div className="space-y-2">
 				<p className="text-xs text-muted-foreground font-medium">Setup instructions:</p>
 				<ol className="list-decimal list-inside space-y-1 text-xs text-muted-foreground pl-1">
@@ -108,13 +126,25 @@ export function LinearWebhookInfoPanel({ webhookUrl }: { webhookUrl: string }) {
 					</li>
 					<li>Click &quot;New webhook&quot; and enter the URL above</li>
 					<li>
-						Enable events: <strong>Issues</strong> (created, updated, removed)
+						Enable these events (each maps to a CASCADE trigger handler):
+						<ul className="list-disc list-inside ml-4 mt-1 space-y-0.5">
+							<li>
+								<strong>Issues</strong> — status transitions drive CASCADE&apos;s splitting,
+								planning, and implementation agents
+							</li>
+							<li>
+								<strong>Comments</strong> — @mentions of the CASCADE bot trigger a response agent
+							</li>
+							<li>
+								<strong>Issue Labels</strong> — adding the &quot;Ready to Process&quot; label starts
+								an agent on the issue
+							</li>
+						</ul>
 					</li>
 					<li>Select your team and save — webhooks are team-scoped in Linear</li>
 					<li>
-						Optionally set a webhook secret and store it as{' '}
-						<code className="bg-muted-foreground/20 px-1 rounded">LINEAR_WEBHOOK_SECRET</code> in
-						project credentials
+						If you set a signing secret in Linear, paste it into the field above so CASCADE can
+						verify webhook authenticity
 					</li>
 				</ol>
 			</div>
@@ -134,6 +164,8 @@ export function WebhookStep({
 	createWebhookMutation,
 	deleteWebhookMutation,
 	linearWebhookUrl,
+	projectId,
+	linearWebhookSecretCredential,
 }: {
 	state: WizardState;
 	webhooksQuery: WebhooksQueryProps;
@@ -142,12 +174,16 @@ export function WebhookStep({
 	createWebhookMutation: UseMutationResult<unknown, Error, void, unknown>;
 	deleteWebhookMutation: UseMutationResult<unknown, Error, string, unknown>;
 	linearWebhookUrl?: string;
+	projectId: string;
+	linearWebhookSecretCredential?: ProjectCredentialMeta;
 }) {
 	// Linear uses a display-only panel — no create/delete buttons
 	if (state.provider === 'linear') {
 		return (
 			<LinearWebhookInfoPanel
 				webhookUrl={linearWebhookUrl ?? `${callbackBaseUrl}/linear/webhook`}
+				projectId={projectId}
+				webhookSecretCredential={linearWebhookSecretCredential}
 			/>
 		);
 	}

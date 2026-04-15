@@ -459,5 +459,9 @@ Before submitting a new integration:
 | `trello` | pm | `src/pm/trello/integration.ts` | `src/router/adapters/trello.ts` | `src/triggers/trello/` |
 | `jira` | pm | `src/pm/jira/integration.ts` | `src/router/adapters/jira.ts` | `src/triggers/jira/` |
 | `linear` | pm | `src/pm/linear/integration.ts` | `src/router/adapters/linear.ts` | `src/triggers/linear/` |
+
+### Linear — operator setup
+
+Linear webhooks are configured **manually in Linear** (CASCADE cannot create them programmatically). The authoritative setup instructions — including the three event families CASCADE consumes (**Issues**, **Comments**, **Issue Labels**) and the inline signing-secret input — live in the dashboard PM wizard at `web/src/components/projects/pm-wizard-common-steps.tsx` (`LinearWebhookInfoPanel`). Any changes to the trigger handlers in `src/triggers/linear/` should be reflected there.
 | `github` | scm | `src/github/scm-integration.ts` | `src/router/adapters/github.ts` | `src/triggers/github/` |
 | `sentry` | alerting | `src/sentry/alerting-integration.ts` | `src/router/adapters/sentry.ts` | `src/triggers/sentry/` |
