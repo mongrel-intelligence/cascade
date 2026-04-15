@@ -6,7 +6,7 @@ plan_slug: status-parity
 level: plan
 parent_spec: docs/specs/003-linear-status-mapping-parity.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 003/1: Linear + JIRA Status Mapping Parity — Full Stage Vocabulary End-to-End
