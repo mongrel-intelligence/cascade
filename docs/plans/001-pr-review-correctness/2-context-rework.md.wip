@@ -6,7 +6,7 @@ plan_slug: context-rework
 level: plan
 parent_spec: docs/specs/001-pr-review-correctness.md
 depends_on: [1-checkout-and-pagination.md]
-status: pending
+status: wip
 ---
 
 # 001/2: Context Pre-Fetch Rework — Compact Diffs & Skipped-File Contract
