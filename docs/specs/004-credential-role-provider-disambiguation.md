@@ -1,0 +1,153 @@
+---
+id: 004
+slug: credential-role-provider-disambiguation
+level: spec
+title: Credential Role Resolution — Disambiguate by Provider, Not Just Category
+created: 2026-04-15
+status: draft
+---
+
+# 004: Credential Role Resolution — Disambiguate by Provider, Not Just Category
+
+## Problem & Motivation
+
+Opening or refreshing the Linear PM wizard on a project that already has `LINEAR_API_KEY` stored in `project_credentials` falsely reports *"Linear credentials not configured"* and forces the operator to re-paste the API key before they can advance past the Board / Project Selection step. The stored credential works fine for the worker at runtime; the dashboard's discovery flow just can't find it.
+
+Root-cause analysis traces to `roleToEnvVarKey(category, role)` in the credentials provider: when multiple PM providers in the same category declare the same role name, the helper iterates through registered providers and returns the **first** match. Both Trello and Linear declare `api_key` in the `pm` category; depending on registration order, `roleToEnvVarKey('pm', 'api_key')` can return `TRELLO_API_KEY` on a Linear-only project. The discovery endpoint then asks the credential resolver for `TRELLO_API_KEY`, gets `null`, and throws the misleading `"Linear credentials not configured"` `TRPCError`. The same ambiguity is latent for `webhook_secret` — Linear and JIRA both declare that role, so any future operator configuring both providers against one org hits the same shape of bug.
+
+The fix is to make role resolution unambiguous: `roleToEnvVarKey` and every function that currently funnels through it must know the **provider** in addition to the category. For dashboard endpoints that only have a `projectId`, the provider is already recorded in `project_integrations` — the endpoints look up the stored provider for the `(projectId, category)` pair before resolving the credential. The fix is small, surgical, and one-shot: no new schema, no new user-visible surface, no migration.
+
+---
+
+## Goals
+
+1. An operator with `LINEAR_API_KEY` stored on a project can open or refresh the Linear wizard and see the discovery step populate without needing to re-type the API key.
+2. An operator with `TRELLO_API_KEY` stored on a project sees the Trello wizard's discovery step populate on reopen without re-typing — same path, same contract.
+3. The root helper (`roleToEnvVarKey`) and its callers resolve credentials unambiguously by `(category, provider, role)` — never by `(category, role)` alone.
+4. Attempting discovery on a project that has no PM integration row yet fails with a clear, distinguishable message (not conflated with "credentials not configured").
+5. The latent `webhook_secret` ambiguity between Linear and JIRA is fixed in the same change — no separate spec needed later.
+6. Behavior change for the runtime router path is bounded and correcting, not regressive. Specifically: `resolveWebhookSecret('linear')` in the router currently resolves via the same broken helper and silently returns the JIRA webhook secret (or null on Linear-only projects), which causes Linear webhook signature verification to be skipped in production. The same fix that unblocks the dashboard also corrects this — Linear webhook verification starts using the operator's configured `LINEAR_WEBHOOK_SECRET`. Zero behavior change for callers that were already provider-aware (passing the provider's unique role names like `implementer_token`, `email`, `api_token`), and zero behavior change for the worker's flat env-var-map builder (which iterates by env-var key directly and never hits the helper).
+
+---
+
+## Non-goals
+
+- Changes to the credential storage schema (`project_credentials` table, encryption scheme, env-var-key naming).
+- Changes to the credential role **definitions** (the role names, env-var keys, or optionality flags that each provider registers) — those stay as-is.
+- Changes to any wizard UI, any trigger handler, any agent dispatch logic.
+- Changes to the runtime (worker) credential resolver path — it already resolves by env-var key directly and has no ambiguity.
+- Restructuring the relationship between provider / category / role (e.g. merging the concepts, introducing a new lookup table). The existing split is fine; the bug is just a missing disambiguator on one function.
+- Adding new PM providers or roles.
+- Retroactive migration of existing stored credentials or `project_integrations` rows — no data touch required.
+- UX changes to surface "no integration configured yet" differently on the frontend beyond what the new error message shape enables.
+
+---
+
+## Constraints
+
+- **TDD-first.** Each behavior change is preceded by a failing unit test demonstrating the ambiguity, then the fix makes it pass.
+- **No hacks.** The fix removes the ambiguity at the helper, not just at one endpoint. Short-circuit workarounds in individual endpoints are explicitly rejected as Strategic decision #1 below.
+- **Backward-compatible call sites.** Any caller of `getIntegrationCredential` / `getIntegrationCredentialOrNull` that today passes only `(projectId, category, role)` must continue to compile. The new provider parameter is either required with a deprecation of the old signature, or added as an additional required argument with every caller updated in the same commit — whichever is cleaner. (Plan decides; both satisfy the AC.)
+- **No behavior regression in other credential paths.** The worker's flat-env-var-map builder and the org-scoped credential helper resolve by env-var key directly and are not touched.
+- **Observable.** When the new NOT_FOUND path fires on a projectless integration, the server log contains enough to diagnose (plan 002's structured error logging surfaces this automatically; no additional logging needed in this spec).
+- **Latency preserved.** Adding one `SELECT provider FROM project_integrations WHERE project_id = ? AND category = ?` per discovery call is acceptable — the call already performs DB round-trips for the credential read.
+
+---
+
+## User stories / Requirements
+
+### As an operator returning to an existing Linear integration
+
+1. **Discovery step populates on reopen.** I open the PM wizard for a project that already has `LINEAR_API_KEY` saved. I see the teams dropdown populate and the team details load automatically. I don't re-paste the API key.
+
+2. **Discovery step populates on page refresh.** Same as above for a hard browser refresh mid-edit — no spurious "credentials not configured" red banner.
+
+### As an operator returning to an existing Trello or JIRA integration
+
+3. **Same guarantee for Trello.** The wizard's boards list loads without re-typing the API key / token.
+4. **Same guarantee for JIRA.** The projects list loads without re-typing the email / API token.
+
+### As an operator on a brand-new project
+
+5. **Clear diagnostic when no integration exists yet.** If I land on the wizard for a project with no `project_integrations` row at all and the wizard tries a `*ByProject` call (e.g. racing an auto-fetch before I've picked a provider), the server replies with a message saying "no PM integration configured yet" — distinguishable from "credentials not configured" — so the frontend can avoid the misleading red banner.
+
+### As an engineer extending CASCADE with a new PM provider
+
+6. **Unambiguous role resolution.** When I add a new provider that reuses an existing role name (e.g. `api_key`, `webhook_secret`), the credential-resolution helper does the right thing without my having to audit call sites. The helper's signature forces me to provide a provider; there's no wrong-default path.
+
+### As an engineer diagnosing a credential failure in production
+
+7. **Server log names the resolved env-var key.** When credential resolution fails, existing structured logging (from spec 002) captures the resolved env-var key that was looked up. This is a carry-over guarantee, not new scope.
+
+---
+
+## Research Notes
+
+- The ambiguity pattern — "multiple subtypes in a category declare the same role name; a helper resolves by category alone and returns the first match" — is a textbook name-resolution bug. The idiomatic fix in credential libraries (AWS SDK credential chain, HashiCorp Vault auth methods) is to require an explicit subtype / mount-path parameter at the resolver, never guess.
+- Trello registers `api_key` first in the PM category (per the built-in registration order), so Linear hits the bug while Trello works by coincidence of registration order. Reversing the order would flip the breakage. Relying on registration order is fragile.
+- The `getOrgCredential(projectId, envVarKey)` helper already resolves directly by env-var key without the role indirection — it's the runtime-side path and has no ambiguity. The dashboard-side path went through the role indirection because role names are the UX primitive (what the operator thinks in), while env-var keys are the storage primitive.
+- Node-style credential APIs (AWS, GCP) universally take a `(provider, credentialName)` tuple or equivalent; none collapse to `(category, credentialName)` alone. There's no precedent in the research for the current two-arg helper shape.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|------|--------|----------|--------|
+| No new OSS dependency | — | **Skip** | The fix is a two-parameter helper-signature change composed entirely from existing internal primitives. No third-party tooling is warranted. |
+
+---
+
+## Strategic decisions
+
+1. **Fix at the root, not at the endpoint.** `roleToEnvVarKey` gains a required provider parameter; every caller updates. Rejected: "short-circuit in the endpoint to call `getOrgCredential` by env-var key directly" — fixes the reported symptom but leaves the helper broken for any future caller. Reason: we want the fix to age well as more PM providers land.
+2. **Provider lookup for `*ByProject` endpoints reads from `project_integrations`.** The `(projectId, category)` → `provider` lookup is a one-row SELECT against a table the endpoint already references indirectly. No new cache, no new service.
+3. **No PM integration row ⇒ distinguishable error.** Throw NOT_FOUND with message "No PM integration configured for this project yet" — distinct from "Linear credentials not configured" so the frontend can surface a clearer state. Reason: the current conflation wastes operator time (they look at the Credentials tab, see the key exists, can't reconcile the error).
+4. **`webhook_secret` disambiguation lands in the same change.** The provider-parameter fix resolves all shared-role cases at once (current: `api_key` between Trello + Linear; latent: `webhook_secret` between Linear + JIRA; any future addition). Reason: zero marginal cost, removes a ticking bomb.
+5. **Out of scope: feature-level Linear project selection.** The operator originally requested this alongside the bug fix; deferred to a future spec because it's a significant feature (new wizard step, new config field, new trigger-layer filter) and bundling would hide a ~10-line bugfix inside a feature PR.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. **Linear wizard reopens cleanly.** Opening the PM wizard on a project that has a stored `LINEAR_API_KEY` credential and a `provider='linear'` row in `project_integrations` populates the Linear teams dropdown without the operator re-entering the API key, verified by an integration test that mimics the wizard's discovery call.
+
+2. **Linear wizard survives a page refresh.** Same guarantee after a browser-style remount where wizard state is reconstructed from the query responses — `hasStoredCredentials` resolves to true and discovery proceeds.
+
+3. **Trello and JIRA wizards enjoy the same fix by virtue of the root change.** Operators returning to a Trello- or JIRA-configured project see their boards / projects list populate from stored credentials.
+
+4. **Shared-role disambiguation.** A test that registers both Linear and JIRA with `webhook_secret` roles and calls the resolver for one specific provider returns the correct provider's env-var key — regardless of registration order.
+
+5. **Distinguishable "no integration" error.** A discovery call on a project with `LINEAR_API_KEY` saved but no `project_integrations` row returns a NOT_FOUND with a message that does not match the `"credentials not configured"` string. The frontend can key off that distinction; updating the frontend's rendering is out of scope for this spec.
+
+6. **Helper signature forces disambiguation.** The updated `roleToEnvVarKey` (or its successor) cannot be called with only `(category, role)` — the compiler rejects any call site that doesn't provide the provider. This is verifiable by TypeScript compilation alone.
+
+7. **Runtime credential path corrects, never regresses.** The worker's flat env-var-map builder and all org-scoped credential helpers continue to return identical values. The router's `resolveWebhookSecret('linear')` starts returning `LINEAR_WEBHOOK_SECRET` (was incorrectly returning `JIRA_WEBHOOK_SECRET` or null due to the same bug); `resolveWebhookSecret('jira')` continues to return `JIRA_WEBHOOK_SECRET` unchanged. Both states verified by unit tests.
+
+8. **No regression in `getOrgCredential`.** The `(projectId, envVarKey)` path used for non-integration credentials is not altered.
+
+9. **Lint, typecheck, tests green.** Root + web typecheck, biome lint, and the full unit + integration suite all pass.
+
+10. **Zero operator action required post-deploy.** The moment the fix ships, existing Linear / JIRA / Trello integrations stop reporting spurious "credentials not configured" errors on wizard reopen. No migration, no credential re-entry, no config change.
+
+---
+
+## Documentation Impact (high-level)
+
+- `CHANGELOG.md` — add an entry under Unreleased describing the fix (what the operator sees: "Linear wizard no longer demands you re-paste your API key on every edit"; latent `webhook_secret` ambiguity also resolved).
+- `src/integrations/README.md` — if the integration-author step-by-step guide mentions the credential-resolution helper, update its example to show the new signature. If it doesn't, no change.
+- `CLAUDE.md` — no change expected; credential-helper internals are not documented there.
+
+---
+
+## Out of Scope
+
+- Linear project selection in the wizard (deferred to a future spec).
+- Changes to `registerCredentialRoles` or the `PROVIDER_CREDENTIAL_ROLES` shape beyond the signature of the resolver function.
+- Frontend changes to surface the new "no PM integration configured yet" message specifically. The spec guarantees the backend produces a distinguishable error; UI-side differentiation is a separate concern.
+- Changes to the worker's flat env-var-map builder.
+- Adding new PM providers, new roles, or new env-var keys.
+- Schema migration or data touch.
+- Caching or batching the `(projectId, category) → provider` lookup.
+- Revisiting the credential encryption scheme or master-key handling.
+- Testing with a real Linear API key (unit + integration tests use stored-credential fakes, not live Linear calls).

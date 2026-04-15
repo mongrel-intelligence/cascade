@@ -1,0 +1,321 @@
+---
+id: 004
+slug: credential-role-provider-disambiguation
+plan: 1
+plan_slug: disambiguate-role-resolver
+level: plan
+parent_spec: docs/specs/004-credential-role-provider-disambiguation.md
+depends_on: []
+status: pending
+---
+
+# 004/1: Disambiguate Credential Role Resolution by Provider
+
+> Part 1 of 1 in the 004-credential-role-provider-disambiguation plan. See [parent spec](../../specs/004-credential-role-provider-disambiguation.md).
+
+## Summary
+
+Single coherent plan closing spec 004. The root cause is one helper — `roleToEnvVarKey(category, role)` in `src/config/provider.ts` — returning the first provider in its registered Map whose role name matches. Because the built-in Map orders PM providers as `trello → jira → linear`, calls for `('pm', 'api_key')` silently resolve to `TRELLO_API_KEY` (breaks Linear-only projects) and `('pm', 'webhook_secret')` silently resolve to `JIRA_WEBHOOK_SECRET` (silently skips Linear webhook signature verification in production).
+
+The fix widens the helper's signature to `roleToEnvVarKey(category, provider, role)`; propagates the provider through `getIntegrationCredential` and `getIntegrationCredentialOrNull` as a required argument; updates every call site to pass the literal provider (for provider-aware callers) or a freshly-looked-up provider from `project_integrations` (for the dashboard `*ByProject` discovery endpoints and the router's `resolveWebhookSecret`). Type-checked end to end — a missing provider is a build error.
+
+New error shape for the `*ByProject` endpoints: when the project has no `project_integrations` row for the relevant category, the endpoint throws `NOT_FOUND` with a distinguishable message (`'No PM integration configured for this project yet'` or equivalent), not conflated with `'{provider} credentials not configured'`.
+
+**Components delivered:**
+- `src/config/provider.ts` — widen `roleToEnvVarKey`, `getIntegrationCredential`, `getIntegrationCredentialOrNull`.
+- `src/pm/linear/integration.ts`, `src/pm/jira/integration.ts`, `src/pm/trello/integration.ts` — pass `'linear'` / `'jira'` / `'trello'` at every call site.
+- `src/github/personas.ts`, `src/github/scm-integration.ts` — pass `'github'`.
+- `src/router/github-token-resolver.ts`, `src/router/pre-actions.ts` — pass `'github'`.
+- `src/router/reactions.ts` — pass provider (determined from project PM integration).
+- `src/router/platformClients/credentials.ts` — pass explicit provider in each branch of `resolveWebhookSecret` and in `resolveTrelloCredentials` / `resolveJiraCredentials` / `resolveLinearCredentials`.
+- `src/api/routers/integrationsDiscovery.ts` — each `*ByProject` endpoint looks up the project's provider for the category and passes it down; on missing row, throws the new distinguishable `NOT_FOUND`.
+- `tests/unit/config/role-resolver.test.ts` (new) — hermetic unit tests proving disambiguation for `api_key` and `webhook_secret` across all affected provider pairs.
+- `tests/integration/api/integrationsDiscovery.test.ts` or equivalent (augment existing if present) — end-to-end assertion that the `*ByProject` endpoints return the right credential on a Linear-only project and throw the new distinguishable error on a project with no integration row.
+- `tests/unit/router/resolveWebhookSecret.test.ts` (new or augmented) — asserts `resolveWebhookSecret('linear')` returns the stored `LINEAR_WEBHOOK_SECRET`, not `JIRA_WEBHOOK_SECRET`.
+
+**Deferred to later plans in this spec:**
+- None. Plan 1 closes spec 004.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (Linear wizard reopens cleanly) — **full**
+- Spec AC #2 (Linear wizard survives page refresh) — **full**
+- Spec AC #3 (Trello / JIRA wizards enjoy same fix) — **full**
+- Spec AC #4 (Shared-role disambiguation including `webhook_secret`) — **full**
+- Spec AC #5 (Distinguishable "no integration" error) — **full**
+- Spec AC #6 (Helper signature forces disambiguation) — **full**
+- Spec AC #7 (Runtime credential path corrects, never regresses) — **full**
+- Spec AC #8 (`getOrgCredential` path unchanged) — **full**
+- Spec AC #9 (Lint + typecheck + tests green) — **full**
+- Spec AC #10 (Zero operator action required post-deploy) — **full**
+
+---
+
+## Depends On
+
+- Nothing external. Single-plan spec.
+
+Context to lift from the spec (do not re-argue):
+- Fix at the root, not the endpoint. One helper change + all callers updated in one PR.
+- `*ByProject` endpoints look up `project_integrations.provider` inline (no new helper).
+- `webhook_secret` disambiguation ships in the same change (was a live production bug for Linear webhook signature verification).
+- Out of scope: Linear project selection (deferred to a future spec).
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Unit tests for the role resolver
+
+**Tests first** (`tests/unit/config/role-resolver.test.ts` — new file):
+
+- `roleToEnvVarKey returns Trello's env-var key when provider='trello' and role='api_key'` — assert `'TRELLO_API_KEY'`.
+- `roleToEnvVarKey returns Linear's env-var key when provider='linear' and role='api_key'` — assert `'LINEAR_API_KEY'`. This test would fail under the pre-fix helper when order happens to put Trello first (which it does).
+- `roleToEnvVarKey returns JIRA's env-var key when provider='jira' and role='webhook_secret'` — assert `'JIRA_WEBHOOK_SECRET'`.
+- `roleToEnvVarKey returns Linear's env-var key when provider='linear' and role='webhook_secret'` — assert `'LINEAR_WEBHOOK_SECRET'`. Key test; would fail pre-fix.
+- `roleToEnvVarKey returns GitHub's env-var key when provider='github' and role='webhook_secret'` — assert `'GITHUB_WEBHOOK_SECRET'`.
+- `roleToEnvVarKey returns Sentry's env-var key when provider='sentry' and role='webhook_secret'` — assert `'SENTRY_WEBHOOK_SECRET'`.
+- `roleToEnvVarKey returns undefined when the (provider, role) pair is not registered` — e.g. `('jira', 'api_key')` (JIRA has no `api_key` role).
+- `roleToEnvVarKey returns undefined when the provider is registered but the category mismatches` — e.g. `('pm', 'github', 'implementer_token')` — GitHub is SCM, so the mismatch returns undefined even though the role name exists.
+
+**Implementation** (`src/config/provider.ts`):
+
+Change the helper signature:
+```ts
+function roleToEnvVarKey(
+  category: string,
+  provider: string,
+  role: string,
+): string | undefined {
+  const providerRoles = PROVIDER_CREDENTIAL_ROLES[provider as IntegrationProvider];
+  if (!providerRoles) return undefined;
+  const providerCategory = PROVIDER_CATEGORY[provider as keyof typeof PROVIDER_CATEGORY];
+  if (!providerCategory || providerCategory !== category) return undefined;
+  return providerRoles.find((r) => r.role === role)?.envVarKey;
+}
+```
+
+No loop through other providers — the helper indexes directly on the provided provider.
+
+### 2. Widen `getIntegrationCredential` / `getIntegrationCredentialOrNull`
+
+**Tests first** (augment `tests/unit/config/role-resolver.test.ts` or new `tests/unit/config/provider.test.ts`):
+
+- `getIntegrationCredentialOrNull returns the stored credential for the correct (projectId, category, provider, role) tuple` — mock `getResolver().resolve` to return a recognizable value when asked for `'LINEAR_API_KEY'`; call `getIntegrationCredentialOrNull('proj', 'pm', 'linear', 'api_key')`; assert it returns that value.
+- `getIntegrationCredentialOrNull returns null when role is not registered for the provider` — e.g. `('proj', 'pm', 'jira', 'api_key')`.
+- `getIntegrationCredential throws when credential is missing` — verify the thrown Error message names the provider and role for diagnosability.
+
+**Implementation** (`src/config/provider.ts`):
+
+Change both function signatures:
+```ts
+export async function getIntegrationCredential(
+  projectId: string,
+  category: string,
+  provider: string,
+  role: string,
+): Promise<string> { ... }
+
+export async function getIntegrationCredentialOrNull(
+  projectId: string,
+  category: string,
+  provider: string,
+  role: string,
+): Promise<string | null> { ... }
+```
+
+Both call the new `roleToEnvVarKey(category, provider, role)`. Throw / return null paths unchanged in behavior aside from disambiguation. Thrown error message includes `provider` for diagnosability (currently only includes `category/role`).
+
+### 3. Update provider-aware call sites
+
+**Stale-reference check:** grep for `getIntegrationCredential\(` and `getIntegrationCredentialOrNull\(` under `src/`. Confirm the full list matches the counted ~30 call sites and no new ones have landed since planning.
+
+**Tests first:** rely on the existing test suite — the updated call sites are provider-aware (e.g. `LinearIntegration.withCredentials` knows it's Linear) and the widened helper is unit-tested in Tasks 1-2. No new tests needed per call site; any regression surfaces in the existing handler / integration tests.
+
+**Implementation** — pass the literal provider string at every call site:
+
+- `src/pm/trello/integration.ts`: `getIntegrationCredentialOrNull(projectId, 'pm', 'trello', roleDef.role)`, `getIntegrationCredential(projectId, 'pm', 'trello', 'api_key')`, `getIntegrationCredential(projectId, 'pm', 'trello', 'token')`.
+- `src/pm/jira/integration.ts`: same pattern with `'jira'`; affects `'email'`, `'api_token'`, `requiredRoles`.
+- `src/pm/linear/integration.ts`: same pattern with `'linear'`; affects `'api_key'` (four call sites per the grep).
+- `src/github/personas.ts`: `getIntegrationCredential(projectId, 'scm', 'github', role)` etc.
+- `src/github/scm-integration.ts`: `getIntegrationCredentialOrNull(projectId, 'scm', 'github', 'implementer_token')`, `getIntegrationCredentialOrNull(projectId, 'scm', 'github', 'reviewer_token')`, `getIntegrationCredential(projectId, 'scm', 'github', 'implementer_token')`.
+- `src/router/github-token-resolver.ts`: `getIntegrationCredential(resolvedProject.id, 'scm', 'github', 'reviewer_token')`.
+- `src/router/pre-actions.ts`: `getIntegrationCredential(project.id, 'scm', 'github', 'reviewer_token')`.
+- `src/sentry/alerting-integration.ts`: `getIntegrationCredentialOrNull(projectId, 'alerting', 'sentry', ...)`.
+
+### 4. Update router platform-client resolvers
+
+**Tests first** (`tests/unit/router/resolveWebhookSecret.test.ts` — new or augment existing):
+
+- `resolveWebhookSecret('linear') returns LINEAR_WEBHOOK_SECRET when configured` — stub `getIntegrationCredentialOrNull` module; assert the `(projectId, 'pm', 'linear', 'webhook_secret')` call and its return value propagate.
+- `resolveWebhookSecret('linear') returns null when only JIRA_WEBHOOK_SECRET is configured on the project` — proves the pre-existing bug is fixed. This test would fail pre-fix because the helper would return `JIRA_WEBHOOK_SECRET` on a Linear-only call.
+- `resolveWebhookSecret('jira') returns JIRA_WEBHOOK_SECRET when configured` — regression guard.
+- `resolveWebhookSecret('github') returns GITHUB_WEBHOOK_SECRET from the SCM integration` — regression guard.
+- `resolveWebhookSecret('trello') returns TRELLO_API_SECRET from the PM integration` — regression guard (Trello is a known quirk: HMAC secret is the API secret, not a dedicated webhook secret).
+- `resolveWebhookSecret('sentry') returns SENTRY_WEBHOOK_SECRET from the alerting integration` — regression guard.
+
+**Implementation** (`src/router/platformClients/credentials.ts`):
+
+Thread the explicit provider through each branch:
+```ts
+if (provider === 'github') return getIntegrationCredentialOrNull(projectId, 'scm', 'github', 'webhook_secret');
+if (provider === 'jira')   return getIntegrationCredentialOrNull(projectId, 'pm', 'jira', 'webhook_secret');
+if (provider === 'sentry') return getIntegrationCredentialOrNull(projectId, 'alerting', 'sentry', 'webhook_secret');
+if (provider === 'linear') return getIntegrationCredentialOrNull(projectId, 'pm', 'linear', 'webhook_secret');
+// Trello
+return getIntegrationCredentialOrNull(projectId, 'pm', 'trello', 'api_secret');
+```
+
+`resolveTrelloCredentials`: pass `'trello'` on each call. `resolveJiraCredentials`: pass `'jira'`. `resolveLinearCredentials`: pass `'linear'`.
+
+`src/router/reactions.ts` line 176: the code is `apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key')` — but it's **not** provider-aware. It needs to know which PM provider the project uses. Add a provider lookup (similar to task 5 below) or look up via `project.pm.type`. Prefer the latter: the calling `handleReaction` function already has access to `project.pm?.type`.
+
+### 5. Update dashboard `*ByProject` endpoints with inline provider lookup
+
+**Tests first** (`tests/integration/api/integrationsDiscovery.test.ts` — augment existing or new):
+
+- `linearTeamsByProject returns teams when a linear integration row exists and LINEAR_API_KEY is stored` — seed a project with `project_integrations(provider='linear')` and `project_credentials('LINEAR_API_KEY')`; mock Linear API to return two teams; assert the endpoint returns them without error.
+- `linearTeamsByProject throws NOT_FOUND with distinguishable message when no project_integrations row exists` — seed the project but not the integration; call the endpoint; assert `TRPCError.code === 'NOT_FOUND'` and message matches `/no.*integration.*configured/i` and does NOT match `/credentials not configured/i`.
+- `linearTeamsByProject throws NOT_FOUND with 'credentials not configured' when the row exists but the credential is absent` — seed integration row, skip the credential; assert the current `'Linear credentials not configured'` message still fires (operator knows to paste the key).
+- Parallel tests for `trelloBoardsByProject`, `jiraProjectsByProject`, and the `*TeamDetailsByProject` / `*BoardsByProject` variants (3 variants × 4 endpoints = ~12 integration tests total; can bundle into a table-driven test).
+
+**Implementation** (`src/api/routers/integrationsDiscovery.ts`):
+
+At the top of each `*ByProject` mutation, after `verifyProjectOrgAccess`, add a provider lookup:
+
+```ts
+const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+if (!integration) {
+  throw new TRPCError({
+    code: 'NOT_FOUND',
+    message: 'No PM integration configured for this project yet',
+  });
+}
+const provider = integration.provider;  // 'trello' | 'jira' | 'linear'
+```
+
+Then pass `provider` through to `getIntegrationCredentialOrNull(input.projectId, 'pm', provider, 'api_key')` etc. `getIntegrationByProjectAndCategory` already exists in `src/db/repositories/integrationsRepository.ts`.
+
+For `linearTeamsByProject` specifically: after the lookup, assert `integration.provider === 'linear'`; if not, throw a NOT_FOUND saying the project has a different PM provider configured. Same guard on Trello and JIRA endpoints — catches a misrouted call from a misconfigured wizard.
+
+### 6. Typecheck + lint sweep
+
+No tests for this task — the compiler is the test. After tasks 1-5 land:
+- `npm run typecheck` catches any caller that wasn't updated to the new 4-arg signature.
+- `npm run lint` catches stale comments / unused imports.
+- Both must be green before commit.
+
+### 7. Documentation
+
+**Implementation** (`CHANGELOG.md`):
+
+Add under `## Unreleased` → `### Fixed`:
+
+```
+- **Linear wizard no longer demands you re-paste your API key on every edit.**
+  The dashboard's credential-resolution helper (`roleToEnvVarKey`) was picking
+  the first provider in its registered order that declared a matching role
+  name, so a Linear-only project's `('pm', 'api_key')` lookup returned
+  `TRELLO_API_KEY` — which isn't configured, which surfaced as
+  "Linear credentials not configured" in the Board / Project Selection step.
+  Fixed by adding a required provider parameter to the helper and updating
+  every call site. Same fix also corrects Linear webhook signature verification
+  in the router (was silently resolving to the JIRA webhook secret). Discovery
+  calls on a project with no PM integration row yet now return a
+  distinguishable "No PM integration configured" error instead of the
+  misleading "credentials not configured".
+  (Spec [004](docs/specs/004-credential-role-provider-disambiguation.md),
+  plan [1/1](docs/plans/004-credential-role-provider-disambiguation/1-disambiguate-role-resolver.md).)
+```
+
+**Implementation** (`src/integrations/README.md`):
+
+The README has example code at lines ~127 and ~136 showing `getIntegrationCredentialOrNull(projectId, 'pm', 'api_key')` and `getIntegrationCredential(projectId, 'pm', 'api_key')`. Update both snippets to the new 4-arg signature:
+- `getIntegrationCredentialOrNull(projectId, 'pm', 'linear', 'api_key')`
+- `getIntegrationCredential(projectId, 'pm', 'linear', 'api_key')`
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/config/role-resolver.test.ts`: ~8 tests covering `roleToEnvVarKey` disambiguation across `api_key`, `webhook_secret`, and mismatched-category cases.
+- [ ] `tests/unit/config/provider.test.ts` (if separate) or augment above: ~3 tests on `getIntegrationCredential` / `getIntegrationCredentialOrNull` with the new signature.
+- [ ] `tests/unit/router/resolveWebhookSecret.test.ts`: ~5 tests covering `resolveWebhookSecret` for each provider.
+
+### Integration tests
+- [ ] `tests/integration/api/integrationsDiscovery.test.ts`: ~12 tests covering the `*ByProject` endpoints (Linear + Trello + JIRA) for the three states (happy path, no integration row, no credential).
+
+### Acceptance tests
+- [ ] Manual on `dev` after deploy: open an existing Linear project's wizard, confirm teams dropdown loads without requiring a re-typed API key; refresh the page, confirm it still loads.
+- [ ] Manual on `dev` after deploy: set a Linear webhook secret, send a real Linear webhook with valid + invalid signatures, confirm valid ones pass verification (router log shows signature verified; signature-verification flag not "skipped").
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `roleToEnvVarKey(category, provider, role)` returns the exact env-var key registered for that specific provider, verifiable by unit test for every `(provider, role)` pair across all five registered providers.
+2. `roleToEnvVarKey` returns `undefined` when the provider's category doesn't match or the role isn't registered for that provider — no silent fallback.
+3. `getIntegrationCredential` and `getIntegrationCredentialOrNull` take `(projectId, category, provider, role)` and the compiler rejects any call site that omits `provider`.
+4. Every call site under `src/` passes the explicit provider string matching the current call context.
+5. `resolveWebhookSecret('linear')` returns the stored `LINEAR_WEBHOOK_SECRET` (not `JIRA_WEBHOOK_SECRET` or null when `LINEAR_WEBHOOK_SECRET` is set) — verifiable by a unit test that previously failed.
+6. `resolveWebhookSecret` returns the correct secret for each of the five providers (`github`, `jira`, `linear`, `trello`, `sentry`) — regression-guarded by unit tests.
+7. Each `*ByProject` discovery endpoint looks up the project's PM provider from `project_integrations` before resolving credentials; on missing row, throws `TRPCError({ code: 'NOT_FOUND', message: /no.*integration.*configured/i })` — distinguishable from `/credentials not configured/i`.
+8. Each `*ByProject` endpoint throws the current `'{Provider} credentials not configured'` message when the row exists but the credential doesn't, preserving that path's diagnostic signal.
+9. `src/integrations/README.md` example code reflects the new 4-arg signature.
+10. `CHANGELOG.md` has the "Fixed" entry describing the wizard-reopen fix and the Linear webhook signature-verification correction.
+11. All new / modified code has corresponding tests (unit or integration, per task breakdown above).
+12. `npm run build` passes.
+13. `npm test` passes (includes the ~8 new unit tests).
+14. `npm run test:integration` passes (includes the ~12 new integration tests).
+15. `npm run lint` passes.
+16. `npm run typecheck` (root) and `cd web && npx tsc -b` (web) both pass.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | One `### Fixed` entry under `## Unreleased` describing the dashboard wizard fix and the Linear webhook signature-verification correction, citing spec 004. |
+| `src/integrations/README.md` | Update the two example snippets at lines ~127 and ~136 to show the new 4-arg `getIntegrationCredential[OrNull]` signature. |
+
+Explicitly **not touched**:
+- `CLAUDE.md` — credential-helper internals aren't documented there; no change required.
+
+---
+
+## Out of Scope (this plan)
+
+- Linear project selection in the wizard (deferred to a future spec; see spec 004 non-goals).
+- Any change to `registerCredentialRoles` or the `PROVIDER_CREDENTIAL_ROLES` shape beyond the resolver signature.
+- Frontend UI changes to surface the new "no PM integration configured yet" message specifically (backend delivers distinguishable error; frontend differentiation is a separate concern).
+- Changes to the worker's flat env-var-map builder.
+- Caching or batching the `(projectId, category) → provider` lookup.
+- New PM / SCM / alerting providers.
+- Any change to credential encryption, storage, or master-key handling.
+- Schema migration or any data touch.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 — roleToEnvVarKey returns correct env-var key per (provider, role)
+- [ ] AC #2 — roleToEnvVarKey returns undefined on mismatch
+- [ ] AC #3 — getIntegrationCredential[OrNull] compiler-enforce provider arg
+- [ ] AC #4 — all call sites pass explicit provider
+- [ ] AC #5 — resolveWebhookSecret('linear') returns LINEAR_WEBHOOK_SECRET
+- [ ] AC #6 — resolveWebhookSecret correct for all 5 providers
+- [ ] AC #7 — *ByProject throws distinguishable NOT_FOUND on missing integration row
+- [ ] AC #8 — 'credentials not configured' preserved when row exists but credential missing
+- [ ] AC #9 — README example snippets updated
+- [ ] AC #10 — CHANGELOG entry present
+- [ ] AC #11 — all new code has tests
+- [ ] AC #12 — build passes
+- [ ] AC #13 — unit tests pass
+- [ ] AC #14 — integration tests pass
+- [ ] AC #15 — lint passes
+- [ ] AC #16 — typecheck (root + web) passes
