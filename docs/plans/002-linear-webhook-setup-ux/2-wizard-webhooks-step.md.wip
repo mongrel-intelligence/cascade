@@ -6,7 +6,7 @@ plan_slug: wizard-webhooks-step
 level: plan
 parent_spec: docs/specs/002-linear-webhook-setup-ux.md
 depends_on: [1-save-path-fix.md]
-status: pending
+status: wip
 ---
 
 # 002/2: Linear Wizard Webhooks Step — Correct Events List + Inline Signing Secret
