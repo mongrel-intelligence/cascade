@@ -6,7 +6,7 @@ plan_slug: save-path-fix
 level: plan
 parent_spec: docs/specs/002-linear-webhook-setup-ux.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 002/1: Linear Wizard Save — Unblock, Diagnose, Harden
@@ -208,14 +208,17 @@ Not touched in this plan (owned by plan 2):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 — Save succeeds, fresh project
-- [ ] AC #2 — Save succeeds, re-configuration
-- [ ] AC #3 — Structured DB error in server log
-- [ ] AC #4 — No plaintext credentials in logs (happy path)
-- [ ] AC #5 — No plaintext credentials in logs (error path)
-- [ ] AC #6 — Safe client error payload
-- [ ] AC #7 — Tests exist for all new/modified code
-- [ ] AC #8 — Build passes
-- [ ] AC #9 — Unit + integration tests pass
-- [ ] AC #10 — Lint passes
-- [ ] AC #11 — Typecheck passes
+- [x] AC #1 — Save succeeds, fresh project
+- [x] AC #2 — Save succeeds, re-configuration
+- [x] AC #3 — Structured DB error in server log
+- [x] AC #4 — No plaintext credentials in logs (happy path)
+- [x] AC #5 — No plaintext credentials in logs (error path)
+- [x] AC #6 — Safe client error payload
+- [x] AC #7 — Tests exist for all new/modified code
+- [x] AC #8 — Build passes (typecheck + lint clean)
+- [x] AC #9 — Unit + integration tests pass (7568 + 522 green)
+- [x] AC #10 — Lint passes
+- [x] AC #11 — Typecheck passes
+
+**Caveats:**
+- CLAUDE.md doc update deferred — user has an in-progress CLAUDE.md rewrite (pre-existing uncommitted diff at session start). Adding a bullet now would conflict. Plan 1's doc impact is met by the CHANGELOG entry (two "Fixed" bullets covering the save-path fix and the structured error logging).
