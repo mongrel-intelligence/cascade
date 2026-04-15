@@ -115,7 +115,12 @@ describe('SentryAlertingIntegration', () => {
 
 			await integration.withCredentials('proj-1', fn);
 
-			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'alerting', 'api_token');
+			expect(mockGetIntegrationCredential).toHaveBeenCalledWith(
+				'proj-1',
+				'alerting',
+				'sentry',
+				'api_token',
+			);
 			expect(fn).toHaveBeenCalled();
 		});
 

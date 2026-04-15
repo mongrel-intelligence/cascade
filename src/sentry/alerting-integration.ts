@@ -38,7 +38,7 @@ export class SentryAlertingIntegration implements AlertingIntegration {
 	 * and restores the previous value afterwards.
 	 */
 	async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-		const token = await getIntegrationCredential(projectId, 'alerting', 'api_token');
+		const token = await getIntegrationCredential(projectId, 'alerting', 'sentry', 'api_token');
 		const previous = process.env.SENTRY_API_TOKEN;
 		process.env.SENTRY_API_TOKEN = token;
 		try {

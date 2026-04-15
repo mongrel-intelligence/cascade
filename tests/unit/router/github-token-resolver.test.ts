@@ -63,7 +63,7 @@ const MOCK_CREDENTIALS: Record<string, string> = {
 };
 
 beforeEach(() => {
-	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
+	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, _provider, role) => {
 		const value = MOCK_CREDENTIALS[`${category}/${role}`];
 		if (value) return value;
 		throw new Error(`Credential '${category}/${role}' not found`);
@@ -107,12 +107,14 @@ describe('resolveGitHubTokenForAck', () => {
 
 describe('resolveGitHubTokenForAckByAgent', () => {
 	it('returns reviewer token for review agent type', async () => {
-		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
-			if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
-			const value = MOCK_CREDENTIALS[`${category}/${role}`];
-			if (value) return value;
-			throw new Error(`Credential '${category}/${role}' not found`);
-		});
+		mockGetIntegrationCredential.mockImplementation(
+			async (_projectId, category, _provider, role) => {
+				if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
+				const value = MOCK_CREDENTIALS[`${category}/${role}`];
+				if (value) return value;
+				throw new Error(`Credential '${category}/${role}' not found`);
+			},
+		);
 
 		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'review');
 
@@ -148,10 +150,12 @@ describe('resolveGitHubTokenForAckByAgent', () => {
 	});
 
 	it('skips findProjectByRepo when pre-resolved project is provided', async () => {
-		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
-			if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
-			throw new Error(`Credential '${category}/${role}' not found`);
-		});
+		mockGetIntegrationCredential.mockImplementation(
+			async (_projectId, category, _provider, role) => {
+				if (category === 'scm' && role === 'reviewer_token') return 'test-reviewer-token';
+				throw new Error(`Credential '${category}/${role}' not found`);
+			},
+		);
 
 		const preResolvedProject = {
 			id: 'test',
@@ -197,10 +201,12 @@ describe('resolveGitHubTokenForAckByAgent', () => {
 
 	it('delegates to getPersonaForAgentType for reviewer token selection', async () => {
 		mockGetPersonaForAgentType.mockReturnValueOnce('reviewer');
-		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
-			if (category === 'scm' && role === 'reviewer_token') return 'custom-reviewer-token';
-			throw new Error(`Credential '${category}/${role}' not found`);
-		});
+		mockGetIntegrationCredential.mockImplementation(
+			async (_projectId, category, _provider, role) => {
+				if (category === 'scm' && role === 'reviewer_token') return 'custom-reviewer-token';
+				throw new Error(`Credential '${category}/${role}' not found`);
+			},
+		);
 
 		const result = await resolveGitHubTokenForAckByAgent('owner/repo', 'custom-review-agent');
 

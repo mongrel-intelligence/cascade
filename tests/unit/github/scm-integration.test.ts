@@ -75,6 +75,7 @@ describe('GitHubSCMIntegration', () => {
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
 				'proj-1',
 				'scm',
+				'github',
 				'implementer_token',
 			);
 		});
@@ -134,6 +135,7 @@ describe('GitHubSCMIntegration', () => {
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
 				'proj-1',
 				'scm',
+				'github',
 				'implementer_token',
 			);
 		});
@@ -155,6 +157,7 @@ describe('GitHubSCMIntegration', () => {
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
 				'proj-1',
 				'scm',
+				'github',
 				'reviewer_token',
 			);
 		});
@@ -175,6 +178,7 @@ describe('GitHubSCMIntegration', () => {
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
 				'proj-2',
 				'scm',
+				'github',
 				'implementer_token',
 			);
 		});
@@ -187,6 +191,7 @@ describe('GitHubSCMIntegration', () => {
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
 				'proj-2',
 				'scm',
+				'github',
 				'reviewer_token',
 			);
 		});
@@ -205,6 +210,7 @@ describe('GitHubSCMIntegration', () => {
 			expect(mockGetIntegrationCredential).toHaveBeenCalledWith(
 				'proj-1',
 				'scm',
+				'github',
 				'implementer_token',
 			);
 			expect(mockWithGitHubToken).toHaveBeenCalledWith('ghp_implementer_123', fn);

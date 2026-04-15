@@ -78,7 +78,7 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 	// Get reviewer token
 	let reviewerToken: string;
 	try {
-		reviewerToken = await getIntegrationCredential(project.id, 'scm', 'reviewer_token');
+		reviewerToken = await getIntegrationCredential(project.id, 'scm', 'github', 'reviewer_token');
 	} catch {
 		logger.warn('[PreActions] Missing GITHUB_TOKEN_REVIEWER, skipping eyes reaction');
 		return;

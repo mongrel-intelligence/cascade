@@ -125,8 +125,26 @@ export const integrationsDiscoveryRouter = router({
 				projectId: input.projectId,
 			});
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
-			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'token');
+			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+			if (!integration) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'No PM integration configured for this project yet',
+				});
+			}
+			if (integration.provider !== 'trello') {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project is configured with a different PM provider',
+				});
+			}
+			const apiKey = await getIntegrationCredentialOrNull(
+				input.projectId,
+				'pm',
+				'trello',
+				'api_key',
+			);
+			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'trello', 'token');
 			if (!apiKey || !token) {
 				throw new TRPCError({ code: 'NOT_FOUND', message: 'Trello credentials not configured' });
 			}
@@ -152,8 +170,26 @@ export const integrationsDiscoveryRouter = router({
 				boardId: input.boardId,
 			});
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
-			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'token');
+			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+			if (!integration) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'No PM integration configured for this project yet',
+				});
+			}
+			if (integration.provider !== 'trello') {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project is configured with a different PM provider',
+				});
+			}
+			const apiKey = await getIntegrationCredentialOrNull(
+				input.projectId,
+				'pm',
+				'trello',
+				'api_key',
+			);
+			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'trello', 'token');
 			if (!apiKey || !token) {
 				throw new TRPCError({ code: 'NOT_FOUND', message: 'Trello credentials not configured' });
 			}
@@ -176,10 +212,27 @@ export const integrationsDiscoveryRouter = router({
 				projectId: input.projectId,
 			});
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'email');
-			const apiToken = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_token');
 			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
-			const baseUrl = (integration?.config as Record<string, unknown> | null)?.baseUrl as
+			if (!integration) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'No PM integration configured for this project yet',
+				});
+			}
+			if (integration.provider !== 'jira') {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project is configured with a different PM provider',
+				});
+			}
+			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'jira', 'email');
+			const apiToken = await getIntegrationCredentialOrNull(
+				input.projectId,
+				'pm',
+				'jira',
+				'api_token',
+			);
+			const baseUrl = (integration.config as Record<string, unknown> | null)?.baseUrl as
 				| string
 				| undefined;
 			if (!email || !apiToken || !baseUrl) {
@@ -207,10 +260,27 @@ export const integrationsDiscoveryRouter = router({
 				projectKey: input.projectKey,
 			});
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'email');
-			const apiToken = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_token');
 			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
-			const baseUrl = (integration?.config as Record<string, unknown> | null)?.baseUrl as
+			if (!integration) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'No PM integration configured for this project yet',
+				});
+			}
+			if (integration.provider !== 'jira') {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project is configured with a different PM provider',
+				});
+			}
+			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'jira', 'email');
+			const apiToken = await getIntegrationCredentialOrNull(
+				input.projectId,
+				'pm',
+				'jira',
+				'api_token',
+			);
+			const baseUrl = (integration.config as Record<string, unknown> | null)?.baseUrl as
 				| string
 				| undefined;
 			if (!email || !apiToken || !baseUrl) {
@@ -484,7 +554,25 @@ export const integrationsDiscoveryRouter = router({
 				projectId: input.projectId,
 			});
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
+			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+			if (!integration) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'No PM integration configured for this project yet',
+				});
+			}
+			if (integration.provider !== 'linear') {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project is configured with a different PM provider',
+				});
+			}
+			const apiKey = await getIntegrationCredentialOrNull(
+				input.projectId,
+				'pm',
+				'linear',
+				'api_key',
+			);
 			if (!apiKey) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',
@@ -530,7 +618,25 @@ export const integrationsDiscoveryRouter = router({
 				teamId: input.teamId,
 			});
 			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const apiKey = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'api_key');
+			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
+			if (!integration) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'No PM integration configured for this project yet',
+				});
+			}
+			if (integration.provider !== 'linear') {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: 'Project is configured with a different PM provider',
+				});
+			}
+			const apiKey = await getIntegrationCredentialOrNull(
+				input.projectId,
+				'pm',
+				'linear',
+				'api_key',
+			);
 			if (!apiKey) {
 				throw new TRPCError({
 					code: 'NOT_FOUND',

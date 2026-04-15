@@ -159,11 +159,13 @@ describe('notifyTimeout', () => {
 		mockLogger.error.mockReset();
 
 		// Default: DB returns credentials
-		mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
-			const value = MOCK_CREDENTIALS[`${category}/${role}`];
-			if (value) return value;
-			throw new Error(`Credential '${category}/${role}' not found`);
-		});
+		mockGetIntegrationCredential.mockImplementation(
+			async (_projectId, category, _provider, role) => {
+				const value = MOCK_CREDENTIALS[`${category}/${role}`];
+				if (value) return value;
+				throw new Error(`Credential '${category}/${role}' not found`);
+			},
+		);
 		mockGetProjectGitHubToken.mockResolvedValue('test-github-token');
 		mockFindProjectByRepo.mockResolvedValue({
 			id: 'test',

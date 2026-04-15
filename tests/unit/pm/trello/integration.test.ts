@@ -168,8 +168,18 @@ describe('TrelloIntegration', () => {
 			expect(result).toBe(true);
 			// Only 2 required credentials checked (api_key, token), not api_secret
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledTimes(2);
-			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'api_key');
-			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'token');
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'trello',
+				'api_key',
+			);
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'trello',
+				'token',
+			);
 		});
 	});
 
@@ -196,8 +206,13 @@ describe('TrelloIntegration', () => {
 			const fn = vi.fn().mockResolvedValue('result');
 			const result = await integration.withCredentials('proj-1', fn);
 
-			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'api_key');
-			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'token');
+			expect(mockGetIntegrationCredential).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'trello',
+				'api_key',
+			);
+			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'trello', 'token');
 			expect(mockWithTrelloCredentials).toHaveBeenCalledWith(
 				{ apiKey: 'my-api-key', token: 'my-token' },
 				fn,

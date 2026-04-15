@@ -53,7 +53,9 @@ export class LinearIntegration implements PMIntegration {
 		const roles = PROVIDER_CREDENTIAL_ROLES.linear;
 		const requiredRoles = roles.filter((r) => !r.optional);
 		const values = await Promise.all(
-			requiredRoles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+			requiredRoles.map((roleDef) =>
+				getIntegrationCredentialOrNull(projectId, 'pm', 'linear', roleDef.role),
+			),
 		);
 		return values.every((v) => v !== null);
 	}
@@ -67,7 +69,7 @@ export class LinearIntegration implements PMIntegration {
 	}
 
 	async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-		const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+		const apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
 		return withLinearCredentials({ apiKey }, fn);
 	}
 
@@ -149,7 +151,7 @@ export class LinearIntegration implements PMIntegration {
 
 		try {
 			// Get the authenticated user to compare — credentials must be in scope.
-			const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+			const apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
 			const { linearClient } = await import('../../linear/client.js');
 			const me = await withLinearCredentials({ apiKey }, () => linearClient.getMe());
 			return me.id === commentUserId;
@@ -164,7 +166,7 @@ export class LinearIntegration implements PMIntegration {
 		message: string,
 	): Promise<string | null> {
 		try {
-			const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+			const apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
 			return await withLinearCredentials({ apiKey }, async () => {
 				const { linearClient } = await import('../../linear/client.js');
 				const comment = await linearClient.createComment(workItemId, message);
@@ -183,7 +185,7 @@ export class LinearIntegration implements PMIntegration {
 
 	async deleteAckComment(projectId: string, _workItemId: string, commentId: string): Promise<void> {
 		try {
-			const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+			const apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
 			await withLinearCredentials({ apiKey }, async () => {
 				const { linearClient } = await import('../../linear/client.js');
 				await linearClient.deleteComment(commentId);

@@ -45,7 +45,9 @@ export class JiraIntegration implements PMIntegration {
 		const roles = PROVIDER_CREDENTIAL_ROLES.jira;
 		const requiredRoles = roles.filter((r) => !r.optional);
 		const values = await Promise.all(
-			requiredRoles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+			requiredRoles.map((roleDef) =>
+				getIntegrationCredentialOrNull(projectId, 'pm', 'jira', roleDef.role),
+			),
 		);
 		return values.every((v) => v !== null);
 	}
@@ -59,8 +61,8 @@ export class JiraIntegration implements PMIntegration {
 	}
 
 	async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-		const email = await getIntegrationCredential(projectId, 'pm', 'email');
-		const apiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
+		const email = await getIntegrationCredential(projectId, 'pm', 'jira', 'email');
+		const apiToken = await getIntegrationCredential(projectId, 'pm', 'jira', 'api_token');
 		const project = await findProjectById(projectId);
 		const baseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		return withJiraCredentials({ email, apiToken, baseUrl }, fn);

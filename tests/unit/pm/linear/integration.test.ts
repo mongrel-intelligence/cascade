@@ -203,7 +203,12 @@ describe('LinearIntegration', () => {
 			const fn = vi.fn().mockResolvedValue('done');
 			const result = await integration.withCredentials('proj-1', fn);
 
-			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'api_key');
+			expect(mockGetIntegrationCredential).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'linear',
+				'api_key',
+			);
 			expect(mockWithLinearCredentials).toHaveBeenCalledWith({ apiKey: 'lin_api_key_xxx' }, fn);
 			expect(result).toBe('done');
 		});

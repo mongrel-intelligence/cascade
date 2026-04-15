@@ -124,7 +124,7 @@ export class LinearIntegration implements PMIntegration {
   async hasIntegration(projectId: string): Promise<boolean> {
     const provider = await getIntegrationProvider(projectId, 'pm');
     if (provider !== 'linear') return false;
-    const key = await getIntegrationCredentialOrNull(projectId, 'pm', 'api_key');
+    const key = await getIntegrationCredentialOrNull(projectId, 'pm', 'linear', 'api_key');
     return key !== null;
   }
 
@@ -133,7 +133,7 @@ export class LinearIntegration implements PMIntegration {
   }
 
   async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-    const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+    const apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
     // set process.env.LINEAR_API_KEY, call fn, restore
     const prev = process.env.LINEAR_API_KEY;
     process.env.LINEAR_API_KEY = apiKey;

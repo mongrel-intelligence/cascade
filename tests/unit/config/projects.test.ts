@@ -155,15 +155,15 @@ describe('config provider', () => {
 		it('resolves credential from project_credentials via envVarKey mapping', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue('db-secret-value');
 
-			const result = await getIntegrationCredential('project1', 'pm', 'api_key');
+			const result = await getIntegrationCredential('project1', 'pm', 'trello', 'api_key');
 			expect(result).toBe('db-secret-value');
 		});
 
 		it('throws when credential not found', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
-			await expect(getIntegrationCredential('project1', 'pm', 'api_key')).rejects.toThrow(
-				"Integration credential 'pm/api_key' not found for project 'project1'",
+			await expect(getIntegrationCredential('project1', 'pm', 'trello', 'api_key')).rejects.toThrow(
+				"Integration credential 'pm/trello/api_key' not found for project 'project1'",
 			);
 		});
 	});
@@ -176,14 +176,24 @@ describe('config provider', () => {
 		it('returns credential value when found', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue('secret-value');
 
-			const result = await getIntegrationCredentialOrNull('project1', 'scm', 'implementer_token');
+			const result = await getIntegrationCredentialOrNull(
+				'project1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 			expect(result).toBe('secret-value');
 		});
 
 		it('returns null when no credential found', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
-			const result = await getIntegrationCredentialOrNull('project1', 'scm', 'implementer_token');
+			const result = await getIntegrationCredentialOrNull(
+				'project1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 			expect(result).toBeNull();
 		});
 	});

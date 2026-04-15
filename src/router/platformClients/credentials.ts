@@ -23,8 +23,8 @@ export async function resolveTrelloCredentials(
 	projectId: string,
 ): Promise<TrelloCredentials | null> {
 	try {
-		const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
-		const token = await getIntegrationCredential(projectId, 'pm', 'token');
+		const apiKey = await getIntegrationCredential(projectId, 'pm', 'trello', 'api_key');
+		const token = await getIntegrationCredential(projectId, 'pm', 'trello', 'token');
 		return { apiKey, token };
 	} catch {
 		return null;
@@ -40,8 +40,8 @@ export async function resolveJiraCredentials(
 	projectId: string,
 ): Promise<JiraCredentialsWithAuth | null> {
 	try {
-		const email = await getIntegrationCredential(projectId, 'pm', 'email');
-		const apiToken = await getIntegrationCredential(projectId, 'pm', 'api_token');
+		const email = await getIntegrationCredential(projectId, 'pm', 'jira', 'email');
+		const apiToken = await getIntegrationCredential(projectId, 'pm', 'jira', 'api_token');
 		const project = await findProjectById(projectId);
 		const baseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
 		if (!baseUrl) throw new Error('Missing JIRA base URL');
@@ -60,7 +60,7 @@ export async function resolveLinearCredentials(
 	projectId: string,
 ): Promise<LinearCredentials | null> {
 	try {
-		const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+		const apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
 		return { apiKey };
 	} catch {
 		return null;
@@ -84,19 +84,19 @@ export async function resolveWebhookSecret(
 	provider: 'github' | 'trello' | 'jira' | 'sentry' | 'linear',
 ): Promise<string | null> {
 	if (provider === 'github') {
-		return getIntegrationCredentialOrNull(projectId, 'scm', 'webhook_secret');
+		return getIntegrationCredentialOrNull(projectId, 'scm', 'github', 'webhook_secret');
 	}
 	if (provider === 'jira') {
-		return getIntegrationCredentialOrNull(projectId, 'pm', 'webhook_secret');
+		return getIntegrationCredentialOrNull(projectId, 'pm', 'jira', 'webhook_secret');
 	}
 	if (provider === 'sentry') {
-		return getIntegrationCredentialOrNull(projectId, 'alerting', 'webhook_secret');
+		return getIntegrationCredentialOrNull(projectId, 'alerting', 'sentry', 'webhook_secret');
 	}
 	if (provider === 'linear') {
-		return getIntegrationCredentialOrNull(projectId, 'pm', 'webhook_secret');
+		return getIntegrationCredentialOrNull(projectId, 'pm', 'linear', 'webhook_secret');
 	}
 	// Trello signs webhook payloads with the API Secret, not the public API Key.
-	return getIntegrationCredentialOrNull(projectId, 'pm', 'api_secret');
+	return getIntegrationCredentialOrNull(projectId, 'pm', 'trello', 'api_secret');
 }
 
 /**

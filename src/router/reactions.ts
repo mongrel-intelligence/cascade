@@ -173,7 +173,7 @@ async function sendLinearReaction(projectId: string, payload: unknown): Promise<
 
 	let apiKey: string;
 	try {
-		apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
+		apiKey = await getIntegrationCredential(projectId, 'pm', 'linear', 'api_key');
 	} catch {
 		logger.warn('[Reactions] Missing Linear credentials, skipping reaction');
 		return;

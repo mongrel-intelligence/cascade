@@ -181,8 +181,18 @@ describe('JiraIntegration', () => {
 			expect(result).toBe(true);
 			// Only 2 required credentials checked (email, api_token), not webhook_secret
 			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledTimes(2);
-			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'email');
-			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith('proj-1', 'pm', 'api_token');
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'jira',
+				'email',
+			);
+			expect(mockGetIntegrationCredentialOrNull).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'jira',
+				'api_token',
+			);
 		});
 	});
 
@@ -226,8 +236,13 @@ describe('JiraIntegration', () => {
 			const fn = vi.fn().mockResolvedValue('done');
 			const result = await integration.withCredentials('proj-1', fn);
 
-			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'email');
-			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'api_token');
+			expect(mockGetIntegrationCredential).toHaveBeenCalledWith('proj-1', 'pm', 'jira', 'email');
+			expect(mockGetIntegrationCredential).toHaveBeenCalledWith(
+				'proj-1',
+				'pm',
+				'jira',
+				'api_token',
+			);
 			expect(mockWithJiraCredentials).toHaveBeenCalledWith(
 				{
 					email: 'bot@example.com',

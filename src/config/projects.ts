@@ -5,6 +5,7 @@ export async function getProjectGitHubToken(project: ProjectConfig): Promise<str
 	const implementerToken = await getIntegrationCredentialOrNull(
 		project.id,
 		'scm',
+		'github',
 		'implementer_token',
 	);
 	if (implementerToken) return implementerToken;

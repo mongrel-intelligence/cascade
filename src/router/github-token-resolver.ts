@@ -60,7 +60,12 @@ export async function resolveGitHubTokenForAckByAgent(
 	try {
 		const persona = getPersonaForAgentType(agentType);
 		if (persona === 'reviewer') {
-			const token = await getIntegrationCredential(resolvedProject.id, 'scm', 'reviewer_token');
+			const token = await getIntegrationCredential(
+				resolvedProject.id,
+				'scm',
+				'github',
+				'reviewer_token',
+			);
 			return { token, project: resolvedProject };
 		}
 		const token = await getProjectGitHubToken(resolvedProject);

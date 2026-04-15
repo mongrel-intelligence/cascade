@@ -137,6 +137,22 @@ describe('integrationsDiscoveryRouter', () => {
 		// Default: org access check passes
 		mockVerifyProjectOrgAccess.mockResolvedValue(undefined);
 		mockFetch.mockReset();
+		// Reset the credential mock so leftover mockResolvedValueOnce values from
+		// earlier tests don't leak into the next test's code path.
+		mockGetIntegrationCredentialOrNull.mockReset();
+		// Default: *ByProject endpoints find a PM integration row for the project.
+		// Individual tests override to simulate missing-integration or wrong-provider cases.
+		mockGetIntegrationByProjectAndCategory.mockReset();
+		mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+			id: 1,
+			projectId: 'proj-1',
+			category: 'pm',
+			provider: 'trello',
+			config: { baseUrl: 'https://myorg.atlassian.net' },
+			triggers: {},
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		});
 	});
 
 	// ── Auth ─────────────────────────────────────────────────────────────
@@ -625,6 +641,7 @@ describe('integrationsDiscoveryRouter', () => {
 				.mockResolvedValueOnce('stored@example.com')
 				.mockResolvedValueOnce('stored-token');
 			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
 				config: { baseUrl: 'https://myorg.atlassian.net' },
 			});
 			const projects = [{ key: 'PROJ', name: 'My Project' }];
@@ -640,6 +657,7 @@ describe('integrationsDiscoveryRouter', () => {
 		it('throws NOT_FOUND when email credential is missing', async () => {
 			mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
 			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
 				config: { baseUrl: 'https://myorg.atlassian.net' },
 			});
 
@@ -653,7 +671,7 @@ describe('integrationsDiscoveryRouter', () => {
 			mockGetIntegrationCredentialOrNull
 				.mockResolvedValueOnce('stored@example.com')
 				.mockResolvedValueOnce('stored-token');
-			mockGetIntegrationByProjectAndCategory.mockResolvedValue({ config: {} });
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({ provider: 'jira', config: {} });
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.jiraProjectsByProject({ projectId: 'proj-1' })).rejects.toMatchObject({
@@ -690,6 +708,7 @@ describe('integrationsDiscoveryRouter', () => {
 				.mockResolvedValueOnce('stored@example.com')
 				.mockResolvedValueOnce('stored-token');
 			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
 				config: { baseUrl: 'https://myorg.atlassian.net' },
 			});
 			mockJiraSearchProjects.mockRejectedValue(new Error('Connection refused'));
@@ -709,6 +728,7 @@ describe('integrationsDiscoveryRouter', () => {
 				.mockResolvedValueOnce('stored@example.com')
 				.mockResolvedValueOnce('stored-token');
 			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
 				config: { baseUrl: 'https://myorg.atlassian.net' },
 			});
 			const statuses = [{ name: 'To Do', id: 'status-1' }];
@@ -739,6 +759,7 @@ describe('integrationsDiscoveryRouter', () => {
 		it('throws NOT_FOUND when credentials are missing', async () => {
 			mockGetIntegrationCredentialOrNull.mockResolvedValue(null);
 			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
 				config: { baseUrl: 'https://myorg.atlassian.net' },
 			});
 
@@ -779,6 +800,7 @@ describe('integrationsDiscoveryRouter', () => {
 				.mockResolvedValueOnce('stored@example.com')
 				.mockResolvedValueOnce('stored-token');
 			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
 				config: { baseUrl: 'https://myorg.atlassian.net' },
 			});
 			mockJiraGetProjectStatuses.mockRejectedValue(new Error('Project not found'));
@@ -1083,6 +1105,19 @@ describe('integrationsDiscoveryRouter', () => {
 	// ── linearTeamsByProject ──────────────────────────────────────────────
 
 	describe('linearTeamsByProject', () => {
+		beforeEach(() => {
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				id: 1,
+				projectId: 'proj-1',
+				category: 'pm',
+				provider: 'linear',
+				config: { teamId: 'team-1' },
+				triggers: {},
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			});
+		});
+
 		it('returns teams using stored project credentials', async () => {
 			mockGetIntegrationCredentialOrNull.mockResolvedValueOnce('stored-api-key');
 			const teams = [{ id: 'team-1', name: 'Engineering', key: 'ENG', description: null }];
@@ -1172,6 +1207,19 @@ describe('integrationsDiscoveryRouter', () => {
 	// ── linearTeamDetailsByProject ────────────────────────────────────────
 
 	describe('linearTeamDetailsByProject', () => {
+		beforeEach(() => {
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				id: 1,
+				projectId: 'proj-1',
+				category: 'pm',
+				provider: 'linear',
+				config: { teamId: 'team-1' },
+				triggers: {},
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			});
+		});
+
 		it('returns team details using stored project credentials', async () => {
 			mockGetIntegrationCredentialOrNull.mockResolvedValueOnce('stored-api-key');
 			const states = [{ id: 'state-1', name: 'Todo', type: 'unstarted', color: '#aaa' }];

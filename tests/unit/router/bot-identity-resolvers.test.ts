@@ -54,7 +54,7 @@ vi.stubGlobal('fetch', mockFetch);
 beforeEach(() => {
 	mockFetch.mockReset();
 
-	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, role) => {
+	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, _provider, role) => {
 		const value = MOCK_CREDENTIALS[`${category}/${role}`];
 		if (value) return value;
 		throw new Error(`Credential '${category}/${role}' not found`);

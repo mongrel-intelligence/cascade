@@ -321,7 +321,7 @@ describe('config/provider', () => {
 			setEnvCredential('TRELLO_API_KEY', 'env-key');
 			vi.mocked(resolveProjectCredential).mockResolvedValue('db-value');
 
-			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
+			const result = await getIntegrationCredential('proj1', 'pm', 'trello', 'api_key');
 
 			// env vars are ignored without CASCADE_CREDENTIAL_KEYS; DB is always used
 			expect(result).toBe('db-value');
@@ -331,7 +331,7 @@ describe('config/provider', () => {
 		it('resolves from project_credentials via envVarKey mapping', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue('db-value');
 
-			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
+			const result = await getIntegrationCredential('proj1', 'pm', 'trello', 'api_key');
 
 			expect(result).toBe('db-value');
 			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'TRELLO_API_KEY');
@@ -340,16 +340,16 @@ describe('config/provider', () => {
 		it('throws when credential not found', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
-			await expect(getIntegrationCredential('proj1', 'pm', 'api_key')).rejects.toThrow(
-				"Integration credential 'pm/api_key' not found for project 'proj1'",
+			await expect(getIntegrationCredential('proj1', 'pm', 'trello', 'api_key')).rejects.toThrow(
+				"Integration credential 'pm/trello/api_key' not found for project 'proj1'",
 			);
 		});
 
 		it('throws without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
 			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'OTHER_KEY');
 
-			await expect(getIntegrationCredential('proj1', 'pm', 'api_key')).rejects.toThrow(
-				"Integration credential 'pm/api_key' not found for project 'proj1'",
+			await expect(getIntegrationCredential('proj1', 'pm', 'trello', 'api_key')).rejects.toThrow(
+				"Integration credential 'pm/trello/api_key' not found for project 'proj1'",
 			);
 			expect(resolveProjectCredential).not.toHaveBeenCalled();
 		});
@@ -360,7 +360,12 @@ describe('config/provider', () => {
 			setEnvCredential('GITHUB_TOKEN_IMPLEMENTER', 'env-token');
 			vi.mocked(resolveProjectCredential).mockResolvedValue('db-token');
 
-			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
+			const result = await getIntegrationCredentialOrNull(
+				'proj1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 
 			// env vars are ignored without CASCADE_CREDENTIAL_KEYS; DB is always used
 			expect(result).toBe('db-token');
@@ -370,7 +375,12 @@ describe('config/provider', () => {
 		it('returns null when credential not found', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue(null);
 
-			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
+			const result = await getIntegrationCredentialOrNull(
+				'proj1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 
 			expect(result).toBeNull();
 		});
@@ -378,7 +388,12 @@ describe('config/provider', () => {
 		it('returns value from project_credentials via envVarKey mapping', async () => {
 			vi.mocked(resolveProjectCredential).mockResolvedValue('db-token');
 
-			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
+			const result = await getIntegrationCredentialOrNull(
+				'proj1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 
 			expect(result).toBe('db-token');
 			expect(resolveProjectCredential).toHaveBeenCalledWith('proj1', 'GITHUB_TOKEN_IMPLEMENTER');
@@ -387,7 +402,12 @@ describe('config/provider', () => {
 		it('returns null without DB fallback when CASCADE_CREDENTIAL_KEYS is set (worker context)', async () => {
 			setEnvCredential('CASCADE_CREDENTIAL_KEYS', 'OTHER_KEY');
 
-			const result = await getIntegrationCredentialOrNull('proj1', 'scm', 'implementer_token');
+			const result = await getIntegrationCredentialOrNull(
+				'proj1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 
 			expect(result).toBeNull();
 			expect(resolveProjectCredential).not.toHaveBeenCalled();
@@ -494,7 +514,7 @@ describe('config/provider', () => {
 			};
 			setCredentialResolver(mockResolver);
 
-			const result = await getIntegrationCredential('proj1', 'pm', 'api_key');
+			const result = await getIntegrationCredential('proj1', 'pm', 'trello', 'api_key');
 
 			expect(result).toBe('injected-value');
 			expect(mockResolver.resolve).toHaveBeenCalledWith('proj1', 'TRELLO_API_KEY');

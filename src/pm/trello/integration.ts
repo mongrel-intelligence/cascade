@@ -41,7 +41,9 @@ export class TrelloIntegration implements PMIntegration {
 		const roles = PROVIDER_CREDENTIAL_ROLES.trello;
 		const requiredRoles = roles.filter((r) => !r.optional);
 		const values = await Promise.all(
-			requiredRoles.map((roleDef) => getIntegrationCredentialOrNull(projectId, 'pm', roleDef.role)),
+			requiredRoles.map((roleDef) =>
+				getIntegrationCredentialOrNull(projectId, 'pm', 'trello', roleDef.role),
+			),
 		);
 		return values.every((v) => v !== null);
 	}
@@ -51,8 +53,8 @@ export class TrelloIntegration implements PMIntegration {
 	}
 
 	async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {
-		const apiKey = await getIntegrationCredential(projectId, 'pm', 'api_key');
-		const token = await getIntegrationCredential(projectId, 'pm', 'token');
+		const apiKey = await getIntegrationCredential(projectId, 'pm', 'trello', 'api_key');
+		const token = await getIntegrationCredential(projectId, 'pm', 'trello', 'token');
 		return withTrelloCredentials({ apiKey, token }, fn);
 	}
 

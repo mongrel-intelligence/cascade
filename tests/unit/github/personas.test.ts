@@ -77,7 +77,12 @@ describe('personas', () => {
 			const token = await getPersonaToken('project1', 'implementation');
 
 			expect(token).toBe('ghp_impl_token');
-			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'implementer_token');
+			expect(getIntegrationCredential).toHaveBeenCalledWith(
+				'project1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 		});
 
 		it('resolves reviewer token for review agent', async () => {
@@ -86,7 +91,12 @@ describe('personas', () => {
 			const token = await getPersonaToken('project1', 'review');
 
 			expect(token).toBe('ghp_review_token');
-			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'reviewer_token');
+			expect(getIntegrationCredential).toHaveBeenCalledWith(
+				'project1',
+				'scm',
+				'github',
+				'reviewer_token',
+			);
 		});
 
 		it('resolves implementer token for respond-to-review agent', async () => {
@@ -95,7 +105,12 @@ describe('personas', () => {
 			const token = await getPersonaToken('project1', 'respond-to-review');
 
 			expect(token).toBe('ghp_impl_token');
-			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'implementer_token');
+			expect(getIntegrationCredential).toHaveBeenCalledWith(
+				'project1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 		});
 
 		it('throws when no token is found', async () => {
@@ -115,7 +130,12 @@ describe('personas', () => {
 
 			await getPersonaToken('project1', 'some-new-agent');
 
-			expect(getIntegrationCredential).toHaveBeenCalledWith('project1', 'scm', 'implementer_token');
+			expect(getIntegrationCredential).toHaveBeenCalledWith(
+				'project1',
+				'scm',
+				'github',
+				'implementer_token',
+			);
 		});
 	});
 
