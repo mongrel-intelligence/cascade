@@ -1,5 +1,5 @@
 import { loadConfig } from '../config/provider.js';
-import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
+import { getJiraConfig, getLinearConfig, getPMConfig, getTrelloConfig } from '../pm/config.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 
 // Minimal config types - what router needs for quick filtering
@@ -7,6 +7,17 @@ export interface RouterProjectConfig {
 	id: string;
 	repo?: string; // owner/repo format (optional for projects without SCM integration)
 	pmType: 'trello' | 'jira' | 'linear';
+	/**
+	 * Generic PM identifier for the active provider.
+	 * Replaces per-provider fields (trello.boardId, jira.projectKey, linear.teamId)
+	 * for generic lookups. Populated by loadProjectConfig() from the active config.
+	 *
+	 * Values by provider:
+	 * - trello: boardId
+	 * - jira: projectKey
+	 * - linear: teamId
+	 */
+	pmIdentifier?: string;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -88,10 +99,26 @@ export async function loadProjectConfig(): Promise<{
 					const trelloConfig = getTrelloConfig(p);
 					const jiraConfig = getJiraConfig(p);
 					const linearConfig = getLinearConfig(p);
+					const pmType = p.pm?.type ?? 'trello';
+
+					// Derive the generic pmIdentifier from the active provider's config
+					let pmIdentifier: string | undefined;
+					const pmConfig = getPMConfig(p);
+					if (pmConfig) {
+						if (pmType === 'trello') {
+							pmIdentifier = pmConfig.boardId as string | undefined;
+						} else if (pmType === 'jira') {
+							pmIdentifier = pmConfig.projectKey as string | undefined;
+						} else if (pmType === 'linear') {
+							pmIdentifier = pmConfig.teamId as string | undefined;
+						}
+					}
+
 					return {
 						id: p.id,
 						repo: p.repo,
-						pmType: p.pm?.type ?? 'trello',
+						pmType,
+						pmIdentifier,
 						...(trelloConfig && {
 							trello: {
 								boardId: trelloConfig.boardId,

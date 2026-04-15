@@ -78,4 +78,53 @@ describe('configCache', () => {
 			expect(configCache.getProjectByRepo('owner/repo')).toBeNull();
 		});
 	});
+
+	describe('projectByPMIdentifier (unified PM lookup cache)', () => {
+		it('returns null when not cached', () => {
+			expect(configCache.getProjectByPMIdentifier('trello', 'board123')).toBeNull();
+		});
+
+		it('caches and retrieves a project by provider + identifier', () => {
+			const project = { id: 'proj1' } as never;
+			configCache.setProjectByPMIdentifier('trello', 'board123', project);
+			expect(configCache.getProjectByPMIdentifier('trello', 'board123')).toBe(project);
+		});
+
+		it('isolates cache by provider type', () => {
+			const project = { id: 'proj1' } as never;
+			configCache.setProjectByPMIdentifier('trello', 'key1', project);
+			// Same key, different provider — should be cache miss
+			expect(configCache.getProjectByPMIdentifier('jira', 'key1')).toBeNull();
+		});
+
+		it('isolates cache by identifier', () => {
+			const project = { id: 'proj1' } as never;
+			configCache.setProjectByPMIdentifier('trello', 'board1', project);
+			expect(configCache.getProjectByPMIdentifier('trello', 'board2')).toBeNull();
+		});
+
+		it('caches undefined (negative cache) correctly', () => {
+			configCache.setProjectByPMIdentifier('jira', 'NONEXISTENT', undefined);
+			// Undefined means "we looked and found nothing" — different from null (not cached)
+			expect(configCache.getProjectByPMIdentifier('jira', 'NONEXISTENT')).toBeUndefined();
+		});
+
+		it('is cleared by invalidate()', () => {
+			const project = { id: 'proj1' } as never;
+			configCache.setProjectByPMIdentifier('trello', 'board1', project);
+			configCache.invalidate();
+			expect(configCache.getProjectByPMIdentifier('trello', 'board1')).toBeNull();
+		});
+
+		it('supports all PM provider types (trello, jira, linear)', () => {
+			const proj = { id: 'p1' } as never;
+			configCache.setProjectByPMIdentifier('trello', 'board1', proj);
+			configCache.setProjectByPMIdentifier('jira', 'PROJ', proj);
+			configCache.setProjectByPMIdentifier('linear', 'team1', proj);
+
+			expect(configCache.getProjectByPMIdentifier('trello', 'board1')).toBe(proj);
+			expect(configCache.getProjectByPMIdentifier('jira', 'PROJ')).toBe(proj);
+			expect(configCache.getProjectByPMIdentifier('linear', 'team1')).toBe(proj);
+		});
+	});
 });

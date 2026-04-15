@@ -17,8 +17,16 @@ import {
 import { loadProjectConfig, routerConfig } from './config.js';
 import { resolveWebhookSecret } from './platformClients/credentials.js';
 
-/** The set of platforms that have a webhook secret in {@link resolveWebhookSecret}. */
-type WebhookPlatform = 'github' | 'trello' | 'jira' | 'sentry' | 'linear';
+/**
+ * Platform identifier for webhook secret resolution.
+ *
+ * Previously a closed union type ('github' | 'trello' | 'jira' | 'sentry' | 'linear').
+ * Now an open string type to allow new PM providers to plug in without modifying this file.
+ * The known built-in values are listed below for discoverability.
+ *
+ * Built-in values: 'github', 'trello', 'jira', 'sentry', 'linear'
+ */
+type WebhookPlatform = string;
 
 // ---------------------------------------------------------------------------
 // Helpers

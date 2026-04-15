@@ -186,3 +186,51 @@ export function findProjectWithConfigByLinearTeamId(
 ): Promise<ProjectWithConfig | undefined> {
 	return findProjectConfigFromDb(linearTeamIdWhereClause(teamId));
 }
+
+// ---------------------------------------------------------------------------
+// Generic PM identifier lookup (Step 2 of PM refactor)
+// ---------------------------------------------------------------------------
+
+/**
+ * PM identifier config key map — maps provider to the JSONB field that
+ * uniquely identifies a project in that provider.
+ */
+const PM_IDENTIFIER_KEYS: Record<string, string> = {
+	trello: 'boardId',
+	jira: 'projectKey',
+	linear: 'teamId',
+};
+
+/**
+ * Find a project by PM provider + provider-specific identifier string.
+ * Uses the `project_integrations` JSONB config to look up the identifier key.
+ *
+ * @param provider - e.g. 'trello', 'jira', 'linear'
+ * @param identifier - provider-specific ID (boardId, projectKey, teamId)
+ */
+function pmIdentifierWhereClause(provider: string, identifier: string): SQL {
+	const key = PM_IDENTIFIER_KEYS[provider];
+	if (!key) {
+		// Unknown provider — return a condition that matches nothing
+		return sql`false`;
+	}
+	return sql`${projects.id} IN (
+		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+		WHERE ${projectIntegrations.provider} = ${provider}
+		AND ${projectIntegrations.config}->>${key} = ${identifier}
+	)`;
+}
+
+export function findProjectByPMIdentifierFromDb(
+	provider: string,
+	identifier: string,
+): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(pmIdentifierWhereClause(provider, identifier));
+}
+
+export function findProjectWithConfigByPMIdentifierFromDb(
+	provider: string,
+	identifier: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(pmIdentifierWhereClause(provider, identifier));
+}

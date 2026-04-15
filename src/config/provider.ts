@@ -3,11 +3,13 @@ import {
 	findProjectByIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
 	findProjectByLinearTeamIdFromDb,
+	findProjectByPMIdentifierFromDb,
 	findProjectByRepoFromDb,
 	findProjectWithConfigByBoardId,
 	findProjectWithConfigById,
 	findProjectWithConfigByJiraProjectKey,
 	findProjectWithConfigByLinearTeamId,
+	findProjectWithConfigByPMIdentifierFromDb,
 	findProjectWithConfigByRepo,
 	loadConfigFromDb,
 } from '../db/repositories/configRepository.js';
@@ -73,6 +75,27 @@ export async function findProjectById(id: string): Promise<ProjectConfig | undef
 	return findProjectByIdFromDb(id);
 }
 
+/**
+ * Find a project by PM provider type + provider-specific identifier.
+ *
+ * Replaces per-provider lookup functions (`findProjectByBoardId`, etc.)
+ * with a single generic function that uses a unified cache.
+ *
+ * @param provider - PM provider type: 'trello', 'jira', 'linear'
+ * @param identifier - Provider-specific ID (boardId, projectKey, teamId)
+ */
+export async function findProjectByPMIdentifier(
+	provider: string,
+	identifier: string,
+): Promise<ProjectConfig | undefined> {
+	const cached = configCache.getProjectByPMIdentifier(provider, identifier);
+	if (cached !== null) return cached;
+
+	const project = await findProjectByPMIdentifierFromDb(provider, identifier);
+	configCache.setProjectByPMIdentifier(provider, identifier, project);
+	return project;
+}
+
 // --- Project + org-scoped config lookups (for webhook handlers / agent runners) ---
 
 type ProjectWithConfig = { project: ProjectConfig; config: CascadeConfig };
@@ -103,6 +126,22 @@ export async function loadProjectConfigByLinearTeamId(
 
 export async function loadProjectConfigById(id: string): Promise<ProjectWithConfig | undefined> {
 	return findProjectWithConfigById(id);
+}
+
+/**
+ * Load both project + cascade config for a PM provider + identifier.
+ *
+ * Replaces per-provider config lookup functions (`loadProjectConfigByBoardId`, etc.)
+ * with a single generic function.
+ *
+ * @param provider - PM provider type: 'trello', 'jira', 'linear'
+ * @param identifier - Provider-specific ID (boardId, projectKey, teamId)
+ */
+export async function loadProjectConfigByPMIdentifier(
+	provider: string,
+	identifier: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigByPMIdentifierFromDb(provider, identifier);
 }
 
 // ============================================================================

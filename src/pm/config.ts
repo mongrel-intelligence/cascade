@@ -77,9 +77,39 @@ export function getLinearConfig(project: ProjectConfig): LinearConfig | undefine
 }
 
 /**
+ * Get the active PM provider's config as a generic record.
+ *
+ * Returns the `pmConfig` field when available (populated from `project_integrations.config`
+ * via the configMapper). Falls back to the per-provider typed accessor for backward compat
+ * with test fixtures and legacy projects that don't have `pmConfig` populated.
+ *
+ * Use the typed accessors (getTrelloConfig, getJiraConfig, getLinearConfig) when you need
+ * provider-specific fields with compile-time type safety. Use this accessor for generic
+ * operations that apply to all providers (e.g., extracting the cost field ID).
+ */
+export function getPMConfig(project: ProjectConfig): Record<string, unknown> | undefined {
+	// Use the unified pmConfig field when available
+	if (project.pmConfig) return project.pmConfig;
+
+	// Fallback: derive from per-provider typed fields (backward compat)
+	const pmType = project.pm?.type ?? 'trello';
+	if (pmType === 'jira') return project.jira as Record<string, unknown> | undefined;
+	if (pmType === 'linear') return project.linear as Record<string, unknown> | undefined;
+	return project.trello as Record<string, unknown> | undefined;
+}
+
+/**
  * Get the cost custom field ID for a project, regardless of PM type.
+ * Uses getPMConfig() for a provider-agnostic lookup when possible.
  */
 export function getCostFieldId(project: ProjectConfig): string | undefined {
+	// Use the generic pmConfig if available (no per-provider branching needed)
+	const pmConfig = getPMConfig(project);
+	if (pmConfig) {
+		const customFields = pmConfig.customFields as { cost?: string } | undefined;
+		return customFields?.cost;
+	}
+	// Fallback to per-provider accessors for backward compatibility
 	if (project.pm?.type === 'jira') {
 		return getJiraConfig(project)?.customFields?.cost;
 	}

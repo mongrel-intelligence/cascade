@@ -14,6 +14,11 @@ class ConfigCache {
 	private projectByJiraKey = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByLinearTeamId = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private orgIdByProject = new Map<string, CacheEntry<string>>();
+	/**
+	 * Unified PM identifier cache, keyed by `${provider}:${identifier}`.
+	 * Replaces per-provider caches for generic lookups.
+	 */
+	private projectByPMIdentifier = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private ttlMs: number;
 
 	constructor(ttlMs = DEFAULT_TTL_MS) {
@@ -81,6 +86,29 @@ class ConfigCache {
 		this.orgIdByProject.set(projectId, this.makeEntry(orgId));
 	}
 
+	/**
+	 * Get a cached project by PM provider type + identifier.
+	 * Key format: `${provider}:${identifier}` (e.g. `trello:boardId123`).
+	 * Returns null if not cached or expired.
+	 */
+	getProjectByPMIdentifier(provider: string, identifier: string): ProjectConfig | undefined | null {
+		const key = `${provider}:${identifier}`;
+		const entry = this.projectByPMIdentifier.get(key);
+		return this.isValid(entry) ? entry.data : null;
+	}
+
+	/**
+	 * Cache a project lookup by PM provider type + identifier.
+	 */
+	setProjectByPMIdentifier(
+		provider: string,
+		identifier: string,
+		project: ProjectConfig | undefined,
+	): void {
+		const key = `${provider}:${identifier}`;
+		this.projectByPMIdentifier.set(key, this.makeEntry(project));
+	}
+
 	invalidate(): void {
 		this.configEntry = null;
 		this.projectByBoardId.clear();
@@ -88,6 +116,7 @@ class ConfigCache {
 		this.projectByJiraKey.clear();
 		this.projectByLinearTeamId.clear();
 		this.orgIdByProject.clear();
+		this.projectByPMIdentifier.clear();
 	}
 }
 

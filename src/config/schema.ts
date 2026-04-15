@@ -72,6 +72,15 @@ export const ProjectConfigSchema = z.object({
 		})
 		.default({ type: 'trello' }),
 
+	/**
+	 * Generic PM config — provider-agnostic view of the active PM integration's config.
+	 * Populated from the active provider's `project_integrations.config` JSONB at load time.
+	 * Consumers should use typed accessors (getTrelloConfig, getJiraConfig, getLinearConfig)
+	 * or the generic getPMConfig() for read access. This field coexists with the
+	 * per-provider top-level fields (trello, jira, linear) for backward compatibility.
+	 */
+	pmConfig: z.record(z.unknown()).optional(),
+
 	trello: z
 		.object({
 			boardId: z.string().min(1),

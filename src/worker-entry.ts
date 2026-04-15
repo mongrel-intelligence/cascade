@@ -19,6 +19,8 @@ import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
+import { pmRegistry } from './pm/index.js';
+import { processPMWebhook } from './pm/webhook-handler.js';
 import { captureException, flush, setTag } from './sentry.js';
 import {
 	createTriggerRegistry,
@@ -94,6 +96,27 @@ export interface LinearJobData {
 	triggerResult?: TriggerResult;
 }
 
+/**
+ * Unified PM job data — represents a webhook event from any PM provider.
+ *
+ * Replaces per-provider job types (TrelloJobData, JiraJobData, LinearJobData)
+ * for new dispatches. The `source` field identifies the PM provider.
+ * Per-provider job types remain for backward compat with existing Redis jobs.
+ */
+export interface PMJobData {
+	type: 'pm';
+	/** PM provider identifier — e.g. 'trello', 'jira', 'linear' */
+	source: string;
+	payload: unknown;
+	projectId: string;
+	workItemId?: string;
+	/** Provider-specific event type */
+	eventType: string;
+	receivedAt: string;
+	ackCommentId?: string;
+	triggerResult?: TriggerResult;
+}
+
 export interface ManualRunJobData {
 	type: 'manual-run';
 	projectId: string;
@@ -128,6 +151,7 @@ export type JobData =
 	| JiraJobData
 	| SentryJobData
 	| LinearJobData
+	| PMJobData
 	| DashboardJobData;
 
 export async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
@@ -257,6 +281,36 @@ export async function dispatchJob(
 				jobData.triggerResult,
 			);
 			break;
+		case 'pm': {
+			// Unified PM dispatch — routes to any registered PM provider via pmRegistry
+			logger.info('[Worker] Processing unified PM job', {
+				jobId,
+				source: jobData.source,
+				projectId: jobData.projectId,
+				workItemId: jobData.workItemId,
+				eventType: jobData.eventType,
+				ackCommentId: jobData.ackCommentId,
+				hasTriggerResult: !!jobData.triggerResult,
+			});
+			const pmIntegration = pmRegistry.getOrNull(jobData.source);
+			if (!pmIntegration) {
+				const registered = pmRegistry
+					.all()
+					.map((i) => i.type)
+					.join(', ');
+				throw new Error(
+					`Unknown PM provider '${jobData.source}' in unified PMJob. Registered: ${registered}`,
+				);
+			}
+			await processPMWebhook(
+				pmIntegration,
+				jobData.payload,
+				triggerRegistry,
+				jobData.ackCommentId,
+				jobData.triggerResult,
+			);
+			break;
+		}
 		case 'manual-run':
 		case 'retry-run':
 		case 'debug-analysis':

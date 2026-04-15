@@ -70,7 +70,31 @@ export interface LinearJob {
 	triggerResult?: TriggerResult;
 }
 
-export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob | LinearJob;
+/**
+ * Unified PM job — represents a webhook event from any PM provider (Trello, JIRA, Linear).
+ *
+ * Replaces the per-provider `TrelloJob`, `JiraJob`, `LinearJob` discriminated union members
+ * with a single generic shape. The `source` field carries the provider name (e.g. 'trello')
+ * so workers can still route to the correct webhook handler.
+ *
+ * Per-provider job types are kept for backward compatibility with jobs already in Redis.
+ * New code should prefer `PMJob` when dispatching PM events.
+ */
+export interface PMJob {
+	type: 'pm';
+	/** PM provider identifier — e.g. 'trello', 'jira', 'linear' */
+	source: string;
+	payload: unknown;
+	projectId: string;
+	workItemId?: string;
+	/** Provider-specific event type (actionType, webhookEvent, Linear event type) */
+	eventType: string;
+	receivedAt: string;
+	ackCommentId?: string;
+	triggerResult?: TriggerResult;
+}
+
+export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob | LinearJob | PMJob;
 
 // Create the job queue
 export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {

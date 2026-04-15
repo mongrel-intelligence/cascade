@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { getCostFieldId, getJiraConfig, getTrelloConfig } from '../../../src/pm/config.js';
+import {
+	getCostFieldId,
+	getJiraConfig,
+	getLinearConfig,
+	getPMConfig,
+	getTrelloConfig,
+} from '../../../src/pm/config.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
 // Minimal required fields for a ProjectConfig fixture
@@ -230,6 +236,99 @@ describe('pm/config', () => {
 			const result = getCostFieldId(project);
 
 			expect(result).toBe('jira-cost-field');
+		});
+
+		it('uses pmConfig.customFields.cost when pmConfig is available (generic path)', () => {
+			const project: ProjectConfig = {
+				...BASE_PROJECT,
+				pm: { type: 'trello' },
+				pmConfig: { boardId: 'b1', customFields: { cost: 'generic-cost-field' } },
+			};
+
+			const result = getCostFieldId(project);
+
+			expect(result).toBe('generic-cost-field');
+		});
+	});
+
+	describe('getPMConfig', () => {
+		it('returns pmConfig when set (generic field takes priority)', () => {
+			const project: ProjectConfig = {
+				...BASE_PROJECT,
+				pm: { type: 'trello' },
+				pmConfig: { boardId: 'b1', lists: {}, labels: {} },
+				trello: TRELLO_CONFIG,
+			};
+
+			const result = getPMConfig(project);
+
+			expect(result).toEqual({ boardId: 'b1', lists: {}, labels: {} });
+		});
+
+		it('falls back to trello field when pmConfig not set', () => {
+			const project: ProjectConfig = {
+				...BASE_PROJECT,
+				pm: { type: 'trello' },
+				trello: TRELLO_CONFIG,
+			};
+
+			const result = getPMConfig(project);
+
+			expect(result).toEqual(TRELLO_CONFIG);
+		});
+
+		it('falls back to jira field when pmConfig not set and pm.type is jira', () => {
+			const project: ProjectConfig = {
+				...BASE_PROJECT,
+				pm: { type: 'jira' },
+				jira: JIRA_CONFIG,
+			};
+
+			const result = getPMConfig(project);
+
+			expect(result).toEqual(JIRA_CONFIG);
+		});
+
+		it('falls back to linear field when pmConfig not set and pm.type is linear', () => {
+			const LINEAR_CONFIG = {
+				teamId: 'team1',
+				statuses: { todo: 'Todo', inProgress: 'In Progress' },
+			} as const;
+
+			const project = {
+				...BASE_PROJECT,
+				pm: { type: 'linear' } as ProjectConfig['pm'],
+				linear: LINEAR_CONFIG,
+			} as ProjectConfig;
+
+			const result = getPMConfig(project);
+
+			expect(result).toEqual(LINEAR_CONFIG);
+		});
+
+		it('returns undefined when no PM config available', () => {
+			const project: ProjectConfig = {
+				...BASE_PROJECT,
+				pm: { type: 'trello' },
+			};
+
+			const result = getPMConfig(project);
+
+			expect(result).toBeUndefined();
+		});
+
+		it('returns pmConfig over per-provider field when pmConfig is set', () => {
+			// pmConfig should take priority over per-provider field
+			const project = {
+				...BASE_PROJECT,
+				pm: { type: 'trello' } as ProjectConfig['pm'],
+				pmConfig: { boardId: 'generic-board', customData: true },
+				trello: TRELLO_CONFIG,
+			} as ProjectConfig;
+
+			const result = getPMConfig(project);
+
+			expect(result).toEqual({ boardId: 'generic-board', customData: true });
 		});
 	});
 });

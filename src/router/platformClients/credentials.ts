@@ -81,7 +81,7 @@ export async function resolveLinearCredentials(
  */
 export async function resolveWebhookSecret(
 	projectId: string,
-	provider: 'github' | 'trello' | 'jira' | 'sentry' | 'linear',
+	provider: string,
 ): Promise<string | null> {
 	if (provider === 'github') {
 		return getIntegrationCredentialOrNull(projectId, 'scm', 'webhook_secret');

@@ -105,6 +105,7 @@ describe('loadProjectConfig', () => {
 			id: 'p1',
 			repo: 'owner/repo',
 			pmType: 'trello',
+			pmIdentifier: 'board1',
 			trello: {
 				boardId: 'board1',
 				lists: { splitting: 'list1', planning: 'list2', todo: 'list3' },
@@ -140,6 +141,7 @@ describe('loadProjectConfig', () => {
 			id: 'p2',
 			repo: 'owner/jira-repo',
 			pmType: 'jira',
+			pmIdentifier: 'MYPROJ',
 			jira: {
 				projectKey: 'MYPROJ',
 				baseUrl: 'https://mycompany.atlassian.net',

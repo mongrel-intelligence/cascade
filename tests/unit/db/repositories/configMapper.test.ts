@@ -408,4 +408,40 @@ describe('mapProjectRow', () => {
 		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, snapshotTtlMs: 3600000 } }));
 		expect(result.snapshotTtlMs).toBe(3600000);
 	});
+
+	// -----------------------------------------------------------------------
+	// pmConfig — generic provider-agnostic PM config (Step 1 of PM refactor)
+	// -----------------------------------------------------------------------
+
+	it('populates pmConfig from trello config when pm.type is trello', () => {
+		const result = mapProjectRow(makeInput());
+		expect(result.pmConfig).toBeDefined();
+		expect(result.pmConfig?.boardId).toBe('board123');
+		expect(result.pmConfig?.lists).toEqual({ todo: 'list-todo', done: 'list-done' });
+	});
+
+	it('populates pmConfig from jira config when pm.type is jira', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, jiraConfig }));
+		expect(result.pmConfig).toBeDefined();
+		expect(result.pmConfig?.projectKey).toBe('PROJ');
+		expect(result.pmConfig?.baseUrl).toBe('https://test.atlassian.net');
+	});
+
+	it('populates pmConfig from linear config when pm.type is linear', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, linearConfig }));
+		expect(result.pmConfig).toBeDefined();
+		expect(result.pmConfig?.teamId).toBe('team-abc123');
+	});
+
+	it('sets pmConfig to undefined when no PM config provided', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined }));
+		expect(result.pmConfig).toBeUndefined();
+	});
+
+	it('pmConfig matches the active provider (jira takes precedence over trello when both present)', () => {
+		// jiaConfig presence means jira is the active provider
+		const result = mapProjectRow(makeInput({ trelloConfig, jiraConfig }));
+		expect(result.pm.type).toBe('jira');
+		expect(result.pmConfig?.projectKey).toBe('PROJ');
+	});
 });

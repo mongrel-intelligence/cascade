@@ -89,6 +89,12 @@ export interface ProjectConfigRaw {
 	baseBranch: string;
 	branchPrefix: string;
 	pm: { type: string };
+	/**
+	 * Generic PM config — a provider-agnostic view of the active PM integration config.
+	 * Populated from the active provider's integration config at load time.
+	 * Coexists with per-provider fields (trello, jira, linear) for backward compat.
+	 */
+	pmConfig?: Record<string, unknown>;
 	model?: string;
 	agentModels?: Record<string, string>;
 	maxIterations?: number;
@@ -292,8 +298,18 @@ export function mapProjectRow({
 	// Derive PM type from integration config
 	const pmType = jiraConfig ? 'jira' : linearConfig ? 'linear' : 'trello';
 
+	// Build the generic pmConfig from the active provider's config
+	const activePmConfig: Record<string, unknown> | undefined = jiraConfig
+		? (jiraConfig as unknown as Record<string, unknown>)
+		: linearConfig
+			? (linearConfig as unknown as Record<string, unknown>)
+			: trelloConfig
+				? (trelloConfig as unknown as Record<string, unknown>)
+				: undefined;
+
 	const project: ProjectConfigRaw = {
 		...buildBaseProjectFields(row, pmType),
+		pmConfig: activePmConfig,
 		agentModels: orUndefined(models),
 		agentEngineSettings: orUndefined(agentEngineSettingsMap) as
 			| Record<string, EngineSettings>
