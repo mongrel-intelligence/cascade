@@ -33,6 +33,24 @@ const mockUsers = {
 	getAuthenticated: vi.fn(),
 };
 
+// By default, mockPaginate routes calls through to the underlying mocked method
+// and unwraps the response shape octokit's real `paginate` would produce.
+// Tests can override per-call via mockPaginate.mockResolvedValue([...]) when
+// they want to assert paginate was invoked directly with specific data.
+const mockPaginate = vi.fn(
+	async (method: (params: unknown) => Promise<unknown>, params: unknown) => {
+		const res = (await method(params)) as { data?: unknown };
+		const data = res?.data;
+		if (data && typeof data === 'object') {
+			// listWorkflowRunsForRepo wraps results in { workflow_runs: [...] }
+			if ('workflow_runs' in data) return (data as { workflow_runs: unknown[] }).workflow_runs;
+			// listJobsForWorkflowRun wraps in { jobs: [...] }
+			if ('jobs' in data) return (data as { jobs: unknown[] }).jobs;
+		}
+		return Array.isArray(data) ? data : [];
+	},
+);
+
 vi.mock('@octokit/rest', () => ({
 	Octokit: vi.fn().mockImplementation(() => ({
 		pulls: mockPulls,
@@ -40,6 +58,7 @@ vi.mock('@octokit/rest', () => ({
 		checks: mockChecks,
 		actions: mockActions,
 		users: mockUsers,
+		paginate: mockPaginate,
 	})),
 }));
 
@@ -541,6 +560,118 @@ describe('githubClient', () => {
 				changes: 15,
 				patch: '@@ -1,5 +1,10 @@',
 			});
+		});
+
+		it('uses octokit paginate (paginates beyond 100 files)', async () => {
+			// Override default routing — assert paginate was called and return 129 entries
+			const allFiles = Array.from({ length: 129 }, (_, i) => ({
+				filename: `file-${i}.ts`,
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@',
+			}));
+			mockPaginate.mockResolvedValueOnce(allFiles);
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPRDiff('owner', 'repo', 1092),
+			);
+
+			expect(result).toHaveLength(129);
+			expect(mockPaginate).toHaveBeenCalledWith(mockPulls.listFiles, {
+				owner: 'owner',
+				repo: 'repo',
+				pull_number: 1092,
+				per_page: 100,
+			});
+		});
+	});
+
+	describe('pagination — all paginated endpoints use octokit paginate', () => {
+		it('getPRReviewComments uses paginate', async () => {
+			mockPaginate.mockResolvedValueOnce([]);
+			await withGitHubToken('test-token', () =>
+				githubClient.getPRReviewComments('owner', 'repo', 1),
+			);
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockPulls.listReviewComments,
+				expect.objectContaining({ per_page: 100 }),
+			);
+		});
+
+		it('getPRReviews uses paginate', async () => {
+			mockPaginate.mockResolvedValueOnce([]);
+			await withGitHubToken('test-token', () => githubClient.getPRReviews('owner', 'repo', 1));
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockPulls.listReviews,
+				expect.objectContaining({ per_page: 100 }),
+			);
+		});
+
+		it('getPRIssueComments uses paginate', async () => {
+			mockPaginate.mockResolvedValueOnce([]);
+			await withGitHubToken('test-token', () =>
+				githubClient.getPRIssueComments('owner', 'repo', 1),
+			);
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockIssues.listComments,
+				expect.objectContaining({ per_page: 100 }),
+			);
+		});
+
+		it('getCheckSuiteStatus uses paginate for both workflow runs and jobs', async () => {
+			mockPaginate.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]); // 2 runs
+			mockPaginate.mockResolvedValueOnce([
+				{ name: 'job1', status: 'completed', conclusion: 'success' },
+			]);
+			mockPaginate.mockResolvedValueOnce([
+				{ name: 'job2', status: 'completed', conclusion: 'success' },
+			]);
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
+
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockActions.listWorkflowRunsForRepo,
+				expect.objectContaining({ per_page: 100 }),
+			);
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockActions.listJobsForWorkflowRun,
+				expect.objectContaining({ run_id: 1, per_page: 100 }),
+			);
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockActions.listJobsForWorkflowRun,
+				expect.objectContaining({ run_id: 2, per_page: 100 }),
+			);
+			expect(result.totalCount).toBe(2);
+		});
+
+		it('getFailedWorkflowRunJobs uses paginate for both workflow runs and jobs', async () => {
+			mockPaginate.mockResolvedValueOnce([
+				{ id: 1, name: 'CI', conclusion: 'failure' },
+				{ id: 2, name: 'OK', conclusion: 'success' },
+			]);
+			mockPaginate.mockResolvedValueOnce([
+				{ name: 'lint', conclusion: 'failure', steps: [{ name: 'eslint', conclusion: 'failure' }] },
+			]);
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getFailedWorkflowRunJobs('owner', 'repo', 'sha123'),
+			);
+
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockActions.listWorkflowRunsForRepo,
+				expect.objectContaining({ per_page: 100 }),
+			);
+			// Only failed run (id:1) is paginated for jobs
+			expect(mockPaginate).toHaveBeenCalledWith(
+				mockActions.listJobsForWorkflowRun,
+				expect.objectContaining({ run_id: 1, per_page: 100 }),
+			);
+			expect(result.failedJobs).toHaveLength(1);
+			expect(result.failedJobs[0].jobName).toBe('lint');
 		});
 	});
 

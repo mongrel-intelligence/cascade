@@ -20,6 +20,7 @@ vi.mock('node:fs', () => ({
 import { existsSync, readdirSync } from 'node:fs';
 
 import {
+	fetchAndCheckoutPR,
 	findSnapshotWorkspaceDir,
 	setupRepository,
 } from '../../../../src/agents/shared/repository.js';
@@ -74,6 +75,153 @@ beforeEach(() => {
 
 afterEach(() => {
 	delete process.env.CASCADE_SNAPSHOT_REUSE;
+});
+
+// ── fetchAndCheckoutPR ────────────────────────────────────────────────────────
+
+describe('fetchAndCheckoutPR', () => {
+	const repoDir = '/workspace/cascade-test-project-12345';
+
+	it('fetches refs/pull/N/head with the + force-update prefix on origin (github)', async () => {
+		const log = makeLog();
+		mockRunCommand.mockResolvedValue({ stdout: 'abc123\n', stderr: '', exitCode: 0 });
+
+		await fetchAndCheckoutPR(repoDir, 1092, undefined, 'github', log);
+
+		expect(mockRunCommand).toHaveBeenNthCalledWith(
+			1,
+			'git',
+			['fetch', 'origin', '+refs/pull/1092/head:refs/remotes/pr/1092'],
+			repoDir,
+		);
+	});
+
+	it('checks out detached pr/N after fetch', async () => {
+		const log = makeLog();
+		mockRunCommand.mockResolvedValue({ stdout: 'abc123\n', stderr: '', exitCode: 0 });
+
+		await fetchAndCheckoutPR(repoDir, 1092, undefined, 'github', log);
+
+		expect(mockRunCommand).toHaveBeenNthCalledWith(
+			2,
+			'git',
+			['checkout', '--detach', 'pr/1092'],
+			repoDir,
+		);
+	});
+
+	it('throws when git fetch returns non-zero exit code', async () => {
+		const log = makeLog();
+		mockRunCommand.mockResolvedValueOnce({
+			stdout: '',
+			stderr: 'fatal: couldn’t find remote ref refs/pull/1092/head',
+			exitCode: 128,
+		});
+
+		await expect(fetchAndCheckoutPR(repoDir, 1092, undefined, 'github', log)).rejects.toThrow(
+			/git fetch PR ref failed.*128.*couldn.t find remote ref/s,
+		);
+	});
+
+	it('throws when git checkout returns non-zero exit code', async () => {
+		const log = makeLog();
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch ok
+			.mockResolvedValueOnce({ stdout: '', stderr: 'unmerged paths', exitCode: 1 }); // checkout fail
+
+		await expect(fetchAndCheckoutPR(repoDir, 1092, undefined, 'github', log)).rejects.toThrow(
+			/git checkout PR failed.*1.*unmerged paths/s,
+		);
+	});
+
+	it('verifies HEAD SHA matches expected when prHeadSha is provided', async () => {
+		const log = makeLog();
+		const expectedSha = '96f5136213d7a435e4b6e27b3d868f7b622b3dc0';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // checkout
+			.mockResolvedValueOnce({ stdout: `${expectedSha}\n`, stderr: '', exitCode: 0 }); // rev-parse
+
+		await expect(
+			fetchAndCheckoutPR(repoDir, 1092, expectedSha, 'github', log),
+		).resolves.toBeUndefined();
+
+		expect(mockRunCommand).toHaveBeenNthCalledWith(3, 'git', ['rev-parse', 'HEAD'], repoDir);
+	});
+
+	it('throws on HEAD SHA mismatch with both SHAs in the message', async () => {
+		const log = makeLog();
+		const expectedSha = '96f5136213d7a435e4b6e27b3d868f7b622b3dc0';
+		const actualSha = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })
+			.mockResolvedValueOnce({ stdout: `${actualSha}\n`, stderr: '', exitCode: 0 });
+
+		await expect(fetchAndCheckoutPR(repoDir, 1092, expectedSha, 'github', log)).rejects.toThrow(
+			new RegExp(`HEAD SHA mismatch.*${expectedSha}.*${actualSha}`),
+		);
+	});
+
+	it('skips SHA check when prHeadSha is undefined', async () => {
+		const log = makeLog();
+		mockRunCommand.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+
+		await fetchAndCheckoutPR(repoDir, 1092, undefined, 'github', log);
+
+		// Only fetch + checkout — no rev-parse call
+		expect(mockRunCommand).toHaveBeenCalledTimes(2);
+		expect(mockRunCommand).not.toHaveBeenCalledWith(
+			'git',
+			['rev-parse', 'HEAD'],
+			expect.any(String),
+		);
+	});
+
+	it('logs fetched ref and resolved HEAD on success', async () => {
+		const log = makeLog();
+		const expectedSha = '96f5136213d7a435e4b6e27b3d868f7b622b3dc0';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })
+			.mockResolvedValueOnce({ stdout: `${expectedSha}\n`, stderr: '', exitCode: 0 });
+
+		await fetchAndCheckoutPR(repoDir, 1092, expectedSha, 'github', log);
+
+		expect(log.info).toHaveBeenCalledWith(
+			'PR checked out',
+			expect.objectContaining({
+				prNumber: 1092,
+				ref: 'refs/pull/1092/head',
+				headSha: expectedSha,
+			}),
+		);
+	});
+
+	it('throws when scmProvider is gitlab (not yet supported)', async () => {
+		const log = makeLog();
+
+		await expect(fetchAndCheckoutPR(repoDir, 1092, undefined, 'gitlab', log)).rejects.toThrow(
+			/only GitHub is currently supported.*GitLab support follows PR #1092/,
+		);
+		// No git commands run
+		expect(mockRunCommand).not.toHaveBeenCalled();
+	});
+
+	it('defaults to github when scmProvider is undefined', async () => {
+		const log = makeLog();
+		mockRunCommand.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 });
+
+		await fetchAndCheckoutPR(repoDir, 1092, undefined, undefined, log);
+
+		// First call should be the GitHub-style fetch
+		expect(mockRunCommand).toHaveBeenNthCalledWith(
+			1,
+			'git',
+			['fetch', 'origin', '+refs/pull/1092/head:refs/remotes/pr/1092'],
+			repoDir,
+		);
+	});
 });
 
 // ── findSnapshotWorkspaceDir ───────────────────────────────────────────────────
@@ -200,26 +348,111 @@ describe('setupRepository', () => {
 		expect(mockRunCommand).not.toHaveBeenCalled();
 	});
 
-	it('checks out PR branch when prBranch option is provided', async () => {
+	it('fetches and checks out PR via refs/pull/N/head when prNumber is provided', async () => {
 		const project = makeProject();
 		const log = makeLog();
 
-		await setupRepository({ project, log, agentType: 'coder', prBranch: 'feature/my-branch' });
+		await setupRepository({ project, log, agentType: 'coder', prNumber: 1092 });
 
+		// fetch refs/pull/N/head, then detached checkout pr/N
 		expect(mockRunCommand).toHaveBeenCalledWith(
 			'git',
-			['checkout', 'feature/my-branch'],
+			['fetch', 'origin', '+refs/pull/1092/head:refs/remotes/pr/1092'],
+			'/tmp/cascade-test-project-12345',
+		);
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['checkout', '--detach', 'pr/1092'],
 			'/tmp/cascade-test-project-12345',
 		);
 	});
 
-	it('does not call git checkout when prBranch is not provided', async () => {
+	it('verifies HEAD SHA when both prNumber and prHeadSha are provided', async () => {
+		const project = makeProject();
+		const log = makeLog();
+		const sha = '96f5136213d7a435e4b6e27b3d868f7b622b3dc0';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // checkout
+			.mockResolvedValueOnce({ stdout: `${sha}\n`, stderr: '', exitCode: 0 }); // rev-parse
+
+		await setupRepository({ project, log, agentType: 'coder', prNumber: 1092, prHeadSha: sha });
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['rev-parse', 'HEAD'],
+			'/tmp/cascade-test-project-12345',
+		);
+	});
+
+	it('throws and stops when PR fetch fails (no silent continuation)', async () => {
+		const project = makeProject();
+		const log = makeLog();
+		mockRunCommand.mockResolvedValueOnce({
+			stdout: '',
+			stderr: 'fatal: couldn’t find ref',
+			exitCode: 128,
+		});
+
+		await expect(
+			setupRepository({ project, log, agentType: 'coder', prNumber: 1092 }),
+		).rejects.toThrow(/git fetch PR ref failed/);
+	});
+
+	it('throws on HEAD SHA mismatch', async () => {
+		const project = makeProject();
+		const log = makeLog();
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 })
+			.mockResolvedValueOnce({ stdout: 'wrongsha\n', stderr: '', exitCode: 0 });
+
+		await expect(
+			setupRepository({
+				project,
+				log,
+				agentType: 'coder',
+				prNumber: 1092,
+				prHeadSha: 'expectedsha',
+			}),
+		).rejects.toThrow(/HEAD SHA mismatch/);
+	});
+
+	it('does not invoke git when prNumber is not provided (non-PR runs)', async () => {
 		const project = makeProject();
 		const log = makeLog();
 
 		await setupRepository({ project, log, agentType: 'coder' });
 
-		expect(mockRunCommand).not.toHaveBeenCalledWith('git', expect.any(Array), expect.any(String));
+		expect(mockRunCommand).not.toHaveBeenCalledWith(
+			'git',
+			expect.arrayContaining(['fetch']),
+			expect.any(String),
+		);
+		expect(mockRunCommand).not.toHaveBeenCalledWith(
+			'git',
+			expect.arrayContaining(['checkout']),
+			expect.any(String),
+		);
+	});
+
+	it('ignores prBranch when prNumber is not provided (legacy field, log-only)', async () => {
+		const project = makeProject();
+		const log = makeLog();
+
+		await setupRepository({
+			project,
+			log,
+			agentType: 'coder',
+			prBranch: 'feature/legacy-branch',
+		});
+
+		// Should NOT do `git checkout feature/legacy-branch` — that path is removed.
+		expect(mockRunCommand).not.toHaveBeenCalledWith(
+			'git',
+			['checkout', 'feature/legacy-branch'],
+			expect.any(String),
+		);
 	});
 
 	it('runs .cascade/setup.sh when it exists', async () => {
@@ -385,7 +618,7 @@ describe('setupRepository — snapshot-reuse path', () => {
 		);
 	});
 
-	it('checks out prBranch instead of baseBranch when prBranch is provided', async () => {
+	it('uses fetchAndCheckoutPR (refs/pull/N/head) when prNumber is provided, instead of base-branch fetch+reset', async () => {
 		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
 		const project = makeProject({ baseBranch: 'main' });
 		const log = makeLog();
@@ -394,17 +627,50 @@ describe('setupRepository — snapshot-reuse path', () => {
 			project,
 			log,
 			agentType: 'coder',
-			prBranch: 'feature/my-branch',
+			prNumber: 1092,
 		});
 
+		// PR ref fetch + detached checkout
 		expect(mockRunCommand).toHaveBeenCalledWith(
 			'git',
-			['reset', '--hard', 'origin/feature/my-branch'],
+			['fetch', 'origin', '+refs/pull/1092/head:refs/remotes/pr/1092'],
 			'/workspace/cascade-test-project-99999',
 		);
 		expect(mockRunCommand).toHaveBeenCalledWith(
 			'git',
-			['checkout', 'feature/my-branch'],
+			['checkout', '--detach', 'pr/1092'],
+			'/workspace/cascade-test-project-99999',
+		);
+		// Should NOT do the base-branch fetch+reset+checkout when PR is set
+		expect(mockRunCommand).not.toHaveBeenCalledWith('git', ['fetch', 'origin'], expect.any(String));
+		expect(mockRunCommand).not.toHaveBeenCalledWith(
+			'git',
+			['reset', '--hard', 'origin/main'],
+			expect.any(String),
+		);
+	});
+
+	it('verifies HEAD SHA on snapshot-reuse path when prNumber + prHeadSha provided', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		const project = makeProject({ baseBranch: 'main' });
+		const log = makeLog();
+		const sha = '96f5136213d7a435e4b6e27b3d868f7b622b3dc0';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // checkout
+			.mockResolvedValueOnce({ stdout: `${sha}\n`, stderr: '', exitCode: 0 }); // rev-parse
+
+		await setupRepository({
+			project,
+			log,
+			agentType: 'coder',
+			prNumber: 1092,
+			prHeadSha: sha,
+		});
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'git',
+			['rev-parse', 'HEAD'],
 			'/workspace/cascade-test-project-99999',
 		);
 	});
@@ -491,38 +757,45 @@ describe('setupRepository — snapshot-reuse path', () => {
 		expect(mockCreateTempDir).toHaveBeenCalled();
 	});
 
-	it('continues gracefully when git fetch exits non-zero', async () => {
+	it('throws (no longer warns-and-continues) when git fetch exits non-zero on snapshot-reuse path', async () => {
 		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
-		mockRunCommand
-			.mockResolvedValueOnce({ stdout: '', stderr: 'network error', exitCode: 128 }) // fetch fails
-			.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }); // reset+checkout succeed
+		mockRunCommand.mockResolvedValueOnce({
+			stdout: '',
+			stderr: 'network error',
+			exitCode: 128,
+		});
 		const project = makeProject();
 		const log = makeLog();
 
-		const result = await setupRepository({ project, log, agentType: 'coder' });
-
-		expect(result).toBe('/workspace/cascade-test-project-99999');
-		expect(log.warn).toHaveBeenCalledWith(
-			'git fetch exited with non-zero code (continuing)',
-			expect.objectContaining({ exitCode: 128 }),
+		await expect(setupRepository({ project, log, agentType: 'coder' })).rejects.toThrow(
+			/git fetch.*128.*network error/s,
 		);
 	});
 
-	it('continues gracefully when git reset --hard exits non-zero', async () => {
+	it('throws (no longer warns-and-continues) when git reset --hard exits non-zero on snapshot-reuse path', async () => {
 		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
 		mockRunCommand
 			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch ok
-			.mockResolvedValueOnce({ stdout: '', stderr: 'conflict', exitCode: 1 }) // reset fails
-			.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 }); // checkout ok
+			.mockResolvedValueOnce({ stdout: '', stderr: 'conflict', exitCode: 1 }); // reset fails
 		const project = makeProject();
 		const log = makeLog();
 
-		const result = await setupRepository({ project, log, agentType: 'coder' });
+		await expect(setupRepository({ project, log, agentType: 'coder' })).rejects.toThrow(
+			/git reset.*1.*conflict/s,
+		);
+	});
 
-		expect(result).toBe('/workspace/cascade-test-project-99999');
-		expect(log.warn).toHaveBeenCalledWith(
-			'git reset --hard exited with non-zero code (continuing)',
-			expect.objectContaining({ exitCode: 1 }),
+	it('throws when git checkout exits non-zero on snapshot-reuse path', async () => {
+		mockReaddirSync.mockReturnValue(['cascade-test-project-99999'] as never);
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // fetch ok
+			.mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 }) // reset ok
+			.mockResolvedValueOnce({ stdout: '', stderr: 'pathspec', exitCode: 128 }); // checkout fails
+		const project = makeProject();
+		const log = makeLog();
+
+		await expect(setupRepository({ project, log, agentType: 'coder' })).rejects.toThrow(
+			/git checkout.*128.*pathspec/s,
 		);
 	});
 });

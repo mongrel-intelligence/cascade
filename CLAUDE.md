@@ -41,6 +41,18 @@ Projects are configured in the PostgreSQL database (`projects` table). Each proj
 
 ## Development
 
+### PR Checkout (worker)
+
+The worker checks out PRs via the canonical `refs/pull/N/head` ref — works for both same-repo branches and external-fork branches. When `prNumber` is set on `AgentInput`, `setupRepository`:
+
+1. Fetches `+refs/pull/<N>/head:refs/remotes/pr/<N>` from `origin`.
+2. Detached-checks out `pr/<N>`.
+3. If `headSha` is also set on `AgentInput`, verifies `git rev-parse HEAD` matches.
+
+Any non-zero git exit code throws — there is no warn-and-continue in setup. Failed runs are marked failed in the dashboard rather than proceeding on a stale or wrong working tree.
+
+The legacy `prBranch` field is retained for human-readable logging but is **not** used to drive checkout (fork branches don't exist on `origin` and the by-name path silently 404s).
+
 ### Testing
 
 > **For a full catalog of test helpers, factory functions, and mock objects**, see [`tests/README.md`](tests/README.md).

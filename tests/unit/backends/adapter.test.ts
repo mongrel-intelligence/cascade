@@ -335,6 +335,22 @@ describe('executeWithEngine', () => {
 		expect(mockSetupRepository).not.toHaveBeenCalled();
 	});
 
+	it('forwards prNumber and headSha (as prHeadSha) from input to setupRepository', async () => {
+		setupMocks();
+		const engine = makeMockBackend();
+		const sha = '96f5136213d7a435e4b6e27b3d868f7b622b3dc0';
+		const input = makeInput({ prNumber: 1092, headSha: sha });
+
+		await executeWithEngine(engine, 'implementation', input);
+
+		expect(mockSetupRepository).toHaveBeenCalledWith(
+			expect.objectContaining({
+				prNumber: 1092,
+				prHeadSha: sha,
+			}),
+		);
+	});
+
 	it('cleans up resources in finally block', async () => {
 		setupMocks();
 		const engine = makeMockBackend();

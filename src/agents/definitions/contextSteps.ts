@@ -195,8 +195,8 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 		description: 'Pre-fetched CI check status',
 	});
 
-	// Read full contents of changed files
-	params.logWriter('INFO', 'Reading PR file contents', { fileCount: prDiff.length });
+	// Total changed files (now complete — `getPRDiff` paginates beyond the first 100).
+	params.logWriter('INFO', 'Total changed files in PR', { totalChangedFiles: prDiff.length });
 	const fileContents = await readPRFileContents(params.repoDir, prDiff);
 	params.logWriter('INFO', 'File contents loaded', {
 		included: fileContents.included.length,

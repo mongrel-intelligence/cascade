@@ -10,8 +10,82 @@ export interface SetupRepositoryOptions {
 	project: ProjectConfig;
 	log: AgentLogger;
 	agentType: string;
+	/** PR number — when provided, drives `refs/pull/N/head` checkout instead of branch-name checkout. */
+	prNumber?: number;
+	/** Expected HEAD SHA — when provided, post-checkout verification compares `git rev-parse HEAD` against this. */
+	prHeadSha?: string;
+	/**
+	 * @deprecated Retained for human-readable logging only. PR checkout uses `prNumber` via the canonical
+	 * `refs/pull/N/head` ref. Branch names from forks are not on `origin` and cannot be checked out by name.
+	 */
 	prBranch?: string;
 	warmTsCache?: boolean;
+}
+
+/**
+ * Fetch a PR via its canonical pull-request ref and check out the resulting commit
+ * on a detached HEAD. This works for PRs from same-repo branches AND from external
+ * forks — the fork's branch name is irrelevant because GitHub mirrors every PR head
+ * onto the base repo at `refs/pull/N/head`.
+ *
+ * Fail-loud: any non-zero git exit code throws. When `prHeadSha` is provided, the
+ * post-checkout HEAD is verified to match.
+ *
+ * Provider-aware signature: GitHub is implemented today. GitLab support is deferred
+ * until PR #1092 lands — the parameter is in the signature so the extension is a
+ * one-line follow-up.
+ */
+export async function fetchAndCheckoutPR(
+	repoDir: string,
+	prNumber: number,
+	prHeadSha: string | undefined,
+	scmProvider: 'github' | 'gitlab' | undefined,
+	log: AgentLogger,
+): Promise<void> {
+	const provider = scmProvider ?? 'github';
+	if (provider !== 'github') {
+		throw new Error(
+			`fetchAndCheckoutPR: only GitHub is currently supported; GitLab support follows PR #1092 merge`,
+		);
+	}
+
+	const ref = `refs/pull/${prNumber}/head`;
+	const refspec = `+${ref}:refs/remotes/pr/${prNumber}`;
+	log.info('Fetching PR ref', { prNumber, ref });
+
+	const fetchResult = await runCommand('git', ['fetch', 'origin', refspec], repoDir);
+	if (fetchResult.exitCode !== 0) {
+		throw new Error(
+			`git fetch PR ref failed (exit ${fetchResult.exitCode}): ${fetchResult.stderr.slice(-500)}`,
+		);
+	}
+
+	const checkoutResult = await runCommand(
+		'git',
+		['checkout', '--detach', `pr/${prNumber}`],
+		repoDir,
+	);
+	if (checkoutResult.exitCode !== 0) {
+		throw new Error(
+			`git checkout PR failed (exit ${checkoutResult.exitCode}): ${checkoutResult.stderr.slice(-500)}`,
+		);
+	}
+
+	if (prHeadSha) {
+		const revParseResult = await runCommand('git', ['rev-parse', 'HEAD'], repoDir);
+		const actualSha = revParseResult.stdout.trim();
+		if (actualSha !== prHeadSha) {
+			throw new Error(
+				`HEAD SHA mismatch after PR checkout: expected ${prHeadSha}, got ${actualSha}`,
+			);
+		}
+	}
+
+	log.info('PR checked out', {
+		prNumber,
+		ref,
+		headSha: prHeadSha ?? '(unverified)',
+	});
 }
 
 /**
@@ -51,37 +125,39 @@ async function refreshSnapshotWorkspace(
 	project: ProjectConfig,
 	log: AgentLogger,
 	agentType: string,
-	prBranch?: string,
+	prNumber?: number,
+	prHeadSha?: string,
 ): Promise<void> {
-	const branch = prBranch ?? project.baseBranch ?? 'main';
+	// PR-driven runs use the canonical refs/pull/N/head ref (works for forks).
+	if (prNumber) {
+		log.info('Refreshing snapshot workspace for PR', { repoDir, prNumber, agentType });
+		await fetchAndCheckoutPR(repoDir, prNumber, prHeadSha, undefined, log);
+		return;
+	}
 
+	// Non-PR runs: fetch + reset + checkout the project's base branch. Fail-loud.
+	const branch = project.baseBranch ?? 'main';
 	log.info('Refreshing snapshot workspace', { repoDir, branch, agentType });
 
-	// Fetch latest refs from origin (tolerates transient network errors)
 	const fetchResult = await runCommand('git', ['fetch', 'origin'], repoDir);
 	if (fetchResult.exitCode !== 0) {
-		log.warn('git fetch exited with non-zero code (continuing)', {
-			exitCode: fetchResult.exitCode,
-			stderr: fetchResult.stderr.slice(-500),
-		});
+		throw new Error(
+			`git fetch failed (exit ${fetchResult.exitCode}): ${fetchResult.stderr.slice(-500)}`,
+		);
 	}
 
-	// Reset to the remote tracking branch to discard any stale local changes
 	const resetResult = await runCommand('git', ['reset', '--hard', `origin/${branch}`], repoDir);
 	if (resetResult.exitCode !== 0) {
-		log.warn('git reset --hard exited with non-zero code (continuing)', {
-			exitCode: resetResult.exitCode,
-			stderr: resetResult.stderr.slice(-500),
-		});
+		throw new Error(
+			`git reset --hard origin/${branch} failed (exit ${resetResult.exitCode}): ${resetResult.stderr.slice(-500)}`,
+		);
 	}
 
-	// Checkout the target branch (no-op when already on the correct branch)
 	const checkoutResult = await runCommand('git', ['checkout', branch], repoDir);
 	if (checkoutResult.exitCode !== 0) {
-		log.warn('git checkout exited with non-zero code (continuing)', {
-			exitCode: checkoutResult.exitCode,
-			stderr: checkoutResult.stderr.slice(-500),
-		});
+		throw new Error(
+			`git checkout ${branch} failed (exit ${checkoutResult.exitCode}): ${checkoutResult.stderr.slice(-500)}`,
+		);
 	}
 
 	log.info('Snapshot workspace refreshed', { repoDir, branch });
@@ -108,7 +184,7 @@ async function maybeWarmTsCache(
 }
 
 export async function setupRepository(options: SetupRepositoryOptions): Promise<string> {
-	const { project, log, agentType, prBranch, warmTsCache } = options;
+	const { project, log, agentType, prNumber, prHeadSha, prBranch, warmTsCache } = options;
 
 	// ── Snapshot-reuse path ────────────────────────────────────────────────────
 	// When CASCADE_SNAPSHOT_REUSE=true the container image already contains the
@@ -122,7 +198,7 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 				agentType,
 				snapshotDir,
 			});
-			await refreshSnapshotWorkspace(snapshotDir, project, log, agentType, prBranch);
+			await refreshSnapshotWorkspace(snapshotDir, project, log, agentType, prNumber, prHeadSha);
 			await maybeWarmTsCache(snapshotDir, warmTsCache, log);
 			return snapshotDir;
 		}
@@ -148,10 +224,14 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 	// Clone repo to temp directory
 	await cloneRepo(project, repoDir);
 
-	// Checkout PR branch if provided
-	if (prBranch) {
-		log.info('Checking out PR branch', { prBranch });
-		await runCommand('git', ['checkout', prBranch], repoDir);
+	// Checkout PR via canonical refs/pull/N/head ref (works for forks too)
+	if (prNumber) {
+		// scmProvider parameter reserved for future GitLab support (PR #1092 follow-up)
+		await fetchAndCheckoutPR(repoDir, prNumber, prHeadSha, undefined, log);
+	} else if (prBranch) {
+		// prBranch without prNumber is a no-op now; log for visibility so misconfigured
+		// callers can be diagnosed (the field is deprecated for checkout — pass prNumber).
+		log.info('prBranch provided without prNumber — skipping branch-name checkout', { prBranch });
 	}
 
 	// Run project-specific setup script if it exists (handles dependency installation)

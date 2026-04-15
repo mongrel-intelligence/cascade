@@ -10,9 +10,14 @@ export interface AgentInput {
 	prNumber?: number;
 	repoDir?: string;
 
-	// PR context fields for check-failure flow
+	// PR context fields — populated by trigger handlers from webhook payload
 	prBranch?: string;
 	repoFullName?: string;
+	/**
+	 * The PR's head SHA at trigger time. Sourced from `pull_request.head.sha` (or
+	 * `check_suite.head_sha` for check-failure events). Used both for the original
+	 * check-failure flow AND for post-checkout HEAD verification in `setupRepository`.
+	 */
 	headSha?: string;
 	triggerType?:
 		| 'check-failure'

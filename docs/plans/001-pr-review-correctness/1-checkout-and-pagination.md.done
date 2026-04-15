@@ -6,7 +6,7 @@ plan_slug: checkout-and-pagination
 level: plan
 parent_spec: docs/specs/001-pr-review-correctness.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 001/1: Checkout Correctness & Pagination
@@ -232,14 +232,14 @@ After this plan ships, the specific PR #1092 hallucination class is substantiall
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
-- [ ] AC #11
+- [x] AC #1 — refs/pull/N/head fetch + detached checkout verified by `setupRepository fetches and checks out PR via refs/pull/N/head when prNumber is provided` and `setupRepository — snapshot-reuse path uses fetchAndCheckoutPR (refs/pull/N/head) when prNumber is provided`
+- [x] AC #2 — `getPRDiff uses octokit paginate (paginates beyond 100 files)` returns 129
+- [x] AC #3 — `setupRepository throws and stops when PR fetch fails (no silent continuation)`, snapshot-reuse `throws (no longer warns-and-continues) when git fetch/reset/checkout exits non-zero`
+- [x] AC #4 — `setupRepository throws on HEAD SHA mismatch` (cold + snapshot paths)
+- [x] AC #5 — `pagination — all paginated endpoints use octokit paginate` describe block (5 endpoints + 2 inner-loop calls)
+- [x] AC #6 — helper logs `PR checked out` with `prNumber`, `ref`, `headSha`; `Total changed files in PR` log entry in contextSteps
+- [x] AC #7 — TDD discipline; new tests for every behavior change
+- [x] AC #8 — `npm run build` passes
+- [x] AC #9 — `npm test` passes (7513 tests, 0 failures)
+- [x] AC #10 — typecheck ✅; lint ✅ after `npm ci` synced biome to 2.4.10 (stale `node_modules` was holding 1.9.4 against a v2-syntax `biome.json`)
+- [x] AC #11 — `CLAUDE.md` updated with new "PR Checkout (worker)" subsection; new `CHANGELOG.md` created with an Unreleased entry describing the fix

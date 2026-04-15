@@ -144,7 +144,8 @@ export const githubClient = {
 		prNumber: number,
 	): Promise<PRReviewComment[]> {
 		logger.debug('Fetching PR review comments', { owner, repo, prNumber });
-		const { data } = await getClient().pulls.listReviewComments({
+		const client = getClient();
+		const data = await client.paginate(client.pulls.listReviewComments, {
 			owner,
 			repo,
 			pull_number: prNumber,
@@ -242,10 +243,12 @@ export const githubClient = {
 
 	async getPRReviews(owner: string, repo: string, prNumber: number): Promise<PRReview[]> {
 		logger.debug('Fetching PR reviews', { owner, repo, prNumber });
-		const { data } = await getClient().pulls.listReviews({
+		const client = getClient();
+		const data = await client.paginate(client.pulls.listReviews, {
 			owner,
 			repo,
 			pull_number: prNumber,
+			per_page: 100,
 		});
 		return data.map((r) => ({
 			id: r.id,
@@ -265,7 +268,8 @@ export const githubClient = {
 		prNumber: number,
 	): Promise<PRIssueComment[]> {
 		logger.debug('Fetching PR issue comments', { owner, repo, prNumber });
-		const { data } = await getClient().issues.listComments({
+		const client = getClient();
+		const data = await client.paginate(client.issues.listComments, {
 			owner,
 			repo,
 			issue_number: prNumber,
@@ -288,7 +292,7 @@ export const githubClient = {
 
 		// Use Actions API (workflow runs + jobs) instead of Checks API,
 		// because fine-grained PATs cannot access the Checks API.
-		const { data: runsData } = await client.actions.listWorkflowRunsForRepo({
+		const workflowRuns = await client.paginate(client.actions.listWorkflowRunsForRepo, {
 			owner,
 			repo,
 			head_sha: ref,
@@ -297,8 +301,8 @@ export const githubClient = {
 
 		// Fetch jobs for each workflow run to get per-job granularity
 		const jobResults = await Promise.all(
-			runsData.workflow_runs.map((run) =>
-				client.actions.listJobsForWorkflowRun({
+			workflowRuns.map((run) =>
+				client.paginate(client.actions.listJobsForWorkflowRun, {
 					owner,
 					repo,
 					run_id: run.id,
@@ -307,8 +311,8 @@ export const githubClient = {
 			),
 		);
 
-		const checkRuns = jobResults.flatMap(({ data }) =>
-			data.jobs.map((job) => ({
+		const checkRuns = jobResults.flatMap((jobs) =>
+			jobs.map((job) => ({
 				name: job.name,
 				status: job.status,
 				conclusion: job.conclusion,
@@ -335,7 +339,8 @@ export const githubClient = {
 
 	async getPRDiff(owner: string, repo: string, prNumber: number): Promise<PRDiffFile[]> {
 		logger.debug('Fetching PR diff', { owner, repo, prNumber });
-		const { data } = await getClient().pulls.listFiles({
+		const client = getClient();
+		const data = await client.paginate(client.pulls.listFiles, {
 			owner,
 			repo,
 			pull_number: prNumber,
@@ -421,14 +426,14 @@ export const githubClient = {
 		logger.debug('Fetching failed workflow run jobs', { owner, repo, ref });
 		const client = getClient();
 
-		const { data: runsData } = await client.actions.listWorkflowRunsForRepo({
+		const workflowRuns = await client.paginate(client.actions.listWorkflowRunsForRepo, {
 			owner,
 			repo,
 			head_sha: ref,
 			per_page: 100,
 		});
 
-		const failedRuns = runsData.workflow_runs.filter(
+		const failedRuns = workflowRuns.filter(
 			(run) => run.conclusion === 'failure' || run.conclusion === 'timed_out',
 		);
 
@@ -438,14 +443,14 @@ export const githubClient = {
 
 		const jobResults = await Promise.all(
 			failedRuns.map((run) =>
-				client.actions
-					.listJobsForWorkflowRun({
+				client
+					.paginate(client.actions.listJobsForWorkflowRun, {
 						owner,
 						repo,
 						run_id: run.id,
 						per_page: 100,
 					})
-					.then((res) => ({ run, jobs: res.data.jobs })),
+					.then((jobs) => ({ run, jobs })),
 			),
 		);
 

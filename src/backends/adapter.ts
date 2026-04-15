@@ -28,6 +28,8 @@ async function resolveRepoDir(
 		project: input.project,
 		log,
 		agentType,
+		prNumber: input.prNumber,
+		prHeadSha: input.headSha,
 		prBranch: input.prBranch,
 		warmTsCache: true,
 	});

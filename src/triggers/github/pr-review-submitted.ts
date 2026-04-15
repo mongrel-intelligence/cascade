@@ -72,6 +72,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 				prNumber,
 				prBranch: reviewPayload.pull_request.head.ref,
 				repoFullName: reviewPayload.repository.full_name,
+				headSha: reviewPayload.pull_request.head.sha,
 				triggerEvent: 'scm:pr-review-submitted',
 				triggerCommentId: reviewPayload.review.id,
 				triggerCommentBody: reviewPayload.review.body || `Review: ${reviewPayload.review.state}`,
