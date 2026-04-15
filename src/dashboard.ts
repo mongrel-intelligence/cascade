@@ -26,6 +26,7 @@ import { loginHandler } from './api/auth/login.js';
 import { logoutHandler } from './api/auth/logout.js';
 import { resolveUserFromSession } from './api/auth/session.js';
 import { computeEffectiveOrgId } from './api/context.js';
+import { formatDashboardErrorLog } from './api/errorLogging.js';
 import { appRouter } from './api/router.js';
 import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { validateCredentialMasterKey } from './db/crypto.js';
@@ -95,7 +96,11 @@ app.notFound((c) => c.json({ error: 'Not Found' }, 404));
 
 // Error handler
 app.onError((err, c) => {
-	console.error('Unhandled error', { error: String(err), path: c.req.path });
+	const payload = formatDashboardErrorLog(err, {
+		path: c.req.path,
+		method: c.req.method,
+	});
+	console.error('Unhandled error', payload);
 	captureException(err, {
 		tags: { source: 'hono_error' },
 		extra: { path: c.req.path, method: c.req.method },

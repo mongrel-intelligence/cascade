@@ -1,4 +1,5 @@
 import { initTRPC, TRPCError } from '@trpc/server';
+import { formatTRPCErrorLog, formatTRPCErrorResponse } from './errorLogging.js';
 
 export interface TRPCUser {
 	id: string;
@@ -13,7 +14,17 @@ export interface TRPCContext {
 	effectiveOrgId: string | null;
 }
 
-const t = initTRPC.context<TRPCContext>().create();
+const t = initTRPC.context<TRPCContext>().create({
+	errorFormatter({ shape, error, path, type }) {
+		// Log the full diagnostic payload server-side (picks up PG error fields
+		// from error.cause when Drizzle wraps a pg driver error).
+		console.error('tRPC error', formatTRPCErrorLog({ error, path, type }));
+
+		// Sanitise the client response: never send raw internal-error text back.
+		const safe = formatTRPCErrorResponse(error);
+		return { ...shape, message: safe.message };
+	},
+});
 
 export const router = t.router;
 export const publicProcedure = t.procedure;
