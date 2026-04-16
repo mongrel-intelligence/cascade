@@ -1,7 +1,7 @@
 import type { AgentProfile } from '../agents/definitions/profiles.js';
 import { getAllProjectCredentials } from '../config/provider.js';
 import { getPersonaToken } from '../github/personas.js';
-import { getJiraConfig } from '../pm/config.js';
+import { getJiraConfig, getLinearConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import { ENV_VAR_NAME } from './progressState.js';
@@ -49,6 +49,22 @@ export async function augmentProjectSecrets(
 		projectSecrets.CASCADE_JIRA_BASE_URL = jiraConfig.baseUrl;
 		if (jiraConfig.statuses) {
 			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
+		}
+	}
+
+	// Inject Linear integration config so cascade-tools can construct LinearPMProvider.
+	// Without this, every `cascade-tools pm <cmd>` from inside a Linear-backed worker
+	// throws "Linear integration requires teamId in config" (LinearIntegration's
+	// guard) — the agent then either errors out or falls back to direct Linear API
+	// calls. Mirrors the JIRA injection above.
+	const linearConfig = getLinearConfig(project);
+	if (linearConfig) {
+		projectSecrets.CASCADE_LINEAR_TEAM_ID = linearConfig.teamId;
+		if (linearConfig.projectId) {
+			projectSecrets.CASCADE_LINEAR_PROJECT_ID = linearConfig.projectId;
+		}
+		if (linearConfig.statuses) {
+			projectSecrets.CASCADE_LINEAR_STATUSES = JSON.stringify(linearConfig.statuses);
 		}
 	}
 

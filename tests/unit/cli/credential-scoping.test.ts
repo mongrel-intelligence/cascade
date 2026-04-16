@@ -28,6 +28,11 @@ vi.mock('../../../src/jira/client.js', () => ({
 	jiraClient: {},
 }));
 
+vi.mock('../../../src/linear/client.js', () => ({
+	withLinearCredentials: vi.fn((_creds: { apiKey: string }, fn: () => unknown) => fn()),
+	linearClient: {},
+}));
+
 vi.mock('../../../src/sentry/integration.js', () => ({
 	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
 	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
@@ -53,6 +58,7 @@ import '../../../src/sentry/register.js';
 
 import { CredentialScopedCommand } from '../../../src/cli/base.js';
 import { withGitHubToken } from '../../../src/github/client.js';
+import { withLinearCredentials } from '../../../src/linear/client.js';
 import { withTrelloCredentials } from '../../../src/trello/client.js';
 
 class TestCommand extends CredentialScopedCommand {
@@ -73,6 +79,12 @@ describe('CredentialScopedCommand', () => {
 		delete process.env.GITHUB_TOKEN;
 		delete process.env.TRELLO_API_KEY;
 		delete process.env.TRELLO_TOKEN;
+		delete process.env.LINEAR_API_KEY;
+		delete process.env.CASCADE_PM_TYPE;
+		delete process.env.CASCADE_LINEAR_TEAM_ID;
+		delete process.env.CASCADE_LINEAR_PROJECT_ID;
+		delete process.env.CASCADE_LINEAR_STATUSES;
+		vi.mocked(withLinearCredentials).mockClear();
 	});
 
 	afterEach(() => {
@@ -138,5 +150,44 @@ describe('CredentialScopedCommand', () => {
 			{ apiKey: 'trello-key', token: 'trello-token' },
 			expect.any(Function),
 		);
+	});
+
+	// Linear scope — mirrors the GitHub/Trello/JIRA pattern. Without these the CLI
+	// throws `Linear integration requires teamId in config` whenever a Linear-backed
+	// agent run invokes any `cascade-tools pm <cmd>`.
+
+	it('wraps execute() with withLinearCredentials when LINEAR_API_KEY is set', async () => {
+		process.env.LINEAR_API_KEY = 'lin_test_key';
+		process.env.CASCADE_PM_TYPE = 'linear';
+		process.env.CASCADE_LINEAR_TEAM_ID = 'team-uuid';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.executeCalled).toBe(true);
+		expect(withLinearCredentials).toHaveBeenCalledWith(
+			{ apiKey: 'lin_test_key' },
+			expect.any(Function),
+		);
+	});
+
+	it('synthesises a populated linear config when CASCADE_LINEAR_TEAM_ID is set so createPMProvider does not throw', async () => {
+		process.env.CASCADE_PM_TYPE = 'linear';
+		process.env.CASCADE_LINEAR_TEAM_ID = 'team-uuid';
+		process.env.CASCADE_LINEAR_STATUSES = JSON.stringify({ backlog: 'state-bl' });
+
+		const cmd = new TestCommand([], {} as never);
+		await expect(cmd.run()).resolves.not.toThrow();
+	});
+
+	it('infers pmType=linear when LINEAR_API_KEY is set and CASCADE_PM_TYPE is not', async () => {
+		process.env.LINEAR_API_KEY = 'lin_test_key';
+		process.env.CASCADE_LINEAR_TEAM_ID = 'team-uuid';
+		// No CASCADE_PM_TYPE, no JIRA env vars — should still construct a Linear
+		// provider (and not fall back to a misconfigured Trello synthesis).
+
+		const cmd = new TestCommand([], {} as never);
+		await expect(cmd.run()).resolves.not.toThrow();
+		expect(withLinearCredentials).toHaveBeenCalled();
 	});
 });

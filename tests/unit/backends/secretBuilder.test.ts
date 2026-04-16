@@ -126,6 +126,58 @@ describe('augmentProjectSecrets', () => {
 		expect(secrets.CASCADE_JIRA_STATUSES).toBe(JSON.stringify(statuses));
 	});
 
+	it('injects CASCADE_LINEAR_* env vars when project is Linear-backed', async () => {
+		const statuses = { backlog: 'state-bl', todo: 'state-td' };
+		const project = makeProject({
+			pm: { type: 'linear' },
+			linear: {
+				teamId: 'team-uuid-1',
+				projectId: 'proj-uuid-2',
+				statuses,
+				labels: {},
+			},
+		} as Partial<ProjectConfig>);
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+
+		expect(secrets.CASCADE_LINEAR_TEAM_ID).toBe('team-uuid-1');
+		expect(secrets.CASCADE_LINEAR_PROJECT_ID).toBe('proj-uuid-2');
+		expect(secrets.CASCADE_LINEAR_STATUSES).toBe(JSON.stringify(statuses));
+	});
+
+	it('omits CASCADE_LINEAR_PROJECT_ID when linear.projectId is not set', async () => {
+		const project = makeProject({
+			pm: { type: 'linear' },
+			linear: { teamId: 'T1', statuses: {}, labels: {} },
+		} as Partial<ProjectConfig>);
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+
+		expect(secrets.CASCADE_LINEAR_TEAM_ID).toBe('T1');
+		expect(secrets).not.toHaveProperty('CASCADE_LINEAR_PROJECT_ID');
+	});
+
+	it('does NOT inject CASCADE_LINEAR_* for Trello/JIRA projects', async () => {
+		const trelloProject = makeProject(); // default Trello fixture
+		const trelloSecrets = await augmentProjectSecrets(
+			trelloProject,
+			'implementation',
+			{} as AgentInput,
+		);
+		expect(trelloSecrets).not.toHaveProperty('CASCADE_LINEAR_TEAM_ID');
+		expect(trelloSecrets).not.toHaveProperty('CASCADE_LINEAR_STATUSES');
+
+		const jiraProject = makeProject({
+			pm: { type: 'jira' },
+			jira: { projectKey: 'PROJ', baseUrl: 'https://acme.atlassian.net' },
+		});
+		const jiraSecrets = await augmentProjectSecrets(
+			jiraProject,
+			'implementation',
+			{} as AgentInput,
+		);
+		expect(jiraSecrets).not.toHaveProperty('CASCADE_LINEAR_TEAM_ID');
+		expect(jiraSecrets).not.toHaveProperty('CASCADE_LINEAR_STATUSES');
+	});
+
 	it('merges existing project credentials with injected vars', async () => {
 		mockGetAllProjectCredentials.mockResolvedValue({
 			GITHUB_TOKEN: 'gh-token',
