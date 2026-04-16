@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../../src/db/client.js';
 import {
+	createWorkItem,
 	linkPRToWorkItem,
 	listPRsForProject,
 	listPRsForWorkItem,
@@ -102,6 +103,62 @@ describe('prWorkItemsRepository (integration)', () => {
 			// lookupWorkItemForPR should return null for orphan PRs
 			const result = await lookupWorkItemForPR('test-project', 55);
 			expect(result).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// Link-preservation invariant — workItemId is one-way set
+	// =========================================================================
+
+	describe('linkPRToWorkItem — link-preservation invariant', () => {
+		it('preserves an existing non-null workItemId when called with workItemId=null', async () => {
+			// First writer (e.g. implementation pipeline post-execution): correct link.
+			await linkPRToWorkItem('test-project', 'owner/repo', 568, 'MNG-93', {
+				workItemUrl: 'https://linear.app/mongrel/issue/MNG-93/...',
+				prUrl: 'https://github.com/owner/repo/pull/568',
+				prTitle: 'feat: add unit tests',
+			});
+
+			// Second writer (e.g. review pipeline post-execution) carries no workItemId.
+			await linkPRToWorkItem('test-project', 'owner/repo', 568, null, {
+				prUrl: 'https://github.com/owner/repo/pull/568',
+				prTitle: 'feat: add unit tests',
+			});
+
+			// The known link must NOT be erased.
+			const workItemId = await lookupWorkItemForPR('test-project', 568);
+			expect(workItemId).toBe('MNG-93');
+		});
+
+		it('removes a stale orphan (projectId, NULL, prNumber) row when promoting a work-item-only row', async () => {
+			// Step 1: review pipeline pre-execution insert an orphan row.
+			await linkPRToWorkItem('test-project', 'owner/repo', 568, null, {
+				prUrl: 'https://github.com/owner/repo/pull/568',
+				prTitle: 'feat: add unit tests',
+			});
+			// Step 2: implementation pipeline createWorkItem inserted earlier
+			// (we do it here in a different order to simulate the race).
+			await createWorkItem('test-project', 'MNG-93', {
+				workItemUrl: 'https://linear.app/mongrel/issue/MNG-93/...',
+				workItemTitle: 'add unit tests',
+			});
+
+			// Step 3: implementation completes — promote work-item-only row.
+			// Without orphan cleanup this throws on uq_pr_work_items_project_pr.
+			await linkPRToWorkItem('test-project', 'owner/repo', 568, 'MNG-93', {
+				workItemUrl: 'https://linear.app/mongrel/issue/MNG-93/...',
+				prUrl: 'https://github.com/owner/repo/pull/568',
+				prTitle: 'feat: add unit tests',
+			});
+
+			const db = getDb();
+			const rows = await db
+				.select()
+				.from(prWorkItems)
+				.where(and(eq(prWorkItems.projectId, 'test-project'), eq(prWorkItems.prNumber, 568)));
+			expect(rows).toHaveLength(1);
+			expect(rows[0].workItemId).toBe('MNG-93');
+			expect(rows[0].workItemUrl).toBe('https://linear.app/mongrel/issue/MNG-93/...');
 		});
 	});
 

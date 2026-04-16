@@ -11,7 +11,6 @@ import './pm-providers/jira/index.js';
 import './pm-providers/linear/index.js';
 import { ManifestProviderWizardSection } from './pm-providers/manifest-section.js';
 import { getProviderWizard } from './pm-providers/registry.js';
-import { renderManifestStep } from './pm-providers/render.js';
 import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
 import {
 	useLinearWebhookInfo,

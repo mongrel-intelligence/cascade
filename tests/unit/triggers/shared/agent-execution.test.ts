@@ -819,3 +819,97 @@ describe('pre-execution PR linking (via runAgentExecutionPipeline)', () => {
 		);
 	});
 });
+
+// ---------------------------------------------------------------------------
+// workItemId staleness recovery (via runAgentExecutionPipeline)
+// ---------------------------------------------------------------------------
+
+describe('workItemId staleness recovery (via runAgentExecutionPipeline)', () => {
+	beforeEach(() => {
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+		mockGetSessionState.mockReturnValue({});
+		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
+	});
+
+	it('re-resolves workItemId from DB when result.workItemId is undefined but PR is already linked', async () => {
+		// Implementation has already linked PR #42 to card-from-db
+		mockLookupWorkItemForPR.mockResolvedValueOnce('card-from-db');
+
+		// PROpenedTrigger-style result captured before the link existed
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: { prNumber: 42 },
+				prNumber: 42,
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'Test PR',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		// runAgent receives the resolved workItemId in agentInput
+		expect(mockRunAgent).toHaveBeenCalledWith(
+			'review',
+			expect.objectContaining({ workItemId: 'card-from-db' }),
+		);
+
+		// linkPRToWorkItem is called with the resolved workItemId, not null
+		expect(vi.mocked(linkPRToWorkItem)).toHaveBeenCalledWith(
+			'project-1',
+			'acme/myapp',
+			42,
+			'card-from-db',
+			expect.anything(),
+		);
+	});
+
+	it('preserves trigger-supplied workItemId when DB lookup is unnecessary', async () => {
+		// Trigger already carries a workItemId — no DB lookup expected
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: { prNumber: 42, workItemId: 'card-from-trigger' },
+				prNumber: 42,
+				workItemId: 'card-from-trigger',
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockLookupWorkItemForPR).not.toHaveBeenCalled();
+		expect(mockRunAgent).toHaveBeenCalledWith(
+			'review',
+			expect.objectContaining({ workItemId: 'card-from-trigger' }),
+		);
+	});
+
+	it('leaves workItemId undefined when neither trigger nor DB has one', async () => {
+		// Default mockLookupWorkItemForPR returns null
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: { prNumber: 42 },
+				prNumber: 42,
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockLookupWorkItemForPR).toHaveBeenCalledWith('project-1', 42);
+		expect(vi.mocked(linkPRToWorkItem)).toHaveBeenCalledWith(
+			'project-1',
+			'acme/myapp',
+			42,
+			null,
+			expect.anything(),
+		);
+	});
+});

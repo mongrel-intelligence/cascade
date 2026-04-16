@@ -8,6 +8,7 @@ import {
 	isNull,
 	max,
 	type SQL,
+	sql,
 	sum,
 } from 'drizzle-orm';
 import { getDb } from '../client.js';
@@ -80,10 +81,20 @@ export async function createWorkItem(
  * Upsert a PR ↔ work item link.
  *
  * Two-step logic:
- * 1. If a work-item-only row exists for (projectId, workItemId), UPDATE it with PR data.
+ * 1. If `workItemId` is provided, drop any racing orphan `(projectId, NULL workItemId,
+ *    prNumber)` row, then UPDATE the existing work-item-only row with PR data.
  * 2. Otherwise INSERT a new row, using onConflictDoUpdate on (projectId, prNumber).
  *
- * workItemId is optional to support "orphan" PRs (PRs created without a linked work item).
+ * `workItemId` is optional to support "orphan" PRs (PRs created without a linked
+ * work item).
+ *
+ * **Link-preservation invariant** — the `work_item_id` column is one-way set: once
+ * an earlier writer landed a non-null value, a later writer that happens to lack
+ * the workItemId must NOT unset it. Step 2's ON CONFLICT clause uses
+ * `COALESCE(EXCLUDED.work_item_id, pr_work_items.work_item_id)` to enforce this.
+ * Without it, a stale review-pipeline writeback (workItemId captured at PR-opened
+ * time, before the implementation linked the PR) would clobber the correct value
+ * and break downstream lookups (notably the `pr-ready-to-merge` auto-merge trigger).
  */
 export async function linkPRToWorkItem(
 	projectId: string,
@@ -96,8 +107,23 @@ export async function linkPRToWorkItem(
 	const now = new Date();
 	const { workItemUrl, workItemTitle, prUrl, prTitle } = options;
 
-	// Step 1: If workItemId is provided, try to update the existing work-item-only row
+	// Step 1: If workItemId is provided, try to update the existing work-item-only row.
 	if (workItemId) {
+		// First, drop any racing orphan row (projectId, NULL workItemId, prNumber). It
+		// only exists because no link existed when an earlier writer (e.g. the review
+		// pipeline's pre-execution pass on a freshly opened PR) inserted it. Promoting
+		// our work-item-only row to the same prNumber would otherwise hit
+		// uq_pr_work_items_project_pr.
+		await db
+			.delete(prWorkItems)
+			.where(
+				and(
+					eq(prWorkItems.projectId, projectId),
+					eq(prWorkItems.prNumber, prNumber),
+					isNull(prWorkItems.workItemId),
+				),
+			);
+
 		const updated = await db
 			.update(prWorkItems)
 			.set({
@@ -142,7 +168,10 @@ export async function linkPRToWorkItem(
 			target: [prWorkItems.projectId, prWorkItems.prNumber],
 			targetWhere: isNotNull(prWorkItems.prNumber),
 			set: {
-				workItemId,
+				// COALESCE: never erase a known workItemId with null. The link is
+				// one-way set — once an earlier writer landed it, later writers that
+				// happen to lack the workItemId must not unset it.
+				workItemId: sql`COALESCE(${workItemId}, ${prWorkItems.workItemId})`,
 				repoFullName,
 				workItemUrl,
 				workItemTitle,

@@ -120,6 +120,7 @@ function makeQueryChainWithRows(rows: unknown[]): ReturnType<typeof createQueryM
 
 describe('prWorkItemsRepository', () => {
 	let chain: ReturnType<typeof createMockChain>;
+	let deleteWhere: ReturnType<typeof vi.fn>;
 	let mockDb: {
 		select: ReturnType<typeof vi.fn>;
 		insert: ReturnType<typeof vi.fn>;
@@ -131,12 +132,14 @@ describe('prWorkItemsRepository', () => {
 		// linkPRToWorkItem's two-step logic: first update (returns []), then insert.
 		// Default: update returns [] (no existing work-item row), insert proceeds.
 		chain = createMockChain([]);
+		// Step 1's orphan-cleanup uses db.delete(table).where(condition).
+		deleteWhere = vi.fn().mockResolvedValue(undefined);
 
 		mockDb = {
 			select: vi.fn().mockReturnValue({ from: chain.from }),
 			insert: vi.fn().mockReturnValue({ values: chain.values }),
 			update: vi.fn().mockReturnValue({ set: chain.set }),
-			delete: vi.fn(),
+			delete: vi.fn().mockReturnValue({ where: deleteWhere }),
 		};
 		mockGetDb.mockReturnValue(mockDb as never);
 	});
@@ -269,12 +272,26 @@ describe('prWorkItemsRepository', () => {
 			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc');
 
 			expect(chain.onConflictDoUpdate).toHaveBeenCalledTimes(1);
-			expect(chain.onConflictDoUpdate).toHaveBeenCalledWith(
-				expect.objectContaining({
-					target: expect.arrayContaining([expect.anything(), expect.anything()]),
-					set: expect.objectContaining({ workItemId: 'wi-abc', repoFullName: 'owner/repo' }),
-				}),
-			);
+			// workItemId in `set` is a COALESCE SQL expression (one-way set semantics),
+			// not the literal string. Other fields are passed through unchanged.
+			const conflictArg = chain.onConflictDoUpdate.mock.calls[0][0];
+			expect(conflictArg.target).toHaveLength(2);
+			expect(conflictArg.set.repoFullName).toBe('owner/repo');
+			expect(conflictArg.set.workItemId).toBeDefined();
+			expect(conflictArg.set.workItemId).not.toBe('wi-abc'); // wrapped in SQL
+		});
+
+		it('deletes any racing orphan (NULL workItemId, prNumber) row before Step 1 UPDATE', async () => {
+			await linkPRToWorkItem('proj-1', 'owner/repo', 42, 'wi-abc');
+
+			expect(mockDb.delete).toHaveBeenCalledTimes(1);
+			expect(deleteWhere).toHaveBeenCalledTimes(1);
+		});
+
+		it('does NOT call delete when workItemId is null (no Step 1 path)', async () => {
+			await linkPRToWorkItem('proj-1', 'owner/repo', 42, null);
+
+			expect(mockDb.delete).not.toHaveBeenCalled();
 		});
 
 		it('persists optional display fields when provided', async () => {

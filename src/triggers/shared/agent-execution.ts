@@ -395,7 +395,21 @@ export async function runAgentExecutionPipeline(
 
 	const { skipPrepareForAgent = false, onSuccess, onFailure, logLabel = 'Agent' } = executionConfig;
 
-	const workItemId = result.workItemId;
+	// Re-resolve workItemId at run time. The trigger handler (e.g. PROpenedTrigger)
+	// captures workItemId synchronously at webhook arrival, before any other
+	// pipeline has had time to link the PR. By the time we run, the DB may have
+	// caught up — preferring the live value avoids carrying a stale `undefined`
+	// into runAgent (and therefore agent_runs.work_item_id) and into the
+	// post-execution linkPRToWorkItem write.
+	const workItemId = await resolveWorkItemId(result.workItemId, project.id, result.prNumber);
+
+	// If we recovered a workItemId the trigger didn't have, patch agentInput so
+	// the corrected value flows into runAgent and into the agent_runs row that
+	// tryCreateRun (src/agents/shared/runTracking.ts) writes.
+	const agentInput =
+		workItemId && workItemId !== result.workItemId
+			? { ...result.agentInput, workItemId }
+			: result.agentInput;
 
 	let remainingBudgetUsd: number | undefined;
 	if (workItemId) {
@@ -448,7 +462,7 @@ export async function runAgentExecutionPipeline(
 	}
 
 	const agentResult = await runAgent(agentType, {
-		...result.agentInput,
+		...agentInput,
 		remainingBudgetUsd,
 		project,
 		config,

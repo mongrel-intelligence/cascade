@@ -43,7 +43,7 @@ describe('PM provider conformance (every registered provider)', () => {
 			expect(manifest.category).toBe('pm');
 		});
 
-		it('webhookRoute matches the /${id}/webhook convention', () => {
+		it('webhookRoute matches the /<id>/webhook convention', () => {
 			expect(manifest.webhookRoute).toBe(`/${id}/webhook`);
 		});
 
