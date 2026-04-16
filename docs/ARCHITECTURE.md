@@ -1,6 +1,6 @@
 # CASCADE Architecture
 
-CASCADE is a PM-to-Code automation platform that connects project management tools (Trello, JIRA), source control (GitHub), and monitoring (Sentry) to AI-powered agents that autonomously implement features, review PRs, debug failures, and manage backlogs. Webhooks from external providers flow through a router, get queued in Redis, and are processed by ephemeral worker containers that run agents against cloned repositories.
+CASCADE is a PM-to-Code automation platform that connects project management tools (Trello, JIRA, Linear), source control (GitHub), and monitoring (Sentry) to AI-powered agents that autonomously implement features, review PRs, debug failures, and manage backlogs. Webhooks from external providers flow through a router, get queued in Redis, and are processed by ephemeral worker containers that run agents against cloned repositories.
 
 > **Relationship to CLAUDE.md**: `CLAUDE.md` is the operational reference (commands, env vars, how-to). This document and its deep-dives cover the *system design* — how components fit together and why.
 
@@ -11,6 +11,7 @@ graph TB
     subgraph External["External Providers"]
         Trello
         JIRA
+        Linear
         GitHub
         Sentry
     end
@@ -30,6 +31,7 @@ graph TB
 
     Trello -->|webhook| Router
     JIRA -->|webhook| Router
+    Linear -->|webhook| Router
     GitHub -->|webhook| Router
     Sentry -->|webhook| Router
 
@@ -39,6 +41,7 @@ graph TB
     Worker -->|PRs, comments| GitHub
     Worker -->|status updates| Trello
     Worker -->|status updates| JIRA
+    Worker -->|status updates| Linear
 
     Router <--> DB
     Worker <--> DB
@@ -65,7 +68,7 @@ The canonical path from webhook to pull request:
 
 ```mermaid
 sequenceDiagram
-    participant P as Provider<br/>(Trello/GitHub/JIRA/Sentry)
+    participant P as Provider<br/>(Trello/JIRA/Linear/GitHub/Sentry)
     participant R as Router
     participant Q as Redis/BullMQ
     participant W as Worker
@@ -97,7 +100,7 @@ sequenceDiagram
 
 **YAML-based agent definitions** — Agents are defined declaratively in YAML files specifying identity, capabilities, triggers, prompts, and lifecycle hooks. Definitions resolve via three tiers: in-memory cache, database, then YAML files on disk.
 
-**AsyncLocalStorage credential scoping** — Provider clients (GitHub, Trello, JIRA) use Node.js `AsyncLocalStorage` to scope credentials per-request, preventing cross-request credential leakage.
+**AsyncLocalStorage credential scoping** — Provider clients (GitHub, Trello, JIRA, Linear) use Node.js `AsyncLocalStorage` to scope credentials per-request, preventing cross-request credential leakage.
 
 ## Directory Map
 
@@ -110,10 +113,11 @@ sequenceDiagram
 | `src/backends/` | LLM execution engines: Claude Code, LLMist, Codex, OpenCode |
 | `src/gadgets/` | Tool implementations agents use (file ops, PM, SCM, alerting, shell) |
 | `src/integrations/` | Unified integration interfaces, registry, bootstrap |
-| `src/pm/` | PM abstraction layer: provider interface, Trello/JIRA adapters, lifecycle |
+| `src/pm/` | PM abstraction layer: provider interface, Trello/JIRA/Linear adapters, lifecycle |
 | `src/github/` | GitHub API client, dual-persona model, PR operations |
 | `src/trello/` | Trello API client |
 | `src/jira/` | JIRA API client (jira.js wrapper) |
+| `src/linear/` | Linear API client |
 | `src/sentry/` | Sentry API client, alerting integration |
 | `src/config/` | Configuration provider, caching, credential resolution, integration roles |
 | `src/db/` | Drizzle ORM schema, repositories, migrations |

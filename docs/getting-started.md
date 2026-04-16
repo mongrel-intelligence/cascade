@@ -264,6 +264,25 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","statuses":{"todo":"To Do","inProgress":"In Progress","inReview":"In Review"}}'
 ```
 
+### Linear
+
+1. Create a Linear API key at https://linear.app/settings/api
+2. Optionally note your webhook signing secret (set when creating the webhook in the Linear UI)
+
+```bash
+# Store Linear credentials (project-scoped)
+node bin/cascade.js projects credentials-set my-project --key LINEAR_API_KEY --value ... --name "Linear API Key"
+# Optional — only needed if you configure a signing secret in the Linear webhook
+node bin/cascade.js projects credentials-set my-project --key LINEAR_WEBHOOK_SECRET --value ... --name "Linear Webhook Secret"
+
+# Configure the integration (teamId is required; projectId is optional to scope to a specific Linear Project)
+node bin/cascade.js projects integration-set my-project \
+  --category pm --provider linear \
+  --config '{"teamId":"TEAM_ID","projectId":"PROJECT_ID_OPTIONAL"}'
+```
+
+> **Note:** Linear webhooks must be created manually in the Linear UI — Cascade cannot create them programmatically. Full step-by-step instructions (including the three event families to subscribe to) are available in the dashboard PM wizard.
+
 ---
 
 ## 9. Set Up Webhooks
@@ -323,7 +342,7 @@ node bin/cascade.js projects trigger-discover --agent implementation
 
 ## 11. Test It
 
-1. Create a card in your PM tool (Trello/Jira) with a clear description of what code change you want
+1. Create a card in your PM tool (Trello/Jira/Linear) with a clear description of what code change you want
 2. Move it to the status that triggers the implementation agent (or add the "Ready to Process" label)
 3. Watch the dashboard — a new run should appear within seconds
 4. The agent clones your repo, writes code, and opens a pull request

@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js 22+](https://img.shields.io/badge/node-%3E%3D22-brightgreen)](https://nodejs.org/)
 
-> **Cascade orchestrates AI agents (Claude Code, Codex, opencode, LLMist) across your workflows in GitHub, Trello, and Jira.**
+> **Cascade orchestrates AI agents (Claude Code, Codex, opencode, LLMist) across your workflows in GitHub, Trello, Jira, and Linear.**
 
 Cascade is an open-source platform that automates the full software development lifecycle. Connect your PM tool and GitHub repository, and Cascade drives work items from plan to merge:
 
@@ -38,7 +38,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 
 ## ⚡ Features
 
-- **Multi-PM support** — Works with Trello and JIRA out of the box
+- **Multi-PM support** — Works with Trello, JIRA, and Linear out of the box
 - **11 agent types** — Splitting, planning, implementation, review, debug, respond-to-review, respond-to-CI, and more
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
@@ -151,7 +151,7 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **Dual-persona GitHub model** — Cascade uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them.
 
-**Trigger system** — Events from Trello, JIRA, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database.
+**Trigger system** — Events from Trello, JIRA, Linear, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database.
 
 **Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `claude-code` (Anthropic Claude Code SDK). Alternatives: `llmist` (supports OpenRouter, Anthropic, OpenAI), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
 
