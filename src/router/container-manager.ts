@@ -79,6 +79,17 @@ function buildSnapshotImageName(projectId: string, workItemId: string): string {
  * On failure the error is logged and swallowed — snapshot failure must not
  * break the normal post-run flow.
  */
+async function inspectImageSizeBestEffort(imageName: string): Promise<number | undefined> {
+	try {
+		const image = docker.getImage(imageName);
+		if (!image) return undefined;
+		const info = (await image.inspect()) as { Size?: number } | undefined;
+		return info?.Size;
+	} catch {
+		return undefined;
+	}
+}
+
 async function commitContainerToSnapshot(
 	containerId: string,
 	projectId: string,
@@ -88,12 +99,17 @@ async function commitContainerToSnapshot(
 	try {
 		const container = docker.getContainer(containerId);
 		await container.commit({ repo: imageName.split(':')[0], tag: 'latest' });
-		registerSnapshot(projectId, workItemId, imageName);
+		// Populate the image size on the registered metadata so max-size
+		// eviction actually fires. Inspecting is best-effort — without size,
+		// the entry still gets TTL/max-count eviction.
+		const imageSize = await inspectImageSizeBestEffort(imageName);
+		registerSnapshot(projectId, workItemId, imageName, imageSize);
 		logger.info('[WorkerManager] Committed container to snapshot image:', {
 			containerId: containerId.slice(0, 12),
 			imageName,
 			projectId,
 			workItemId,
+			imageSizeBytes: imageSize,
 		});
 	} catch (err) {
 		logger.warn('[WorkerManager] Failed to commit container to snapshot (non-fatal):', {

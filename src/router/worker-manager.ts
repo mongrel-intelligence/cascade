@@ -21,6 +21,7 @@ import {
 } from './container-manager.js';
 import type { CascadeJob } from './queue.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from './snapshot-cleanup.js';
+import { syncSnapshotsFromDocker } from './snapshot-startup-sync.js';
 
 // Re-export container-manager public API so existing callers are unaffected.
 export { getActiveWorkerCount, getActiveWorkers, startOrphanCleanup, stopOrphanCleanup };
@@ -81,6 +82,15 @@ export function startWorkerProcessor(): void {
 
 	// Start periodic snapshot eviction alongside orphan cleanup
 	startSnapshotCleanup();
+
+	// Reconcile pre-existing snapshot images on disk so the eviction loop can
+	// apply TTL/max-count/max-size policies to them. Best-effort — Docker
+	// outage at boot must not block the worker manager from starting.
+	void syncSnapshotsFromDocker().catch((err) => {
+		logger.warn('[WorkerManager] Snapshot startup sync failed (continuing):', {
+			error: String(err),
+		});
+	});
 
 	logger.info('[WorkerManager] Started with max', routerConfig.maxWorkers, 'concurrent workers');
 }

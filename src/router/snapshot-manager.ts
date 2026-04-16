@@ -37,13 +37,24 @@ export interface SnapshotMetadata {
 /** In-memory snapshot registry keyed by `${projectId}:${workItemId}` */
 const snapshots = new Map<string, SnapshotMetadata>();
 
+/** Synthetic projectId used for entries discovered on disk at startup. */
+const DISCOVERED_PROJECT_ID = '__discovered__';
+
 function snapshotKey(projectId: string, workItemId: string): string {
 	return `${projectId}:${workItemId}`;
+}
+
+function discoveredKey(imageName: string): string {
+	return snapshotKey(DISCOVERED_PROJECT_ID, imageName);
 }
 
 /**
  * Register or refresh snapshot metadata for a project+workItem pair.
  * Overwrites any existing entry for the same key.
+ *
+ * Also drops any "discovered" entry that points to the same image, so the
+ * startup-sync orphan tracking doesn't double-count an image that's now
+ * being actively managed.
  */
 export function registerSnapshot(
 	projectId: string,
@@ -60,12 +71,52 @@ export function registerSnapshot(
 		imageSizeBytes,
 	};
 	snapshots.set(key, metadata);
+	// Drop any orphan-tracking entry for the same image — the real registration
+	// supersedes it.
+	snapshots.delete(discoveredKey(imageName));
 	logger.info('[SnapshotManager] Snapshot registered:', {
 		projectId,
 		workItemId,
 		imageName,
 	});
 	return metadata;
+}
+
+/**
+ * Track a snapshot image discovered on disk at startup so the cleanup loop
+ * can apply TTL/max-count/max-size limits to it.
+ *
+ * The (projectId, workItemId) pair cannot be reliably parsed from the
+ * sanitised composite image name — sanitisation collapses runs of '-' so
+ * `cascade-snapshot-llmist-mng-93:latest` is genuinely ambiguous. We sidestep
+ * that by keying discovered entries on the image name itself under a synthetic
+ * project (`__discovered__`). Eviction works the same way regardless of key.
+ *
+ * No-op when an entry already exists for this image, either as a discovered
+ * orphan or as a real registration.
+ */
+export function registerDiscoveredSnapshot(
+	imageName: string,
+	createdAt: Date,
+	imageSizeBytes: number,
+): void {
+	const key = discoveredKey(imageName);
+	if (snapshots.has(key)) return;
+	for (const m of snapshots.values()) {
+		if (m.imageName === imageName) return;
+	}
+	snapshots.set(key, {
+		imageName,
+		projectId: DISCOVERED_PROJECT_ID,
+		workItemId: imageName,
+		createdAt,
+		imageSizeBytes,
+	});
+	logger.debug('[SnapshotManager] Discovered orphan snapshot tracked:', {
+		imageName,
+		createdAt: createdAt.toISOString(),
+		imageSizeBytes,
+	});
 }
 
 /**
@@ -135,17 +186,17 @@ export function getSnapshotCount(): number {
  * 3. Max-size: if still over-budget, remove oldest entries until estimated
  *    total size is at or below snapshotMaxSizeBytes.
  *
- * Returns the number of entries removed.
- *
- * This function operates only on the in-memory metadata registry. It does NOT
- * remove Docker images — callers are responsible for any Docker cleanup.
+ * Returns the metadata of every evicted entry so the caller can do the
+ * matching `docker rmi`. Removing the in-memory entry without removing the
+ * underlying image (the prior behaviour of this function) is the leak that
+ * filled the dev disk to 100% — callers MUST act on the returned list.
  */
 export function evictSnapshots(
 	ttlMs: number = routerConfig.snapshotDefaultTtlMs,
 	maxCount: number = routerConfig.snapshotMaxCount,
 	maxSizeBytes: number = routerConfig.snapshotMaxSizeBytes,
-): number {
-	let evicted = 0;
+): SnapshotMetadata[] {
+	const evicted: SnapshotMetadata[] = [];
 	const now = Date.now();
 
 	// Phase 1: TTL eviction — remove all expired entries
@@ -153,7 +204,7 @@ export function evictSnapshots(
 		const ageMs = now - metadata.createdAt.getTime();
 		if (ageMs > ttlMs) {
 			snapshots.delete(key);
-			evicted++;
+			evicted.push(metadata);
 			logger.info('[SnapshotManager] Evicted expired snapshot:', {
 				projectId: metadata.projectId,
 				workItemId: metadata.workItemId,
@@ -172,7 +223,7 @@ export function evictSnapshots(
 		for (let i = 0; i < toRemove; i++) {
 			const [key, metadata] = sorted[i];
 			snapshots.delete(key);
-			evicted++;
+			evicted.push(metadata);
 			logger.info('[SnapshotManager] Evicted snapshot (over max-count):', {
 				projectId: metadata.projectId,
 				workItemId: metadata.workItemId,
@@ -195,7 +246,7 @@ export function evictSnapshots(
 		for (const [key, metadata] of sorted) {
 			if (runningSize <= maxSizeBytes) break;
 			snapshots.delete(key);
-			evicted++;
+			evicted.push(metadata);
 			runningSize -= metadata.imageSizeBytes ?? 0;
 			logger.info('[SnapshotManager] Evicted snapshot (over max-size):', {
 				projectId: metadata.projectId,
@@ -207,9 +258,9 @@ export function evictSnapshots(
 		}
 	}
 
-	if (evicted > 0) {
+	if (evicted.length > 0) {
 		logger.info('[SnapshotManager] Eviction sweep complete:', {
-			evicted,
+			evicted: evicted.length,
 			remaining: snapshots.size,
 		});
 	}

@@ -237,8 +237,8 @@ describe('snapshot-manager', () => {
 	// -------------------------------------------------------------------------
 
 	describe('evictSnapshots', () => {
-		it('returns 0 when no snapshots are registered', () => {
-			expect(evictSnapshots(1000, 5, 10 * 1024 * 1024 * 1024)).toBe(0);
+		it('returns an empty array when no snapshots are registered', () => {
+			expect(evictSnapshots(1000, 5, 10 * 1024 * 1024 * 1024)).toEqual([]);
 		});
 
 		it('evicts expired snapshots by TTL', () => {
@@ -251,7 +251,8 @@ describe('snapshot-manager', () => {
 
 			const evicted = evictSnapshots(1000, 10, 10 * 1024 * 1024 * 1024);
 
-			expect(evicted).toBe(1);
+			expect(evicted).toHaveLength(1);
+			expect(evicted[0].imageName).toBe('img-1:latest');
 			expect(getSnapshotCount()).toBe(1);
 			expect(getSnapshot('proj-1', 'card-2')).toBeDefined();
 			expect(getSnapshot('proj-1', 'card-1', 1000)).toBeUndefined();
@@ -270,7 +271,7 @@ describe('snapshot-manager', () => {
 			// Allow all TTL, but cap at 2 snapshots
 			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 2, 10 * 1024 * 1024 * 1024);
 
-			expect(evicted).toBe(1);
+			expect(evicted).toHaveLength(1);
 			expect(getSnapshotCount()).toBe(2);
 			// s1 (oldest) should have been evicted
 			expect(getSnapshot('proj-1', 'card-1')).toBeUndefined();
@@ -293,7 +294,7 @@ describe('snapshot-manager', () => {
 			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 100, 1100);
 
 			// After removing s1 (500 bytes): 1000 <= 1100, done
-			expect(evicted).toBe(1);
+			expect(evicted).toHaveLength(1);
 			expect(getSnapshotCount()).toBe(2);
 			expect(getSnapshot('proj-1', 'card-1')).toBeUndefined();
 			expect(getSnapshot('proj-1', 'card-2')).toBeDefined();
@@ -314,7 +315,7 @@ describe('snapshot-manager', () => {
 			const evicted = evictSnapshots(1000, 2, 10 * 1024 * 1024 * 1024);
 
 			// Both expired, so 2 removed by TTL, count drops to 1 which is under maxCount=2
-			expect(evicted).toBe(2);
+			expect(evicted).toHaveLength(2);
 			expect(getSnapshotCount()).toBe(1);
 			expect(getSnapshot('proj-1', 'card-3')).toBeDefined();
 		});
@@ -325,7 +326,7 @@ describe('snapshot-manager', () => {
 
 			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 10, 10 * 1024 * 1024 * 1024);
 
-			expect(evicted).toBe(0);
+			expect(evicted).toEqual([]);
 			expect(getSnapshotCount()).toBe(2);
 		});
 
@@ -341,7 +342,7 @@ describe('snapshot-manager', () => {
 			// Snapshots without size contribute 0 — no eviction needed
 			const evicted = evictSnapshots(24 * 60 * 60 * 1000, 100, 1000);
 
-			expect(evicted).toBe(0);
+			expect(evicted).toEqual([]);
 			expect(getSnapshotCount()).toBe(2);
 		});
 
@@ -357,8 +358,66 @@ describe('snapshot-manager', () => {
 			// should use that default
 			const evicted = evictSnapshots();
 
-			expect(evicted).toBe(1);
+			expect(evicted).toHaveLength(1);
 			expect(getSnapshotCount()).toBe(5);
+		});
+
+		it('returns SnapshotMetadata for each evicted entry so the caller can rmi', () => {
+			const s1 = registerSnapshot('proj-1', 'card-old', 'img-old:latest', 1000);
+			s1.createdAt = new Date(Date.now() - 99_999_999);
+
+			const evicted = evictSnapshots(1000, 100, 10 * 1024 * 1024 * 1024);
+			expect(evicted).toHaveLength(1);
+			expect(evicted[0]).toMatchObject({
+				imageName: 'img-old:latest',
+				projectId: 'proj-1',
+				workItemId: 'card-old',
+				imageSizeBytes: 1000,
+			});
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// registerDiscoveredSnapshot — startup-sync entry point
+	// -------------------------------------------------------------------------
+
+	describe('registerDiscoveredSnapshot', () => {
+		it('tracks an image found on disk so the cleanup loop can evict it', async () => {
+			const { registerDiscoveredSnapshot } = await import(
+				'../../../src/router/snapshot-manager.js'
+			);
+			const old = new Date(Date.now() - 99_999_999);
+			registerDiscoveredSnapshot('cascade-snapshot-orphan:latest', old, 3_000_000_000);
+
+			expect(getSnapshotCount()).toBe(1);
+			const evicted = evictSnapshots(1000, 100, 10 * 1024 * 1024 * 1024);
+			expect(evicted).toHaveLength(1);
+			expect(evicted[0].imageName).toBe('cascade-snapshot-orphan:latest');
+			expect(evicted[0].imageSizeBytes).toBe(3_000_000_000);
+		});
+
+		it('does not duplicate when the same image is registered twice', async () => {
+			const { registerDiscoveredSnapshot } = await import(
+				'../../../src/router/snapshot-manager.js'
+			);
+			const ts = new Date();
+			registerDiscoveredSnapshot('cascade-snapshot-dup:latest', ts, 100);
+			registerDiscoveredSnapshot('cascade-snapshot-dup:latest', ts, 100);
+			expect(getSnapshotCount()).toBe(1);
+		});
+
+		it('is dropped when a real registerSnapshot lands the same image name', async () => {
+			const { registerDiscoveredSnapshot } = await import(
+				'../../../src/router/snapshot-manager.js'
+			);
+			const old = new Date(Date.now() - 99_999_999);
+			registerDiscoveredSnapshot('cascade-snapshot-llmist-mng-95:latest', old, 100);
+			expect(getSnapshotCount()).toBe(1);
+
+			registerSnapshot('llmist', 'mng-95', 'cascade-snapshot-llmist-mng-95:latest', 200);
+			// Discovered entry replaced; only the real entry remains.
+			expect(getSnapshotCount()).toBe(1);
+			expect(getSnapshot('llmist', 'mng-95')?.imageSizeBytes).toBe(200);
 		});
 	});
 });
