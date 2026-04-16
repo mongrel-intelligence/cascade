@@ -4,6 +4,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Config, run } from '@oclif/core';
 
+// Bootstrap all integrations before oclif loads any command. The CLI
+// runs commands lazily, and Spec 006/5 removed the legacy self-bootstrap
+// path, so side-effect imports have to fire at the entry point.
+// Without this, `cascade-tools pm <cmd>` throws `Unknown PM integration type`.
+await import('../dist/cli/bootstrap.js');
+
 // cascade-tools uses its own oclif config independent of package.json,
 // which now points to the dashboard CLI (cascade binary).
 const __dirname = dirname(fileURLToPath(import.meta.url));

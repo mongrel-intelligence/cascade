@@ -88,6 +88,40 @@ describe('fetchPipelineSnapshotStep', () => {
 		expect(result).toEqual([]);
 	});
 
+	it('builds pipeline lists from Linear statuses', async () => {
+		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
+		mockProvider.listWorkItems.mockResolvedValue([]);
+		mockReadWorkItem.mockResolvedValue('# details');
+
+		const linearProject = {
+			id: 'test-project',
+			orgId: 'test-org',
+			name: 'Test Project',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			pm: { type: 'linear' },
+			linear: {
+				teamId: 'team-1',
+				statuses: {
+					backlog: 'st-backlog',
+					todo: 'st-todo',
+					inProgress: 'st-inprog',
+					inReview: 'st-inrev',
+					done: 'st-done',
+					merged: 'st-merged',
+				},
+				labels: {},
+			},
+		} as unknown as ProjectConfig;
+
+		const result = await fetchPipelineSnapshotStep(makeParams({}, linearProject));
+
+		expect(result).toHaveLength(1);
+		for (const id of ['st-backlog', 'st-todo', 'st-inprog', 'st-inrev', 'st-done', 'st-merged']) {
+			expect(mockProvider.listWorkItems).toHaveBeenCalledWith(id);
+		}
+	});
+
 	it('returns a single ContextInjection with toolName PipelineSnapshot', async () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 		mockProvider.listWorkItems.mockResolvedValue([]);

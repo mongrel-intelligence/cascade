@@ -17,7 +17,7 @@ import {
 	saveTodos,
 } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
-import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
+import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProviderOrNull, MAX_IMAGES_PER_WORK_ITEM } from '../../pm/index.js';
 import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
@@ -376,18 +376,43 @@ const PIPELINE_DETAIL_CONCURRENCY = 5;
 function buildPipelineLists(project: ProjectConfig): PipelineList[] {
 	const trelloConfig = getTrelloConfig(project);
 	const jiraConfig = getJiraConfig(project);
+	const linearConfig = getLinearConfig(project);
 	const lists: PipelineList[] = [];
 
 	const addList = (name: string, id: string | undefined): void => {
 		if (id) lists.push({ name, id });
 	};
 
-	addList('BACKLOG', trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog);
-	addList('TODO', trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo);
-	addList('IN_PROGRESS', trelloConfig?.lists?.inProgress ?? jiraConfig?.statuses?.inProgress);
-	addList('IN_REVIEW', trelloConfig?.lists?.inReview ?? jiraConfig?.statuses?.inReview);
-	addList('DONE', trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done);
-	addList('MERGED', trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged);
+	addList(
+		'BACKLOG',
+		trelloConfig?.lists?.backlog ??
+			jiraConfig?.statuses?.backlog ??
+			linearConfig?.statuses?.backlog,
+	);
+	addList(
+		'TODO',
+		trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo ?? linearConfig?.statuses?.todo,
+	);
+	addList(
+		'IN_PROGRESS',
+		trelloConfig?.lists?.inProgress ??
+			jiraConfig?.statuses?.inProgress ??
+			linearConfig?.statuses?.inProgress,
+	);
+	addList(
+		'IN_REVIEW',
+		trelloConfig?.lists?.inReview ??
+			jiraConfig?.statuses?.inReview ??
+			linearConfig?.statuses?.inReview,
+	);
+	addList(
+		'DONE',
+		trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done ?? linearConfig?.statuses?.done,
+	);
+	addList(
+		'MERGED',
+		trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged ?? linearConfig?.statuses?.merged,
+	);
 
 	return lists;
 }
