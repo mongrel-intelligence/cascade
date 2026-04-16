@@ -48,8 +48,17 @@ export class TrelloIntegration implements PMIntegration {
 		return values.every((v) => v !== null);
 	}
 
-	createProvider(_project: ProjectConfig): PMProvider {
-		return new TrelloPMProvider();
+	createProvider(project: ProjectConfig): PMProvider {
+		// Pass the project's TrelloConfig so listWorkItems can self-resolve list
+		// IDs from CASCADE status keys (used by the snapshot loader and capacity
+		// check). When the project doesn't carry a TrelloConfig — the CLI's
+		// CredentialScopedCommand synthesises a `{ pm: { type: 'trello' } }`
+		// shell with no `trello` field for gadget-scope purposes (gadgets pass
+		// containerId explicitly) — fall back to an empty config so the
+		// adapter still constructs cleanly. listWorkItems' self-resolution
+		// then returns [] which is fine for that path.
+		const config = getTrelloConfig(project) ?? { boardId: '', lists: {}, labels: {} };
+		return new TrelloPMProvider(config);
 	}
 
 	async withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T> {

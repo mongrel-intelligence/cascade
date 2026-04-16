@@ -88,7 +88,7 @@ describe('fetchPipelineSnapshotStep', () => {
 		expect(result).toEqual([]);
 	});
 
-	it('builds pipeline lists from Linear statuses', async () => {
+	it('uses unified provider.listWorkItems(undefined, { status }) for Linear projects', async () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 		mockProvider.listWorkItems.mockResolvedValue([]);
 		mockReadWorkItem.mockResolvedValue('# details');
@@ -117,8 +117,11 @@ describe('fetchPipelineSnapshotStep', () => {
 		const result = await fetchPipelineSnapshotStep(makeParams({}, linearProject));
 
 		expect(result).toHaveLength(1);
-		for (const id of ['st-backlog', 'st-todo', 'st-inprog', 'st-inrev', 'st-done', 'st-merged']) {
-			expect(mockProvider.listWorkItems).toHaveBeenCalledWith(id);
+		// After the listWorkItems unification fix: the loader passes
+		// (undefined, { status: cascadeKey }) — NOT the raw state UUID as
+		// containerId. Each provider self-resolves the scope from its config.
+		for (const status of ['backlog', 'todo', 'inProgress', 'inReview', 'done', 'merged']) {
+			expect(mockProvider.listWorkItems).toHaveBeenCalledWith(undefined, { status });
 		}
 	});
 
@@ -165,9 +168,9 @@ describe('fetchPipelineSnapshotStep', () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 
 		const card = { id: 'card-1', title: 'Test Card', url: 'http://trello.com/c/1', labels: [] };
-		mockProvider.listWorkItems.mockImplementation(async (listId: string) => {
-			if (listId === 'list-backlog') return [card];
-			if (listId === 'list-todo') return [card];
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'backlog') return [card];
+			if (filter?.status === 'todo') return [card];
 			return [];
 		});
 		mockReadWorkItem.mockResolvedValue('# Test Card\n\nFull details here');
@@ -183,8 +186,8 @@ describe('fetchPipelineSnapshotStep', () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 
 		const card = { id: 'card-done', title: 'Done Card', url: 'http://trello.com/c/2', labels: [] };
-		mockProvider.listWorkItems.mockImplementation(async (listId: string) => {
-			if (listId === 'list-done' || listId === 'list-merged') return [card];
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'done' || filter?.status === 'merged') return [card];
 			return [];
 		});
 		mockReadWorkItem.mockResolvedValue('# Done Card\n\nFull details');
@@ -204,8 +207,8 @@ describe('fetchPipelineSnapshotStep', () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 
 		const card = { id: 'card-done', title: 'Done Card', url: '', labels: [] };
-		mockProvider.listWorkItems.mockImplementation(async (listId: string) => {
-			if (listId === 'list-done') return [card];
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'done') return [card];
 			return [];
 		});
 
@@ -237,8 +240,8 @@ describe('fetchPipelineSnapshotStep', () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 
 		const card = { id: 'card-1', title: 'Test Card', url: 'http://trello.com/c/1', labels: [] };
-		mockProvider.listWorkItems.mockImplementation(async (listId: string) => {
-			if (listId === 'list-backlog') return [card];
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'backlog') return [card];
 			return [];
 		});
 		mockReadWorkItem.mockRejectedValue(new Error('Card read error'));
@@ -254,8 +257,8 @@ describe('fetchPipelineSnapshotStep', () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 
 		const card = { id: 'card-1', title: 'Test Card', url: 'http://trello.com/c/1', labels: [] };
-		mockProvider.listWorkItems.mockImplementation(async (listId: string) => {
-			if (listId === 'list-backlog') return [card];
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'backlog') return [card];
 			return [];
 		});
 		mockReadWorkItem.mockResolvedValue('# Test Card');
@@ -329,14 +332,17 @@ describe('fetchPipelineSnapshotStep', () => {
 		expect(result[0].description).toContain('2 lists');
 	});
 
-	it('includes list IDs in section headers', async () => {
+	it('includes CASCADE status keys in section headers', async () => {
 		mockGetPMProviderOrNull.mockReturnValue(mockProvider as never);
 		mockProvider.listWorkItems.mockResolvedValue([]);
 
 		const result = await fetchPipelineSnapshotStep(makeParams({}, makeProject()));
 
 		const output = result[0].result as string;
-		expect(output).toContain('list ID: list-backlog');
-		expect(output).toContain('list ID: list-todo');
+		// Headers expose the CASCADE status key (what move-work-item expects),
+		// not the provider-native ID — that's a Linear UUID for Linear projects
+		// and useless to the agent.
+		expect(output).toContain('status: backlog');
+		expect(output).toContain('status: todo');
 	});
 });

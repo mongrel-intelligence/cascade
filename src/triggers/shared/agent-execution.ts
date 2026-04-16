@@ -3,7 +3,6 @@ import type { LifecycleHooks } from '../../agents/definitions/schema.js';
 import { runAgent } from '../../agents/registry.js';
 import { createWorkItem, linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
 import { updateRunPRNumber } from '../../db/repositories/runsRepository.js';
-import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
 import { getPMProvider } from '../../pm/context.js';
 import {
 	createPMProvider,
@@ -558,43 +557,12 @@ async function propagateAutoLabelAfterSplitting(
 	const autoLabelId = pmConfig.labels.auto;
 	if (!autoLabelId) return null;
 
-	// List all backlog items and add auto label
+	// List backlog items via the unified call shape — provider self-resolves
+	// scope (Trello list / JIRA project / Linear team) and maps the CASCADE
+	// status key to its native identifier from its own config.
 	let backlogItems: Awaited<ReturnType<typeof provider.listWorkItems>>;
 	try {
-		if (provider.type === 'trello') {
-			// Trello: containerId is the list ID
-			const backlogListId = getTrelloConfig(project)?.lists?.backlog;
-			if (!backlogListId) {
-				logger.warn(
-					'propagateAutoLabelAfterSplitting: no backlog list configured for Trello, skipping',
-					{ workItemId },
-				);
-				return null;
-			}
-			backlogItems = await provider.listWorkItems(backlogListId);
-		} else if (provider.type === 'jira') {
-			// JIRA: use server-side JQL filtering by status to avoid fetching all project issues
-			const jiraConfig = getJiraConfig(project);
-			const backlogStatus = jiraConfig?.statuses?.backlog;
-			const projectKey = jiraConfig?.projectKey;
-			if (!backlogStatus || !projectKey) {
-				logger.warn(
-					'propagateAutoLabelAfterSplitting: no backlog status or projectKey configured for JIRA, skipping',
-					{ workItemId },
-				);
-				return null;
-			}
-			backlogItems = await provider.listWorkItems(projectKey, { status: backlogStatus });
-			logger.info('JIRA backlog items fetched for auto-label propagation', {
-				backlogCount: backlogItems.length,
-				projectKey,
-			});
-		} else {
-			logger.warn('propagateAutoLabelAfterSplitting: unsupported PM provider type', {
-				providerType: provider.type,
-			});
-			return null;
-		}
+		backlogItems = await provider.listWorkItems(undefined, { status: 'backlog' });
 	} catch (err) {
 		logger.warn('propagateAutoLabelAfterSplitting: failed to list backlog items', {
 			workItemId,

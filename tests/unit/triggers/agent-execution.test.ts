@@ -525,7 +525,7 @@ describe('runAgentExecutionPipeline', () => {
 
 			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
 
-			expect(mockProvider.listWorkItems).toHaveBeenCalledWith('backlog-list-id');
+			expect(mockProvider.listWorkItems).toHaveBeenCalledWith(undefined, { status: 'backlog' });
 			expect(mockProvider.addLabel).toHaveBeenCalledTimes(2);
 			expect(mockProvider.addLabel).toHaveBeenCalledWith('card-1', 'auto-label-id');
 			expect(mockProvider.addLabel).toHaveBeenCalledWith('card-3', 'auto-label-id');
@@ -580,8 +580,9 @@ describe('runAgentExecutionPipeline', () => {
 
 			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
 
-			// Should use server-side status filtering via the filter parameter
-			expect(jiraProvider.listWorkItems).toHaveBeenCalledWith('PROJ', { status: 'Backlog' });
+			// After listWorkItems unification: provider self-resolves projectKey from
+			// its own config and maps the CASCADE status key to its native status name.
+			expect(jiraProvider.listWorkItems).toHaveBeenCalledWith(undefined, { status: 'backlog' });
 			// Should only label PROJ-2 (no auto label yet); PROJ-4 already has auto label
 			expect(jiraProvider.addLabel).toHaveBeenCalledTimes(1);
 			expect(jiraProvider.addLabel).toHaveBeenCalledWith('PROJ-2', 'auto-label-id');
@@ -627,10 +628,15 @@ describe('runAgentExecutionPipeline', () => {
 				labels: [{ id: 'auto-label-id', name: 'auto' }],
 			});
 
-			// Non-empty backlog — agent should chain to backlog-manager
-			mockProvider.listWorkItems.mockResolvedValue([
-				{ id: 'backlog-card-1', title: 'Item 1', description: '', url: '', labels: [] },
-			]);
+			// Non-empty backlog — agent should chain to backlog-manager. Mock
+			// per-status so the in-flight checks (todo/inProgress/inReview) return
+			// [] and the capacity check below the backlog-empty check sees room.
+			mockProvider.listWorkItems.mockImplementation(async (_containerId, opts) => {
+				if (opts?.status === 'backlog') {
+					return [{ id: 'backlog-card-1', title: 'Item 1', description: '', url: '', labels: [] }];
+				}
+				return [];
+			});
 
 			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
 
@@ -668,12 +674,8 @@ describe('runAgentExecutionPipeline', () => {
 			expect(runAgent).toHaveBeenCalledWith('splitting', expect.any(Object));
 		});
 
-		it('skips propagation if backlog list/status is not configured', async () => {
-			vi.mocked(getTrelloConfig).mockReturnValue({
-				boardId: 'board123',
-				lists: {}, // No backlog list
-				labels: {},
-			});
+		it('skips chaining to backlog-manager when backlog comes back empty (e.g. provider misconfigured)', async () => {
+			vi.mocked(checkTriggerEnabled).mockResolvedValue(true); // chain would happen if backlog were non-empty
 
 			const splittingResult: TriggerResult = {
 				agentType: 'splitting',
@@ -689,9 +691,19 @@ describe('runAgentExecutionPipeline', () => {
 				labels: [{ id: 'auto-label-id', name: 'auto' }],
 			});
 
+			// After listWorkItems unification: misconfigured providers return [] from
+			// self-resolution rather than the function dispatching on provider type and
+			// short-circuiting. The backlog-empty check below the propagation block
+			// catches it the same way.
+			mockProvider.listWorkItems.mockResolvedValue([]);
+
 			await runAgentExecutionPipeline(splittingResult, mockProject, mockConfig);
 
-			expect(mockProvider.listWorkItems).not.toHaveBeenCalled();
+			// listWorkItems IS called now (the unified path always queries) — but the
+			// chain still skips because backlog comes back empty.
+			expect(mockProvider.listWorkItems).toHaveBeenCalledWith(undefined, { status: 'backlog' });
+			expect(runAgent).toHaveBeenCalledTimes(1);
+			expect(runAgent).toHaveBeenCalledWith('splitting', expect.any(Object));
 		});
 	});
 });

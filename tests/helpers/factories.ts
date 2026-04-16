@@ -60,6 +60,37 @@ export function createMockJiraProject(overrides?: Partial<ProjectConfig>): Proje
 	} as ProjectConfig;
 }
 
+/**
+ * Creates a mock Linear project config.
+ */
+export function createMockLinearProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
+	return {
+		id: 'linear-project',
+		orgId: 'org-1',
+		name: 'Linear Project',
+		repo: 'owner/linear-repo',
+		baseBranch: 'main',
+		branchPrefix: 'feature/',
+		pm: { type: 'linear' },
+		linear: {
+			teamId: 'team-1',
+			statuses: {
+				backlog: 'state-backlog',
+				todo: 'state-todo',
+				inProgress: 'state-inprog',
+				inReview: 'state-inrev',
+			},
+			labels: {
+				processing: 'lbl-processing',
+				processed: 'lbl-processed',
+				error: 'lbl-error',
+				readyToProcess: 'lbl-ready',
+			},
+		},
+		...overrides,
+	} as ProjectConfig;
+}
+
 // ---------------------------------------------------------------------------
 // tRPC factories
 // ---------------------------------------------------------------------------

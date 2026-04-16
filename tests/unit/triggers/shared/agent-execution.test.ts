@@ -190,10 +190,19 @@ function mockProvider(overrides: Record<string, unknown> = {}) {
 			id: 'parent-card',
 			labels: [{ id: 'label-auto-id', name: 'auto' }],
 		}),
-		listWorkItems: vi.fn().mockResolvedValue([
-			{ id: 'backlog-1', labels: [] },
-			{ id: 'backlog-2', labels: [{ id: 'label-auto-id', name: 'auto' }] },
-		]),
+		// Per-status impl: backlog has 2 cards, in-flight statuses are empty so the
+		// chain's capacity check below the propagation block doesn't bail.
+		listWorkItems: vi
+			.fn()
+			.mockImplementation(async (_containerId: string | undefined, opts?: { status?: string }) => {
+				if (opts?.status === 'backlog') {
+					return [
+						{ id: 'backlog-1', labels: [] },
+						{ id: 'backlog-2', labels: [{ id: 'label-auto-id', name: 'auto' }] },
+					];
+				}
+				return [];
+			}),
 		addLabel: vi.fn().mockResolvedValue(undefined),
 		...overrides,
 	};

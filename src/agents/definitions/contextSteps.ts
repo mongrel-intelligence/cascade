@@ -356,10 +356,15 @@ export async function prepopulateTodosStep(
 
 /**
  * Named list entries used in the pipeline snapshot.
+ *
+ * `statusKey` is the CASCADE-canonical status (`'backlog'`, `'todo'`, ...) that
+ * gets passed to `provider.listWorkItems(undefined, { status: statusKey })`.
+ * Each provider self-resolves its native identifier (Trello list ID, JIRA
+ * status name, Linear state UUID) from its own config.
  */
 interface PipelineList {
 	name: string;
-	id: string;
+	statusKey: string;
 }
 
 interface PipelineListResult {
@@ -377,42 +382,28 @@ function buildPipelineLists(project: ProjectConfig): PipelineList[] {
 	const trelloConfig = getTrelloConfig(project);
 	const jiraConfig = getJiraConfig(project);
 	const linearConfig = getLinearConfig(project);
-	const lists: PipelineList[] = [];
 
-	const addList = (name: string, id: string | undefined): void => {
-		if (id) lists.push({ name, id });
+	const STATUS_KEYS = ['backlog', 'todo', 'inProgress', 'inReview', 'done', 'merged'] as const;
+	const NAME_BY_KEY: Record<(typeof STATUS_KEYS)[number], string> = {
+		backlog: 'BACKLOG',
+		todo: 'TODO',
+		inProgress: 'IN_PROGRESS',
+		inReview: 'IN_REVIEW',
+		done: 'DONE',
+		merged: 'MERGED',
 	};
 
-	addList(
-		'BACKLOG',
-		trelloConfig?.lists?.backlog ??
-			jiraConfig?.statuses?.backlog ??
-			linearConfig?.statuses?.backlog,
-	);
-	addList(
-		'TODO',
-		trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo ?? linearConfig?.statuses?.todo,
-	);
-	addList(
-		'IN_PROGRESS',
-		trelloConfig?.lists?.inProgress ??
-			jiraConfig?.statuses?.inProgress ??
-			linearConfig?.statuses?.inProgress,
-	);
-	addList(
-		'IN_REVIEW',
-		trelloConfig?.lists?.inReview ??
-			jiraConfig?.statuses?.inReview ??
-			linearConfig?.statuses?.inReview,
-	);
-	addList(
-		'DONE',
-		trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done ?? linearConfig?.statuses?.done,
-	);
-	addList(
-		'MERGED',
-		trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged ?? linearConfig?.statuses?.merged,
-	);
+	const lists: PipelineList[] = [];
+	for (const statusKey of STATUS_KEYS) {
+		// Skip statuses that no provider has configured — provider self-resolves
+		// the actual native ID at fetch time.
+		const hasMapping = Boolean(
+			trelloConfig?.lists?.[statusKey] ??
+				jiraConfig?.statuses?.[statusKey] ??
+				linearConfig?.statuses?.[statusKey],
+		);
+		if (hasMapping) lists.push({ name: NAME_BY_KEY[statusKey], statusKey });
+	}
 
 	return lists;
 }
@@ -425,12 +416,18 @@ async function fetchPipelineLists(
 	return Promise.all(
 		lists.map(async (list) => {
 			try {
-				const items = await provider.listWorkItems(list.id);
+				// Pass `undefined` as containerId so each provider self-resolves
+				// the natural scope from its own config. The `status` filter is
+				// the CASCADE status key — provider maps it to its native
+				// identifier internally. This unified call shape works for all
+				// providers; passing `list.id` (a status identifier) directly as
+				// containerId silently returned [] for JIRA and Linear.
+				const items = await provider.listWorkItems(undefined, { status: list.statusKey });
 				return { list, items, error: null };
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
 				logWriter('WARN', `fetchPipelineSnapshotStep: Failed to fetch list ${list.name}`, {
-					listId: list.id,
+					statusKey: list.statusKey,
 					error: message,
 				});
 				return { list, items: null, error: message };
@@ -480,7 +477,7 @@ function appendPipelineSection(
 ): void {
 	const { list, items, error } = listResult;
 
-	sections.push(`## ${list.name} (list ID: ${list.id})`);
+	sections.push(`## ${list.name} (status: ${list.statusKey})`);
 	sections.push('');
 
 	if (error) {

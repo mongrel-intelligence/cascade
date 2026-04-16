@@ -134,9 +134,13 @@ export class LinearPMProvider implements PMProvider {
 		};
 	}
 
-	async listWorkItems(containerId: string, filter?: ListWorkItemsFilter): Promise<WorkItem[]> {
-		// containerId is the Linear team ID
+	async listWorkItems(
+		containerId: string | undefined,
+		filter?: ListWorkItemsFilter,
+	): Promise<WorkItem[]> {
+		// containerId is the Linear team ID — defaults to config.teamId.
 		const teamId = containerId || this.config.teamId;
+		if (!teamId) return [];
 		const issues = await linearClient.listIssues({
 			teamId,
 			...(this.config.projectId ? { projectId: this.config.projectId } : {}),

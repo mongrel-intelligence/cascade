@@ -184,11 +184,21 @@ export class JiraPMProvider implements PMProvider {
 		};
 	}
 
-	async listWorkItems(containerId: string, filter?: ListWorkItemsFilter): Promise<WorkItem[]> {
-		// containerId is the JIRA project key
-		let jql = `project = "${containerId}"`;
+	async listWorkItems(
+		containerId: string | undefined,
+		filter?: ListWorkItemsFilter,
+	): Promise<WorkItem[]> {
+		// containerId is the JIRA project key — defaults to config.projectKey.
+		const projectKey = containerId ?? this.config.projectKey;
+		if (!projectKey) return [];
+		let jql = `project = "${projectKey}"`;
 		if (filter?.status) {
-			jql += ` AND status = "${filter.status}"`;
+			// Map CASCADE status key (e.g. 'todo') to native JIRA status name
+			// via config.statuses. Falls through to the literal value when no
+			// mapping exists, preserving backwards compat with callers that
+			// pass status names directly.
+			const native = this.config.statuses?.[filter.status] ?? filter.status;
+			jql += ` AND status = "${native}"`;
 		}
 		jql += ' ORDER BY created DESC';
 		const issues = await jiraClient.searchIssues(jql);

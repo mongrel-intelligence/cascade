@@ -11,7 +11,7 @@
  * still runs normally.
  */
 
-import { getJiraConfig, getTrelloConfig } from '../../pm/config.js';
+import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../../pm/config.js';
 import type { PMProvider } from '../../pm/types.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -57,26 +57,83 @@ export interface PipelineCapacityResult {
  * @param project - Resolved project configuration
  * @param provider - An initialised PM provider instance
  */
+/**
+ * Compile-time exhaustiveness guard. The `default` branch of the switch in
+ * `isProviderMisconfigured` calls this with `provider.type` narrowed to
+ * `never` — TypeScript only allows that when every `PMType` member has its
+ * own case. Adding a 4th provider without a matching case becomes a compile
+ * error, not a silent runtime "misconfigured".
+ */
+function assertNeverPMType(t: never): never {
+	throw new Error(`Unhandled PMType in isProviderMisconfigured: ${String(t)}`);
+}
+
+/**
+ * Detect missing/incomplete provider config so we can return `'misconfigured'`
+ * (conservative fallback: agent runs anyway) instead of silently treating it as
+ * an empty backlog (which would skip the agent run). This is the *only* part of
+ * isPipelineAtCapacity that needs per-provider awareness — the actual queries
+ * go through the unified `provider.listWorkItems(undefined, { status })` path.
+ */
+function isProviderMisconfigured(project: ProjectConfig, provider: PMProvider): boolean {
+	switch (provider.type) {
+		case 'trello':
+			return !getTrelloConfig(project)?.lists?.backlog;
+		case 'jira': {
+			const jira = getJiraConfig(project);
+			return !jira?.projectKey || !jira.statuses?.backlog;
+		}
+		case 'linear': {
+			const linear = getLinearConfig(project);
+			return !linear?.teamId || !linear.statuses?.backlog;
+		}
+		default:
+			return assertNeverPMType(provider.type);
+	}
+}
+
 export async function isPipelineAtCapacity(
 	project: ProjectConfig,
 	provider: PMProvider,
 ): Promise<PipelineCapacityResult> {
 	const limit = project.maxInFlightItems ?? 1;
 
-	try {
-		if (provider.type === 'trello') {
-			return await checkTrelloCapacity(project, provider, limit);
-		}
-
-		if (provider.type === 'jira') {
-			return await checkJiraCapacity(project, provider, limit);
-		}
-
-		logger.warn('isPipelineAtCapacity: unsupported PM provider type', {
+	if (isProviderMisconfigured(project, provider)) {
+		logger.warn('isPipelineAtCapacity: provider config incomplete for backlog check', {
 			providerType: provider.type,
 			projectId: project.id,
 		});
 		return { atCapacity: false, reason: 'misconfigured' };
+	}
+
+	try {
+		// Unified path: each provider self-resolves the natural scope
+		// (Trello list / JIRA project / Linear team) from its config when
+		// containerId is undefined. The status filter is the CASCADE-canonical
+		// key, mapped to the provider's native identifier internally.
+		const backlogItems = await provider.listWorkItems(undefined, { status: 'backlog' });
+		if (backlogItems.length === 0) {
+			logger.info('isPipelineAtCapacity: backlog is empty', { projectId: project.id });
+			return { atCapacity: true, reason: 'backlog-empty', inFlightCount: 0, limit };
+		}
+
+		const inFlightLists = await Promise.all(
+			(['todo', 'inProgress', 'inReview'] as const).map((status) =>
+				provider.listWorkItems(undefined, { status }),
+			),
+		);
+		const inFlightCount = inFlightLists.reduce((sum, items) => sum + items.length, 0);
+
+		if (inFlightCount >= limit) {
+			logger.info('isPipelineAtCapacity: pipeline at capacity', {
+				projectId: project.id,
+				inFlightCount,
+				limit,
+			});
+			return { atCapacity: true, reason: 'at-capacity', inFlightCount, limit };
+		}
+
+		return { atCapacity: false, reason: 'below-capacity', inFlightCount, limit };
 	} catch (err) {
 		logger.warn('isPipelineAtCapacity: failed to check capacity, assuming not at capacity', {
 			projectId: project.id,
@@ -84,103 +141,4 @@ export async function isPipelineAtCapacity(
 		});
 		return { atCapacity: false, reason: 'error' };
 	}
-}
-
-async function checkTrelloCapacity(
-	project: ProjectConfig,
-	provider: PMProvider,
-	limit: number,
-): Promise<PipelineCapacityResult> {
-	const trelloConfig = getTrelloConfig(project);
-	if (!trelloConfig) {
-		logger.warn('isPipelineAtCapacity: no Trello config for project', {
-			projectId: project.id,
-		});
-		return { atCapacity: false, reason: 'misconfigured' };
-	}
-
-	const { lists } = trelloConfig;
-
-	// Step 1: Check if backlog is empty — no work to pull in
-	const backlogListId = lists.backlog;
-	if (!backlogListId) {
-		logger.warn('isPipelineAtCapacity: no backlog list configured for Trello project', {
-			projectId: project.id,
-		});
-		return { atCapacity: false, reason: 'misconfigured' };
-	}
-
-	const backlogItems = await provider.listWorkItems(backlogListId);
-	if (backlogItems.length === 0) {
-		logger.info('isPipelineAtCapacity: backlog is empty', { projectId: project.id });
-		return { atCapacity: true, reason: 'backlog-empty', inFlightCount: 0, limit };
-	}
-
-	// Step 2: Count in-flight items (TODO + IN_PROGRESS + IN_REVIEW)
-	const inFlightListIds = [lists.todo, lists.inProgress, lists.inReview].filter(
-		(id): id is string => Boolean(id),
-	);
-
-	const inFlightCounts = await Promise.all(
-		inFlightListIds.map((listId) => provider.listWorkItems(listId)),
-	);
-	const inFlightCount = inFlightCounts.reduce((sum, items) => sum + items.length, 0);
-
-	if (inFlightCount >= limit) {
-		logger.info('isPipelineAtCapacity: pipeline at capacity', {
-			projectId: project.id,
-			inFlightCount,
-			limit,
-		});
-		return { atCapacity: true, reason: 'at-capacity', inFlightCount, limit };
-	}
-
-	return { atCapacity: false, reason: 'below-capacity', inFlightCount, limit };
-}
-
-async function checkJiraCapacity(
-	project: ProjectConfig,
-	provider: PMProvider,
-	limit: number,
-): Promise<PipelineCapacityResult> {
-	const jiraConfig = getJiraConfig(project);
-	const backlogStatus = jiraConfig?.statuses?.backlog;
-	const projectKey = jiraConfig?.projectKey;
-
-	if (!backlogStatus || !projectKey) {
-		logger.warn(
-			'isPipelineAtCapacity: no backlog status or projectKey configured for JIRA project',
-			{ projectId: project.id },
-		);
-		return { atCapacity: false, reason: 'misconfigured' };
-	}
-
-	// Step 1: Check if backlog is empty — no work to pull in
-	const backlogItems = await provider.listWorkItems(projectKey, { status: backlogStatus });
-	if (backlogItems.length === 0) {
-		logger.info('isPipelineAtCapacity: backlog is empty', { projectId: project.id });
-		return { atCapacity: true, reason: 'backlog-empty', inFlightCount: 0, limit };
-	}
-
-	// Step 2: Count in-flight items across TODO + IN_PROGRESS + IN_REVIEW statuses
-	const { statuses } = jiraConfig;
-	const inFlightStatuses = [statuses.todo, statuses.inProgress, statuses.inReview].filter(
-		(s): s is string => Boolean(s),
-	);
-
-	const inFlightCounts = await Promise.all(
-		inFlightStatuses.map((status) => provider.listWorkItems(projectKey, { status })),
-	);
-	const inFlightCount = inFlightCounts.reduce((sum, items) => sum + items.length, 0);
-
-	if (inFlightCount >= limit) {
-		logger.info('isPipelineAtCapacity: pipeline at capacity', {
-			projectId: project.id,
-			inFlightCount,
-			limit,
-		});
-		return { atCapacity: true, reason: 'at-capacity', inFlightCount, limit };
-	}
-
-	return { atCapacity: false, reason: 'below-capacity', inFlightCount, limit };
 }

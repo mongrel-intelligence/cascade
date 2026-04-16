@@ -38,7 +38,9 @@ describe('TrelloPMProvider', () => {
 
 	beforeEach(() => {
 		vi.resetAllMocks();
-		provider = new TrelloPMProvider();
+		// Default to an empty Trello config; specific listWorkItems tests below
+		// instantiate with a populated config when they need self-resolution.
+		provider = new TrelloPMProvider({ boardId: 'B1', lists: {}, labels: {} });
 	});
 
 	it('has type "trello"', () => {
@@ -335,6 +337,51 @@ describe('TrelloPMProvider', () => {
 			expect(mockTrelloClient.getListCards).toHaveBeenCalledWith('list-456');
 			expect(result).toHaveLength(1);
 			expect(result[0].id).toBe('card-a');
+		});
+	});
+
+	describe('listWorkItems — self-resolution from config', () => {
+		it('looks up config.lists[status] when containerId is omitted', async () => {
+			mockTrelloClient.getListCards.mockResolvedValue([]);
+			const providerWithConfig = new TrelloPMProvider({
+				boardId: 'B1',
+				lists: { backlog: 'list-BL', todo: 'list-TODO' },
+				labels: {},
+			});
+			await providerWithConfig.listWorkItems(undefined, { status: 'backlog' });
+			expect(mockTrelloClient.getListCards).toHaveBeenCalledWith('list-BL');
+		});
+
+		it('returns empty array when status has no list mapping in config', async () => {
+			mockTrelloClient.getListCards.mockResolvedValue([]);
+			const providerWithEmptyConfig = new TrelloPMProvider({
+				boardId: 'B1',
+				lists: {}, // no backlog
+				labels: {},
+			});
+			const result = await providerWithEmptyConfig.listWorkItems(undefined, {
+				status: 'backlog',
+			});
+			expect(result).toEqual([]);
+			expect(mockTrelloClient.getListCards).not.toHaveBeenCalled();
+		});
+
+		it('returns empty array when no config and no containerId', async () => {
+			mockTrelloClient.getListCards.mockResolvedValue([]);
+			const result = await provider.listWorkItems(undefined, { status: 'backlog' });
+			expect(result).toEqual([]);
+			expect(mockTrelloClient.getListCards).not.toHaveBeenCalled();
+		});
+
+		it('explicit containerId overrides config lookup (backwards compat)', async () => {
+			mockTrelloClient.getListCards.mockResolvedValue([]);
+			const providerWithConfig = new TrelloPMProvider({
+				boardId: 'B1',
+				lists: { backlog: 'list-BL' },
+				labels: {},
+			});
+			await providerWithConfig.listWorkItems('explicit-list', { status: 'backlog' });
+			expect(mockTrelloClient.getListCards).toHaveBeenCalledWith('explicit-list');
 		});
 	});
 

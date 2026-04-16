@@ -81,7 +81,15 @@ export interface CreateWorkItemConfig {
 
 /** Optional filters for listWorkItems to enable server-side filtering */
 export interface ListWorkItemsFilter {
-	/** Filter by status name (JIRA: adds status filter to JQL; Trello: ignored since lists are status-scoped) */
+	/**
+	 * CASCADE-canonical status key (e.g. `'backlog'`, `'todo'`, `'inProgress'`).
+	 * Each provider maps this through its own config:
+	 * - Trello: looks up `config.lists[status]` to find the list ID.
+	 * - JIRA: looks up `config.statuses[status]` for the status name in JQL.
+	 * - Linear: looks up `config.statuses[status]` for the state UUID.
+	 *
+	 * Falls through to literal value when no mapping exists (backwards compat).
+	 */
 	status?: string;
 }
 
@@ -95,7 +103,16 @@ export interface PMProvider {
 	addComment(id: string, text: string): Promise<string>;
 	updateComment(id: string, commentId: string, text: string): Promise<void>;
 	createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem>;
-	listWorkItems(containerId: string, filter?: ListWorkItemsFilter): Promise<WorkItem[]>;
+	/**
+	 * List work items in a container (Trello list / JIRA project / Linear team).
+	 *
+	 * Pass `undefined` for `containerId` to fetch by status — each provider
+	 * self-resolves the natural scope from its config: Trello looks up
+	 * `lists[filter.status]`, JIRA defaults to `projectKey`, Linear defaults
+	 * to `teamId`. Returns `[]` when neither containerId nor a resolvable
+	 * scope is available.
+	 */
+	listWorkItems(containerId: string | undefined, filter?: ListWorkItemsFilter): Promise<WorkItem[]>;
 
 	// Lifecycle
 	moveWorkItem(id: string, destination: string): Promise<void>;

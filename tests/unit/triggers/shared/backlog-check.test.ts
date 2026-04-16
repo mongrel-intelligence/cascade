@@ -4,20 +4,24 @@ import { describe, expect, it, vi } from 'vitest';
 // Hoisted mocks
 // ---------------------------------------------------------------------------
 
-const { mockGetTrelloConfig, mockGetJiraConfig, mockLogger } = vi.hoisted(() => ({
-	mockGetTrelloConfig: vi.fn(),
-	mockGetJiraConfig: vi.fn(),
-	mockLogger: {
-		info: vi.fn(),
-		warn: vi.fn(),
-		debug: vi.fn(),
-		error: vi.fn(),
-	},
-}));
+const { mockGetTrelloConfig, mockGetJiraConfig, mockGetLinearConfig, mockLogger } = vi.hoisted(
+	() => ({
+		mockGetTrelloConfig: vi.fn(),
+		mockGetJiraConfig: vi.fn(),
+		mockGetLinearConfig: vi.fn(),
+		mockLogger: {
+			info: vi.fn(),
+			warn: vi.fn(),
+			debug: vi.fn(),
+			error: vi.fn(),
+		},
+	}),
+);
 
 vi.mock('../../../../src/pm/config.js', () => ({
 	getTrelloConfig: mockGetTrelloConfig,
 	getJiraConfig: mockGetJiraConfig,
+	getLinearConfig: mockGetLinearConfig,
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -25,24 +29,37 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 import { isPipelineAtCapacity } from '../../../../src/triggers/shared/backlog-check.js';
-import { createMockJiraProject, createMockProject } from '../../../helpers/factories.js';
+import {
+	createMockJiraProject,
+	createMockLinearProject,
+	createMockProject,
+} from '../../../helpers/factories.js';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-function makeProvider(type: 'trello' | 'jira', itemsByList: Record<string, unknown[]> = {}) {
+/**
+ * Build a mock PMProvider whose `listWorkItems(undefined, { status: <key> })`
+ * resolves to `itemsByStatus[key]`. Keys MUST be CASCADE-canonical statuses
+ * (`'backlog'`, `'todo'`, `'inProgress'`, `'inReview'`) — same shape that
+ * `isPipelineAtCapacity` and the snapshot loader use.
+ */
+function makeProvider(
+	type: 'trello' | 'jira' | 'linear',
+	itemsByStatus: Record<string, unknown[]> = {},
+) {
 	return {
 		type,
-		listWorkItems: vi.fn().mockImplementation((listIdOrKey: string, opts?: { status?: string }) => {
-			// For JIRA: look up by status value; for Trello: look up by list ID
-			const key = opts?.status ?? listIdOrKey;
-			return Promise.resolve(itemsByList[key] ?? []);
-		}),
+		listWorkItems: vi
+			.fn()
+			.mockImplementation((_containerId: string | undefined, opts?: { status?: string }) =>
+				Promise.resolve(opts?.status ? (itemsByStatus[opts.status] ?? []) : []),
+			),
 	} as unknown as Parameters<typeof isPipelineAtCapacity>[1];
 }
 
-function makeErrorProvider(type: 'trello' | 'jira') {
+function makeErrorProvider(type: 'trello' | 'jira' | 'linear') {
 	return {
 		type,
 		listWorkItems: vi.fn().mockRejectedValue(new Error('network error')),
@@ -102,8 +119,8 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('trello', {
-				'backlog-list-id': [{ id: 'card-backlog-1' }],
-				'todo-list-id': [{ id: 'card-todo-1' }],
+				backlog: [{ id: 'card-backlog-1' }],
+				todo: [{ id: 'card-todo-1' }],
 			});
 
 			const result = await isPipelineAtCapacity(trelloProject, provider);
@@ -138,9 +155,9 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('trello', {
-				'backlog-list-id': [{ id: 'card-backlog-1' }],
-				'todo-list-id': [{ id: 'card-todo-1' }],
-				'in-progress-list-id': [{ id: 'card-wip-1' }, { id: 'card-wip-2' }],
+				backlog: [{ id: 'card-backlog-1' }],
+				todo: [{ id: 'card-todo-1' }],
+				inProgress: [{ id: 'card-wip-1' }, { id: 'card-wip-2' }],
 			});
 
 			const result = await isPipelineAtCapacity(project, provider);
@@ -175,9 +192,9 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('trello', {
-				'backlog-list-id': [{ id: 'card-backlog-1' }],
-				'todo-list-id': [{ id: 'card-todo-1' }],
-				'in-progress-list-id': [{ id: 'card-wip-1' }],
+				backlog: [{ id: 'card-backlog-1' }],
+				todo: [{ id: 'card-todo-1' }],
+				inProgress: [{ id: 'card-wip-1' }],
 			});
 
 			const result = await isPipelineAtCapacity(project, provider);
@@ -205,8 +222,8 @@ describe('isPipelineAtCapacity', () => {
 				lists: { backlog: 'backlog-list-id', todo: 'todo-list-id' },
 			});
 			const provider = makeProvider('trello', {
-				'backlog-list-id': [{ id: 'card-backlog-1' }],
-				'todo-list-id': [{ id: 'card-todo-1' }],
+				backlog: [{ id: 'card-backlog-1' }],
+				todo: [{ id: 'card-todo-1' }],
 			});
 
 			const result = await isPipelineAtCapacity(projectNoLimit, provider);
@@ -230,7 +247,7 @@ describe('isPipelineAtCapacity', () => {
 				lists: { backlog: 'backlog-list-id', todo: 'todo-list-id' },
 			});
 			const provider = makeProvider('trello', {
-				'backlog-list-id': [{ id: 'card-backlog-1' }],
+				backlog: [{ id: 'card-backlog-1' }],
 				// todo is empty
 			});
 
@@ -302,10 +319,10 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('trello', {
-				'backlog-list-id': [{ id: 'card-backlog-1' }],
-				'todo-list-id': [{ id: 'todo-1' }, { id: 'todo-2' }],
-				'in-progress-list-id': [{ id: 'wip-1' }],
-				'in-review-list-id': [{ id: 'review-1' }, { id: 'review-2' }, { id: 'review-3' }],
+				backlog: [{ id: 'card-backlog-1' }],
+				todo: [{ id: 'todo-1' }, { id: 'todo-2' }],
+				inProgress: [{ id: 'wip-1' }],
+				inReview: [{ id: 'review-1' }, { id: 'review-2' }, { id: 'review-3' }],
 			});
 
 			const result = await isPipelineAtCapacity(project, provider);
@@ -367,8 +384,8 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('jira', {
-				Backlog: [{ id: 'PROJ-1' }],
-				'To Do': [{ id: 'PROJ-2' }],
+				backlog: [{ id: 'PROJ-1' }],
+				todo: [{ id: 'PROJ-2' }],
 			});
 
 			const result = await isPipelineAtCapacity(jiraProject, provider);
@@ -404,9 +421,9 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('jira', {
-				Backlog: [{ id: 'PROJ-1' }],
-				'To Do': [{ id: 'PROJ-2' }],
-				'In Progress': [{ id: 'PROJ-3' }],
+				backlog: [{ id: 'PROJ-1' }],
+				todo: [{ id: 'PROJ-2' }],
+				inProgress: [{ id: 'PROJ-3' }],
 			});
 
 			const result = await isPipelineAtCapacity(project, provider);
@@ -442,10 +459,10 @@ describe('isPipelineAtCapacity', () => {
 				},
 			});
 			const provider = makeProvider('jira', {
-				Backlog: [{ id: 'PROJ-1' }],
-				'To Do': [{ id: 'PROJ-2' }],
-				'In Progress': [{ id: 'PROJ-3' }],
-				'In Review': [{ id: 'PROJ-4' }],
+				backlog: [{ id: 'PROJ-1' }],
+				todo: [{ id: 'PROJ-2' }],
+				inProgress: [{ id: 'PROJ-3' }],
+				inReview: [{ id: 'PROJ-4' }],
 			});
 
 			const result = await isPipelineAtCapacity(project, provider);
@@ -474,8 +491,8 @@ describe('isPipelineAtCapacity', () => {
 				statuses: { backlog: 'Backlog', todo: 'To Do' },
 			});
 			const provider = makeProvider('jira', {
-				Backlog: [{ id: 'PROJ-1' }],
-				'To Do': [{ id: 'PROJ-2' }],
+				backlog: [{ id: 'PROJ-1' }],
+				todo: [{ id: 'PROJ-2' }],
 			});
 
 			const result = await isPipelineAtCapacity(projectNoLimit, provider);
@@ -500,7 +517,7 @@ describe('isPipelineAtCapacity', () => {
 				statuses: { backlog: 'Backlog', todo: 'To Do' },
 			});
 			const provider = makeProvider('jira', {
-				Backlog: [{ id: 'PROJ-1' }],
+				backlog: [{ id: 'PROJ-1' }],
 				// To Do is empty
 			});
 
@@ -567,26 +584,122 @@ describe('isPipelineAtCapacity', () => {
 	});
 
 	// =========================================================================
-	// Unsupported provider type
+	// Linear
+	// =========================================================================
+
+	describe('Linear', () => {
+		const linearProject = createMockLinearProject({
+			linear: {
+				teamId: 'T1',
+				statuses: {
+					backlog: 'state-backlog',
+					todo: 'state-todo',
+					inProgress: 'state-inprog',
+					inReview: 'state-inrev',
+				},
+				labels: {},
+			},
+			maxInFlightItems: 1,
+		});
+
+		it('returns at-capacity (backlog-empty) when the Linear backlog is empty', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				teamId: 'T1',
+				statuses: { backlog: 'state-backlog' },
+			});
+			const provider = makeProvider('linear', {});
+
+			const result = await isPipelineAtCapacity(linearProject, provider);
+
+			expect(result.atCapacity).toBe(true);
+			expect(result.reason).toBe('backlog-empty');
+			expect(provider.listWorkItems).toHaveBeenCalledWith(undefined, { status: 'backlog' });
+		});
+
+		it('returns below-capacity when Linear in-flight count is below limit', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				teamId: 'T1',
+				statuses: { backlog: 'state-backlog' },
+			});
+			const provider = makeProvider('linear', {
+				backlog: [{ id: 'MNG-97' }],
+				todo: [],
+				inProgress: [],
+				inReview: [],
+			});
+
+			const result = await isPipelineAtCapacity(linearProject, provider);
+
+			expect(result.atCapacity).toBe(false);
+			expect(result.reason).toBe('below-capacity');
+			expect(result.inFlightCount).toBe(0);
+			expect(result.limit).toBe(1);
+		});
+
+		it('returns at-capacity when Linear in-flight count meets the limit', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				teamId: 'T1',
+				statuses: { backlog: 'state-backlog' },
+			});
+			const provider = makeProvider('linear', {
+				backlog: [{ id: 'MNG-97' }],
+				todo: [{ id: 'MNG-96' }],
+			});
+
+			const result = await isPipelineAtCapacity(linearProject, provider);
+
+			expect(result.atCapacity).toBe(true);
+			expect(result.reason).toBe('at-capacity');
+			expect(result.inFlightCount).toBe(1);
+		});
+
+		it('returns misconfigured when Linear has no statuses.backlog configured', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				teamId: 'T1',
+				statuses: {}, // no backlog
+			});
+			const provider = makeProvider('linear');
+
+			const result = await isPipelineAtCapacity(linearProject, provider);
+
+			expect(result.atCapacity).toBe(false);
+			expect(result.reason).toBe('misconfigured');
+			expect(provider.listWorkItems).not.toHaveBeenCalled();
+		});
+
+		it('returns misconfigured when Linear has no teamId configured', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				teamId: '',
+				statuses: { backlog: 'state-backlog' },
+			});
+			const provider = makeProvider('linear');
+
+			const result = await isPipelineAtCapacity(linearProject, provider);
+
+			expect(result.atCapacity).toBe(false);
+			expect(result.reason).toBe('misconfigured');
+		});
+	});
+
+	// =========================================================================
+	// Unsupported provider type — exhaustiveness safety net
 	// =========================================================================
 
 	describe('unsupported provider type', () => {
-		it('returns misconfigured for an unknown provider type', async () => {
+		it('throws when an unknown provider.type sneaks past TypeScript', async () => {
+			// In normal use, PMType (`'trello' | 'jira' | 'linear'`) is enforced at
+			// compile time. The cast here simulates a JS-side path bypassing the
+			// type system (e.g. the oclif command loader). The exhaustive switch
+			// in isProviderMisconfigured throws via assertNeverPMType so the bug
+			// surfaces immediately rather than silently reporting "misconfigured".
 			const project = createMockProject();
 			const provider = {
 				type: 'unknown-provider' as unknown as 'trello',
 				listWorkItems: vi.fn(),
 			} as unknown as Parameters<typeof isPipelineAtCapacity>[1];
 
-			const result = await isPipelineAtCapacity(project, provider);
-
-			expect(result.atCapacity).toBe(false);
-			expect(result.reason).toBe('misconfigured');
+			await expect(isPipelineAtCapacity(project, provider)).rejects.toThrow(/Unhandled PMType/);
 			expect(provider.listWorkItems).not.toHaveBeenCalled();
-			expect(mockLogger.warn).toHaveBeenCalledWith(
-				'isPipelineAtCapacity: unsupported PM provider type',
-				expect.objectContaining({ providerType: 'unknown-provider' }),
-			);
 		});
 	});
 });

@@ -449,6 +449,33 @@ describe('JiraPMProvider', () => {
 				status: 'Backlog',
 			});
 		});
+
+		describe('self-resolution from config', () => {
+			it('uses config.projectKey when containerId is omitted', async () => {
+				mockJiraClient.searchIssues.mockResolvedValue([]);
+				await provider.listWorkItems(undefined, { status: 'backlog' });
+				expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
+					expect.stringContaining(`project = "${mockConfig.projectKey}"`),
+				);
+			});
+
+			it('maps a CASCADE status key (e.g. "todo") through config.statuses to the native status name', async () => {
+				mockJiraClient.searchIssues.mockResolvedValue([]);
+				await provider.listWorkItems(undefined, { status: 'todo' });
+				const native = mockConfig.statuses.todo;
+				expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
+					expect.stringContaining(`status = "${native}"`),
+				);
+			});
+
+			it('falls through to literal status when config.statuses has no mapping (backwards compat)', async () => {
+				mockJiraClient.searchIssues.mockResolvedValue([]);
+				await provider.listWorkItems(undefined, { status: 'Custom Status' });
+				expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
+					expect.stringContaining(`status = "Custom Status"`),
+				);
+			});
+		});
 	});
 
 	describe('moveWorkItem', () => {

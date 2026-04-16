@@ -7,6 +7,7 @@
  */
 
 import { trelloClient } from '../../trello/client.js';
+import type { TrelloConfig } from '../config.js';
 import { extractMarkdownImages } from '../media.js';
 import type {
 	Attachment,
@@ -22,6 +23,14 @@ import type {
 
 export class TrelloPMProvider implements PMProvider {
 	readonly type = 'trello' as const;
+
+	/**
+	 * `config` is required — `listWorkItems` self-resolution looks up
+	 * `config.lists[filter.status]` when no containerId is passed. The
+	 * single production caller (`TrelloIntegration.createProvider`) always
+	 * has a `TrelloConfig` available; tests must provide one too.
+	 */
+	constructor(private readonly config: TrelloConfig) {}
 
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const card = await trelloClient.getCard(id);
@@ -100,8 +109,15 @@ export class TrelloPMProvider implements PMProvider {
 		};
 	}
 
-	async listWorkItems(containerId: string, _filter?: ListWorkItemsFilter): Promise<WorkItem[]> {
-		const cards = await trelloClient.getListCards(containerId);
+	async listWorkItems(
+		containerId: string | undefined,
+		filter?: ListWorkItemsFilter,
+	): Promise<WorkItem[]> {
+		// Self-resolve list ID from config when caller doesn't pass one. Trello
+		// lists ARE the statuses, so `config.lists[filter.status]` IS the list ID.
+		const listId = containerId ?? (filter?.status ? this.config.lists?.[filter.status] : undefined);
+		if (!listId) return [];
+		const cards = await trelloClient.getListCards(listId);
 		return cards.map((card) => ({
 			id: card.id,
 			title: card.name,
