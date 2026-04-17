@@ -1,0 +1,149 @@
+---
+id: 007
+slug: robust-review-dispatch
+plan: 1
+plan_slug: lock-infra
+level: plan
+parent_spec: docs/specs/007-robust-review-dispatch.md
+depends_on: []
+status: pending
+---
+
+# 007/1: Lock infrastructure — remove false cross-type serialization
+
+> Part 1 of 2 in the 007-robust-review-dispatch plan. See [parent spec](../../specs/007-robust-review-dispatch.md).
+
+## Summary
+
+The work-item lock in `src/router/work-item-lock.ts` enforces two thresholds: `MAX_SAME_TYPE_PER_WORK_ITEM = 1` (per-agent-type) and `MAX_WORK_ITEM_CONCURRENCY = 2` (total across all types). The total cap is what blocked the review for MNG-122: two agents (implementation + one other) were enqueued for MNG-122, hitting the total cap of 2, so the review couldn't dispatch.
+
+This plan removes the `MAX_WORK_ITEM_CONCURRENCY` total cap from `isWorkItemLocked`, retaining only the per-type cap. Different agent types can then run concurrently on the same work item. The per-type cap (`MAX_SAME_TYPE_PER_WORK_ITEM = 1`) still prevents duplicate same-type runs — the invariant the lock was introduced to protect.
+
+This plan also enriches the lock-skip log with the lock-holder's agent type so operators can diagnose blocked dispatches.
+
+**Components delivered:**
+- `src/router/work-item-lock.ts` — remove total-concurrency checks from `isWorkItemLocked` and `getInMemoryCounts`; delete `MAX_WORK_ITEM_CONCURRENCY` constant
+- `src/router/webhook-processor.ts` — enrich lock-skip log with lock-holder agent type + trigger handler name
+- `tests/unit/router/work-item-lock.test.ts` — update existing tests + add cross-type concurrency tests
+- `tests/unit/router/webhook-processor.test.ts` — update lock-skip log assertion
+
+**Deferred to plan 2:**
+- Post-completion hook that fires review deterministically after implementation success (the 30-second guarantee)
+- Dedup coordination between the hook and the `check-suite-success` trigger
+
+---
+
+## Spec ACs satisfied by this plan
+
+- **Spec AC #2** (review can dispatch during container cleanup) — **full**: removing the total cap means a review is never blocked by an implementation's in-memory entry.
+- **Spec AC #3** (different agent types can run concurrently) — **full**: the total cap was the only thing preventing this.
+- **Spec AC #4** (same agent type still deduplicated) — **full**: `MAX_SAME_TYPE_PER_WORK_ITEM = 1` is unchanged.
+- **Spec AC #6** (structured lock-skip log) — **full**: log enriched with lock-holder agent type + trigger handler name.
+- **Spec AC #7** (works identically for all PM providers) — **full**: no per-provider branching in the lock logic (was already true; this plan doesn't introduce any).
+- **Spec AC #8** (router restart doesn't leave permanent stale locks) — **full**: 30-min TTL unchanged; removing the total cap doesn't affect TTL behaviour.
+- **Spec AC #1** (review within 30s) — **partial**: this plan unblocks cross-type dispatch so `check-suite-success` webhooks that arrive during container cleanup are no longer blocked. But the 30s deterministic guarantee requires plan 2's post-completion hook.
+- **Spec AC #5** (no double-enqueue with hook) — **deferred to plan 2**.
+
+---
+
+## Depends On
+
+- None — this is the first plan.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Remove total-concurrency cap from `isWorkItemLocked`
+
+**Tests first** (`tests/unit/router/work-item-lock.test.ts`):
+
+- `allows a different agent type to enqueue when another type is already enqueued` — `markWorkItemEnqueued('p1', 'wi1', 'implementation')` then `isWorkItemLocked('p1', 'wi1', 'review')`: expect `{ locked: false }`.
+- `still blocks same agent type from double-enqueuing` — `markWorkItemEnqueued('p1', 'wi1', 'review')` then `isWorkItemLocked('p1', 'wi1', 'review')`: expect `{ locked: true, reason: /same-type/ }`.
+- `allows 3+ different agent types concurrently` — enqueue `implementation`, `review`, `respond-to-ci` for the same work item, then `isWorkItemLocked('p1', 'wi1', 'respond-to-review')`: expect `{ locked: false }`.
+- Update existing tests that assert `MAX_WORK_ITEM_CONCURRENCY` behaviour — they should now pass without the total cap.
+- DB-layer same-type check still works: mock `countActiveRuns` to return 1 for same-type, 0 otherwise; expect locked.
+
+**Implementation** (`src/router/work-item-lock.ts`):
+
+- Delete `MAX_WORK_ITEM_CONCURRENCY` constant (line 16).
+- In `getInMemoryCounts(projectId, workItemId, agentType)`: remove the `total` computation (iterating all keys). Return only `sameType`.
+- In `isWorkItemLocked`: remove lines 94-99 (in-memory total check) and lines 118-124 (DB total check). Remove the `dbTotal` query at line 104 (saves one DB round-trip). Keep lines 88-93 (in-memory same-type) and lines 108-115 (effective same-type with DB).
+- Export type change: `getInMemoryCounts` returns `{ sameType: number }` instead of `{ total: number; sameType: number }`.
+
+### 2. Enrich lock-skip log
+
+**Tests first** (`tests/unit/router/webhook-processor.test.ts` — or nearest existing test):
+
+- `lock-skip log includes trigger handler name and lock reason` — mock `isWorkItemLocked` to return `{ locked: true, reason: 'same-type: 1 running' }`. Assert `logger.info` called with a message containing `projectId`, `workItemId`, `agentType`, `reason`, and `triggerHandler`.
+
+**Implementation** (`src/router/webhook-processor.ts:154`):
+
+- Add `triggerHandler: result.triggerHandler ?? 'unknown'` to the log object. (`result` is the `TriggerResult` — it already carries the handler name from the trigger match; verify the field name and thread it through if needed.)
+- Change log level: keep at INFO (already is — spec calls for INFO with structured context).
+
+### 3. Update existing tests
+
+**Tests** (`tests/unit/router/work-item-lock.test.ts`):
+
+- Remove or update any test that asserts the old total-concurrency behaviour (e.g., "returns locked when total exceeds MAX_WORK_ITEM_CONCURRENCY"). These tests should now assert the opposite: "allows cross-type enqueue even when multiple types are enqueued."
+- Verify no other test files reference `MAX_WORK_ITEM_CONCURRENCY` — grep for it and update any assertions.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/router/work-item-lock.test.ts`: ~5 new + ~3 updated tests covering cross-type concurrency, same-type dedup, and DB fallback.
+- [ ] `tests/unit/router/webhook-processor.test.ts`: ~1 updated test for enriched lock-skip log.
+
+### Acceptance tests
+- [ ] Cross-type dispatch: implementation enqueued → review `isWorkItemLocked` returns false.
+- [ ] Same-type dedup: implementation enqueued → implementation `isWorkItemLocked` returns true.
+- [ ] Lock-skip log: structured context includes all required fields.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `isWorkItemLocked('p', 'wi', 'review')` returns `{ locked: false }` when only an `implementation` agent is enqueued for `('p', 'wi')`.
+2. `isWorkItemLocked('p', 'wi', 'review')` returns `{ locked: true }` when a `review` agent is already enqueued for `('p', 'wi')`.
+3. `MAX_WORK_ITEM_CONCURRENCY` constant no longer exists in the codebase.
+4. Lock-skip log message includes: `projectId`, `workItemId`, `agentType`, `reason`, and `triggerHandler` (or equivalent structured context).
+5. All new/modified code has corresponding tests.
+6. `npm test` passes.
+7. `npm run typecheck` passes.
+8. `npm run lint` passes.
+9. `CLAUDE.md` updated to document per-agent-type locking semantics under the "Agent triggers" section.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | Add a note under "Agent triggers" that the work-item lock is per-agent-type: different agent types can run concurrently on the same work item; only same-type duplicate runs are prevented. |
+
+---
+
+## Out of Scope (this plan)
+
+- Post-completion review dispatch hook (plan 2).
+- Dedup coordination between the hook and `check-suite-success` (plan 2).
+- Enabling `pr-opened` for review on any project (per-project config decision, out of spec scope).
+- Lock persistence to Redis/DB (out of spec scope).
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
