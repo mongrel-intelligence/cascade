@@ -6,7 +6,7 @@ plan_slug: markdown-engine
 level: plan
 parent_spec: docs/specs/008-inline-checklists.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 008/1: Shared Markdown Checklist Engine
@@ -199,13 +199,13 @@ The engine operates on plain markdown strings. It knows nothing about Linear, JI
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
+- [x] AC #1
+- [x] AC #2
+- [x] AC #3
+- [x] AC #4
+- [x] AC #5
+- [x] AC #6
+- [x] AC #7
+- [x] AC #8
+- [x] AC #9
+- [x] AC #10
