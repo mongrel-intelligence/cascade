@@ -152,9 +152,10 @@ export async function processRouterWebhook(
 		if (lockStatus.locked) {
 			result.onBlocked?.();
 			logger.info(`Skipping ${adapter.type} job — work item already locked`, {
+				source: adapter.type,
 				projectId: project.id,
 				workItemId: result.workItemId,
-				agentType: result.agentType,
+				blockedAgentType: result.agentType,
 				reason: lockStatus.reason,
 			});
 			return {

@@ -1,8 +1,12 @@
 /**
  * Work-item concurrency lock for the router.
  *
- * Allows up to 2 agents per work item (e.g. implementation + review overlap),
- * but only 1 agent of the same type per work item.
+ * Only 1 agent of the same type per work item. Different agent types can
+ * run concurrently (e.g. review starts while implementation's container is
+ * still cleaning up). The total-concurrency cap was removed in spec 007
+ * because it falsely serialized unrelated agent types — the review for
+ * MNG-122/PR-572 was silently dropped because two agents were already
+ * enqueued for the same work item.
  *
  * Two layers:
  * 1. In-memory map — closes the race window between addJob() and worker createRun()
@@ -13,7 +17,6 @@ import { countActiveRuns } from '../db/repositories/runsRepository.js';
 import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
 
-export const MAX_WORK_ITEM_CONCURRENCY = 2;
 export const MAX_SAME_TYPE_PER_WORK_ITEM = 1;
 
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
@@ -29,97 +32,61 @@ function makeKey(projectId: string, workItemId: string, agentType: string): stri
 	return `${projectId}:${workItemId}:${agentType}`;
 }
 
-function keyPrefix(projectId: string, workItemId: string): string {
-	return `${projectId}:${workItemId}:`;
-}
-
 /**
- * Sum in-memory counts for all agent types on a given work item.
- * Skips TTL-expired entries and cleans them up lazily.
+ * Get the in-memory enqueue count for a specific (projectId, workItemId, agentType).
+ * Cleans up TTL-expired entries lazily.
  */
-function getInMemoryCounts(
+function getInMemorySameTypeCount(
 	projectId: string,
 	workItemId: string,
 	agentType: string,
-): { total: number; sameType: number } {
-	const prefix = keyPrefix(projectId, workItemId);
-	const now = Date.now();
-	let total = 0;
-	let sameType = 0;
-
-	for (const [key, entry] of enqueuedMap) {
-		if (!key.startsWith(prefix)) continue;
-		if (now - entry.timestamp > TTL_MS) {
-			enqueuedMap.delete(key);
-			logger.info('[WorkItemLock] TTL expired, releasing in-memory lock', {
-				projectId,
-				workItemId,
-			});
-			continue;
-		}
-		total += entry.count;
-		if (key === makeKey(projectId, workItemId, agentType)) {
-			sameType = entry.count;
-		}
+): number {
+	const key = makeKey(projectId, workItemId, agentType);
+	const entry = enqueuedMap.get(key);
+	if (!entry) return 0;
+	if (Date.now() - entry.timestamp > TTL_MS) {
+		enqueuedMap.delete(key);
+		logger.info('[WorkItemLock] TTL expired, releasing in-memory lock', {
+			projectId,
+			workItemId,
+			agentType,
+		});
+		return 0;
 	}
-
-	return { total, sameType };
+	return entry.count;
 }
 
 /**
  * Check whether a work item is currently locked for the given agent type.
  *
- * Locked when:
- * - Same agent type already has MAX_SAME_TYPE_PER_WORK_ITEM agents running/enqueued
- * - Total agents on this work item already at MAX_WORK_ITEM_CONCURRENCY
+ * Locked when the same agent type already has MAX_SAME_TYPE_PER_WORK_ITEM
+ * agents running or enqueued. Different agent types are NOT blocked — they
+ * can run concurrently on the same work item (spec 007).
  */
 export async function isWorkItemLocked(
 	projectId: string,
 	workItemId: string,
 	agentType: string,
 ): Promise<{ locked: boolean; reason?: string }> {
-	const { total: inMemoryTotal, sameType: inMemorySameType } = getInMemoryCounts(
-		projectId,
-		workItemId,
-		agentType,
-	);
+	const inMemorySameType = getInMemorySameTypeCount(projectId, workItemId, agentType);
 
-	// Short-circuit: in-memory alone proves locked
+	// Short-circuit: in-memory alone proves locked for same type
 	if (inMemorySameType >= MAX_SAME_TYPE_PER_WORK_ITEM) {
 		return {
 			locked: true,
 			reason: `in-memory same-type: ${inMemorySameType} enqueued (max ${MAX_SAME_TYPE_PER_WORK_ITEM} per type)`,
 		};
 	}
-	if (inMemoryTotal >= MAX_WORK_ITEM_CONCURRENCY) {
-		return {
-			locked: true,
-			reason: `in-memory total: ${inMemoryTotal} enqueued (max ${MAX_WORK_ITEM_CONCURRENCY})`,
-		};
-	}
 
-	// DB check — ignore runs older than 2× worker timeout (stale/orphaned)
+	// DB check — same-type only, ignore runs older than 2× worker timeout
 	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
-	const [dbTotal, dbSameType] = await Promise.all([
-		countActiveRuns({ projectId, workItemId, maxAgeMs }),
-		countActiveRuns({ projectId, workItemId, agentType, maxAgeMs }),
-	]);
+	const dbSameType = await countActiveRuns({ projectId, workItemId, agentType, maxAgeMs });
 
-	// Same-type check first (more specific)
 	const effectiveSameType = Math.max(dbSameType, inMemorySameType);
 	if (effectiveSameType >= MAX_SAME_TYPE_PER_WORK_ITEM) {
 		return {
 			locked: true,
 			reason: `same-type: ${dbSameType} running, ${inMemorySameType} enqueued (max ${MAX_SAME_TYPE_PER_WORK_ITEM} per type)`,
-		};
-	}
-
-	// Total work-item check
-	const effectiveTotal = Math.max(dbTotal, inMemoryTotal);
-	if (effectiveTotal >= MAX_WORK_ITEM_CONCURRENCY) {
-		return {
-			locked: true,
-			reason: `total: ${dbTotal} running, ${inMemoryTotal} enqueued (max ${MAX_WORK_ITEM_CONCURRENCY})`,
 		};
 	}
 

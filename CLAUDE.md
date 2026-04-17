@@ -117,6 +117,8 @@ cascade projects trigger-set <project-id> --agent <type> --event <event> --enabl
 
 Some triggers take params (e.g. `review` + `scm:check-suite-success` accepts `{"authorMode":"own"|"external"}`). Legacy configs on `project_integrations.triggers` are auto-migrated on merge to `dev`/`main`.
 
+**Work-item concurrency lock** — the router prevents duplicate agent runs via a per-agent-type lock on `(projectId, workItemId, agentType)`. Only same-type duplicates are blocked; **different agent types can run concurrently** on the same work item (e.g. review starts while implementation's container is still cleaning up). The lock has a 30-minute TTL hard ceiling that auto-clears stale entries after router restart.
+
 ## Review agent — context shape (debugging)
 
 Review agent receives a **compact per-file diff context**, not full file contents. Each changed file is a `### <file> (<status>, +N -M)` section with a unified diff hunk. Budget: `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` = 200k tokens, per-file cap 10%.

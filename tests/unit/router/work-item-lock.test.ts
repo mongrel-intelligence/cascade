@@ -31,12 +31,8 @@ describe('work-item-lock', () => {
 		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result).toEqual({ locked: false });
 		const maxAgeMs = 2 * 30 * 60 * 1000;
-		// Two parallel countActiveRuns calls: one for total (workItemId only) and one for same-type
-		expect(countActiveRuns).toHaveBeenCalledWith({
-			projectId: 'proj1',
-			workItemId: 'card1',
-			maxAgeMs,
-		});
+		// Only one DB query: same-type count (no total query — total cap removed)
+		expect(countActiveRuns).toHaveBeenCalledTimes(1);
 		expect(countActiveRuns).toHaveBeenCalledWith({
 			projectId: 'proj1',
 			workItemId: 'card1',
@@ -45,7 +41,7 @@ describe('work-item-lock', () => {
 		});
 	});
 
-	it('1 enqueued agent does not lock (1 < MAX_WORK_ITEM_CONCURRENCY)', async () => {
+	it('1 enqueued agent of different type does not lock (per-type only)', async () => {
 		markWorkItemEnqueued('proj1', 'card1', 'implementation');
 		const result = await isWorkItemLocked('proj1', 'card1', 'review');
 		expect(result.locked).toBe(false);
@@ -58,12 +54,17 @@ describe('work-item-lock', () => {
 		expect(result.reason).toContain('same-type');
 	});
 
-	it('2 enqueued agents of different types locks (total = MAX_WORK_ITEM_CONCURRENCY)', async () => {
+	it('allows 3+ different agent types concurrently (no total cap)', async () => {
 		markWorkItemEnqueued('proj1', 'card1', 'implementation');
 		markWorkItemEnqueued('proj1', 'card1', 'review');
 		const result = await isWorkItemLocked('proj1', 'card1', 'debug');
-		expect(result.locked).toBe(true);
-		expect(result.reason).toContain('total');
+		expect(result.locked).toBe(false);
+	});
+
+	it('allows review dispatch while implementation is enqueued', async () => {
+		markWorkItemEnqueued('proj1', 'card1', 'implementation');
+		const result = await isWorkItemLocked('proj1', 'card1', 'review');
+		expect(result.locked).toBe(false);
 	});
 
 	it('clearWorkItemEnqueued decrements count, does not immediately delete', async () => {
@@ -83,31 +84,28 @@ describe('work-item-lock', () => {
 	});
 
 	it('DB count of 1 does not lock for different type', async () => {
-		// First call (total): 1, second call (same-type): 0
-		vi.mocked(countActiveRuns).mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+		// Single DB call: same-type count for 'review' is 0
+		vi.mocked(countActiveRuns).mockResolvedValueOnce(0);
 		const result = await isWorkItemLocked('proj1', 'card1', 'review');
 		expect(result.locked).toBe(false);
 	});
 
-	it('DB total count of 2 locks', async () => {
-		// First call (total): 2, second call (same-type): 0
-		vi.mocked(countActiveRuns).mockResolvedValueOnce(2).mockResolvedValueOnce(0);
+	it('DB total count irrelevant for cross-type dispatch (total cap removed)', async () => {
+		// Only one DB call now: same-type. Return 0 for it.
+		vi.mocked(countActiveRuns).mockResolvedValueOnce(0);
 		const result = await isWorkItemLocked('proj1', 'card1', 'review');
-		expect(result.locked).toBe(true);
-		expect(result.reason).toContain('total');
+		expect(result.locked).toBe(false);
 	});
 
 	it('DB same-type count of 1 locks for same type', async () => {
-		// First call (total): 1, second call (same-type): 1
-		vi.mocked(countActiveRuns).mockResolvedValueOnce(1).mockResolvedValueOnce(1);
+		vi.mocked(countActiveRuns).mockResolvedValueOnce(1);
 		const result = await isWorkItemLocked('proj1', 'card1', 'implementation');
 		expect(result.locked).toBe(true);
 		expect(result.reason).toContain('same-type');
 	});
 
-	it('DB same-type count of 1 does not lock for different type when total < max', async () => {
-		// First call (total): 1, second call (same-type for 'review'): 0
-		vi.mocked(countActiveRuns).mockResolvedValueOnce(1).mockResolvedValueOnce(0);
+	it('DB same-type count of 0 does not lock for different type', async () => {
+		vi.mocked(countActiveRuns).mockResolvedValueOnce(0);
 		const result = await isWorkItemLocked('proj1', 'card1', 'review');
 		expect(result.locked).toBe(false);
 	});
@@ -155,12 +153,11 @@ describe('work-item-lock', () => {
 		expect(countActiveRuns).not.toHaveBeenCalled();
 	});
 
-	it('short-circuits on in-memory total without DB query', async () => {
+	it('does NOT short-circuit on in-memory total (total cap removed)', async () => {
 		markWorkItemEnqueued('proj1', 'card1', 'implementation');
 		markWorkItemEnqueued('proj1', 'card1', 'review');
 		const result = await isWorkItemLocked('proj1', 'card1', 'debug');
-		expect(result.locked).toBe(true);
-		expect(result.reason).toContain('in-memory total');
-		expect(countActiveRuns).not.toHaveBeenCalled();
+		// No total cap — 'debug' same-type is 0, so unlocked
+		expect(result.locked).toBe(false);
 	});
 });
