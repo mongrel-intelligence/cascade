@@ -30,6 +30,7 @@ export interface JiraIntegrationConfig {
 
 export interface LinearIntegrationConfig {
 	teamId: string;
+	projectId?: string;
 	statuses: Record<string, string>;
 	labels?: {
 		processing?: string;
@@ -119,6 +120,7 @@ export interface ProjectConfigRaw {
 	};
 	linear?: {
 		teamId: string;
+		projectId?: string;
 		statuses: Record<string, string>;
 		labels?: {
 			processing?: string;
@@ -210,6 +212,7 @@ function buildJiraConfig(config: JiraIntegrationConfig): ProjectConfigRaw['jira'
 function buildLinearConfig(config: LinearIntegrationConfig): ProjectConfigRaw['linear'] {
 	return {
 		teamId: config.teamId,
+		projectId: config.projectId,
 		statuses: config.statuses,
 		labels: config.labels,
 		customFields: config.customFields,

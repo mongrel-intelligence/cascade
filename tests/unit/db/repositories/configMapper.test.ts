@@ -327,6 +327,22 @@ describe('mapProjectRow', () => {
 		});
 	});
 
+	it('preserves Linear projectId through the mapper', () => {
+		const configWithProject = { ...linearConfig, projectId: 'proj-lin-1' };
+		const result = mapProjectRow(
+			makeInput({
+				trelloConfig: undefined,
+				linearConfig: configWithProject,
+			}),
+		);
+		expect(result.linear?.projectId).toBe('proj-lin-1');
+	});
+
+	it('omits Linear projectId when not configured', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, linearConfig }));
+		expect(result.linear?.projectId).toBeUndefined();
+	});
+
 	it('does not include linear field when linearConfig is not provided', () => {
 		const result = mapProjectRow(makeInput());
 		expect(result.linear).toBeUndefined();
