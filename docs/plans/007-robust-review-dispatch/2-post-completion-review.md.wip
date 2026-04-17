@@ -6,7 +6,7 @@ plan_slug: post-completion-review
 level: plan
 parent_spec: docs/specs/007-robust-review-dispatch.md
 depends_on: [1-lock-infra.md]
-status: pending
+status: wip
 ---
 
 # 007/2: Post-completion review dispatch hook
