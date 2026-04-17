@@ -1,0 +1,211 @@
+---
+id: 008
+slug: inline-checklists
+plan: 1
+plan_slug: markdown-engine
+level: plan
+parent_spec: docs/specs/008-inline-checklists.md
+depends_on: []
+status: wip
+---
+
+# 008/1: Shared Markdown Checklist Engine
+
+> Part 1 of 2 in the 008-inline-checklists plan. See [parent spec](../../specs/008-inline-checklists.md).
+
+## Summary
+
+Builds the shared utility module that reads, writes, and mutates inline markdown checklists within issue descriptions. This is the foundation that both the Linear and JIRA adapters will consume in plan 2.
+
+The engine operates on plain markdown strings. It knows nothing about Linear, JIRA, or the PMProvider interface — it's a pure string transformer with these capabilities: parse checklist sections from a description, append a new checklist section, add/toggle/remove individual items, and generate stable content-hash IDs for items.
+
+**Dormant until plan 2** — no adapter wiring, no user-visible behavior change.
+
+**Components delivered:**
+- `src/pm/_shared/inline-checklist.ts` — the engine (parse, append, toggle, remove, hash)
+- `tests/unit/pm/_shared/inline-checklist.test.ts` — full test coverage
+
+**Deferred to plan 2:**
+- Adapter rewiring (Linear + JIRA)
+- ADF round-trip for JIRA (`adfToPlainText` taskList/taskItem handling)
+- Reverting PR #1139's `stateId` addition to `addChecklistItem`
+- ReadWorkItem formatting changes
+- Documentation updates
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #4 (ReadWorkItem returns inline checkboxes as standard Checklists format) — **partial (this plan provides the parser; plan 2 wires it into the adapters)**
+- Spec AC #7 (PMProvider interface unchanged) — **partial (this plan adds no interface changes; plan 2 confirms adapters still conform)**
+- Spec AC #8 (Concurrent updates don't lose data) — **partial (this plan provides the read-modify-write logic; plan 2 wires the retry into adapters)**
+
+---
+
+## Depends On
+
+- None — standalone utility module.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Content hashing for item IDs
+
+**Tests first** (`tests/unit/pm/_shared/inline-checklist.test.ts`):
+- `hashChecklistItemId('✅ Acceptance Criteria', 'Tests verify X')` — returns deterministic 8-char hex hash
+- Same input always produces same output (stability)
+- Different inputs produce different outputs (uniqueness within checklist)
+- Hash includes checklist name as namespace (two checklists with same item text produce different IDs)
+
+**Implementation** (`src/pm/_shared/inline-checklist.ts`):
+- `hashChecklistItemId(checklistName: string, itemText: string): string`
+- Use Node's `crypto.createHash('sha256')` on `${checklistName}\0${itemText}`, take first 8 hex chars
+- Prefix with `cl-` for clarity: `cl-a1b2c3d4`
+
+### 2. Parsing checklists from description
+
+**Tests first:**
+- Parse description with one checklist section:
+  ```
+  Some description.
+
+  ### ✅ Acceptance Criteria
+  - [ ] First criterion
+  - [x] Second criterion
+  ```
+  Returns: `[{ name: '✅ Acceptance Criteria', items: [{ name: 'First criterion', complete: false, id: 'cl-...' }, { name: 'Second criterion', complete: true, id: 'cl-...' }] }]`
+- Parse description with multiple checklist sections
+- Parse description with no checklist sections → returns `[]`
+- Parse description with mixed content between checklists (non-checklist headings are not treated as checklists)
+- Parse description with items that have leading/trailing whitespace → trimmed
+- Empty description → returns `[]`
+- Description with `### ` heading but no `- [ ]` items under it → not treated as a checklist
+
+**Implementation:**
+- `parseInlineChecklists(description: string): ParsedChecklist[]`
+- Interface: `ParsedChecklist { name: string; items: ParsedChecklistItem[] }`
+- Interface: `ParsedChecklistItem { id: string; name: string; complete: boolean }`
+- Strategy: split on `### ` headings. For each section, collect lines matching `/^- \[([ x])\] (.+)$/`. Generate IDs via `hashChecklistItemId`.
+- Only `### ` (h3) headings followed by `- [ ]`/`- [x]` lines are recognized as checklists. Other headings or content are ignored.
+
+### 3. Appending a checklist section
+
+**Tests first:**
+- Append to empty description → returns checklist section only
+- Append to description with existing content → appends after `\n\n` separator
+- Append to description that already has a checklist section → adds new section after it
+- Append with items: `appendChecklist(desc, '✅ AC', [{ name: 'Item 1', checked: false }, { name: 'Item 2', checked: true }])` → produces correct markdown
+- Append with no items → produces heading with no items underneath
+
+**Implementation:**
+- `appendChecklistSection(description: string, checklistName: string, items: { name: string; checked: boolean }[]): string`
+- Returns the new full description string with the section appended
+
+### 4. Adding a single item to an existing checklist
+
+**Tests first:**
+- Add item to existing checklist section → item appended at end of that section's items
+- Add item when checklist section doesn't exist → throws error (caller should appendChecklistSection first)
+- Add checked item (`checked: true`) → `- [x]` prefix
+- Add unchecked item → `- [ ]` prefix
+
+**Implementation:**
+- `addItemToChecklist(description: string, checklistName: string, itemName: string, checked?: boolean): string`
+- Finds the `### {checklistName}` heading, finds the last `- [...]` line in that section, inserts the new item after it
+- Returns the new full description string
+
+### 5. Toggling an item's checked state
+
+**Tests first:**
+- Toggle item from unchecked to checked → `- [ ] X` becomes `- [x] X`
+- Toggle item from checked to unchecked → `- [x] X` becomes `- [ ] X`
+- Toggle by item ID (content hash) → finds the correct item even if description has other content
+- Item ID not found → throws error
+- Multiple checklists with same item text but different checklist names → toggles the right one (hash includes checklist name)
+
+**Implementation:**
+- `toggleChecklistItem(description: string, itemId: string, complete: boolean, checklists: ParsedChecklist[]): string`
+- Takes pre-parsed checklists (from `parseInlineChecklists`) to resolve itemId to checklist name + item text
+- Finds the line in the description, replaces `[ ]` with `[x]` or vice versa
+- Returns the new full description string
+
+### 6. Removing an item
+
+**Tests first:**
+- Remove item → line deleted from description
+- Remove last item in a checklist section → section heading also removed (clean up empty sections)
+- Item ID not found → throws error
+
+**Implementation:**
+- `removeChecklistItem(description: string, itemId: string, checklists: ParsedChecklist[]): string`
+- Resolves itemId, finds the line, removes it
+- If the section has no remaining items, removes the heading too
+- Returns the new full description string
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/pm/_shared/inline-checklist.test.ts`: ~20 tests covering hashing, parsing, appending, adding, toggling, removing
+
+### Integration tests
+- None for this plan (pure utility, no external dependencies)
+
+### Acceptance tests
+- [ ] Engine correctly round-trips: append → parse → toggle → parse → remove → parse with consistent IDs throughout
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `parseInlineChecklists` correctly extracts checklist sections from markdown descriptions with stable content-hash IDs.
+2. `appendChecklistSection` produces well-formed markdown checklist sections.
+3. `addItemToChecklist` adds items to the correct section.
+4. `toggleChecklistItem` toggles the correct item by ID without affecting other content.
+5. `removeChecklistItem` removes the correct item and cleans up empty sections.
+6. `hashChecklistItemId` produces deterministic, collision-resistant 8-char IDs.
+7. All new code has corresponding tests.
+8. `npm run build` passes.
+9. `npm test` passes.
+10. `npm run lint` passes.
+
+**Dormant-state criterion:**
+- The engine module exists and is fully tested but is not imported by any adapter. No user-visible behavior change.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| None | Engine is dormant; no user-facing docs needed until plan 2 wires it in. |
+
+---
+
+## Out of Scope (this plan)
+
+- Adapter rewiring (Linear + JIRA) — deferred to plan 2
+- ADF round-trip for JIRA — deferred to plan 2
+- Reverting PR #1139 stateId in addChecklistItem — deferred to plan 2
+- ReadWorkItem formatting — deferred to plan 2
+- Documentation and CHANGELOG updates — deferred to plan 2
+- Trello changes (out of scope per spec)
+- Migration of existing sub-issues (out of scope per spec)
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
