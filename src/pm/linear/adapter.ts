@@ -102,6 +102,7 @@ export class LinearPMProvider implements PMProvider {
 			...(this.config.projectId ? { projectId: this.config.projectId } : {}),
 			title: config.title,
 			description: config.description,
+			...(this.config.statuses?.backlog ? { stateId: this.config.statuses.backlog } : {}),
 			...(config.labels?.length
 				? {
 						labelIds: config.labels
@@ -110,20 +111,6 @@ export class LinearPMProvider implements PMProvider {
 					}
 				: {}),
 		});
-
-		// Transition to backlog status if configured
-		const backlogStatus = this.config.statuses?.backlog;
-		if (backlogStatus) {
-			try {
-				await this.moveWorkItem(issue.id, backlogStatus);
-			} catch (err) {
-				logger.warn('[Linear] Failed to transition new issue to backlog status', {
-					issueId: issue.id,
-					targetStatus: backlogStatus,
-					error: String(err),
-				});
-			}
-		}
 
 		return {
 			id: issue.identifier || issue.id,

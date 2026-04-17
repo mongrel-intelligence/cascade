@@ -242,7 +242,20 @@ describe('buildPromptContext', () => {
 			expect(ctx.workItemUrl).toBe('https://linear.app/myorg/issue/TEAM-123');
 		});
 
-		it('sets pipeline list IDs from Linear statuses', () => {
+		it('sets backlogListId to teamId (containerId for CreateWorkItem)', () => {
+			const linearProject = makeProject({
+				trello: undefined,
+				pm: { type: 'linear' },
+				linear: {
+					teamId: 'team-abc',
+					statuses: { backlog: 'state-bl-uuid' },
+				},
+			});
+			const ctx = buildPromptContext('TEAM-1', linearProject as never);
+			expect(ctx.backlogListId).toBe('team-abc');
+		});
+
+		it('sets other pipeline list IDs from Linear statuses', () => {
 			const linearProject = makeProject({
 				trello: undefined,
 				pm: { type: 'linear' },
@@ -259,7 +272,6 @@ describe('buildPromptContext', () => {
 				},
 			});
 			const ctx = buildPromptContext('TEAM-1', linearProject as never);
-			expect(ctx.backlogListId).toBe('Backlog');
 			expect(ctx.todoListId).toBe('Todo');
 			expect(ctx.inProgressListId).toBe('In Progress');
 			expect(ctx.inReviewListId).toBe('In Review');
@@ -276,7 +288,7 @@ describe('buildPromptContext', () => {
 				},
 			});
 			const ctx = buildPromptContext('TEAM-1', linearProject as never);
-			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.backlogListId).toBe('team-abc');
 			expect(ctx.todoListId).toBeUndefined();
 			expect(ctx.inProgressListId).toBeUndefined();
 			expect(ctx.inReviewListId).toBeUndefined();

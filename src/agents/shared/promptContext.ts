@@ -10,9 +10,7 @@ function getListIds(project: ProjectConfig) {
 
 	return {
 		backlogListId:
-			trelloConfig?.lists?.backlog ??
-			jiraConfig?.statuses?.backlog ??
-			linearConfig?.statuses?.backlog,
+			trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog ?? linearConfig?.teamId,
 		todoListId:
 			trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo ?? linearConfig?.statuses?.todo,
 		inProgressListId:

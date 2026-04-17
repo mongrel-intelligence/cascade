@@ -222,9 +222,8 @@ describe('LinearPMProvider', () => {
 	// createWorkItem
 	// =========================================================================
 	describe('createWorkItem', () => {
-		it('creates an issue in the given team', async () => {
+		it('creates an issue in the given team with backlog stateId', async () => {
 			mockCreateIssue.mockResolvedValue(makeIssue({ identifier: 'TEAM-2', title: 'New Story' }));
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
 
 			const result = await provider.createWorkItem({
 				containerId: 'team-abc',
@@ -233,7 +232,11 @@ describe('LinearPMProvider', () => {
 			});
 
 			expect(mockCreateIssue).toHaveBeenCalledWith(
-				expect.objectContaining({ teamId: 'team-abc', title: 'New Story' }),
+				expect.objectContaining({
+					teamId: 'team-abc',
+					title: 'New Story',
+					stateId: 'state-backlog',
+				}),
 			);
 			expect(result.id).toBe('TEAM-2');
 			expect(result.title).toBe('New Story');
@@ -241,20 +244,31 @@ describe('LinearPMProvider', () => {
 
 		it('falls back to config teamId when containerId is empty', async () => {
 			mockCreateIssue.mockResolvedValue(makeIssue());
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
 
 			await provider.createWorkItem({ containerId: '', title: 'Test' });
 
 			expect(mockCreateIssue).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'team-abc' }));
 		});
 
-		it('transitions to backlog status after creation', async () => {
+		it('does not call updateIssueState — stateId is set on create', async () => {
 			mockCreateIssue.mockResolvedValue(makeIssue());
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
 
 			await provider.createWorkItem({ containerId: 'team-abc', title: 'Test' });
 
-			expect(mockUpdateIssueState).toHaveBeenCalledWith('issue-uuid', 'state-backlog');
+			expect(mockUpdateIssueState).not.toHaveBeenCalled();
+		});
+
+		it('omits stateId when statuses.backlog is not configured', async () => {
+			const noBacklogProvider = new LinearPMProvider({
+				teamId: 'team-abc',
+				statuses: {},
+			});
+			mockCreateIssue.mockResolvedValue(makeIssue());
+
+			await noBacklogProvider.createWorkItem({ containerId: 'team-abc', title: 'Test' });
+
+			const call = mockCreateIssue.mock.calls[0][0];
+			expect(call).not.toHaveProperty('stateId');
 		});
 	});
 
