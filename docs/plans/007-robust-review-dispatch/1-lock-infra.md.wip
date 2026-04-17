@@ -6,7 +6,7 @@ plan_slug: lock-infra
 level: plan
 parent_spec: docs/specs/007-robust-review-dispatch.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 007/1: Lock infrastructure — remove false cross-type serialization
