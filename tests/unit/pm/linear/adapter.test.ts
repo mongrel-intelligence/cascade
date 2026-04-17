@@ -396,6 +396,16 @@ describe('LinearPMProvider', () => {
 			);
 		});
 
+		it('passes stateId for backlog on sub-issue creation', async () => {
+			mockCreateIssue.mockResolvedValue(makeIssue());
+
+			await provider.addChecklistItem('subtasks-issue-uuid', 'Sub-task 1');
+
+			expect(mockCreateIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ stateId: 'state-backlog' }),
+			);
+		});
+
 		it('throws when checklistId has no extractable parent', async () => {
 			await expect(provider.addChecklistItem('invalid-id', 'Sub-task')).rejects.toThrow(
 				'Cannot extract parent issue ID from checklist ID: invalid-id',

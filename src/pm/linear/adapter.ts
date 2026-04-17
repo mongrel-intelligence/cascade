@@ -227,6 +227,7 @@ export class LinearPMProvider implements PMProvider {
 		await linearClient.createIssue({
 			teamId: this.config.teamId,
 			...(this.config.projectId ? { projectId: this.config.projectId } : {}),
+			...(this.config.statuses?.backlog ? { stateId: this.config.statuses.backlog } : {}),
 			title: name,
 			description,
 			parentId,
