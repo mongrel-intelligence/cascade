@@ -119,6 +119,8 @@ Some triggers take params (e.g. `review` + `scm:check-suite-success` accepts `{"
 
 **Work-item concurrency lock** — the router prevents duplicate agent runs via a per-agent-type lock on `(projectId, workItemId, agentType)`. Only same-type duplicates are blocked; **different agent types can run concurrently** on the same work item (e.g. review starts while implementation's container is still cleaning up). The lock has a 30-minute TTL hard ceiling that auto-clears stale entries after router restart.
 
+**Post-completion review dispatch** — when an implementation agent succeeds with a PR, the execution pipeline checks CI status and fires the review agent deterministically (before the container exits). This guarantees review dispatch within seconds of implementation completion, regardless of GitHub webhook timing. Uses the same `claimReviewDispatch` dedup key as the `check-suite-success` trigger, so the two paths cannot double-enqueue.
+
 ## Review agent — context shape (debugging)
 
 Review agent receives a **compact per-file diff context**, not full file contents. Each changed file is a `### <file> (<status>, +N -M)` section with a unified diff hunk. Budget: `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` = 200k tokens, per-file cap 10%.

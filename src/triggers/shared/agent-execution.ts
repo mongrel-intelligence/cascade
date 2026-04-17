@@ -10,10 +10,15 @@ import {
 	PMLifecycleManager,
 	resolveProjectPMConfig,
 } from '../../pm/index.js';
+import {
+	buildReviewDispatchKey,
+	claimReviewDispatch,
+} from '../../triggers/github/review-dispatch-dedup.js';
 import { checkTriggerEnabled } from '../../triggers/shared/trigger-check.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { extractPRNumber } from '../../utils/prUrl.js';
+import { parseRepoFullName } from '../../utils/repo.js';
 import type { TriggerResult } from '../types.js';
 import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { isPipelineAtCapacity } from './backlog-check.js';
@@ -225,6 +230,96 @@ async function linkPRPostExecution(
 				error: String(err),
 			});
 		}
+	}
+}
+
+/**
+ * Dispatch a review agent after a successful implementation run, if the PR's
+ * CI is green and no review has been dispatched yet.
+ *
+ * Uses `claimReviewDispatch` with the same dedup key format as the
+ * `check-suite-success` trigger, so the two paths cannot double-enqueue.
+ * If CI isn't green yet, does nothing — the webhook-triggered path will
+ * handle it when CI finishes.
+ *
+ * Runs inside the worker container, before exit. Uses the same recursive
+ * `runAgentExecutionPipeline` pattern as the splitting → backlog-manager chain.
+ *
+ * Best-effort: errors are logged as warn but never break the implementation
+ * pipeline.
+ */
+async function tryDispatchPostCompletionReview(
+	agentResult: AgentResult & { prUrl: string },
+	project: ProjectConfig & { repo: string },
+	workItemId: string | undefined,
+	config: CascadeConfig,
+	executionConfig: AgentExecutionConfig,
+): Promise<void> {
+	try {
+		const prNumber = extractPRNumber(agentResult.prUrl);
+		if (!prNumber) return;
+
+		const { owner, repo } = parseRepoFullName(project.repo);
+		const { githubClient } = await import('../../github/client.js');
+
+		const pr = await githubClient.getPR(owner, repo, prNumber);
+		const headSha = pr.headSha;
+		if (!headSha) return;
+
+		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+		if (!checkStatus.allPassing) {
+			logger.debug('Skipping post-completion review: CI not all passing', {
+				prNumber,
+				workItemId,
+			});
+			return;
+		}
+
+		const dedupKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
+		if (!claimReviewDispatch(dedupKey, 'post-completion-hook', { prNumber, headSha })) {
+			logger.info('Skipping post-completion review: already dispatched', {
+				prNumber,
+				workItemId,
+				dedupKey,
+			});
+			return;
+		}
+
+		logger.info('Post-completion review dispatch: firing review for implementation PR', {
+			prNumber,
+			workItemId,
+			headSha,
+		});
+
+		const reviewResult: TriggerResult = {
+			agentType: 'review',
+			agentInput: {
+				prNumber,
+				prBranch: pr.headRef,
+				repoFullName: project.repo,
+				headSha,
+				triggerType: 'ci-success',
+				triggerEvent: 'scm:check-suite-success',
+				workItemId,
+			},
+			prNumber,
+			prUrl: agentResult.prUrl,
+			prTitle: pr.title,
+			workItemId,
+		};
+
+		await runAgentExecutionPipeline(reviewResult, project, config, {
+			...executionConfig,
+			skipPrepareForAgent: true,
+			skipHandleFailure: true,
+			logLabel: 'review (post-completion)',
+		});
+	} catch (err) {
+		logger.warn('Post-completion review dispatch failed (non-fatal)', {
+			prUrl: agentResult.prUrl,
+			workItemId,
+			error: String(err),
+		});
 	}
 }
 
@@ -504,6 +599,21 @@ export async function runAgentExecutionPipeline(
 
 	if (onFailure && !agentResult.success) {
 		await onFailure(result, agentResult);
+	}
+
+	// Post-completion review dispatch: when an implementation agent succeeds
+	// with a PR, check CI and fire review deterministically. This guarantees
+	// review dispatch within seconds of completion, regardless of webhook
+	// timing (spec 007). Uses the same recursive pattern as the splitting →
+	// backlog-manager chain below.
+	if (agentType === 'implementation' && agentResult.success && agentResult.prUrl && project.repo) {
+		await tryDispatchPostCompletionReview(
+			agentResult as AgentResult & { prUrl: string },
+			project as ProjectConfig & { repo: string },
+			workItemId,
+			config,
+			executionConfig,
+		);
 	}
 
 	// After a successful splitting run, propagate auto label and optionally chain backlog-manager

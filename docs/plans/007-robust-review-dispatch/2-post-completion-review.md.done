@@ -6,7 +6,7 @@ plan_slug: post-completion-review
 level: plan
 parent_spec: docs/specs/007-robust-review-dispatch.md
 depends_on: [1-lock-infra.md]
-status: wip
+status: done
 ---
 
 # 007/2: Post-completion review dispatch hook
@@ -165,14 +165,14 @@ if (
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
-- [ ] AC #11
+- [x] AC #1
+- [x] AC #2
+- [x] AC #3
+- [x] AC #4
+- [x] AC #5
+- [x] AC #6
+- [x] AC #7
+- [x] AC #8
+- [x] AC #9
+- [x] AC #10
+- [x] AC #11
