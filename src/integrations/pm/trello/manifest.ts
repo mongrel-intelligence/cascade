@@ -123,10 +123,15 @@ export const trelloManifest: PMProviderManifest = {
 
 	wizardSpec: {
 		steps: [
-			{ kind: 'credentials', id: 'trello-credentials' },
+			// Plan 011/2: Trello credentials use an OAuth popup + manual-token
+			// fallback. The `window.open` flow is intrinsically Trello-specific
+			// — kept as `kind: 'custom'` and resolved to `TrelloOAuthStep` by
+			// the Trello ProviderWizardDefinition.
+			{ kind: 'custom', id: 'trello-credentials-oauth', component: 'TrelloOAuthStep' },
 			{ kind: 'container-pick', id: 'trello-board' },
-			{ kind: 'label-mapping', id: 'trello-labels' },
 			{ kind: 'status-mapping', id: 'trello-statuses' },
+			{ kind: 'label-mapping', id: 'trello-labels' },
+			{ kind: 'custom-field-mapping', id: 'trello-custom-fields' },
 			{ kind: 'webhook-url-display', id: 'trello-webhook' },
 		],
 	},

@@ -30,6 +30,17 @@ export interface LabelMappingStepProps {
 	readonly onCreateLabel?: (slotKey: string, name: string, color?: string) => void;
 	readonly loading?: boolean;
 	readonly error?: string;
+	/**
+	 * Plan 011/1 (forward-edit for 011/2 Trello migration): when the provider
+	 * has canonical per-slot default names/colors (Trello: `cascade-ready`,
+	 * `cascade-processing`, etc.), this pre-populates the inline Create
+	 * form's text input. User can still override. The `color` is passed
+	 * through to `onCreateLabel(slot, name, color)`. Omitting the prop
+	 * keeps the existing "user types everything" UX unchanged.
+	 */
+	readonly labelDefaults?: Readonly<
+		Record<string, { readonly name: string; readonly color?: string }>
+	>;
 }
 
 export function LabelMappingStep({
@@ -42,8 +53,17 @@ export function LabelMappingStep({
 	onCreateLabel,
 	loading,
 	error,
+	labelDefaults,
 }: LabelMappingStepProps) {
-	const [newLabelNames, setNewLabelNames] = useState<Record<string, string>>({});
+	// Seed the create-form text with labelDefaults[slot].name when supplied.
+	const [newLabelNames, setNewLabelNames] = useState<Record<string, string>>(() => {
+		if (!labelDefaults) return {};
+		const seed: Record<string, string> = {};
+		for (const [slot, def] of Object.entries(labelDefaults)) {
+			seed[slot] = def.name;
+		}
+		return seed;
+	});
 	const useFreeText = providerLabels.length === 0;
 
 	return createElement(
@@ -125,11 +145,13 @@ export function LabelMappingStep({
 													onClick: () => {
 														const name = newLabelNames[slot.key];
 														if (name) {
-															onCreateLabel(slot.key, name);
+															const color = labelDefaults?.[slot.key]?.color;
+															onCreateLabel(slot.key, name, color);
 															setNewLabelNames((prev) => ({ ...prev, [slot.key]: '' }));
 														}
 													},
 													'data-action': 'create-label',
+													'data-create-color': labelDefaults?.[slot.key]?.color,
 												},
 												'Create label',
 											),

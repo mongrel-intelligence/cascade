@@ -1,5 +1,11 @@
 /**
  * Trello-specific step renderer components for PMWizard.
+ *
+ * **Retained until plan 011/5 — see spec 011 AC #4.** Plan 011/2 migrated
+ * the Trello wizard to the shared step components; this file has no
+ * production consumer and is scheduled for deletion. The only surviving
+ * export (`TRELLO_LABEL_DEFAULTS`) was duplicated into
+ * `pm-providers/trello/wizard.ts`.
  */
 
 import type { UseMutationResult } from '@tanstack/react-query';

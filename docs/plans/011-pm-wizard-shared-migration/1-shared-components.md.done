@@ -227,6 +227,16 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
+
+> **Forward-edit (2026-04-18, during plan 011/2):** widened `label-mapping`
+> with optional `labelDefaults?: Record<slot, {name, color?}>` prop
+> (pre-populates Create input, threads color to `onCreateLabel`); widened
+> `custom-field-mapping` with optional `fieldDefaults?: Record<slot, {name}>`
+> prop. Both are additive — existing tests + consumers unchanged. Motivation:
+> Trello's legacy UX auto-names labels (`cascade-ready`, etc.) and custom
+> fields (`cost`); without the defaults, migration to shared components
+> would regress operator UX. See plan 011/2 Task 1 inventory.
+
 - [x] AC #1 (`StandardStepKind` widened with `'custom-field-mapping'`)
 - [x] AC #2 (`STANDARD_STEP_COMPONENTS['custom-field-mapping']` registered)
 - [x] AC #3 (`renderStandardStep` dispatches the new kind via `it.each` row)

@@ -97,6 +97,51 @@ describe('LabelMappingStep', () => {
 		expect(html).toContain('data-color="red"');
 	});
 
+	// ── Plan 011/1 (forward-edit for 011/2): labelDefaults pre-populates Create input ──
+
+	it('pre-populates the Create input with labelDefaults[slotKey].name when supplied', () => {
+		const html = renderToStaticMarkup(
+			createElement(LabelMappingStep, {
+				step,
+				providerId: 'trello',
+				labelSlots,
+				providerLabels,
+				mappings: {},
+				onMappingChange: () => {},
+				onCreateLabel: () => {},
+				labelDefaults: {
+					processing: { name: 'cascade-processing', color: 'blue' },
+					error: { name: 'cascade-error', color: 'red' },
+				},
+			}),
+		);
+		// Each Create row's text input starts with the default name.
+		expect(html).toMatch(/placeholder="New label name"[^>]*value="cascade-processing"/);
+		expect(html).toMatch(/placeholder="New label name"[^>]*value="cascade-error"/);
+	});
+
+	it('exposes the labelDefaults color on the Create button via data-create-color', () => {
+		// The onClick handler reads color from labelDefaults; we pin the wire-
+		// through via a data attribute (SSR-observable) rather than RTL.
+		const html = renderToStaticMarkup(
+			createElement(LabelMappingStep, {
+				step,
+				providerId: 'trello',
+				labelSlots,
+				providerLabels,
+				mappings: {},
+				onMappingChange: () => {},
+				onCreateLabel: () => {},
+				labelDefaults: {
+					processing: { name: 'cascade-processing', color: 'sky' },
+					error: { name: 'cascade-error', color: 'red' },
+				},
+			}),
+		);
+		expect(html).toContain('data-create-color="sky"');
+		expect(html).toContain('data-create-color="red"');
+	});
+
 	it('renders loading and error states', () => {
 		const loading = renderToStaticMarkup(
 			createElement(LabelMappingStep, {

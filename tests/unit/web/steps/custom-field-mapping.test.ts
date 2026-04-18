@@ -151,6 +151,24 @@ describe('CustomFieldMappingStep', () => {
 		expect(html).toContain('data-action="create-custom-field"');
 	});
 
+	// ── Plan 011/1 (forward-edit for 011/2 Trello migration): fieldDefaults pre-populates Create input ──
+
+	it('pre-populates the Create input with fieldDefaults[slotKey].name when supplied', () => {
+		const html = renderToStaticMarkup(
+			createElement(CustomFieldMappingStep, {
+				step,
+				providerId: 'trello',
+				cascadeSlots: [{ key: 'cost', label: 'Cost' }],
+				providerCustomFields: [],
+				mappings: {},
+				onMappingChange: () => {},
+				onCreateCustomField: () => {},
+				fieldDefaults: { cost: { name: 'cost' } },
+			}),
+		);
+		expect(html).toMatch(/placeholder="New custom field name"[^>]*value="cost"/);
+	});
+
 	it('hides the Create affordance when onCreateCustomField is omitted', () => {
 		const html = renderToStaticMarkup(
 			createElement(CustomFieldMappingStep, {

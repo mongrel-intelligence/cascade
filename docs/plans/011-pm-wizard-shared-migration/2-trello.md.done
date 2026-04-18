@@ -6,7 +6,7 @@ plan_slug: trello
 level: plan
 parent_spec: docs/specs/011-pm-wizard-shared-migration.md
 depends_on: [1-shared-components.md]
-status: wip
+status: done
 ---
 
 # 011/2: Trello Migration — First Consumer of Shared Wizard Components
@@ -212,16 +212,35 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (wizardSpec updated)
-- [ ] AC #2 (standard steps dispatch through generator)
-- [ ] AC #3 (OAuth custom step shipped + tested)
-- [ ] AC #4 (searchable board picker)
-- [ ] AC #5 (custom-field creation via shared)
-- [ ] AC #6 (legacy file retained, no consumer)
-- [ ] AC #7 (test coverage migrated)
-- [ ] AC #8 (conformance harness green)
-- [ ] AC #9 (no operator regression)
-- [ ] AC #10 (build)
-- [ ] AC #11 (test)
-- [ ] AC #12 (lint)
-- [ ] AC #13 (typecheck)
+
+> **Plan divergence note (2026-04-18):** Task 1 inventory surfaced 4 gaps
+> between shared components and legacy Trello UX. User-approved resolutions:
+>  - **Retry button on board picker**: dropped (normalize-upward). Operator
+>    refreshes page if discovery fails.
+>  - **Pre-filled label defaults on Create**: forward-edit to plan 011/1 —
+>    widened `label-mapping` with optional `labelDefaults?` prop that
+>    pre-populates Create input + threads color to `onCreateLabel(slot,
+>    name, color)`. Additive; existing consumers unchanged.
+>  - **"Create All Missing Labels" batch button**: dropped (normalize-upward).
+>    Operator uses per-slot Create buttons now.
+>  - **Pre-filled custom-field name**: forward-edit to plan 011/1 — widened
+>    `custom-field-mapping` with optional `fieldDefaults?` prop.
+>
+> Trello's `useTrelloCustomFieldCreation` hook accepts `{ name: string }` now
+> (was hard-coded `'Cost'`). The shared step lets operators type their own
+> name; Trello's wizard passes `fieldDefaults: { cost: { name: 'Cost' } }`
+> to preserve the default.
+
+- [x] AC #1 (`trelloManifest.wizardSpec.steps` = `[custom(TrelloOAuthStep), container-pick, status-mapping, label-mapping, custom-field-mapping, webhook-url-display]`)
+- [x] AC #2 (standard steps dispatch via `renderStandardStep` + `STANDARD_STEP_COMPONENTS`; identity-check tested)
+- [x] AC #3 (`TrelloOAuthStep` shipped at `pm-providers/trello/oauth-step.tsx`; 7 tests)
+- [x] AC #4 (board picker passes `searchable: true` through `providerHooks`; exercised by trello-wizard-generator test)
+- [x] AC #5 (`onCreateCustomField` wired to `pm.discovery.createCustomField` via `useTrelloCustomFieldCreation` hook with new `{name}` arg)
+- [x] AC #6 (`pm-wizard-trello-steps.tsx` retained with "Retained until plan 011/5" header comment; no live importers outside itself)
+- [x] AC #7 (19 Trello tests — 5 wizardSpec + 7 oauth-step + 7 wizard-generator)
+- [x] AC #8 (conformance harness green — 95 tests, Trello included)
+- [ ] AC #9 — **deferred**: browser smoke test pending operator verification. Unit tests + conformance harness cover wire-level invariants; no runtime behavior change in adapters (legacy `useTrelloDiscovery` / `useTrelloLabelCreation` / `useTrelloCustomFieldCreation` reused unchanged). Reviewer should exercise OAuth + create-label + create-cost-field end-to-end before merge.
+- [x] AC #10 (`npm run build` green)
+- [x] AC #11 (`npm test` green — 8169/8169)
+- [x] AC #12 (`npm run lint` green)
+- [x] AC #13 (`npm run typecheck` green)

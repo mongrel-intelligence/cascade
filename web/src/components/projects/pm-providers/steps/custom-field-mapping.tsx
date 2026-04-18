@@ -36,6 +36,12 @@ export interface CustomFieldMappingStepProps {
 	 * type is a provider concern; this component surfaces name only.
 	 */
 	readonly onCreateCustomField?: (slotKey: string, name: string) => void;
+	/**
+	 * Plan 011/1 (forward-edit for 011/2 Trello migration): per-slot default
+	 * name pre-populates the Create input. User can override. Omitting keeps
+	 * the existing blank-input UX.
+	 */
+	readonly fieldDefaults?: Readonly<Record<string, { readonly name: string }>>;
 	readonly loading?: boolean;
 	readonly error?: string;
 }
@@ -43,12 +49,14 @@ export interface CustomFieldMappingStepProps {
 /** Inline row-level create form — private helper. */
 function CreateCustomFieldForm({
 	slotKey,
+	defaultName,
 	onCreate,
 }: {
 	slotKey: string;
+	defaultName?: string;
 	onCreate: (slotKey: string, name: string) => void;
 }) {
-	const [name, setName] = useState('');
+	const [name, setName] = useState(defaultName ?? '');
 	return createElement(
 		'div',
 		{ className: 'pm-wizard-create-custom-field' },
@@ -85,6 +93,7 @@ export function CustomFieldMappingStep({
 	mappings,
 	onMappingChange,
 	onCreateCustomField,
+	fieldDefaults,
 	loading,
 	error,
 }: CustomFieldMappingStepProps) {
@@ -132,6 +141,7 @@ export function CustomFieldMappingStep({
 								onCreateCustomField
 									? createElement(CreateCustomFieldForm, {
 											slotKey: slot.key,
+											defaultName: fieldDefaults?.[slot.key]?.name,
 											onCreate: onCreateCustomField,
 										})
 									: null,

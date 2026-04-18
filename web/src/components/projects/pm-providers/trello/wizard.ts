@@ -1,29 +1,74 @@
 /**
- * Trello ProviderWizardDefinition — the frontend half of the manifest
- * pattern. Registered via `./index.ts` at module load.
+ * Trello ProviderWizardDefinition (plan 011/2).
  *
- * `useProviderHooks` composes the existing Trello hooks
- * (`useTrelloDiscovery`, `useTrelloLabelCreation`,
- * `useTrelloCustomFieldCreation`) and exposes the mutations + handlers
- * the step adapters consume. This is where the per-provider React
- * wiring lives; `pm-wizard.tsx` no longer needs to call
- * `useTrelloDiscovery` directly (task 3 of this plan removes those
- * calls from the parent wizard).
+ * Migrated from per-provider step components to the shared step
+ * components shipped by spec 010/3 + widened by plan 011/1. Every step
+ * except the custom OAuth credentials step now renders through
+ * `renderStandardStep` + `STANDARD_STEP_COMPONENTS`.
+ *
+ * Step sequence mirrors `trelloManifest.wizardSpec.steps`:
+ *   1. custom(TrelloOAuthStep)     — OAuth popup + manual token fallback
+ *   2. container-pick (searchable) — board picker with type-ahead
+ *   3. status-mapping              — CASCADE stages → Trello lists
+ *   4. label-mapping (w/defaults)  — CASCADE labels → Trello labels + create
+ *   5. custom-field-mapping        — cost custom field + create
+ *   6. webhook-url-display         — router URL + copy button
  */
 
+import { Loader2 } from 'lucide-react';
+import type { ReactElement } from 'react';
 import { useState } from 'react';
 import {
 	useTrelloCustomFieldCreation,
 	useTrelloDiscovery,
 	useTrelloLabelCreation,
 } from '../../pm-wizard-hooks.js';
-import { TRELLO_LABEL_DEFAULTS } from '../../pm-wizard-trello-steps.js';
-import type { ProviderWizardDefinition } from '../types.js';
-import {
-	TrelloBoardStepAdapter,
-	TrelloCredentialsStepAdapter,
-	TrelloFieldMappingStepAdapter,
-} from './adapters.js';
+import { ContainerPickStep } from '../steps/container-pick.js';
+import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
+import { LabelMappingStep } from '../steps/label-mapping.js';
+import { StatusMappingStep } from '../steps/status-mapping.js';
+import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
+import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { TrelloOAuthStep } from './oauth-step.js';
+
+// CASCADE stage keys that map to Trello lists (one list per stage).
+const TRELLO_LIST_SLOTS = [
+	{ key: 'backlog', label: 'Backlog' },
+	{ key: 'splitting', label: 'Splitting' },
+	{ key: 'planning', label: 'Planning' },
+	{ key: 'todo', label: 'Todo' },
+	{ key: 'inProgress', label: 'In Progress' },
+	{ key: 'inReview', label: 'In Review' },
+	{ key: 'done', label: 'Done' },
+	{ key: 'merged', label: 'Merged' },
+	{ key: 'debug', label: 'Debug' },
+] as const;
+
+// CASCADE labels that map to Trello labels. Defaults (name + color)
+// pre-populate the shared `label-mapping` Create affordance and thread
+// the color to `onCreateLabel(slot, name, color)`. Migrated here from
+// the retiring `pm-wizard-trello-steps.tsx` (plan 011/5 deletes that
+// file); a duplicate copy temporarily lives there until plan 5.
+const TRELLO_LABEL_DEFAULTS: Readonly<
+	Record<string, { readonly name: string; readonly color: string }>
+> = {
+	readyToProcess: { name: 'cascade-ready', color: 'sky' },
+	processing: { name: 'cascade-processing', color: 'blue' },
+	processed: { name: 'cascade-processed', color: 'green' },
+	error: { name: 'cascade-error', color: 'red' },
+	auto: { name: 'cascade-auto', color: 'purple' },
+};
+
+const TRELLO_LABEL_SLOTS = [
+	{ key: 'readyToProcess', label: 'Ready to Process' },
+	{ key: 'processing', label: 'Processing' },
+	{ key: 'processed', label: 'Processed' },
+	{ key: 'error', label: 'Error' },
+	{ key: 'auto', label: 'Auto' },
+] as const;
+
+// Trello has one known custom-field slot: the cost estimate.
+const TRELLO_CUSTOM_FIELD_SLOTS = [{ key: 'cost', label: 'Cost (number)' }] as const;
 
 function isCredentialsComplete(state: {
 	trelloApiKey: string;
@@ -36,36 +81,179 @@ function isCredentialsComplete(state: {
 	return Boolean(state.trelloApiKey && state.trelloToken && state.verificationResult);
 }
 
+/**
+ * The shape returned by `useProviderHooks`. Each step adapter pulls the
+ * slice it needs from this record. Ports all the mutations + memoized
+ * callbacks that the legacy adapters consumed.
+ */
+interface TrelloProviderHooks {
+	readonly boardOptions: ReadonlyArray<{
+		readonly id: string;
+		readonly name: string;
+		readonly url?: string;
+	}>;
+	readonly boardsLoading: boolean;
+	readonly boardsError: string | undefined;
+	readonly onBoardSelect: (boardId: string) => void;
+	readonly boardDetailsLoading: boolean;
+	readonly providerStates: ReadonlyArray<{ readonly id: string; readonly name: string }>;
+	readonly providerLabels: ReadonlyArray<{
+		readonly id: string;
+		readonly name: string;
+		readonly color?: string;
+	}>;
+	readonly providerCustomFields: ReadonlyArray<{
+		readonly id: string;
+		readonly name: string;
+		readonly type: string;
+	}>;
+	readonly onCreateLabel: (slotKey: string, name: string, color?: string) => void;
+	readonly onCreateCustomField: (slotKey: string, name: string) => void;
+	readonly webhookUrl: string;
+	readonly creatingSlot: string | null;
+}
+
+function asTrelloHooks(providerHooks: Record<string, unknown> | undefined): TrelloProviderHooks {
+	return (providerHooks ?? {}) as unknown as TrelloProviderHooks;
+}
+
+// ── Per-step adapters ────────────────────────────────────────────────
+//
+// Each adapter bridges `ProviderWizardStepProps` → the shared step's prop
+// contract, pulling Trello-specific state off `providerHooks`.
+
+function TrelloBoardPickAdapter({ state, providerHooks }: ProviderWizardStepProps): ReactElement {
+	const h = asTrelloHooks(providerHooks);
+	return ContainerPickStep({
+		step: { kind: 'container-pick', id: 'trello-board' },
+		providerId: 'trello',
+		label: 'Select Board',
+		options: h.boardOptions,
+		selectedId: state.trelloBoardId || null,
+		onSelect: h.onBoardSelect,
+		loading: h.boardsLoading,
+		error: h.boardsError,
+		searchable: true,
+	});
+}
+
+function TrelloStatusMappingAdapter({
+	state,
+	dispatch,
+	providerHooks,
+}: ProviderWizardStepProps): ReactElement {
+	const h = asTrelloHooks(providerHooks);
+	return StatusMappingStep({
+		step: { kind: 'status-mapping', id: 'trello-statuses' },
+		providerId: 'trello',
+		cascadeStatuses: TRELLO_LIST_SLOTS,
+		providerStates: h.providerStates,
+		mappings: state.trelloListMappings,
+		onMappingChange: (key, value) => dispatch({ type: 'SET_TRELLO_LIST_MAPPING', key, value }),
+		loading: h.boardDetailsLoading,
+	});
+}
+
+function TrelloLabelMappingAdapter({
+	state,
+	dispatch,
+	providerHooks,
+}: ProviderWizardStepProps): ReactElement {
+	const h = asTrelloHooks(providerHooks);
+	return LabelMappingStep({
+		step: { kind: 'label-mapping', id: 'trello-labels' },
+		providerId: 'trello',
+		labelSlots: TRELLO_LABEL_SLOTS,
+		providerLabels: h.providerLabels,
+		mappings: state.trelloLabelMappings,
+		onMappingChange: (key, value) => dispatch({ type: 'SET_TRELLO_LABEL_MAPPING', key, value }),
+		onCreateLabel: h.onCreateLabel,
+		labelDefaults: TRELLO_LABEL_DEFAULTS,
+		loading: h.boardDetailsLoading,
+	});
+}
+
+function TrelloCustomFieldMappingAdapter({
+	state,
+	dispatch,
+	providerHooks,
+}: ProviderWizardStepProps): ReactElement {
+	const h = asTrelloHooks(providerHooks);
+	return CustomFieldMappingStep({
+		step: { kind: 'custom-field-mapping', id: 'trello-custom-fields' },
+		providerId: 'trello',
+		cascadeSlots: TRELLO_CUSTOM_FIELD_SLOTS,
+		providerCustomFields: h.providerCustomFields,
+		mappings: { cost: state.trelloCostFieldId || undefined },
+		onMappingChange: (key, value) => {
+			if (key === 'cost') dispatch({ type: 'SET_TRELLO_COST_FIELD', id: value });
+		},
+		onCreateCustomField: h.onCreateCustomField,
+		fieldDefaults: { cost: { name: 'Cost' } },
+		loading: h.boardDetailsLoading,
+	});
+}
+
+function TrelloWebhookDisplayAdapter({ providerHooks }: ProviderWizardStepProps): ReactElement {
+	const h = asTrelloHooks(providerHooks);
+	return WebhookUrlDisplayStep({
+		step: {
+			kind: 'webhook-url-display',
+			id: 'trello-webhook',
+			config: {
+				instructions:
+					'Add this URL as a Trello webhook using the REST API. See docs for the exact curl command.',
+			},
+		},
+		providerId: 'trello',
+		webhookUrl: h.webhookUrl,
+	});
+}
+
 export const trelloProviderWizard: ProviderWizardDefinition = {
 	id: 'trello',
 	label: 'Trello',
 
+	// Each step mirrors `trelloManifest.wizardSpec.steps` by id.
 	steps: [
 		{
-			id: 'credentials',
+			id: 'trello-credentials-oauth',
 			title: 'Trello credentials',
-			Component: TrelloCredentialsStepAdapter,
+			Component: TrelloOAuthStep,
 			isComplete: isCredentialsComplete,
 		},
 		{
-			id: 'board',
+			id: 'trello-board',
 			title: 'Board',
-			Component: TrelloBoardStepAdapter,
+			Component: TrelloBoardPickAdapter,
 			isComplete: (state) => Boolean(state.trelloBoardId),
 		},
 		{
-			id: 'fields',
-			title: 'Field mappings',
-			Component: TrelloFieldMappingStepAdapter,
+			id: 'trello-statuses',
+			title: 'Status mapping',
+			Component: TrelloStatusMappingAdapter,
 			isComplete: (state) => Object.keys(state.trelloListMappings).length > 0,
+		},
+		{
+			id: 'trello-labels',
+			title: 'Label mapping',
+			Component: TrelloLabelMappingAdapter,
+			isComplete: () => true, // labels are optional
+		},
+		{
+			id: 'trello-custom-fields',
+			title: 'Custom fields',
+			Component: TrelloCustomFieldMappingAdapter,
+			isComplete: () => true, // cost field is optional
+		},
+		{
+			id: 'trello-webhook',
+			title: 'Webhook',
+			Component: TrelloWebhookDisplayAdapter,
+			isComplete: () => true,
 		},
 	],
 
-	// Shape mirrors the existing inline save body in `useSaveMutation`
-	// (pm-wizard-hooks.ts). `saveMutation` still constructs the same shape
-	// directly while the parent wizard owns the save flow; plan 006/5 will
-	// consolidate save onto `def.buildIntegrationConfig` and remove the
-	// per-provider if/else in `saveMutation`.
 	buildIntegrationConfig: (state) => ({
 		boardId: state.trelloBoardId,
 		lists: state.trelloListMappings,
@@ -80,62 +268,48 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 	},
 
 	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
-		// Parent wizard previously called these at the top level; moved here so
-		// pm-wizard.tsx no longer contains Trello-specific hook wiring.
 		const discovery = useTrelloDiscovery(state, dispatch, advanceToStep, projectId ?? '');
 		const labels = useTrelloLabelCreation(state, dispatch);
 		const customField = useTrelloCustomFieldCreation(state, dispatch);
 
-		// creatingSlot + creatingCostField are shared setter state between parent
-		// components. For the manifest path we recreate them here; the Trello
-		// wizard UI only renders while the manifest shell is mounted.
 		const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
-		const [creatingCostField, setCreatingCostField] = useState(false);
 
-		const onCreateLabel = (slot: string) => {
-			const defaults = TRELLO_LABEL_DEFAULTS[slot];
-			if (!defaults) return;
+		const onCreateLabel = (slot: string, name: string, color?: string) => {
+			// If caller didn't supply a color, fall back to the canonical default.
+			const resolvedColor = color ?? TRELLO_LABEL_DEFAULTS[slot]?.color ?? 'sky';
 			setCreatingSlot(slot);
 			labels.createLabelMutation.mutate(
-				{ name: defaults.name, color: defaults.color, slot },
+				{ name, color: resolvedColor, slot },
 				{ onSettled: () => setCreatingSlot(null) },
 			);
 		};
 
-		const onCreateAllMissingLabels = () => {
-			const existingLabelNames = new Set(
-				(state.trelloBoardDetails?.labels ?? []).map((l) => l.name.toLowerCase()),
-			);
-			const labelsToCreate = Object.entries(TRELLO_LABEL_DEFAULTS)
-				.filter(([slot, { name }]) => {
-					if (state.trelloLabelMappings[slot]) return false;
-					return !existingLabelNames.has(name.toLowerCase());
-				})
-				.map(([slot, { name, color }]) => ({ slot, name, color }));
-			if (labelsToCreate.length > 0) {
-				setCreatingSlot('__batch__');
-				labels.createMissingLabelsMutation.mutate(labelsToCreate, {
-					onSettled: () => setCreatingSlot(null),
-				});
-			}
+		const onCreateCustomField = (_slotKey: string, name: string) => {
+			customField.createCustomFieldMutation.mutate({ name });
 		};
 
-		const onCreateCostField = () => {
-			setCreatingCostField(true);
-			customField.createCustomFieldMutation.mutate(undefined, {
-				onSettled: () => setCreatingCostField(false),
-			});
-		};
+		const webhookUrl = projectId ? `${window.location.origin}/webhooks/${projectId}/trello` : '';
+
+		const boardDetails = state.trelloBoardDetails;
 
 		return {
+			boardOptions: state.trelloBoards,
+			boardsLoading: discovery.boardsMutation.isPending,
+			boardsError: discovery.boardsMutation.isError
+				? (discovery.boardsMutation.error as Error).message
+				: undefined,
 			onBoardSelect: discovery.handleBoardSelect,
-			boardsMutation: discovery.boardsMutation,
-			boardDetailsMutation: discovery.boardDetailsMutation,
+			boardDetailsLoading: discovery.boardDetailsMutation.isPending,
+			providerStates: boardDetails?.lists ?? [],
+			providerLabels: boardDetails?.labels ?? [],
+			providerCustomFields: boardDetails?.customFields.filter((f) => f.type === 'number') ?? [],
 			onCreateLabel,
-			onCreateAllMissingLabels,
-			onCreateCostField,
+			onCreateCustomField,
+			webhookUrl,
 			creatingSlot,
-			creatingCostField,
-		};
+			// Exposed for any caller that wants to render a secondary
+			// loading indicator near the board-picker step.
+			boardDetailsLoadingIcon: Loader2,
+		} satisfies TrelloProviderHooks & Record<string, unknown>;
 	},
 };

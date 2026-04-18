@@ -613,7 +613,10 @@ export function useTrelloCustomFieldCreation(
 	dispatch: React.Dispatch<WizardAction>,
 ) {
 	const createCustomFieldMutation = useMutation({
-		mutationFn: () => {
+		// Plan 011/2: the shared custom-field-mapping step lets operators type
+		// a name. `mutate({ name })` — callers without a preference pass
+		// `{ name: 'Cost' }` to preserve the legacy default.
+		mutationFn: ({ name }: { name: string }) => {
 			if (!state.trelloApiKey || !state.trelloToken || !state.trelloBoardId) {
 				throw new Error('Missing credentials or board selection');
 			}
@@ -621,7 +624,7 @@ export function useTrelloCustomFieldCreation(
 			return trpcClient.pm.discovery.createCustomField.mutate({
 				providerId: 'trello',
 				containerId: state.trelloBoardId,
-				name: 'Cost',
+				name,
 				credentials: {
 					api_key: state.trelloApiKey,
 					token: state.trelloToken,
