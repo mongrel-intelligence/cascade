@@ -6,7 +6,7 @@ plan_slug: linear-webhook
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: [2-jira-webhook.md]
-status: pending
+status: wip
 ---
 
 # 012/3: Linear Webhook — Activate Manifest Path With Signing-Secret + Instructions
