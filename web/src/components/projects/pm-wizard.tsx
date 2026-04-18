@@ -116,7 +116,7 @@ export function PMWizard({
 	// through to the legacy per-provider branches.
 	const manifestDef = getProviderWizard(state.provider);
 
-	const { verifyMutation } = useVerification(state, dispatch, advanceToStep);
+	const { verifyMutation } = useVerification(state, dispatch, advanceToStep, projectId);
 	// Every PM provider (Trello 006/2, JIRA 006/3, Linear 006/4) composes its
 	// discovery / label / custom-field / webhook hooks inside its own
 	// useProviderHooks. The parent wizard no longer calls any provider-
@@ -213,24 +213,30 @@ export function PMWizard({
 								stepIndex={entry.index}
 							/>
 
-							{/* Verify Connection button still belongs on the first
-							    manifest step (credentials). */}
+							{/* Verify Connection button belongs on the first manifest
+							    step (credentials). Always render — edit mode with stored
+							    credentials uses the `projectId` path on the backend, so
+							    users can verify without re-typing the key. */}
 							{isCredentials && (
 								<div className="flex items-center gap-3 pt-2">
-									{(!state.isEditing || !state.hasStoredCredentials || credsReady) && (
-										<button
-											type="button"
-											onClick={() => verifyMutation.mutate()}
-											disabled={!credsReady || verifyMutation.isPending}
-											className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-										>
-											{verifyMutation.isPending ? (
-												<Loader2 className="h-4 w-4 animate-spin" />
-											) : (
-												<Globe className="h-4 w-4" />
-											)}
-											Verify Connection
-										</button>
+									<button
+										type="button"
+										onClick={() => verifyMutation.mutate()}
+										disabled={
+											!(credsReady || (state.isEditing && state.hasStoredCredentials)) ||
+											verifyMutation.isPending
+										}
+										className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+									>
+										{verifyMutation.isPending ? (
+											<Loader2 className="h-4 w-4 animate-spin" />
+										) : (
+											<Globe className="h-4 w-4" />
+										)}
+										Verify Connection
+									</button>
+									{!credsReady && state.isEditing && state.hasStoredCredentials && (
+										<span className="text-xs text-muted-foreground">Using stored credentials</span>
 									)}
 									{state.verificationResult && (
 										<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
