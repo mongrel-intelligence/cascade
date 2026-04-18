@@ -6,7 +6,7 @@ plan_slug: cleanup
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: [3-linear-webhook.md]
-status: pending
+status: wip
 ---
 
 # 012/4: Cleanup — Delete Legacy Webhook UX + Rewrite Docs + Close Spec
