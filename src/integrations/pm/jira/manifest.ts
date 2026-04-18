@@ -155,6 +155,7 @@ export const jiraManifest: PMProviderManifest = {
 		states: true,
 		labels: true,
 		customFields: true,
+		currentUser: true,
 	},
 
 	/**
@@ -215,6 +216,22 @@ export const jiraManifest: PMProviderManifest = {
 						const out = fields
 							.filter((f) => f.custom)
 							.map((f) => ({ id: f.id, name: f.name, type: 'custom' }));
+						return out as unknown as DiscoveryResult<K>;
+					}
+					case 'currentUser': {
+						// Plan 010/2: restore verification UX. Use the JIRA
+						// account's displayName as the primary name and the
+						// email as secondary (matches the pre-009/5 display).
+						const me = (await runWithCreds(() => jiraClient.getMyself())) as {
+							accountId?: string;
+							displayName?: string;
+							emailAddress?: string;
+						};
+						const out = {
+							id: me.accountId ?? '',
+							name: me.displayName ?? '',
+							displayName: me.emailAddress,
+						};
 						return out as unknown as DiscoveryResult<K>;
 					}
 					default:

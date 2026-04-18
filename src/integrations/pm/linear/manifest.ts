@@ -150,6 +150,7 @@ export const linearManifest: PMProviderManifest = {
 		states: true,
 		labels: true,
 		projects: true,
+		currentUser: true,
 	},
 
 	/**
@@ -219,6 +220,16 @@ export const linearManifest: PMProviderManifest = {
 							id: parseContainerId(p.id),
 							name: p.name,
 						}));
+						return out as unknown as DiscoveryResult<K>;
+					}
+					case 'currentUser': {
+						// Plan 010/2: restore verification UX.
+						const me = await runWithCreds(() => linearClient.getMe());
+						const out = {
+							id: me.id,
+							name: me.name,
+							displayName: me.displayName,
+						};
 						return out as unknown as DiscoveryResult<K>;
 					}
 					default:

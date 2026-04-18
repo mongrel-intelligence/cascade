@@ -23,9 +23,16 @@ import type {
 } from '../../../src/pm/types.js';
 
 describe('DiscoveryCapability', () => {
-	it('is the expected string-literal union', () => {
+	it('is the expected string-literal union (plan 010/2: includes currentUser)', () => {
 		expectTypeOf<DiscoveryCapability>().toEqualTypeOf<
-			'teams' | 'boards' | 'labels' | 'states' | 'projects' | 'customFields' | 'containers'
+			| 'teams'
+			| 'boards'
+			| 'labels'
+			| 'states'
+			| 'projects'
+			| 'customFields'
+			| 'containers'
+			| 'currentUser'
 		>();
 	});
 });
@@ -49,6 +56,10 @@ describe('DiscoveryArgs', () => {
 
 	it('containers capability takes no args', () => {
 		expectTypeOf<DiscoveryArgs<'containers'>>().toEqualTypeOf<Record<string, never>>();
+	});
+
+	it('currentUser capability takes no args (plan 010/2)', () => {
+		expectTypeOf<DiscoveryArgs<'currentUser'>>().toEqualTypeOf<Record<string, never>>();
 	});
 });
 
@@ -82,6 +93,14 @@ describe('DiscoveryResult', () => {
 		expectTypeOf<DiscoveryResult<'projects'>>().toEqualTypeOf<
 			Array<{ id: ContainerId; name: string }>
 		>();
+	});
+
+	it('currentUser returns { id, name, displayName? } (plan 010/2)', () => {
+		expectTypeOf<DiscoveryResult<'currentUser'>>().toEqualTypeOf<{
+			id: string;
+			name: string;
+			displayName?: string;
+		}>();
 	});
 
 	it('customFields returns an array of { id: string, name: string, type: string }', () => {

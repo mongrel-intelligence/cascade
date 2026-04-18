@@ -33,6 +33,11 @@ vi.mock('../../../../src/trello/client.js', () => {
 			getBoardLabels: vi.fn(async () => fakeLabels),
 			getBoardLists: vi.fn(async () => fakeLists),
 			getBoardCustomFields: vi.fn(async () => fakeCustomFields),
+			getMe: vi.fn(async () => ({
+				id: 'trello-user-abc',
+				fullName: 'Trello User',
+				username: 'trellouser',
+			})),
 		},
 	};
 });
@@ -40,11 +45,12 @@ vi.mock('../../../../src/trello/client.js', () => {
 import { trelloManifest } from '../../../../src/integrations/pm/trello/manifest.js';
 
 describe('trelloManifest.discoveryCapabilities', () => {
-	it('declares boards, labels, customFields (no native container/state concept)', () => {
+	it('declares boards, labels, customFields, currentUser', () => {
 		const caps = trelloManifest.discoveryCapabilities;
 		expect(caps?.boards).toBe(true);
 		expect(caps?.labels).toBe(true);
 		expect(caps?.customFields).toBe(true);
+		expect(caps?.currentUser).toBe(true);
 		// Trello doesn't declare containers or states — see manifest docstring.
 		expect(caps?.containers).toBeUndefined();
 		expect(caps?.states).toBeUndefined();
@@ -95,5 +101,15 @@ describe('trelloManifest.discover via createDiscoveryProvider', () => {
 		expect(result?.[0]).toEqual(
 			expect.objectContaining({ id: 'cf-1', name: 'Cost', type: 'number' }),
 		);
+	});
+
+	it('discover("currentUser") returns { id, name, displayName } (plan 010/2)', async () => {
+		const provider = makeProvider();
+		const result = await provider.discover?.('currentUser', {});
+		expect(result).toEqual({
+			id: 'trello-user-abc',
+			name: 'Trello User',
+			displayName: 'trellouser',
+		});
 	});
 });

@@ -39,6 +39,11 @@ vi.mock('../../../../src/jira/client.js', () => {
 			searchProjects: vi.fn(async () => fakeProjects),
 			getProjectStatuses: vi.fn(async () => fakeStatuses),
 			getFields: vi.fn(async () => fakeFields),
+			getMyself: vi.fn(async () => ({
+				accountId: 'jira-acct-xyz',
+				displayName: 'JIRA User',
+				emailAddress: 'jira@example.com',
+			})),
 		},
 	};
 });
@@ -46,12 +51,13 @@ vi.mock('../../../../src/jira/client.js', () => {
 import { jiraManifest } from '../../../../src/integrations/pm/jira/manifest.js';
 
 describe('jiraManifest.discoveryCapabilities', () => {
-	it('declares projects, states, labels, customFields', () => {
+	it('declares projects, states, labels, customFields, currentUser', () => {
 		const caps = jiraManifest.discoveryCapabilities;
 		expect(caps?.projects).toBe(true);
 		expect(caps?.states).toBe(true);
 		expect(caps?.labels).toBe(true);
 		expect(caps?.customFields).toBe(true);
+		expect(caps?.currentUser).toBe(true);
 	});
 
 	it('declares createDiscoveryProvider factory', () => {
@@ -113,5 +119,15 @@ describe('jiraManifest.discover via createDiscoveryProvider', () => {
 		expect(ids).toContain('customfield_10100');
 		expect(ids).toContain('customfield_10200');
 		expect(ids).not.toContain('summary');
+	});
+
+	it('discover("currentUser") returns { id, name, displayName } mapped from getMyself (plan 010/2)', async () => {
+		const provider = makeProvider();
+		const result = await provider.discover?.('currentUser', {});
+		expect(result).toEqual({
+			id: 'jira-acct-xyz',
+			name: 'JIRA User',
+			displayName: 'jira@example.com',
+		});
 	});
 });

@@ -36,6 +36,11 @@ vi.mock('../../../../src/linear/client.js', () => {
 			getTeamWorkflowStates: vi.fn(async () => fakeStates),
 			getTeamLabels: vi.fn(async () => fakeLabels),
 			getTeamProjects: vi.fn(async () => fakeProjects),
+			getMe: vi.fn(async () => ({
+				id: 'linear-user-123',
+				name: 'Linear User',
+				displayName: 'linearuser',
+			})),
 		},
 	};
 });
@@ -43,12 +48,13 @@ vi.mock('../../../../src/linear/client.js', () => {
 import { linearManifest } from '../../../../src/integrations/pm/linear/manifest.js';
 
 describe('linearManifest.discoveryCapabilities', () => {
-	it('declares teams, states, labels, projects', () => {
+	it('declares teams, states, labels, projects, currentUser', () => {
 		const caps = linearManifest.discoveryCapabilities;
 		expect(caps?.teams).toBe(true);
 		expect(caps?.states).toBe(true);
 		expect(caps?.labels).toBe(true);
 		expect(caps?.projects).toBe(true);
+		expect(caps?.currentUser).toBe(true);
 	});
 
 	it('declares createDiscoveryProvider factory', () => {
@@ -113,5 +119,14 @@ describe('linearManifest.discover', () => {
 	it('discover("projects") with no containerId returns empty (team must be chosen first)', async () => {
 		const result = await makeProvider().discover?.('projects', {});
 		expect(result).toEqual([]);
+	});
+
+	it('discover("currentUser") returns { id, name, displayName } (plan 010/2)', async () => {
+		const result = await makeProvider().discover?.('currentUser', {});
+		expect(result).toEqual({
+			id: 'linear-user-123',
+			name: 'Linear User',
+			displayName: 'linearuser',
+		});
 	});
 });

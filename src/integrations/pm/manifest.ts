@@ -85,6 +85,8 @@ export interface DiscoveryCapabilitiesMap {
 	readonly projects?: true;
 	readonly customFields?: true;
 	readonly containers?: true;
+	/** Plan 010/2: restores "Verified as @username" wizard UX via generic dispatch. */
+	readonly currentUser?: true;
 }
 
 /** Every wizard step kind the generic generator knows how to render. */

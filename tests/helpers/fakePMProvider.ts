@@ -395,6 +395,15 @@ export function createFakePMProvider(): { provider: PMProvider; store: FakePMSto
 				case 'customFields': {
 					return [] as unknown as DiscoveryResult<K>;
 				}
+				case 'currentUser': {
+					// Plan 010/2: fake provider returns deterministic identity.
+					const out = {
+						id: 'fake-user',
+						name: 'Fake User',
+						displayName: 'fake',
+					};
+					return out as unknown as DiscoveryResult<K>;
+				}
 				default:
 					throw new Error(`Fake provider: unsupported discovery capability '${capability}'`);
 			}
@@ -461,6 +470,7 @@ export function createFakePMManifest(): PMProviderManifest {
 			projects: true,
 			customFields: true,
 			containers: true,
+			currentUser: true,
 		},
 		wizardSpec: {
 			steps: [

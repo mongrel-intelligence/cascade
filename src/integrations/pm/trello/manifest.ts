@@ -151,6 +151,7 @@ export const trelloManifest: PMProviderManifest = {
 		boards: true,
 		labels: true,
 		customFields: true,
+		currentUser: true,
 	},
 
 	/**
@@ -206,6 +207,17 @@ export const trelloManifest: PMProviderManifest = {
 							name: f.name,
 							type: f.type,
 						}));
+						return out as unknown as DiscoveryResult<K>;
+					}
+					case 'currentUser': {
+						// Plan 010/2: restore "Verified as @username" wizard UX.
+						// Maps trelloClient.getMe() → { id, name, displayName }.
+						const me = await runWithCreds(() => trelloClient.getMe());
+						const out = {
+							id: me.id,
+							name: me.fullName,
+							displayName: me.username,
+						};
 						return out as unknown as DiscoveryResult<K>;
 					}
 					default:
