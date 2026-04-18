@@ -6,7 +6,7 @@ plan_slug: trello
 level: plan
 parent_spec: docs/specs/011-pm-wizard-shared-migration.md
 depends_on: [1-shared-components.md]
-status: pending
+status: wip
 ---
 
 # 011/2: Trello Migration — First Consumer of Shared Wizard Components
