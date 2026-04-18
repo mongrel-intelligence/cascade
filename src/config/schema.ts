@@ -38,6 +38,8 @@ const JiraConfigSchema = z.object({
 
 const LinearConfigSchema = z.object({
 	teamId: z.string().min(1),
+	/** Optional Linear Project (initiative) ID — when set, narrows scope within the team. */
+	projectId: z.string().optional(),
 	statuses: z.record(z.string()), // CASCADE status names → Linear state IDs
 	labels: z
 		.object({

@@ -378,6 +378,47 @@ describe.concurrent('validateConfig', () => {
 		expect(result.projects[0].engineSettings?.['claude-code']?.thinking).toBe('adaptive');
 	});
 
+	it('preserves linear.projectId through validation', () => {
+		const result = validateConfig({
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					linear: {
+						teamId: 'team-uuid',
+						projectId: 'project-uuid',
+						statuses: { backlog: 'state-bl' },
+					},
+				},
+			],
+		});
+
+		expect(result.projects[0].linear?.projectId).toBe('project-uuid');
+		expect(result.projects[0].linear?.teamId).toBe('team-uuid');
+	});
+
+	it('treats linear.projectId as optional', () => {
+		const result = validateConfig({
+			projects: [
+				{
+					id: 'test',
+					orgId: 'default',
+					name: 'Test',
+					repo: 'owner/repo',
+					linear: {
+						teamId: 'team-uuid',
+						statuses: {},
+					},
+				},
+			],
+		});
+
+		expect(result.projects[0].linear?.projectId).toBeUndefined();
+		expect(result.projects[0].linear?.teamId).toBe('team-uuid');
+	});
+
 	it('rejects unsupported project engineSettings entries', () => {
 		const config = {
 			projects: [
