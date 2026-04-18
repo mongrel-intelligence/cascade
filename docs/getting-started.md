@@ -264,6 +264,26 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","statuses":{"todo":"To Do","inProgress":"In Progress","inReview":"In Review"}}'
 ```
 
+### Linear
+
+1. Generate a **Personal API key** from https://linear.app/settings/api
+2. (Optional) Create a webhook in your Linear workspace settings and note the signing secret
+
+```bash
+# Store Linear credentials (project-scoped)
+node bin/cascade.js projects credentials-set my-project --key LINEAR_API_KEY --value lin_api_... --name "Linear API Key"
+
+# Optional: webhook secret for signature verification
+node bin/cascade.js projects credentials-set my-project --key LINEAR_WEBHOOK_SECRET --value ... --name "Linear Webhook Secret"
+
+# Configure the integration
+# teamId: your Linear team UUID (find it via Settings > API or the team URL)
+# statuses: map Cascade lifecycle stages to Linear workflow state IDs
+node bin/cascade.js projects integration-set my-project \
+  --category pm --provider linear \
+  --config '{"teamId":"TEAM_UUID","statuses":{"todo":"STATE_UUID","inProgress":"STATE_UUID","done":"STATE_UUID"},"labels":{"readyToProcess":"LABEL_UUID","processing":"LABEL_UUID"}}'
+```
+
 ---
 
 ## 9. Set Up Webhooks
@@ -285,7 +305,7 @@ node bin/cascade.js webhooks create my-project \
   --callback-url https://your-tunnel.ngrok.io
 ```
 
-This creates webhooks on GitHub (and Trello if configured) pointing to your Router.
+This creates webhooks on GitHub (and Trello if configured) pointing to your Router. For Linear, create the webhook manually in your Linear workspace settings, pointing to `https://your-router-host/linear/webhook`.
 
 ---
 
@@ -323,7 +343,7 @@ node bin/cascade.js projects trigger-discover --agent implementation
 
 ## 11. Test It
 
-1. Create a card in your PM tool (Trello/Jira) with a clear description of what code change you want
+1. Create a card in your PM tool (Trello/Jira/Linear) with a clear description of what code change you want
 2. Move it to the status that triggers the implementation agent (or add the "Ready to Process" label)
 3. Watch the dashboard — a new run should appear within seconds
 4. The agent clones your repo, writes code, and opens a pull request

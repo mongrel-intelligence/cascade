@@ -120,7 +120,7 @@ This is enforced by commitlint via lefthook pre-commit hooks.
 See [CLAUDE.md](./CLAUDE.md) for a detailed architecture overview. Key directories:
 
 - `src/router/` — Webhook receiver (enqueues jobs to Redis)
-- `src/triggers/` — Event handlers (Trello, GitHub, JIRA)
+- `src/triggers/` — Event handlers (Trello, JIRA, Linear, GitHub)
 - `src/agents/` — AI agent implementations
 - `src/gadgets/` — Tools agents can use
 - `src/api/` — Dashboard API (tRPC)

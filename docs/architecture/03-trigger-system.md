@@ -39,7 +39,7 @@ interface TriggerHandler {
 ```typescript
 interface TriggerContext {
   project: ProjectConfig;
-  source: TriggerSource;          // 'trello' | 'github' | 'jira' | 'sentry'
+  source: TriggerSource;          // 'trello' | 'github' | 'jira' | 'linear' | 'sentry'
   payload: unknown;                // Raw webhook payload
   personaIdentities?: PersonaIdentities;  // GitHub bot identities
 }
@@ -64,12 +64,16 @@ interface TriggerResult {
 
 ## Built-in Triggers
 
-Registration happens in `src/triggers/builtins.ts`, which delegates to per-platform `register.ts` files:
+Registration happens in `src/triggers/builtins.ts`. PM providers (Trello, JIRA, Linear) contribute triggers via the manifest registry; SCM and alerting providers use their own `register.ts` functions:
 
 ```typescript
 function registerBuiltInTriggers(registry: TriggerRegistry): void {
-  registerTrelloTriggers(registry);
-  registerJiraTriggers(registry);
+  // PM providers register via the manifest registry (spec 006/009 pattern)
+  for (const manifest of listPMProviders()) {
+    for (const handler of manifest.triggerHandlers) {
+      registry.register(handler);
+    }
+  }
   registerGitHubTriggers(registry);
   registerSentryTriggers(registry);
 }
@@ -108,6 +112,14 @@ function registerBuiltInTriggers(registry: TriggerRegistry): void {
 | `PrMergedTrigger` | PR merged | PM status update (no agent) |
 | `PrReadyToMergeTrigger` | PR approved + checks pass | PM status update (no agent) |
 | `PrConflictDetectedTrigger` | Merge conflict on PR | `resolve-conflicts` |
+
+### Linear triggers (`src/triggers/linear/`)
+
+| Handler | Event | Agent |
+|---------|-------|-------|
+| `LinearCommentMentionTrigger` | Bot @mentioned in issue comment | `respond-to-planning-comment` |
+| `LinearStatusChangedTrigger` | Issue state transition | Per-status mapping |
+| `LinearReadyToProcessLabelTrigger` | "cascade-ready" label added | `splitting` |
 
 ### Sentry triggers (`src/triggers/sentry/`)
 

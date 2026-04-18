@@ -48,6 +48,7 @@ The router is the webhook ingestion point. It receives HTTP POST requests from e
 | `POST /trello/webhook` | Trello | HEAD/GET returns 200 for Trello's verification |
 | `POST /github/webhook` | GitHub | Injects `X-GitHub-Event` header into payload |
 | `POST /jira/webhook` | JIRA | HEAD/GET returns 200 for JIRA verification |
+| `POST /linear/webhook` | Linear | HMAC-SHA256 via `linear-signature` header |
 | `POST /sentry/webhook/:projectId` | Sentry | Project ID in URL for unambiguous routing |
 | `GET /health` | Internal | Queue stats, active worker count |
 
@@ -94,7 +95,7 @@ The router passes job data to workers via Docker container env vars:
 | Variable | Purpose |
 |----------|---------|
 | `JOB_ID` | Unique job identifier |
-| `JOB_TYPE` | `trello`, `github`, `jira`, `sentry`, `manual-run`, `retry-run`, `debug-analysis` |
+| `JOB_TYPE` | `trello`, `github`, `jira`, `linear`, `sentry`, `manual-run`, `retry-run`, `debug-analysis` |
 | `JOB_DATA` | JSON-encoded job payload |
 | `CASCADE_CREDENTIAL_KEYS` | Comma-separated list of credential env var names |
 | Individual credential vars | Pre-loaded project credentials (e.g., `GITHUB_TOKEN_IMPLEMENTER`) |
@@ -106,6 +107,7 @@ type JobData =
   | TrelloJobData      // Trello webhook payload
   | GitHubJobData      // GitHub webhook payload
   | JiraJobData        // JIRA webhook payload
+  | LinearJobData      // Linear webhook payload
   | SentryJobData      // Sentry webhook payload
   | ManualRunJobData   // Dashboard-initiated run
   | RetryRunJobData    // Retry a failed run

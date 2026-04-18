@@ -1,6 +1,6 @@
 # Webhook Pipeline
 
-Webhooks from external providers (Trello, GitHub, JIRA, Sentry) are processed through a two-layer system: a **webhook handler factory** that handles HTTP concerns, and a **router platform adapter** that implements the business logic pipeline.
+Webhooks from external providers (Trello, JIRA, Linear, GitHub, Sentry) are processed through a two-layer system: a **webhook handler factory** that handles HTTP concerns, and a **router platform adapter** that implements the business logic pipeline.
 
 ## Webhook Handler Factory
 
@@ -16,7 +16,7 @@ Each webhook endpoint provides a `WebhookHandlerConfig`:
 
 ```typescript
 interface WebhookHandlerConfig {
-  source: string;                    // 'trello' | 'github' | 'jira' | 'sentry'
+  source: string;                    // 'trello' | 'github' | 'jira' | 'linear' | 'sentry'
   parsePayload: (c: Context) => ParseResult;
   verifySignature?: (ctx, rawBody, projectId?) => VerificationResult | null;
   processWebhook: (payload, eventType?, headers?) => Promise<WebhookLogOverrides>;
@@ -37,6 +37,7 @@ The factory handles:
 | `parseGitHubPayload()` | JSON or form-encoded body | `X-GitHub-Event` header |
 | `parseTrelloPayload()` | JSON body | `action.type` field |
 | `parseJiraPayload()` | JSON body | `webhookEvent` field |
+| `parseLinearPayload()` | JSON body | `type` field |
 | `parseSentryPayload()` | JSON body | `Sentry-Hook-Resource` header |
 
 ## Platform Adapters
@@ -81,6 +82,7 @@ interface ParsedWebhookEvent {
 | `TrelloRouterAdapter` | `src/router/adapters/trello.ts` | `boardId` |
 | `GitHubRouterAdapter` | `src/router/adapters/github.ts` | `repoFullName` |
 | `JiraRouterAdapter` | `src/router/adapters/jira.ts` | JIRA project key |
+| `LinearRouterAdapter` | `src/router/adapters/linear.ts` | Linear team ID |
 | `SentryRouterAdapter` | `src/router/adapters/sentry.ts` | CASCADE `projectId` (from URL) |
 
 ## The 12-Step Pipeline
@@ -144,6 +146,7 @@ Each provider's verification function checks for a stored `webhook_secret` crede
 | GitHub | `X-Hub-Signature-256` | HMAC-SHA256 |
 | Trello | Custom verification | Trello-specific |
 | JIRA | `X-Hub-Signature` | HMAC-SHA256 |
+| Linear | `linear-signature` | HMAC-SHA256 (hex, no prefix) |
 | Sentry | `Sentry-Hook-Signature` | HMAC-SHA256 |
 
 If no webhook secret is configured for a project, verification is skipped (returns `null`).

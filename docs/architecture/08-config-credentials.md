@@ -16,13 +16,14 @@ The config provider loads project configuration from the database with in-memory
 | `loadProjectConfigByBoardId(boardId)` | Trello board ID | `{ project, config }` |
 | `loadProjectConfigByRepo(repo)` | GitHub `owner/repo` | `{ project, config }` |
 | `loadProjectConfigByJiraProjectKey(key)` | JIRA project key | `{ project, config }` |
+| `loadProjectConfigByLinearTeamId(teamId)` | Linear team ID | `{ project, config }` |
 | `loadProjectConfigById(id)` | CASCADE project ID | `{ project, config }` |
 
 ### Caching
 
 `src/config/configCache.ts` — in-memory cache with TTL populated at service startup. Caches:
 - Full config object
-- Per-project lookups by board ID, repo, JIRA key
+- Per-project lookups by board ID, repo, JIRA key, Linear team ID
 - Invalidated on config writes (via tRPC mutations)
 
 ## Config Schema
@@ -103,6 +104,11 @@ await withTrelloCredentials({ apiKey, token }, async () => {
 // JIRA
 await withJiraCredentials({ email, apiToken, baseUrl }, async () => {
   // All JIRA API calls use these credentials
+});
+
+// Linear
+await withLinearCredentials({ apiKey }, async () => {
+  // All Linear API calls use these credentials
 });
 ```
 
