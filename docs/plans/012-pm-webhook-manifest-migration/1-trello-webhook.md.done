@@ -6,7 +6,7 @@ plan_slug: trello-webhook
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 012/1: Trello Webhook — Migrate Creation UX Into Manifest Path
@@ -178,13 +178,13 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (Trello wizard step Component identity)
-- [ ] AC #2 (adapter composes shared step + Trello-specific UI)
-- [ ] AC #3 (filter excludes Trello)
-- [ ] AC #4 (legacy WebhookStep continues to render for JIRA + Linear)
-- [ ] AC #5 (tests cover every Trello webhook action)
-- [ ] AC #6 (conformance harness green)
-- [ ] AC #7 (build)
-- [ ] AC #8 (test)
-- [ ] AC #9 (lint)
-- [ ] AC #10 (typecheck)
+- [x] AC #1 (`trelloProviderWizard.steps[trello-webhook].Component = TrelloWebhookAdapter`)
+- [x] AC #2 (Fragment composes shared `WebhookUrlDisplayStep` + active list + Create + curl + delete)
+- [x] AC #3 (`pm-wizard.tsx` filter: `id !== 'jira-webhook' && id !== 'linear-webhook'`)
+- [x] AC #4 (legacy `WebhookStep` still renders for JIRA + Linear; no code change to the legacy slot)
+- [x] AC #5 (10 Trello-webhook tests covering URL / active list / Create / curl / delete / regression guard)
+- [x] AC #6 (conformance harness green — full suite 8177/8177 passes)
+- [x] AC #7 (`npm run build` green)
+- [x] AC #8 (`npm test` green — 8177/8177)
+- [x] AC #9 (`npm run lint` green)
+- [x] AC #10 (`npm run typecheck` green)

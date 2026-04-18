@@ -152,19 +152,15 @@ export function PMWizard({
 	// ---- Active webhooks for this provider ----
 	const activeWebhooks = deriveActiveWebhooks(state.provider, webhooksQuery.data);
 
-	// ---- Manifest step layout (plan 011/4) ----
-	// Iterate over `manifestDef.steps`, but skip the provider's webhook
-	// display step — the legacy WebhookStep below still owns webhook
-	// registration (Trello/JIRA API calls) + signing-secret UX (Linear).
-	// Convention: every provider's webhook step id ends with `-webhook`
-	// (`trello-webhook`, `jira-webhook`, `linear-webhook`). The shared
-	// `webhook-url-display` component (widened in plan 011/1) is dormant
-	// until a future plan migrates webhook-creation UX into the manifest
-	// path.
+	// ---- Manifest step layout (plans 011/4 + 012/1) ----
+	// Iterate over `manifestDef.steps`. The legacy `WebhookStep` below
+	// still owns webhook UX for providers that haven't been migrated yet.
+	// Plan 012/1 migrated Trello; JIRA + Linear still route through legacy.
+	// Plans 012/2-3 migrate those; plan 012/4 deletes the filter entirely.
 	const renderedManifestSteps = manifestDef
 		? manifestDef.steps
 				.map((step, index) => ({ step, index }))
-				.filter((entry) => !entry.step.id.endsWith('-webhook'))
+				.filter((entry) => entry.step.id !== 'jira-webhook' && entry.step.id !== 'linear-webhook')
 		: [];
 	const webhookStepNumber = renderedManifestSteps.length + 2; // +1 for provider, +1 for 1-indexed
 	const saveStepNumber = webhookStepNumber + 1;

@@ -15,21 +15,25 @@
  *   6. webhook-url-display         — router URL + copy button
  */
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2 } from 'lucide-react';
 import type { ReactElement } from 'react';
 import { useState } from 'react';
+import { API_URL } from '@/lib/api.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import {
 	useTrelloCustomFieldCreation,
 	useTrelloDiscovery,
 	useTrelloLabelCreation,
 } from '../../pm-wizard-hooks.js';
+import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
-import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
 import { TrelloOAuthStep } from './oauth-step.js';
+import { TrelloWebhookAdapter } from './webhook-step.js';
 
 // CASCADE stage keys that map to Trello lists (one list per stage).
 const TRELLO_LIST_SLOTS = [
@@ -110,6 +114,19 @@ interface TrelloProviderHooks {
 	readonly onCreateCustomField: (slotKey: string, name: string) => void;
 	readonly webhookUrl: string;
 	readonly creatingSlot: string | null;
+	// Plan 012/1 — webhook-step plumbing: programmatic Create + active list + delete.
+	readonly callbackBaseUrl: string;
+	readonly activeTrelloWebhooks: ReadonlyArray<{
+		readonly id: string;
+		readonly url: string;
+		readonly active: boolean;
+	}>;
+	readonly webhooksLoading: boolean;
+	readonly createTrelloWebhook: () => void;
+	readonly createLoading: boolean;
+	readonly createError: string | undefined;
+	readonly deleteTrelloWebhook: (callbackBaseUrl: string) => void;
+	readonly deleteLoading: boolean;
 }
 
 function asTrelloHooks(providerHooks: Record<string, unknown> | undefined): TrelloProviderHooks {
@@ -193,21 +210,10 @@ function TrelloCustomFieldMappingAdapter({
 	});
 }
 
-function TrelloWebhookDisplayAdapter({ providerHooks }: ProviderWizardStepProps): ReactElement {
-	const h = asTrelloHooks(providerHooks);
-	return WebhookUrlDisplayStep({
-		step: {
-			kind: 'webhook-url-display',
-			id: 'trello-webhook',
-			config: {
-				instructions:
-					'Add this URL as a Trello webhook using the REST API. See docs for the exact curl command.',
-			},
-		},
-		providerId: 'trello',
-		webhookUrl: h.webhookUrl,
-	});
-}
+// Plan 012/1: the trello-webhook step's Component is now `TrelloWebhookAdapter`
+// (imported from `./webhook-step.js`), a Fragment composing the shared
+// WebhookUrlDisplayStep with Trello-specific UX: active-webhooks list,
+// programmatic Create button, delete buttons, curl fallback.
 
 export const trelloProviderWizard: ProviderWizardDefinition = {
 	id: 'trello',
@@ -248,7 +254,7 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		{
 			id: 'trello-webhook',
 			title: 'Webhook',
-			Component: TrelloWebhookDisplayAdapter,
+			Component: TrelloWebhookAdapter,
 			isComplete: () => true,
 		},
 	],
@@ -270,6 +276,7 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		const discovery = useTrelloDiscovery(state, dispatch, advanceToStep, projectId ?? '');
 		const labels = useTrelloLabelCreation(state, dispatch);
 		const customField = useTrelloCustomFieldCreation(state, dispatch);
+		const queryClient = useQueryClient();
 
 		const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
 
@@ -288,6 +295,50 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		};
 
 		const webhookUrl = projectId ? `${window.location.origin}/webhooks/${projectId}/trello` : '';
+
+		// Plan 012/1 — webhook plumbing. Mirrors the legacy `useWebhookManagement`
+		// formula (plan 012/4 deletes that hook). Computes the public router URL
+		// from the Vite env (dev) or current origin (prod), fetches active
+		// webhooks via `trpc.webhooks.list`, wraps create/delete mutations with
+		// `trelloOnly: true`.
+		const callbackBaseUrl =
+			API_URL ||
+			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
+		const activeTrelloWebhooks = deriveActiveWebhooks('trello', webhooksQuery.data) as Array<{
+			id: string;
+			url: string;
+			active: boolean;
+		}>;
+
+		const createWebhookMutation = useMutation({
+			mutationFn: () =>
+				trpcClient.webhooks.create.mutate({
+					projectId: projectId ?? '',
+					callbackBaseUrl,
+					trelloOnly: true,
+				}),
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }).queryKey,
+				});
+			},
+		});
+
+		const deleteWebhookMutation = useMutation({
+			mutationFn: (deleteBaseUrl: string) =>
+				trpcClient.webhooks.delete.mutate({
+					projectId: projectId ?? '',
+					callbackBaseUrl: deleteBaseUrl,
+					trelloOnly: true,
+				}),
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }).queryKey,
+				});
+			},
+		});
 
 		const boardDetails = state.trelloBoardDetails;
 
@@ -309,6 +360,17 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 			// Exposed for any caller that wants to render a secondary
 			// loading indicator near the board-picker step.
 			boardDetailsLoadingIcon: Loader2,
+			// Plan 012/1 — webhook plumbing consumed by `TrelloWebhookAdapter`.
+			callbackBaseUrl,
+			activeTrelloWebhooks,
+			webhooksLoading: webhooksQuery.isLoading,
+			createTrelloWebhook: () => createWebhookMutation.mutate(),
+			createLoading: createWebhookMutation.isPending,
+			createError: createWebhookMutation.isError
+				? (createWebhookMutation.error as Error).message
+				: undefined,
+			deleteTrelloWebhook: (baseUrl: string) => deleteWebhookMutation.mutate(baseUrl),
+			deleteLoading: deleteWebhookMutation.isPending,
 		} satisfies TrelloProviderHooks & Record<string, unknown>;
 	},
 };
