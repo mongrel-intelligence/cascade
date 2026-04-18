@@ -152,15 +152,13 @@ export function PMWizard({
 	// ---- Active webhooks for this provider ----
 	const activeWebhooks = deriveActiveWebhooks(state.provider, webhooksQuery.data);
 
-	// ---- Manifest step layout (plans 011/4 + 012/1-2) ----
-	// Iterate over `manifestDef.steps`. The legacy `WebhookStep` below
-	// still owns webhook UX for providers that haven't been migrated yet.
-	// Plans 012/1-2 migrated Trello + JIRA; Linear still routes through legacy.
-	// Plan 012/3 migrates Linear; plan 012/4 deletes the filter entirely.
+	// ---- Manifest step layout (plans 011/4 + 012/1-3) ----
+	// Iterate over `manifestDef.steps`. All three providers own their
+	// webhook UX via the manifest path now. The legacy `WebhookStep`
+	// below is a no-op (no provider routes to its branches); plan 012/4
+	// deletes the slot + legacy surface entirely.
 	const renderedManifestSteps = manifestDef
-		? manifestDef.steps
-				.map((step, index) => ({ step, index }))
-				.filter((entry) => entry.step.id !== 'linear-webhook')
+		? manifestDef.steps.map((step, index) => ({ step, index }))
 		: [];
 	const webhookStepNumber = renderedManifestSteps.length + 2; // +1 for provider, +1 for 1-indexed
 	const saveStepNumber = webhookStepNumber + 1;

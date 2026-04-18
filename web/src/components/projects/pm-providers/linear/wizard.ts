@@ -20,18 +20,18 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { createElement, Fragment, type ReactElement, useState } from 'react';
+import { type ReactElement, useState } from 'react';
 import { trpc } from '@/lib/trpc.js';
 import { useLinearDiscovery, useLinearLabelCreation } from '../../pm-wizard-hooks.js';
 import { buildLinearIntegrationConfig } from '../../pm-wizard-state.js';
-import { type ProjectCredentialMeta, ProjectSecretField } from '../../project-secret-field.js';
+import type { ProjectCredentialMeta } from '../../project-secret-field.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { ProjectScopeStep } from '../steps/project-scope.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
-import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { LinearWebhookAdapter } from './webhook-step.js';
 
 // CASCADE stage keys that map to Linear workflow state IDs (UUIDs —
 // Linear's issue-update API requires state UUIDs, not names; the
@@ -192,48 +192,11 @@ function LinearProjectScopeAdapter({ providerHooks }: ProviderWizardStepProps): 
 	});
 }
 
-/**
- * Linear's webhook step composes the shared `WebhookUrlDisplayStep`
- * (URL + copy button + instructions) with the `ProjectSecretField` for
- * `LINEAR_WEBHOOK_SECRET`. The secret field is NOT a simple controlled
- * input — it manages its own server round-trip (save/load/cleared
- * indicators) via the project-credentials API. Plan 011/1's widening
- * of `webhook-url-display` (secretFieldRole + onSecretChange) assumed a
- * controlled pattern; it remains useful for providers with simpler
- * secret management but isn't the right fit here. Composition via
- * Fragment is cleaner than forcing ProjectSecretField into the widened
- * props.
- */
-function LinearWebhookDisplayAdapter({ providerHooks }: ProviderWizardStepProps): ReactElement {
-	const h = asLinearHooks(providerHooks);
-	return createElement(
-		Fragment,
-		null,
-		WebhookUrlDisplayStep({
-			step: {
-				kind: 'webhook-url-display',
-				id: 'linear-webhook',
-				config: {
-					instructions:
-						'Configure this webhook URL manually in Linear → Settings → API → Webhooks. Enable the Issues, Comments, and Issue Labels event families.',
-				},
-			},
-			providerId: 'linear',
-			webhookUrl: h.webhookUrl,
-		}),
-		h.projectIdForSecret
-			? createElement(ProjectSecretField, {
-					projectId: h.projectIdForSecret,
-					envVarKey: 'LINEAR_WEBHOOK_SECRET',
-					label: 'Webhook Signing Secret (optional)',
-					description:
-						'Paste the signing secret from your Linear webhook. CASCADE verifies HMAC-SHA256 on every incoming Linear webhook request when this is set; verification is skipped if left blank.',
-					placeholder: 'lin_wh_...',
-					credential: h.webhookSecretCredential,
-				})
-			: null,
-	);
-}
+// Plan 012/3: the linear-webhook step's Component is now `LinearWebhookAdapter`
+// (imported from `./webhook-step.js`) — a Fragment composing the shared
+// WebhookUrlDisplayStep + info banner + 5-step setup instructions +
+// ProjectSecretField for LINEAR_WEBHOOK_SECRET. Linear's API forbids
+// programmatic webhook registration, so no Create/delete/curl UX.
 
 export const linearProviderWizard: ProviderWizardDefinition = {
 	id: 'linear',
@@ -273,7 +236,7 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		{
 			id: 'linear-webhook',
 			title: 'Webhook',
-			Component: LinearWebhookDisplayAdapter,
+			Component: LinearWebhookAdapter,
 			isComplete: () => true,
 		},
 	],

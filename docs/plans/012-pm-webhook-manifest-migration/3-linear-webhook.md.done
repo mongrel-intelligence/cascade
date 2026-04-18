@@ -6,7 +6,7 @@ plan_slug: linear-webhook
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: [2-jira-webhook.md]
-status: wip
+status: done
 ---
 
 # 012/3: Linear Webhook — Activate Manifest Path With Signing-Secret + Instructions
@@ -166,14 +166,21 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (Linear wizard step Component identity)
-- [ ] AC #2 (adapter composes shared step + secret field + instructions)
-- [ ] AC #3 (filter removed; manifest iteration complete)
-- [ ] AC #4 (legacy slot still renders but unrouted; plan 4 deletes)
-- [ ] AC #5 (tests cover Linear webhook behaviors)
-- [ ] AC #6 (conformance harness green)
-- [ ] AC #7 (regression-2026-04 passes)
-- [ ] AC #8 (build)
-- [ ] AC #9 (test)
-- [ ] AC #10 (lint)
-- [ ] AC #11 (typecheck)
+
+> **Note on test mock**: `ProjectSecretField` uses `useQueryClient`
+> internally which pulls React from `web/node_modules` (different
+> instance from the root-aliased React the test env uses). SSR crashes on
+> the null Context hook. Same pattern as plan 011/1's Combobox — mocked
+> `ProjectSecretField` to a deterministic stub preserving props.
+
+- [x] AC #1 (`linearProviderWizard.steps[linear-webhook].Component = LinearWebhookAdapter`)
+- [x] AC #2 (Fragment composes shared `WebhookUrlDisplayStep` + info banner + 5-step instructions + `ProjectSecretField(envVarKey=LINEAR_WEBHOOK_SECRET)`)
+- [x] AC #3 (`-webhook` filter removed from `pm-wizard.tsx`; `manifestDef.steps` iterates in full)
+- [x] AC #4 (legacy `WebhookStep` slot still renders but no provider is routed to its branches; plan 4 deletes)
+- [x] AC #5 (7 Linear-webhook tests covering URL display, secret-field presence + absence, 5-step instructions, linear.app link, info banner, Trello/JIRA-UI regression guard)
+- [x] AC #6 (conformance harness green — full suite 8194/8194)
+- [x] AC #7 (`regression-2026-04.test.ts` passes — adapter untouched)
+- [x] AC #8 (`npm run build` green)
+- [x] AC #9 (`npm test` green — 8194/8194)
+- [x] AC #10 (`npm run lint` green)
+- [x] AC #11 (`npm run typecheck` green)
