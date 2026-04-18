@@ -1,3 +1,23 @@
+/**
+ * integrations-discovery router — post-spec-010 scope.
+ *
+ * After spec 010, this router contains:
+ *  - GitHub SCM procedures (verifyGithubToken) — SCM is out of the spec-010
+ *    PM manifest migration scope.
+ *  - Sentry alerting procedures (verifySentry) — alerting is also out of scope.
+ *  - The 6 composite `*Details(ByProject)` read procedures (Trello board
+ *    details; JIRA project details; Linear team details) — these bundle
+ *    multiple reads that would require new `pm.discover` capabilities
+ *    (`containers` for Trello lists, `issueTypes` for JIRA) to migrate.
+ *    Deferred to a follow-up spec.
+ *
+ * All simple PM read + write procedures were migrated to `pm.discovery.*`
+ * in specs 009/5 and 010/1-2. When this file gets further cleanup, the
+ * `spec 010/2 deferred` describe block in
+ * `tests/unit/api/pm-discovery-legacy-removed.test.ts` flips from "still
+ * defined" to "removed".
+ */
+
 import { Octokit } from '@octokit/rest';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
@@ -64,12 +84,7 @@ export const integrationsDiscoveryRouter = router({
 	// See web/src/components/projects/pm-wizard-hooks.ts for the migrated caller.
 	// verifyLinear was removed in the same commit (see below in this file).
 
-	trelloBoards: protectedProcedure.input(trelloCredsInput).mutation(async ({ ctx, input }) => {
-		logger.debug('integrationsDiscovery.trelloBoards called', { orgId: ctx.effectiveOrgId });
-		return withTrelloCreds(input, 'Failed to fetch Trello boards', (creds) =>
-			withTrelloCredentials(creds, () => trelloClient.getBoards()),
-		);
-	}),
+	// Plan 010/2 removed trelloBoards — migrated to pm.discovery.discover({capability: 'boards'}).
 
 	trelloBoardDetails: protectedProcedure
 		.input(
@@ -96,41 +111,8 @@ export const integrationsDiscoveryRouter = router({
 			);
 		}),
 
-	trelloBoardsByProject: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.trelloBoardsByProject called', {
-				orgId: ctx.effectiveOrgId,
-				projectId: input.projectId,
-			});
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
-			if (!integration) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'No PM integration configured for this project yet',
-				});
-			}
-			if (integration.provider !== 'trello') {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Project is configured with a different PM provider',
-				});
-			}
-			const apiKey = await getIntegrationCredentialOrNull(
-				input.projectId,
-				'pm',
-				'trello',
-				'api_key',
-			);
-			const token = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'trello', 'token');
-			if (!apiKey || !token) {
-				throw new TRPCError({ code: 'NOT_FOUND', message: 'Trello credentials not configured' });
-			}
-			return wrapIntegrationCall('Failed to fetch Trello boards', () =>
-				withTrelloCredentials({ apiKey, token }, () => trelloClient.getBoards()),
-			);
-		}),
+	// Plan 010/2 removed trelloBoardsByProject — migrated to
+	// pm.discovery.discover({capability: 'boards', projectId}).
 
 	trelloBoardDetailsByProject: protectedProcedure
 		.input(
@@ -183,44 +165,8 @@ export const integrationsDiscoveryRouter = router({
 			);
 		}),
 
-	jiraProjectsByProject: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.jiraProjectsByProject called', {
-				orgId: ctx.effectiveOrgId,
-				projectId: input.projectId,
-			});
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
-			if (!integration) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'No PM integration configured for this project yet',
-				});
-			}
-			if (integration.provider !== 'jira') {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Project is configured with a different PM provider',
-				});
-			}
-			const email = await getIntegrationCredentialOrNull(input.projectId, 'pm', 'jira', 'email');
-			const apiToken = await getIntegrationCredentialOrNull(
-				input.projectId,
-				'pm',
-				'jira',
-				'api_token',
-			);
-			const baseUrl = (integration.config as Record<string, unknown> | null)?.baseUrl as
-				| string
-				| undefined;
-			if (!email || !apiToken || !baseUrl) {
-				throw new TRPCError({ code: 'NOT_FOUND', message: 'JIRA credentials not configured' });
-			}
-			return wrapIntegrationCall('Failed to fetch JIRA projects', () =>
-				withJiraCredentials({ email, apiToken, baseUrl }, () => jiraClient.searchProjects()),
-			);
-		}),
+	// Plan 010/2 removed jiraProjectsByProject — migrated to
+	// pm.discovery.discover({capability: 'projects', projectId}).
 
 	jiraProjectDetailsByProject: protectedProcedure
 		.input(
@@ -286,12 +232,7 @@ export const integrationsDiscoveryRouter = router({
 	// through trelloManifest.createLabel / createCustomField hooks).
 	// See web/src/components/projects/pm-wizard-hooks.ts.
 
-	jiraProjects: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {
-		logger.debug('integrationsDiscovery.jiraProjects called', { orgId: ctx.effectiveOrgId });
-		return withJiraCreds(input, 'Failed to fetch JIRA projects', (creds) =>
-			withJiraCredentials(creds, () => jiraClient.searchProjects()),
-		);
-	}),
+	// Plan 010/2 removed jiraProjects — migrated to pm.discovery.discover({capability: 'projects'}).
 
 	jiraProjectDetails: protectedProcedure
 		.input(
@@ -382,58 +323,8 @@ export const integrationsDiscoveryRouter = router({
 	// `pm.discover({ providerId: 'linear', capability: 'teams', ... })`.
 	// See web/src/components/projects/pm-wizard-hooks.ts.
 
-	/**
-	 * Fetch Linear teams using raw API key credentials.
-	 * Returns all teams accessible by the provided API key.
-	 */
-	linearTeams: protectedProcedure.input(linearCredsInput).mutation(async ({ ctx, input }) => {
-		logger.debug('integrationsDiscovery.linearTeams called', { orgId: ctx.effectiveOrgId });
-		return withLinearCreds(input, 'Failed to fetch Linear teams', (creds) =>
-			withLinearCredentials(creds, () => linearClient.getTeams()),
-		);
-	}),
-
-	/**
-	 * Fetch Linear teams using stored project credentials.
-	 * Resolves the API key from the project's stored credentials and returns all teams.
-	 */
-	linearTeamsByProject: protectedProcedure
-		.input(z.object({ projectId: z.string() }))
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.linearTeamsByProject called', {
-				orgId: ctx.effectiveOrgId,
-				projectId: input.projectId,
-			});
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
-			if (!integration) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'No PM integration configured for this project yet',
-				});
-			}
-			if (integration.provider !== 'linear') {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Project is configured with a different PM provider',
-				});
-			}
-			const apiKey = await getIntegrationCredentialOrNull(
-				input.projectId,
-				'pm',
-				'linear',
-				'api_key',
-			);
-			if (!apiKey) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Linear credentials not configured',
-				});
-			}
-			return wrapIntegrationCall('Failed to fetch Linear teams', () =>
-				withLinearCredentials({ apiKey }, () => linearClient.getTeams()),
-			);
-		}),
+	// Plan 010/2 removed linearTeams + linearTeamsByProject — migrated
+	// to pm.discovery.discover({capability: 'teams', [projectId]}).
 
 	/**
 	 * Fetch Linear team workflow states and labels using raw API key credentials.
@@ -508,60 +399,8 @@ export const integrationsDiscoveryRouter = router({
 	 * Fetch Linear projects scoped to a team using raw API key credentials.
 	 * Returns the list of Linear Projects accessible to the given team.
 	 */
-	linearProjects: protectedProcedure
-		.input(linearCredsInput.extend({ teamId: z.string().min(1) }))
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.linearProjects called', {
-				orgId: ctx.effectiveOrgId,
-				teamId: input.teamId,
-			});
-			return withLinearCreds(input, 'Failed to fetch Linear projects', (creds) =>
-				withLinearCredentials(creds, () => linearClient.getTeamProjects(input.teamId)),
-			);
-		}),
-
-	/**
-	 * Fetch Linear projects scoped to a team using stored project credentials.
-	 * Resolves the API key from stored credentials and returns the team's projects.
-	 */
-	linearProjectsByProject: protectedProcedure
-		.input(z.object({ projectId: z.string(), teamId: z.string().min(1) }))
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.linearProjectsByProject called', {
-				orgId: ctx.effectiveOrgId,
-				projectId: input.projectId,
-				teamId: input.teamId,
-			});
-			await verifyProjectOrgAccess(input.projectId, ctx.effectiveOrgId);
-			const integration = await getIntegrationByProjectAndCategory(input.projectId, 'pm');
-			if (!integration) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'No PM integration configured for this project yet',
-				});
-			}
-			if (integration.provider !== 'linear') {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Project is configured with a different PM provider',
-				});
-			}
-			const apiKey = await getIntegrationCredentialOrNull(
-				input.projectId,
-				'pm',
-				'linear',
-				'api_key',
-			);
-			if (!apiKey) {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: 'Linear credentials not configured',
-				});
-			}
-			return wrapIntegrationCall('Failed to fetch Linear projects', () =>
-				withLinearCredentials({ apiKey }, () => linearClient.getTeamProjects(input.teamId)),
-			);
-		}),
+	// Plan 010/2 removed linearProjects + linearProjectsByProject — migrated
+	// to pm.discovery.discover({capability: 'projects', args: {containerId: teamId}, [projectId]}).
 
 	// Plan 010/1 removed createLinearLabel + createLinearLabels. Callers
 	// migrated to pm.discovery.createLabel (generic endpoint dispatching

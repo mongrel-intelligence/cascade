@@ -56,6 +56,44 @@ describe('integrationsDiscoveryRouter — plan 009/5 legacy cleanup', () => {
 		});
 	});
 
+	/**
+	 * Spec 010/2 migrated the 1:1-mappable read procedures to
+	 * `pm.discovery.discover`. The composite `*Details(ByProject)` procedures
+	 * stay (deferred to a follow-up because they bundle multiple reads
+	 * including some capabilities that aren't yet exposed).
+	 */
+	describe('spec 010/2 cleanup (read procedures removed)', () => {
+		it.each([
+			'trelloBoards',
+			'trelloBoardsByProject',
+			'jiraProjects',
+			'jiraProjectsByProject',
+			'linearTeams',
+			'linearTeamsByProject',
+			'linearProjects',
+			'linearProjectsByProject',
+		])('%s is removed (migrated to pm.discovery.discover)', (name) => {
+			expect(
+				(integrationsDiscoveryRouter._def.procedures as Record<string, unknown>)[name],
+			).toBeUndefined();
+		});
+	});
+
+	describe('spec 010/2 deferred (composite *Details procedures remain)', () => {
+		it.each([
+			'trelloBoardDetails',
+			'trelloBoardDetailsByProject',
+			'jiraProjectDetails',
+			'jiraProjectDetailsByProject',
+			'linearTeamDetails',
+			'linearTeamDetailsByProject',
+		])('%s is still defined (composite reads — pending follow-up)', (name) => {
+			expect(
+				(integrationsDiscoveryRouter._def.procedures as Record<string, unknown>)[name],
+			).toBeDefined();
+		});
+	});
+
 	it('verifyGithubToken stays (SCM is out of spec 009 scope)', () => {
 		expect(
 			(integrationsDiscoveryRouter._def.procedures as Record<string, unknown>).verifyGithubToken,

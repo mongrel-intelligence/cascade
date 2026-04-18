@@ -51,7 +51,11 @@ export type DiscoveryResult<K extends DiscoveryCapability> = K extends 'labels'
 		: K extends 'customFields'
 			? Array<{ id: string; name: string; type: string }>
 			: K extends 'teams' | 'boards' | 'containers' | 'projects'
-				? Array<{ id: ContainerId; name: string }>
+				? // `url` is optional — Trello boards carry a web URL; JIRA/Linear
+					// projects/teams may not. Consumers that display a board URL
+					// (e.g. the wizard's SearchableSelect `detail` slot) read it
+					// when present.
+					Array<{ id: ContainerId; name: string; url?: string }>
 				: K extends 'currentUser'
 					? { id: string; name: string; displayName?: string }
 					: never;

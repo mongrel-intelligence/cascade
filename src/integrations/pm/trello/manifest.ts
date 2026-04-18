@@ -184,6 +184,7 @@ export const trelloManifest: PMProviderManifest = {
 						const out = boards.map((b) => ({
 							id: parseContainerId(b.id),
 							name: b.name,
+							url: b.url,
 						}));
 						return out as unknown as DiscoveryResult<K>;
 					}
