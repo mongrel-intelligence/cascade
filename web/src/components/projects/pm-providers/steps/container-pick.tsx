@@ -9,6 +9,7 @@
 
 import { createElement } from 'react';
 import type { StandardStep } from '../../../../../../src/integrations/pm/manifest.js';
+import { Combobox, type ComboboxOption } from '../../../ui/combobox.js';
 
 export interface ContainerPickStepProps {
 	readonly step: StandardStep;
@@ -23,6 +24,12 @@ export interface ContainerPickStepProps {
 	readonly onSelect: (id: string) => void;
 	readonly loading?: boolean;
 	readonly error?: string;
+	/**
+	 * Plan 011/1: when `true`, renders the shared cmdk Combobox (searchable,
+	 * type-ahead) instead of a plain <select>. Opt-in per provider via
+	 * `providerHooks`. Backward-compatible default is plain <select>.
+	 */
+	readonly searchable?: boolean;
 }
 
 export function ContainerPickStep({
@@ -34,7 +41,14 @@ export function ContainerPickStep({
 	onSelect,
 	loading,
 	error,
+	searchable,
 }: ContainerPickStepProps) {
+	const comboboxOptions: ComboboxOption[] = options.map((opt) => ({
+		value: opt.id,
+		label: opt.name,
+		detail: opt.url,
+	}));
+
 	return createElement(
 		'div',
 		{
@@ -48,22 +62,30 @@ export function ContainerPickStep({
 			? createElement('p', { 'data-state': 'loading' }, 'Loading...')
 			: error
 				? createElement('p', { 'data-state': 'error' }, `Error: ${error}`)
-				: createElement(
-						'select',
-						{
+				: searchable
+					? createElement(Combobox, {
 							id: `container-${step.id}`,
 							value: selectedId ?? '',
-							onChange: (e: React.ChangeEvent<HTMLSelectElement>) => onSelect(e.target.value),
-							'data-action': 'select-container',
-						},
-						createElement('option', { value: '' }, '— Select —'),
-						...options.map((opt) =>
-							createElement(
-								'option',
-								{ key: opt.id, value: opt.id, 'data-detail': opt.url ?? undefined },
-								opt.name,
+							onChange: onSelect,
+							options: comboboxOptions,
+							emptyLabel: '— Select —',
+						})
+					: createElement(
+							'select',
+							{
+								id: `container-${step.id}`,
+								value: selectedId ?? '',
+								onChange: (e: React.ChangeEvent<HTMLSelectElement>) => onSelect(e.target.value),
+								'data-action': 'select-container',
+							},
+							createElement('option', { value: '' }, '— Select —'),
+							...options.map((opt) =>
+								createElement(
+									'option',
+									{ key: opt.id, value: opt.id, 'data-detail': opt.url ?? undefined },
+									opt.name,
+								),
 							),
 						),
-					),
 	);
 }

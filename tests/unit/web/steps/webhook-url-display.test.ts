@@ -62,4 +62,73 @@ describe('WebhookUrlDisplayStep', () => {
 		);
 		expect(html).toContain('Fallback instructions');
 	});
+
+	// ── Plan 011/1: optional inline signing-secret input ───────────────
+
+	it('does not render a secret input when secretFieldRole is omitted (backward compat)', () => {
+		const html = renderToStaticMarkup(
+			createElement(WebhookUrlDisplayStep, {
+				step,
+				providerId: 'linear',
+				webhookUrl: 'https://example.com/webhook',
+			}),
+		);
+		expect(html).not.toMatch(/<input[^>]*type="password"/);
+	});
+
+	it('renders a password input with data-role when secretFieldRole + onSecretChange are supplied', () => {
+		const html = renderToStaticMarkup(
+			createElement(WebhookUrlDisplayStep, {
+				step,
+				providerId: 'linear',
+				webhookUrl: 'https://example.com/webhook',
+				secretFieldRole: 'webhook_secret',
+				secretValue: 'shh',
+				onSecretChange: () => {},
+			}),
+		);
+		expect(html).toMatch(/<input[^>]*type="password"/);
+		expect(html).toContain('data-role="webhook_secret"');
+		expect(html).toContain('value="shh"');
+	});
+
+	it('uses secretLabel prop for the field label; falls back to secretFieldRole when absent', () => {
+		const withLabel = renderToStaticMarkup(
+			createElement(WebhookUrlDisplayStep, {
+				step,
+				providerId: 'linear',
+				webhookUrl: 'https://example.com/webhook',
+				secretFieldRole: 'webhook_secret',
+				secretLabel: 'Signing secret',
+				secretValue: '',
+				onSecretChange: () => {},
+			}),
+		);
+		expect(withLabel).toContain('Signing secret');
+
+		const withoutLabel = renderToStaticMarkup(
+			createElement(WebhookUrlDisplayStep, {
+				step,
+				providerId: 'linear',
+				webhookUrl: 'https://example.com/webhook',
+				secretFieldRole: 'webhook_secret',
+				secretValue: '',
+				onSecretChange: () => {},
+			}),
+		);
+		expect(withoutLabel).toContain('webhook_secret');
+	});
+
+	it('omits the secret input defensively when secretFieldRole is present but onSecretChange is not', () => {
+		const html = renderToStaticMarkup(
+			createElement(WebhookUrlDisplayStep, {
+				step,
+				providerId: 'linear',
+				webhookUrl: 'https://example.com/webhook',
+				secretFieldRole: 'webhook_secret',
+				// onSecretChange intentionally omitted
+			}),
+		);
+		expect(html).not.toMatch(/<input[^>]*type="password"/);
+	});
 });

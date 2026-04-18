@@ -24,6 +24,7 @@ import {
 } from '../../../web/src/components/projects/pm-providers/generator.js';
 import { ContainerPickStep } from '../../../web/src/components/projects/pm-providers/steps/container-pick.js';
 import { CredentialsStep } from '../../../web/src/components/projects/pm-providers/steps/credentials.js';
+import { CustomFieldMappingStep } from '../../../web/src/components/projects/pm-providers/steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../../../web/src/components/projects/pm-providers/steps/label-mapping.js';
 import { ProjectScopeStep } from '../../../web/src/components/projects/pm-providers/steps/project-scope.js';
 import { StatusMappingStep } from '../../../web/src/components/projects/pm-providers/steps/status-mapping.js';
@@ -37,6 +38,8 @@ describe('STANDARD_STEP_COMPONENTS registry (plan 010/3)', () => {
 		expect(STANDARD_STEP_COMPONENTS['label-mapping']).toBe(LabelMappingStep);
 		expect(STANDARD_STEP_COMPONENTS['webhook-url-display']).toBe(WebhookUrlDisplayStep);
 		expect(STANDARD_STEP_COMPONENTS['project-scope']).toBe(ProjectScopeStep);
+		// Plan 011/1 — 7th kind.
+		expect(STANDARD_STEP_COMPONENTS['custom-field-mapping']).toBe(CustomFieldMappingStep);
 	});
 });
 
@@ -52,6 +55,7 @@ describe('renderStandardStep (plan 010/3)', () => {
 		['label-mapping', LabelMappingStep],
 		['webhook-url-display', WebhookUrlDisplayStep],
 		['project-scope', ProjectScopeStep],
+		['custom-field-mapping', CustomFieldMappingStep],
 	] as const)('dispatches %s to the corresponding real component', (kind, Component) => {
 		const step: StandardStep = { kind, id: `step-${kind}` };
 		const element = renderStandardStep(step, { providerId: 'new-provider' });

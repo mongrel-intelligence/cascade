@@ -6,7 +6,7 @@ plan_slug: shared-components
 level: plan
 parent_spec: docs/specs/011-pm-wizard-shared-migration.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 011/1: Shared Components — Widen Existing Steps + Add 7th Kind
@@ -227,18 +227,18 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (StandardStepKind widened)
-- [ ] AC #2 (STANDARD_STEP_COMPONENTS registry)
-- [ ] AC #3 (renderStandardStep dispatches new kind)
-- [ ] AC #4 (container-pick searchable on)
-- [ ] AC #5 (container-pick backward compat)
-- [ ] AC #6 (project-scope searchable)
-- [ ] AC #7 (webhook-url-display secret field)
-- [ ] AC #8 (custom-field-mapping component)
-- [ ] AC #9 (new-provider-surface tightened)
-- [ ] AC #10 (spec-010 tests unchanged)
-- [ ] AC #11 (tests)
-- [ ] AC #12 (build)
-- [ ] AC #13 (test)
-- [ ] AC #14 (lint)
-- [ ] AC #15 (typecheck)
+- [x] AC #1 (`StandardStepKind` widened with `'custom-field-mapping'`)
+- [x] AC #2 (`STANDARD_STEP_COMPONENTS['custom-field-mapping']` registered)
+- [x] AC #3 (`renderStandardStep` dispatches the new kind via `it.each` row)
+- [x] AC #4 (`container-pick` searchable=true renders shared Combobox)
+- [x] AC #5 (container-pick backward compat — 5 existing tests unchanged)
+- [x] AC #6 (`project-scope` searchable=true renders shared Combobox)
+- [x] AC #7 (`webhook-url-display` optional secret field via `secretFieldRole` + `onSecretChange`)
+- [x] AC #8 (custom-field-mapping shared component; 8 tests)
+- [x] AC #9 (new-provider-surface lists 7th file)
+- [x] AC #10 (31 spec-010 step tests pass unchanged — full suite green)
+- [x] AC #11 (17 new/updated test assertions across 4 files)
+- [x] AC #12 (`npm run build` green)
+- [x] AC #13 (`npm test` green — 8153/8153)
+- [x] AC #14 (`npm run lint` green — 0 warnings)
+- [x] AC #15 (`npm run typecheck` green)

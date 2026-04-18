@@ -9,6 +9,7 @@
 
 import { createElement } from 'react';
 import type { StandardStep } from '../../../../../../src/integrations/pm/manifest.js';
+import { Combobox, type ComboboxOption } from '../../../ui/combobox.js';
 
 export interface ProjectScopeStepProps {
 	readonly step: StandardStep;
@@ -18,6 +19,11 @@ export interface ProjectScopeStepProps {
 	readonly onSelect: (projectId: string | null) => void;
 	readonly loading?: boolean;
 	readonly error?: string;
+	/**
+	 * Plan 011/1: opt-in to the shared cmdk Combobox for searchable/
+	 * type-ahead selection. Empty value (cleared) maps to null (no scope).
+	 */
+	readonly searchable?: boolean;
 }
 
 export function ProjectScopeStep({
@@ -28,7 +34,13 @@ export function ProjectScopeStep({
 	onSelect,
 	loading,
 	error,
+	searchable,
 }: ProjectScopeStepProps) {
+	const comboboxOptions: ComboboxOption[] = projects.map((p) => ({
+		value: p.id,
+		label: p.name,
+	}));
+
 	return createElement(
 		'div',
 		{
@@ -46,17 +58,25 @@ export function ProjectScopeStep({
 			? createElement('p', { 'data-state': 'loading' }, 'Loading projects…')
 			: error
 				? createElement('p', { 'data-state': 'error' }, `Error: ${error}`)
-				: createElement(
-						'select',
-						{
+				: searchable
+					? createElement(Combobox, {
 							id: `project-scope-${step.id}`,
 							value: selectedProjectId ?? '',
-							onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-								onSelect(e.target.value === '' ? null : e.target.value),
-							'data-action': 'select-project-scope',
-						},
-						createElement('option', { value: '' }, 'No project scope'),
-						...projects.map((p) => createElement('option', { key: p.id, value: p.id }, p.name)),
-					),
+							onChange: (v: string) => onSelect(v === '' ? null : v),
+							options: comboboxOptions,
+							emptyLabel: 'No project scope',
+						})
+					: createElement(
+							'select',
+							{
+								id: `project-scope-${step.id}`,
+								value: selectedProjectId ?? '',
+								onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+									onSelect(e.target.value === '' ? null : e.target.value),
+								'data-action': 'select-project-scope',
+							},
+							createElement('option', { value: '' }, 'No project scope'),
+							...projects.map((p) => createElement('option', { key: p.id, value: p.id }, p.name)),
+						),
 	);
 }

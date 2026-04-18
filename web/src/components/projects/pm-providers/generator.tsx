@@ -27,6 +27,7 @@ import type {
 } from '../../../../../src/integrations/pm/manifest.js';
 import { ContainerPickStep } from './steps/container-pick.js';
 import { CredentialsStep } from './steps/credentials.js';
+import { CustomFieldMappingStep } from './steps/custom-field-mapping.js';
 import { LabelMappingStep } from './steps/label-mapping.js';
 import { ProjectScopeStep } from './steps/project-scope.js';
 import { StatusMappingStep } from './steps/status-mapping.js';
@@ -51,6 +52,7 @@ export const STANDARD_STEP_COMPONENTS: Record<StandardStepKind, React.ComponentT
 	'label-mapping': LabelMappingStep,
 	'webhook-url-display': WebhookUrlDisplayStep,
 	'project-scope': ProjectScopeStep,
+	'custom-field-mapping': CustomFieldMappingStep,
 };
 
 const warnedKinds = new Set<string>();

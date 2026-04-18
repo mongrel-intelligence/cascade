@@ -16,6 +16,18 @@ export interface WebhookUrlDisplayStepProps {
 	readonly /** Fully-qualified webhook URL (e.g. "https://router.example/trello/webhook"). */
 	webhookUrl: string;
 	readonly instructions?: string;
+	/**
+	 * Plan 011/1: optional inline signing-secret field. When both
+	 * `secretFieldRole` and `onSecretChange` are supplied, the step renders
+	 * an additional <input type="password"> below the URL. Used by Linear
+	 * (`LINEAR_WEBHOOK_SECRET`) and any other provider that requires HMAC-
+	 * signed webhooks. Omitting either prop preserves the spec-010 output
+	 * byte-for-byte.
+	 */
+	readonly secretFieldRole?: string;
+	readonly secretLabel?: string;
+	readonly secretValue?: string;
+	readonly onSecretChange?: (value: string) => void;
 }
 
 export function WebhookUrlDisplayStep({
@@ -23,9 +35,18 @@ export function WebhookUrlDisplayStep({
 	providerId,
 	webhookUrl,
 	instructions,
+	secretFieldRole,
+	secretLabel,
+	secretValue,
+	onSecretChange,
 }: WebhookUrlDisplayStepProps) {
 	const [copied, setCopied] = useState(false);
 	const cfgInstructions = (step.config?.instructions as string | undefined) ?? instructions;
+
+	// Plan 011/1: render the secret field only when BOTH role and callback are
+	// supplied — a role without a callback would be an uncontrolled input,
+	// silently dropping user input.
+	const showSecretField = Boolean(secretFieldRole && onSecretChange);
 
 	return createElement(
 		'div',
@@ -59,6 +80,27 @@ export function WebhookUrlDisplayStep({
 		),
 		cfgInstructions
 			? createElement('p', { className: 'pm-wizard-webhook-instructions' }, cfgInstructions)
+			: null,
+		showSecretField
+			? createElement(
+					'div',
+					{
+						className: 'pm-wizard-webhook-secret',
+						'data-secret-role': secretFieldRole,
+					},
+					createElement(
+						'label',
+						{ htmlFor: `webhook-secret-${step.id}` },
+						secretLabel ?? secretFieldRole,
+					),
+					createElement('input', {
+						id: `webhook-secret-${step.id}`,
+						type: 'password',
+						'data-role': secretFieldRole,
+						value: secretValue ?? '',
+						onChange: (e: React.ChangeEvent<HTMLInputElement>) => onSecretChange?.(e.target.value),
+					}),
+				)
 			: null,
 	);
 }

@@ -96,7 +96,8 @@ export type StandardStepKind =
 	| 'status-mapping'
 	| 'label-mapping'
 	| 'webhook-url-display'
-	| 'project-scope';
+	| 'project-scope'
+	| 'custom-field-mapping';
 
 export interface StandardStep {
 	readonly kind: StandardStepKind;

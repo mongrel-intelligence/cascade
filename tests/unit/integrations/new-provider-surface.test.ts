@@ -44,16 +44,18 @@ const SHARED_SURFACE_FILES = [
 	'src/api/routers/pm-discovery.ts',
 	'web/src/components/projects/pm-providers/generator.tsx',
 
-	// Shared wizard step components (plan 010/3) — real components for
-	// every StandardStepKind. A new provider with purely standard steps
-	// never touches these files; it declares `wizardSpec.steps` in its
-	// manifest and reuses the shared UI through the generator.
+	// Shared wizard step components (plan 010/3 + plan 011/1) — real
+	// components for every StandardStepKind. A new provider with purely
+	// standard steps never touches these files; it declares
+	// `wizardSpec.steps` in its manifest and reuses the shared UI through
+	// the generator.
 	'web/src/components/projects/pm-providers/steps/credentials.tsx',
 	'web/src/components/projects/pm-providers/steps/container-pick.tsx',
 	'web/src/components/projects/pm-providers/steps/status-mapping.tsx',
 	'web/src/components/projects/pm-providers/steps/label-mapping.tsx',
 	'web/src/components/projects/pm-providers/steps/webhook-url-display.tsx',
 	'web/src/components/projects/pm-providers/steps/project-scope.tsx',
+	'web/src/components/projects/pm-providers/steps/custom-field-mapping.tsx',
 
 	// Central config schema — providers bring their own schema files.
 	'src/config/schema.ts',
