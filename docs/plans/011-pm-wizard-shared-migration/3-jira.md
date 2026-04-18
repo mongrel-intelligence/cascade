@@ -1,0 +1,216 @@
+---
+id: 011
+slug: pm-wizard-shared-migration
+plan: 3
+plan_slug: jira
+level: plan
+parent_spec: docs/specs/011-pm-wizard-shared-migration.md
+depends_on: [2-trello.md]
+status: pending
+---
+
+# 011/3: JIRA Migration — Second Consumer of Shared Wizard Components
+
+> Part 3 of 5 in the 011-pm-wizard-shared-migration plan. See [parent spec](../../specs/011-pm-wizard-shared-migration.md).
+
+## Summary
+
+Migrates the JIRA wizard from its per-provider step file (`pm-wizard-jira-steps.tsx`, 319 lines) onto the shared `StandardStepKind` components (including searchable `container-pick` and `custom-field-mapping` shipped in plan 1 and field-proven in plan 2 by Trello). Declares JIRA's standard steps (credentials, searchable project picker, status mapping, free-text label mapping, custom-field mapping, webhook URL display) in `jiraManifest.wizardSpec`. **Issue-type mapping** (task / subtask) remains JIRA-specific and lives as a `kind: 'custom'` step rendered from the JIRA provider folder — it has exactly one consumer today and generalizing it into an 8th standard kind would be speculative abstraction.
+
+JIRA's label mapping is **free-text** (JIRA's labels aren't a curated enum). The shared `label-mapping` component already handles this case by design — when `providerLabels` is empty, it degrades to text-input mode. The migration exercises that code path for the first time in production.
+
+Depends on plan 2 (Trello) only to ensure the shared components have been validated by a real consumer and any plan-1 gaps surfaced by Trello have already been backfilled.
+
+**Components delivered:**
+- `src/integrations/pm/jira/manifest.ts` — replace the existing `wizardSpec.steps` with the migrated step list: `[credentials, container-pick (searchable), status-mapping, label-mapping (free-text mode), custom-field-mapping, custom (IssueTypeMappingStep), webhook-url-display]`.
+- `web/src/components/projects/pm-providers/jira/wizard.ts` — rewrite `ProviderWizardDefinition.steps` to consume shared components via `renderStandardStep` + `STANDARD_STEP_COMPONENTS`. Pass JIRA-specific props via `useProviderHooks`.
+- `web/src/components/projects/pm-providers/jira/issue-type-step.tsx` — **new file** — JIRA-specific issue-type custom step (task / subtask rows). Encapsulates what previously lived in `pm-wizard-jira-steps.tsx` under the "issue types" section.
+- `web/src/components/projects/pm-providers/jira/adapters.tsx` — trimmed.
+- `tests/unit/web/jira-wizard-generator.test.ts` — **new file** (JIRA had zero dedicated legacy step tests per spec survey). Assert the JIRA wizard dispatches through the generator to shared components for every standard step, and to the issue-type custom step where declared.
+- `tests/unit/web/jira-issue-type-step.test.tsx` — **new file** — unit tests for the custom issue-type step.
+- `tests/unit/pm/jira/manifest-wizard-spec.test.ts` — extend: update the expected step sequence.
+
+**Deferred to later plans in this spec:**
+- Linear migration — plan 4.
+- Deletion of `pm-wizard-jira-steps.tsx` — plan 5.
+- Documentation updates — plan 5.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #2 (JIRA wizard renders every standard step through shared components; issue-type as `kind: 'custom'`) — **full** (closes the chain started by plan 1).
+- Spec AC #5 (no operator regression for JIRA) — **full**.
+- Spec AC #6 (UX normalized upward — JIRA inherits searchable project picker, inline custom-field create) — **partial** (JIRA half; Linear in plan 4).
+- Spec AC #10 (conformance harness stays green) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+- Plan 2 (`trello`) — provides field-validation that the plan-1 widenings work for real providers. If Trello surfaced a gap that was back-filled into plan 1, JIRA inherits the fix.
+- Plan 1 (`shared-components`) — transitively; provides the shared components, 7th kind, and widened searchable/secret-field props.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Re-read the legacy JIRA wizard for behavior inventory
+
+Same pre-flight as plan 2 task 1, for JIRA. Read `web/src/components/projects/pm-wizard-jira-steps.tsx` end-to-end. List every operator-facing behavior, trace each to a shared component or a JIRA custom step. Output the checklist under this task in the `.wip` file.
+
+### 2. JIRA issue-type custom step
+
+**Tests first** (`tests/unit/web/jira-issue-type-step.test.tsx` — new file):
+- `renders a row for 'task' issue type with a dropdown of discovered issue types` — assert `data-role="task"` present + options from `issueTypes` prop.
+- `renders a row for 'subtask' issue type` — same for subtask.
+- `pre-selects the current mappings prop`.
+- `invokes 'onMappingChange(role, typeId)' on select change`.
+- `renders loading / error states` (matching the shared `data-state` conventions).
+
+**Implementation** (`web/src/components/projects/pm-providers/jira/issue-type-step.tsx`):
+- Named export: `IssueTypeMappingStep: React.FC<IssueTypeMappingStepProps>` where props carry `{ step: CustomStep, providerId: 'jira', issueTypes: Array<{id, name}>, mappings: Record<'task' | 'subtask', string>, onMappingChange, loading?, error? }`.
+- Structurally mirror the shared `status-mapping` component — same row pattern, same data-attributes — so the JIRA-specific step follows the same visual idiom as the shared steps. This keeps UX consistency with the rest of the wizard even though the step itself isn't shared.
+
+### 3. JIRA manifest wizardSpec migration
+
+**Tests first** (`tests/unit/pm/jira/manifest-wizard-spec.test.ts`):
+- `includes standard step kinds in the expected order` — update to `['credentials', 'container-pick', 'status-mapping', 'label-mapping', 'custom-field-mapping', 'custom', 'webhook-url-display']`. The custom step is `{ component: 'IssueTypeMappingStep' }`.
+- `each declared standard step dispatches to the corresponding real component` — identity check via `STANDARD_STEP_COMPONENTS`.
+- `the custom issue-type step resolves to IssueTypeMappingStep` — via the JIRA wizard definition's custom-step resolver.
+
+**Implementation** (`src/integrations/pm/jira/manifest.ts`):
+- Replace `wizardSpec.steps` with:
+  ```ts
+  steps: [
+    { kind: 'credentials', id: 'jira-credentials' },
+    { kind: 'container-pick', id: 'jira-project' },
+    { kind: 'status-mapping', id: 'jira-status' },
+    { kind: 'label-mapping', id: 'jira-label' },
+    { kind: 'custom-field-mapping', id: 'jira-custom-field' },
+    { kind: 'custom', id: 'jira-issue-type', component: 'IssueTypeMappingStep' },
+    { kind: 'webhook-url-display', id: 'jira-webhook', config: { instructions: '<existing JIRA copy>' } },
+  ]
+  ```
+
+### 4. JIRA wizard definition rewrite
+
+**Tests first** (`tests/unit/web/jira-wizard-generator.test.ts` — new file):
+- `each standard step dispatches to STANDARD_STEP_COMPONENTS[kind]`.
+- `container-pick receives searchable: true` via `providerHooks`.
+- `label-mapping receives an empty providerLabels array` — verify JIRA's free-text mode triggers.
+- `custom-field-mapping receives the createCustomField hook`.
+- `the custom issue-type step resolves to IssueTypeMappingStep with JIRA's discovered issue types`.
+- `step ids are unique across the JIRA wizardSpec`.
+
+**Implementation** (`web/src/components/projects/pm-providers/jira/wizard.ts`):
+- `useProviderHooks` returns `{ credentialRoles, projectOptions (via useDiscovery('projects')), cascadeStatuses, providerStates (via useDiscovery('states')), statusMappings, providerLabels: [] (JIRA doesn't enumerate labels — triggers free-text mode), labelMappings, cascadeCustomFieldSlots, providerCustomFields (via useDiscovery('customFields')), customFieldMappings, onCreateCustomField, issueTypes (via useDiscovery('issueTypes') OR a dedicated JIRA hook if issueTypes isn't a discovery capability — see Decision below), issueTypeMappings, webhookUrl }`.
+- `steps` maps each wizardSpec step through `renderStandardStep`; custom step resolved to `IssueTypeMappingStep`.
+- `isSetupComplete` preserved (issue-type mappings included in the completeness check).
+
+**Decision required at task-entry time**: is `issueTypes` already a declared `DiscoveryCapability`? Check `src/pm/types.ts` — if not, either (a) add it as a new capability in plan 1's scope via destructive edit, (b) fetch via a JIRA-specific hook that bypasses the generic endpoint. **Recommendation: if not present, use a JIRA-specific hook** — issue types are JIRA-specific (Trello has no equivalent; Linear uses workflow states), and the custom step already encapsulates this. Extending the generic discovery capability list for a JIRA-only query would be a form of leakage.
+
+### 5. Retire JIRA per-provider step adapters
+
+- `web/src/components/projects/pm-providers/jira/adapters.tsx` — delete adapters that bridged to retired per-provider step components.
+- `web/src/components/projects/pm-wizard-jira-steps.tsx` — retain; deletion is plan 5's job. Add the same one-line `// Retained until plan 011/5 — see spec 011 AC #4.` comment.
+
+### 6. Smoke-run the conformance harness
+
+- `npx vitest run --project unit-core tests/unit/integrations/pm-conformance.test.ts` passes for JIRA.
+
+### 7. Manual dashboard verification
+
+Browser smoke test the JIRA wizard:
+- Credential entry (email + API token + base URL).
+- Project picker with search.
+- Status mapping for all CASCADE stages.
+- Label mapping in free-text mode (no dropdowns; plain text inputs).
+- Custom-field mapping with the Create affordance.
+- Issue-type mapping (task / subtask).
+- Webhook URL display + copy.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/web/jira-wizard-generator.test.ts` — new file, ~6 tests.
+- [ ] `tests/unit/web/jira-issue-type-step.test.tsx` — new file, ~5 tests.
+- [ ] `tests/unit/pm/jira/manifest-wizard-spec.test.ts` — updated; ~3 tests.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] Conformance harness passes for JIRA.
+- [ ] Browser smoke test of the JIRA wizard.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `jiraManifest.wizardSpec.steps` lists `[credentials, container-pick, status-mapping, label-mapping, custom-field-mapping, custom(IssueTypeMappingStep), webhook-url-display]`.
+2. JIRA's `ProviderWizardDefinition` renders each standard step via `renderStandardStep` + `STANDARD_STEP_COMPONENTS`.
+3. `IssueTypeMappingStep` is the new JIRA-specific custom component and passes its own unit tests.
+4. JIRA project picker uses the searchable `Combobox` mode.
+5. JIRA's `label-mapping` step renders in free-text mode (empty `providerLabels` triggers text inputs).
+6. JIRA's custom-field creation flows through `pm.discovery.createCustomField` via the shared `custom-field-mapping` component.
+7. Legacy `pm-wizard-jira-steps.tsx` still exists (deletion deferred to plan 5) but no longer has any production consumer.
+8. All JIRA wizard behaviors are covered by tests against the new components.
+9. Conformance harness passes for JIRA.
+10. No operator-visible regression.
+11. `npm run build` passes.
+12. `npm test` passes.
+13. `npm run lint` passes.
+14. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+None — deferred to plan 5.
+
+| File | Change |
+|---|---|
+| — | Deferred. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to later plans in this spec:
+- Linear wizard migration — plan 4.
+- Deletion of all three `pm-wizard-{trello,jira,linear}-steps.tsx` files — plan 5.
+- README / CLAUDE.md / CHANGELOG / spec-010 forward-ref updates — plan 5.
+
+Originally out of scope for the spec (repeated for clarity):
+- Changes to operator wizard UX beyond the normalize-upward moves.
+- Extending the manifest/conformance pattern to SCM or alerting.
+- Migrating composite `*Details(ByProject)` tRPC procedures.
+- Changing the `ProviderWizardDefinition` contract.
+- New shared UI primitives.
+- Schema migrations.
+- Generalizing JIRA's issue-type mapping into an 8th `StandardStepKind`.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (wizardSpec updated)
+- [ ] AC #2 (standard steps dispatch through generator)
+- [ ] AC #3 (IssueTypeMappingStep shipped + tested)
+- [ ] AC #4 (searchable project picker)
+- [ ] AC #5 (free-text label mapping)
+- [ ] AC #6 (custom-field creation via shared)
+- [ ] AC #7 (legacy file retained, no consumer)
+- [ ] AC #8 (test coverage)
+- [ ] AC #9 (conformance harness green)
+- [ ] AC #10 (no operator regression)
+- [ ] AC #11 (build)
+- [ ] AC #12 (test)
+- [ ] AC #13 (lint)
+- [ ] AC #14 (typecheck)

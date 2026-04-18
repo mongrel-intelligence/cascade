@@ -1,0 +1,205 @@
+---
+id: 011
+slug: pm-wizard-shared-migration
+plan: 4
+plan_slug: linear
+level: plan
+parent_spec: docs/specs/011-pm-wizard-shared-migration.md
+depends_on: [3-jira.md]
+status: pending
+---
+
+# 011/4: Linear Migration — Third Consumer of Shared Wizard Components
+
+> Part 4 of 5 in the 011-pm-wizard-shared-migration plan. See [parent spec](../../specs/011-pm-wizard-shared-migration.md).
+
+## Summary
+
+Migrates the Linear wizard from its per-provider step file (`pm-wizard-linear-steps.tsx`, 320 lines) + custom `LinearWebhookInfoPanel` component onto the shared `StandardStepKind` components. Linear is the **primary consumer** of the widened `webhook-url-display` component — its signing-secret field (`LINEAR_WEBHOOK_SECRET`) was the motivating use case for the plan-1 widening. The `project-scope` step (from spec 005) is already declared on Linear's manifest and now consumes the shared component directly.
+
+Linear's standard steps: `[credentials, container-pick (searchable team picker), status-mapping, label-mapping, project-scope, webhook-url-display (with secret field)]`. No `kind: 'custom'` steps needed — Linear has no truly-provider-specific wizard UI. The retired `LinearWebhookInfoPanel` is **replaced**, not ported as custom, because its secret-field functionality is exactly what plan 1 widened into the shared component.
+
+Depends on plan 3 (JIRA). At this point, the shared components have been exercised by two real providers; any remaining gap surfaces here gets back-filled into plan 1 via destructive edit + carry-forward.
+
+**Components delivered:**
+- `src/integrations/pm/linear/manifest.ts` — wizardSpec already declares six standard kinds (spec 010/4). No manifest change expected, but the `webhook-url-display` step's `config` may gain a hint about the secret field (e.g. `config: { secretRole: 'webhook_secret' }`) so the wizard definition knows to wire it.
+- `web/src/components/projects/pm-providers/linear/wizard.ts` — rewrite `ProviderWizardDefinition.steps` to consume shared components via `renderStandardStep` + `STANDARD_STEP_COMPONENTS`. Pass Linear-specific props (discovered teams, workflow states, labels, projects for scope, webhook URL, secret field role + value + onChange) via `useProviderHooks`.
+- `web/src/components/projects/pm-providers/linear/adapters.tsx` — trimmed.
+- `tests/unit/web/linear-wizard-generator.test.ts` — **new file** (or extend the existing manifest-wizard-spec test file). Assert Linear dispatches through the generator for every standard kind, and the webhook step renders the inline secret field.
+- `tests/unit/pm/linear/manifest-wizard-spec.test.ts` — extend if any wizardSpec entry changes (e.g. the `webhook-url-display` gains a `config.secretRole` hint).
+
+**Retired** (replaced by widened shared component, not ported):
+- `LinearWebhookInfoPanel` (in `pm-wizard-linear-steps.tsx`) — signing-secret input functionality now lives in the widened shared `webhook-url-display`.
+- `LinearTeamStep` et al. — team picker now dispatched via the widened searchable `container-pick`.
+- `LinearFieldMappingStep` — status + label mappings dispatch via the shared components.
+
+**Deferred to later plans in this spec:**
+- Deletion of `pm-wizard-linear-steps.tsx` — plan 5.
+- Documentation updates — plan 5.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #3 (Linear wizard renders every standard step through shared components; inline signing-secret via widened webhook-url-display; project-scope preserved) — **full** (closes the chain started by plan 1).
+- Spec AC #5 (no operator regression for Linear) — **full**.
+- Spec AC #6 (UX normalized upward — Linear inherits searchable team picker) — **full** for Linear (last of three providers).
+- Spec AC #10 (conformance harness stays green) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+- Plan 3 (`jira`) — provides two-provider field-validation of the shared components; any shared-component gap surfaced by JIRA is back-filled into plan 1 and carried forward.
+- Plan 2 (`trello`) — transitively; the Trello migration pattern (how `useProviderHooks` bridges into shared-component props) is the template Linear follows.
+- Plan 1 (`shared-components`) — directly; Linear consumes the widened `webhook-url-display` (with secret field) and `container-pick` (searchable). `project-scope` was already declared; it now consumes the (possibly-widened-with-searchable) shared component.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Re-read the legacy Linear wizard for behavior inventory
+
+Same pre-flight as plans 2 and 3, for Linear. Pay special attention to `LinearWebhookInfoPanel` — the widened shared `webhook-url-display` must match every behavior (URL display, copy button, inline secret-field form, setup instructions). If a gap surfaces, back-fill plan 1 destructively.
+
+### 2. Verify `webhook-url-display`'s secret-field support matches Linear's needs
+
+**Tests first** (`tests/unit/web/steps/webhook-url-display.test.ts` — extend from plan 1):
+- If plan 1's test coverage for the secret field doesn't match every behavior Linear's legacy `LinearWebhookInfoPanel` offered (e.g. "secret is persisted across wizard navigation", "secret-field focus ring matches the URL input"), add a targeted test here. Keep the test assertions component-level, not Linear-specific.
+
+**Implementation**:
+- No change to shared component expected. If a gap surfaces, this is a **destructive plan-1 edit** — surface to the user, revise plan 1's `.md.done`, update plan 1's tests, and carry forward.
+
+### 3. Linear wizard definition rewrite
+
+**Tests first** (`tests/unit/web/linear-wizard-generator.test.ts` — new file):
+- `each standard step dispatches to STANDARD_STEP_COMPONENTS[kind]` — 6 standard kinds.
+- `container-pick receives searchable: true via providerHooks`.
+- `webhook-url-display receives secretFieldRole, secretValue, onSecretChange via providerHooks` — assert the secret-field input appears in SSR output of the wizard's rendered step.
+- `project-scope receives the discovered projects + selectedProjectId from providerHooks`.
+- `label-mapping receives Linear's curated labels (non-empty) — not free-text mode`.
+
+**Implementation** (`web/src/components/projects/pm-providers/linear/wizard.ts`):
+- `useProviderHooks` returns `{ credentialRoles, teamOptions (via useDiscovery('teams')), cascadeStatuses, providerStates (via useDiscovery('states')), statusMappings, providerLabels (via useDiscovery('labels')), labelMappings, onCreateLabel, projectOptions (via useDiscovery('projects')), selectedProjectId, onSelectProject, webhookUrl, secretFieldRole: 'webhook_secret', secretValue: <resolved from project credentials>, onSecretChange: <dispatches to wizard state for later persistence> }`.
+- Each standard step is rendered via `renderStandardStep(step, { providerId: 'linear', providerHooks })`.
+- Preserve `isSetupComplete` behavior including the project-scope optionality (empty scope is valid).
+
+### 4. Retire Linear per-provider step adapters + `LinearWebhookInfoPanel`
+
+- `web/src/components/projects/pm-providers/linear/adapters.tsx` — delete adapters that bridged to retired components.
+- `web/src/components/projects/pm-wizard-linear-steps.tsx` — retain until plan 5. Add the same `// Retained until plan 011/5 — see spec 011 AC #4.` comment.
+- `LinearWebhookInfoPanel` — the **test file** `tests/unit/web/linear-webhook-info-panel.test.ts` is retired: either deleted (shared `webhook-url-display` tests in plan 1 already cover the behavior) or ported-and-renamed to target the shared component with Linear-specific props (`secretFieldRole: 'webhook_secret'`). Recommendation: **delete**; shared-component tests cover the functionality; a Linear-specific DOM test pins an implementation detail the migration is replacing.
+
+### 5. Audit + port other Linear legacy tests
+
+The spec-011 survey identified 5 Linear legacy test files. Walk each:
+- `linear-field-mapping-step.test.ts` — if assertions test logic equivalent to shared `status-mapping` / `label-mapping`, delete (duplicates plan 1 coverage). If Linear-specific (e.g. "Linear's 8-stage lifecycle is preserved"), port the assertion to `tests/unit/web/linear-wizard-generator.test.ts`.
+- `linear-team-step.test.ts` — likely retired in favor of `linear-wizard-generator.test.ts` assertions on the searchable team picker.
+- `linear-webhook-info-panel.test.ts` — delete per task 4.
+- Other two (shared `pm-wizard-state.test.ts` / `pm-wizard-webhooks-step.test.ts`) — audit for Linear-only assertions; keep shared assertions.
+
+Each retired test is justified in the implementation commit message.
+
+### 6. Smoke-run the conformance harness
+
+- `npx vitest run --project unit-core tests/unit/integrations/pm-conformance.test.ts` passes for Linear.
+- The Linear lifecycle scenario continues to pass.
+- `tests/unit/pm/linear/regression-2026-04.test.ts` continues to pass (the wizard migration doesn't touch the adapter, but we assert this explicitly as a safety net).
+
+### 7. Manual dashboard verification
+
+Browser smoke test the Linear wizard:
+- API-key credential entry.
+- Searchable team picker.
+- Status mapping for all 8 CASCADE stages.
+- Label mapping with create affordance.
+- Project-scope dropdown (optional).
+- Webhook URL display + inline signing-secret field — confirm paste-in persists.
+- Every error / loading state.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/web/linear-wizard-generator.test.ts` — new file, ~6 tests.
+- [ ] `tests/unit/web/steps/webhook-url-display.test.ts` — any Linear-motivated extensions (unlikely; ideally plan 1 covered this fully).
+- [ ] Legacy `tests/unit/web/linear-*-step.test.tsx` + `linear-webhook-info-panel.test.ts` — each either deleted or ported.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] Conformance harness passes for Linear.
+- [ ] `tests/unit/pm/linear/regression-2026-04.test.ts` passes.
+- [ ] Browser smoke test of the Linear wizard.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. Linear's `ProviderWizardDefinition` renders each of the 6 standard steps via `renderStandardStep` + `STANDARD_STEP_COMPONENTS` (no per-provider step component in use).
+2. Linear team picker uses the searchable `Combobox` mode.
+3. Linear webhook step renders the shared `webhook-url-display` with `secretFieldRole: 'webhook_secret'` — the inline signing-secret input is present and functional.
+4. Linear project-scope step uses the shared `project-scope` component (preserving spec 005's behavior).
+5. Linear label-mapping renders in dropdown mode (non-empty `providerLabels`), with the `onCreateLabel` affordance visible.
+6. `LinearWebhookInfoPanel` has no production consumers; `linear-webhook-info-panel.test.ts` is deleted.
+7. Legacy `pm-wizard-linear-steps.tsx` still exists (deletion deferred to plan 5) but no production consumer.
+8. All Linear wizard behaviors are covered by tests against the new components.
+9. Conformance harness passes for Linear.
+10. `regression-2026-04.test.ts` passes (adapter unchanged).
+11. No operator-visible regression.
+12. `npm run build` passes.
+13. `npm test` passes.
+14. `npm run lint` passes.
+15. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+None — deferred to plan 5.
+
+| File | Change |
+|---|---|
+| — | Deferred. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to later plans in this spec:
+- Deletion of the three `pm-wizard-{trello,jira,linear}-steps.tsx` files — plan 5.
+- Any remaining audit/cleanup of `pm-wizard-common-steps.tsx` — plan 5.
+- README / CLAUDE.md / CHANGELOG / spec-010 forward-ref updates — plan 5.
+
+Originally out of scope for the spec (repeated for clarity):
+- Changes to operator wizard UX beyond the normalize-upward moves.
+- Extending the manifest/conformance pattern to SCM or alerting.
+- Migrating composite `*Details(ByProject)` tRPC procedures.
+- Changing the `ProviderWizardDefinition` contract.
+- New shared UI primitives.
+- Schema migrations.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (all 6 standard steps dispatch through generator)
+- [ ] AC #2 (searchable team picker)
+- [ ] AC #3 (inline webhook secret field)
+- [ ] AC #4 (project-scope via shared)
+- [ ] AC #5 (label-mapping dropdown mode + create)
+- [ ] AC #6 (LinearWebhookInfoPanel retired)
+- [ ] AC #7 (legacy file retained, no consumer)
+- [ ] AC #8 (test coverage migrated)
+- [ ] AC #9 (conformance harness green)
+- [ ] AC #10 (regression-2026-04 passes)
+- [ ] AC #11 (no operator regression)
+- [ ] AC #12 (build)
+- [ ] AC #13 (test)
+- [ ] AC #14 (lint)
+- [ ] AC #15 (typecheck)

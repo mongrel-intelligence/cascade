@@ -1,0 +1,218 @@
+---
+id: 011
+slug: pm-wizard-shared-migration
+plan: 5
+plan_slug: cleanup
+level: plan
+parent_spec: docs/specs/011-pm-wizard-shared-migration.md
+depends_on: [4-linear.md]
+status: pending
+---
+
+# 011/5: Cleanup — Delete Retired Files + Rewrite Docs + Close Spec
+
+> Part 5 of 5 in the 011-pm-wizard-shared-migration plan. See [parent spec](../../specs/011-pm-wizard-shared-migration.md).
+
+## Summary
+
+Closes spec 011. Deletes the three `pm-wizard-{trello,jira,linear}-steps.tsx` files now that all three providers migrated (plans 2–4). Audits `pm-wizard-common-steps.tsx` for dead exports and deletes any that lost their consumers. Rewrites the documentation surface to reflect the post-spec-011 state: the provider-migration status table, the "Adding a new PM provider" section, the root CLAUDE.md summary paragraph, a single CHANGELOG entry summarizing the spec, and a forward-reference in spec 010.
+
+**Cleanup-only plan.** Zero new features, zero widenings, zero behavior changes. The whole plan is deletions + prose. This is intentional — separating cleanup from the migration plans keeps each provider PR focused on one concern and makes this plan's diff easy to review.
+
+**Components delivered:**
+- `web/src/components/projects/pm-wizard-trello-steps.tsx` — **deleted**.
+- `web/src/components/projects/pm-wizard-jira-steps.tsx` — **deleted**.
+- `web/src/components/projects/pm-wizard-linear-steps.tsx` — **deleted**.
+- `web/src/components/projects/pm-wizard-common-steps.tsx` — audit for dead exports after all three per-provider files are gone; delete any export with zero consumers; retain any that still serve the wizard orchestration path.
+- `src/integrations/README.md` — rewrite:
+  - Provider migration status table: Trello/JIRA/Linear all show `✅ shared step components (no per-provider step file)`.
+  - "Adding a new PM provider" section: remove the "Trello/JIRA/Linear still ship their own per-provider adapters (spec 006 era)" caveat — no longer true.
+  - "Post-spec-010 additions (2026-04-18)" section: add a peer section "Post-spec-011 additions (2026-04-XX)" summarizing the 7th standard kind + searchable dropdowns + inline webhook secrets.
+- `CLAUDE.md` (project root) — update the PM-integration summary paragraph: remove the "A new PM provider with purely-standard wizard steps writes zero per-provider step code" conditional — all providers now use shared components.
+- `CHANGELOG.md` — single "Internal" entry summarizing spec 011 (mirrors the spec-010 style).
+- `docs/specs/010-pm-integration-hardening-followups.md.done` — forward-reference to spec 011 at the top (mirrors the 009 → 010 pointer).
+
+**Deferred to follow-up specs (repeated from spec-level Out of Scope):**
+- Migration of the 6 composite `*Details(ByProject)` tRPC procedures — spec 012 territory.
+- Extending the manifest pattern to SCM / alerting — spec 013 territory.
+- Registry-driven `configMapper` — separate spec.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #4 (three `pm-wizard-{trello,jira,linear}-steps.tsx` files deleted) — **full**.
+- Spec AC #12 (new provider can still add with zero shared edits) — **full** (verifiable only after cleanup; `new-provider-surface` guard test is the ongoing enforcement).
+- Spec AC #10 (conformance harness stays green through the full cleanup) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+- Plan 4 (`linear`) — last plan that still imported anything from the legacy per-provider step files. Once plan 4 is done, the deletions in this plan are safe.
+- Transitively: plans 1, 2, 3.
+
+---
+
+## Detailed Task List
+
+### 1. Dead-code audit before deletion
+
+**Tests first** (diagnostic-only — not a new test file):
+- `grep -r pm-wizard-trello-steps .` — expected: no results (or only test files being deleted in this plan).
+- `grep -r pm-wizard-jira-steps .` — expected: no results.
+- `grep -r pm-wizard-linear-steps .` — expected: no results.
+- `grep -r LinearWebhookInfoPanel .` — expected: no results (retired in plan 4).
+
+Any surviving reference is either a bug in an earlier plan (escalate) or a test that was never deleted (delete now).
+
+### 2. Delete the three per-provider step files
+
+**Implementation**:
+- `git rm web/src/components/projects/pm-wizard-trello-steps.tsx`
+- `git rm web/src/components/projects/pm-wizard-jira-steps.tsx`
+- `git rm web/src/components/projects/pm-wizard-linear-steps.tsx`
+
+No corresponding test creation — the dead-code audit in task 1 is the test.
+
+### 3. Audit `pm-wizard-common-steps.tsx`
+
+**Implementation**:
+- Read the file. For each named export:
+  - `grep -r '<exportName>' web/src/components/projects/ tests/` — if zero consumers, delete the export.
+  - If some consumers remain (wizard orchestration, shared fallback), keep the export.
+- Delete the entire file if every export is unused.
+
+Tests: if any export is deleted and had corresponding tests, delete those tests too.
+
+### 4. Rewrite `src/integrations/README.md`
+
+**Implementation**:
+- Update the "Provider migration status (plan 009 — PM integration hardening)" table — add a new column "Shared wizard steps" with ✅ for all three providers.
+- Update the "Post-spec-010 additions (2026-04-18)" → add a new "Post-spec-011 additions" peer section:
+  - Wizard UI column: "All three production providers migrated to shared step components. Legacy `pm-wizard-{trello,jira,linear}-steps.tsx` deleted."
+  - New kind: "7th `StandardStepKind: custom-field-mapping` added; shared component wires `manifest.createCustomField`."
+  - Widenings: "`container-pick` and `project-scope` support optional searchable mode; `webhook-url-display` supports an optional inline signing-secret input."
+- Update "Adding a new PM provider" section step 3: remove the "Trello/JIRA/Linear still ship their own per-provider adapters (spec 006 era)" caveat. State the unconditional rule: "For shared wizard steps declared on `manifest.wizardSpec`, the generator dispatches to the real shared step components. All current providers do this; new providers with purely standard steps write zero per-provider step components."
+
+### 5. Update root `CLAUDE.md`
+
+**Implementation**:
+- In the PM-integration summary paragraph (currently mentions spec 006, 009, 010), append a spec-011 line:
+  > Spec 011 completed the shared-component migration — Trello, JIRA, and Linear now use the shared step components universally. Zero per-provider step UI outside of explicit `kind: 'custom'` steps declared in each manifest (Trello OAuth, JIRA issue-type).
+- Remove the spec-010-era conditional "new PM provider with purely-standard wizard steps writes zero per-provider step code" — it's unconditional now.
+
+### 6. CHANGELOG entry
+
+**Implementation**: add under `## Unreleased` → `### Internal`:
+
+> **PM wizard shared-component migration (spec 011).** Trello, JIRA, and Linear wizards now render every standard wizard step through the shared `StandardStepKind` components — zero per-provider step forks. Plan 1 widened three shared components (optional searchable mode on `container-pick` and `project-scope`; optional inline signing-secret input on `webhook-url-display`) and added a 7th `StandardStepKind: custom-field-mapping` that wires the generic `manifest.createCustomField` hook. Plans 2–4 migrated each provider one at a time: Trello keeps its `kind: 'custom'` OAuth step, JIRA keeps its `kind: 'custom'` issue-type step, Linear's `LinearWebhookInfoPanel` is retired in favor of the widened shared component. Plan 5 deletes `pm-wizard-{trello,jira,linear}-steps.tsx` (≈1,085 lines of legacy UI). No operator-visible change beyond consistency: every provider now has searchable board/project/team pickers and inline create-label / create-custom-field affordances. See spec [011](docs/specs/011-pm-wizard-shared-migration.md.done).
+
+### 7. Forward-reference in spec 010
+
+**Implementation**:
+- Prepend a blockquote to `docs/specs/010-pm-integration-hardening-followups.md.done` right after the H1:
+  > **Forward reference (2026-04-XX):** follow-ups landed in spec [011 — PM Wizard Shared Migration](./011-pm-wizard-shared-migration.md.done). That spec retires the spec-006-era per-provider wizard step files (`pm-wizard-{trello,jira,linear}-steps.tsx`), migrates all three production providers onto the shared step components, and adds a 7th `StandardStepKind: custom-field-mapping`.
+
+### 8. Full verification before marking done
+
+- `npm run build` green.
+- `npm test` green (including `new-provider-surface`, conformance harness, all three provider wizard-generator tests).
+- `npm run lint` green.
+- `npm run typecheck` green.
+
+### 9. Mark spec 011 .done
+
+Per `/implement` Phase 8: rename `docs/specs/011-pm-wizard-shared-migration.md` → `.md.done` in a separate trailing commit after the plan-5 `.wip` → `.done` commit.
+
+---
+
+## Test Plan
+
+### Unit tests
+- No new test files.
+- Existing tests continue to pass.
+- Any test files pinned to deleted source files are deleted alongside.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] `grep -r pm-wizard-trello-steps .` returns zero results (outside git history).
+- [ ] Same for JIRA and Linear.
+- [ ] Same for `LinearWebhookInfoPanel`.
+- [ ] Every documentation file listed above has been updated.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+- [ ] `new-provider-surface.test.ts` still passes with the 7 step-component files.
+- [ ] Conformance harness still green for all three providers.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `web/src/components/projects/pm-wizard-trello-steps.tsx` is deleted from the repository.
+2. `web/src/components/projects/pm-wizard-jira-steps.tsx` is deleted.
+3. `web/src/components/projects/pm-wizard-linear-steps.tsx` is deleted.
+4. `pm-wizard-common-steps.tsx` retains only exports with at least one consumer (or is deleted if all exports became orphans).
+5. `src/integrations/README.md` reflects the post-spec-011 state (provider migration status, Post-spec-011 additions, "Adding a new PM provider" section).
+6. Root `CLAUDE.md` PM-integration summary reflects the unconditional shared-components path.
+7. `CHANGELOG.md` has a single Internal entry summarizing spec 011.
+8. `docs/specs/010-pm-integration-hardening-followups.md.done` has a forward-reference to spec 011.
+9. Dead-code grep for retired symbols returns zero results.
+10. Conformance harness passes for all three providers.
+11. `new-provider-surface.test.ts` passes with the 7 step-component files pinned.
+12. `npm run build` passes.
+13. `npm test` passes.
+14. `npm run lint` passes.
+15. `npm run typecheck` passes.
+16. Spec 011 is marked `.done` via file rename.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `src/integrations/README.md` | Rewrite: provider migration status table, "Post-spec-011 additions" section, "Adding a new PM provider" step 3 (remove spec-006-era caveat). |
+| `CLAUDE.md` (project root) | Append spec-011 line to PM-integration summary; remove the spec-010-era conditional. |
+| `CHANGELOG.md` | New Internal entry summarizing spec 011. |
+| `docs/specs/010-pm-integration-hardening-followups.md.done` | Forward-reference blockquote to spec 011 at the top. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to follow-up specs:
+- Migration of the 6 composite `*Details(ByProject)` tRPC procedures — spec 012 territory.
+- Extending the manifest pattern to SCM / alerting — spec 013 territory.
+- Registry-driven `configMapper` rewrite — separate spec.
+- Any change to wizard UX beyond what plans 1–4 already landed.
+
+Originally out of scope for the spec (repeated for clarity):
+- New shared UI primitives.
+- Schema migrations.
+- Renaming the discovery router.
+- Changing the `ProviderWizardDefinition` contract.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (Trello legacy file deleted)
+- [ ] AC #2 (JIRA legacy file deleted)
+- [ ] AC #3 (Linear legacy file deleted)
+- [ ] AC #4 (pm-wizard-common-steps audited)
+- [ ] AC #5 (README rewritten)
+- [ ] AC #6 (CLAUDE.md updated)
+- [ ] AC #7 (CHANGELOG entry)
+- [ ] AC #8 (spec 010 forward-ref)
+- [ ] AC #9 (dead-code grep clean)
+- [ ] AC #10 (conformance harness green)
+- [ ] AC #11 (new-provider-surface green)
+- [ ] AC #12 (build)
+- [ ] AC #13 (test)
+- [ ] AC #14 (lint)
+- [ ] AC #15 (typecheck)
+- [ ] AC #16 (spec marked .done)
