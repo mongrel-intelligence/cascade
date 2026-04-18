@@ -274,8 +274,8 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 
 	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useTrelloDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const labels = useTrelloLabelCreation(state, dispatch);
-		const customField = useTrelloCustomFieldCreation(state, dispatch);
+		const labels = useTrelloLabelCreation(state, dispatch, projectId ?? '');
+		const customField = useTrelloCustomFieldCreation(state, dispatch, projectId ?? '');
 		const queryClient = useQueryClient();
 
 		const [creatingSlot, setCreatingSlot] = useState<string | null>(null);

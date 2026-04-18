@@ -289,7 +289,7 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 
 	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useJiraDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const customField = useJiraCustomFieldCreation(state, dispatch);
+		const customField = useJiraCustomFieldCreation(state, dispatch, projectId ?? '');
 		const queryClient = useQueryClient();
 
 		const onCreateCustomField = (_slotKey: string, name: string) => {

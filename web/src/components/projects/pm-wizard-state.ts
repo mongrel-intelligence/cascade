@@ -490,6 +490,27 @@ export function areCredentialsReady(state: WizardState): boolean {
 }
 
 /**
+ * Returns `true` when a wizard mutation (verify, createLabel, createCustomField)
+ * should pass `projectId` to the backend — meaning: edit mode is active, the
+ * provider has stored credentials in `project_credentials`, and the user has
+ * NOT re-typed the primary API key in the form (because `buildEditState`
+ * intentionally leaves raw credentials blank for security).
+ *
+ * `resolvePMCredentials` on the backend (`src/api/routers/pm-discovery.ts`)
+ * resolves stored credentials when `projectId` is supplied, so this check
+ * lets edit-mode mutations work without the user re-typing their key.
+ *
+ * Fresh setup (no `isEditing`) → false → mutation passes `credentials` from
+ * form state (current behavior).
+ */
+export function shouldUseStoredCredentials(state: WizardState): boolean {
+	if (!state.isEditing || !state.hasStoredCredentials) return false;
+	if (state.provider === 'trello') return !state.trelloApiKey;
+	if (state.provider === 'jira') return !state.jiraApiToken;
+	return !state.linearApiKey;
+}
+
+/**
  * Build the Linear integration config payload from wizard state.
  * Pure function so it can be unit-tested without the React runtime.
  */
