@@ -1,31 +1,34 @@
 /**
- * Trello wizardSpec + renderStandardStep integration (plan 009/2 task 5).
+ * Trello wizardSpec + renderStandardStep dispatch (plan 009/2 task 5,
+ * updated by plan 010/3).
  *
  * Verifies that every step declared on `trelloManifest.wizardSpec`
- * renders through the plan-1 generator (`renderStandardStep`) without
- * crashing. In plan 1 the generator returns typed placeholders for
- * every standard kind — plans 009/3–4 (or a later dedicated plan) swap
- * in real shared step components. Until then, Trello's live wizard
- * continues to use its per-provider step adapters; the generator path
- * exists in parallel so wizardSpec is genuinely wired, not just
- * declarative metadata.
+ * dispatches through the shared generator (`renderStandardStep`) to a
+ * real shared component. The existing Trello wizard continues to use
+ * its per-provider step adapters (`pm-wizard-trello-steps.tsx`) for the
+ * actual UI — this test proves the wizardSpec is correctly wired to the
+ * shared component registry so a future migration can swap in the
+ * shared components without edits to the manifest.
  */
 
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { trelloManifest } from '../../../src/integrations/pm/trello/manifest.js';
-import { renderStandardStep } from '../../../web/src/components/projects/pm-providers/generator.js';
+import {
+	renderStandardStep,
+	STANDARD_STEP_COMPONENTS,
+} from '../../../web/src/components/projects/pm-providers/generator.js';
 
 describe('Trello wizardSpec through the shared generator', () => {
-	it('renders every declared step via renderStandardStep', () => {
+	it('each declared step dispatches to the corresponding real component', () => {
 		const steps = trelloManifest.wizardSpec?.steps ?? [];
 		expect(steps.length).toBeGreaterThan(0);
 
 		for (const step of steps) {
+			if (step.kind === 'custom') continue;
 			const element = renderStandardStep(step, { providerId: 'trello' });
-			const html = renderToStaticMarkup(element);
-			expect(html).toContain('data-provider-id="trello"');
-			expect(html).toContain(`data-step-kind="${step.kind}"`);
+			// element.type is the registered component — identity check proves
+			// the dispatcher routes to the right shared component.
+			expect(element.type).toBe(STANDARD_STEP_COMPONENTS[step.kind]);
 		}
 	});
 

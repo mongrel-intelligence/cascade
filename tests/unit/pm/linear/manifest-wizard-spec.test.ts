@@ -6,10 +6,12 @@
  * in the provider folder as `kind: 'custom'`.
  */
 
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { linearManifest } from '../../../../src/integrations/pm/linear/manifest.js';
-import { renderStandardStep } from '../../../../web/src/components/projects/pm-providers/generator.js';
+import {
+	renderStandardStep,
+	STANDARD_STEP_COMPONENTS,
+} from '../../../../web/src/components/projects/pm-providers/generator.js';
 
 describe('linearManifest.wizardSpec', () => {
 	it('is declared', () => {
@@ -35,22 +37,24 @@ describe('linearManifest.wizardSpec', () => {
 	});
 });
 
-describe('Linear wizardSpec through renderStandardStep', () => {
-	it('renders every declared step through the shared generator', () => {
+describe('Linear wizardSpec through the shared generator', () => {
+	it('each declared step dispatches to the corresponding real component', () => {
 		const steps = linearManifest.wizardSpec?.steps ?? [];
+		expect(steps.length).toBeGreaterThan(0);
 		for (const step of steps) {
+			if (step.kind === 'custom') continue;
 			const element = renderStandardStep(step, { providerId: 'linear' });
-			const html = renderToStaticMarkup(element);
-			expect(html).toContain('data-provider-id="linear"');
-			expect(html).toContain(`data-step-kind="${step.kind}"`);
+			// element.type is the registered component — identity check proves
+			// the dispatcher routes to the right shared component.
+			expect(element.type).toBe(STANDARD_STEP_COMPONENTS[step.kind]);
 		}
 	});
 
-	it('project-scope step renders (spec 005 preservation)', () => {
+	it('project-scope step is present and dispatches to ProjectScopeStep (spec 005 preservation)', () => {
 		const projectScope = linearManifest.wizardSpec?.steps.find((s) => s.kind === 'project-scope');
 		expect(projectScope).toBeDefined();
 		if (!projectScope) return;
-		const html = renderToStaticMarkup(renderStandardStep(projectScope, { providerId: 'linear' }));
-		expect(html).toContain('data-step-kind="project-scope"');
+		const element = renderStandardStep(projectScope, { providerId: 'linear' });
+		expect(element.type).toBe(STANDARD_STEP_COMPONENTS['project-scope']);
 	});
 });

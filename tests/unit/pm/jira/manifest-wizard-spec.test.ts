@@ -7,10 +7,12 @@
  * as `kind: 'custom'` steps.
  */
 
-import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { jiraManifest } from '../../../../src/integrations/pm/jira/manifest.js';
-import { renderStandardStep } from '../../../../web/src/components/projects/pm-providers/generator.js';
+import {
+	renderStandardStep,
+	STANDARD_STEP_COMPONENTS,
+} from '../../../../web/src/components/projects/pm-providers/generator.js';
 
 describe('jiraManifest.wizardSpec', () => {
 	it('is declared', () => {
@@ -41,15 +43,16 @@ describe('jiraManifest.wizardSpec', () => {
 	});
 });
 
-describe('JIRA wizardSpec through renderStandardStep', () => {
-	it('renders every declared step through the shared generator', () => {
+describe('JIRA wizardSpec through the shared generator', () => {
+	it('each declared step dispatches to the corresponding real component', () => {
 		const steps = jiraManifest.wizardSpec?.steps ?? [];
 		expect(steps.length).toBeGreaterThan(0);
 		for (const step of steps) {
+			if (step.kind === 'custom') continue;
 			const element = renderStandardStep(step, { providerId: 'jira' });
-			const html = renderToStaticMarkup(element);
-			expect(html).toContain('data-provider-id="jira"');
-			expect(html).toContain(`data-step-kind="${step.kind}"`);
+			// element.type is the registered component — identity check proves
+			// the dispatcher routes to the right shared component.
+			expect(element.type).toBe(STANDARD_STEP_COMPONENTS[step.kind]);
 		}
 	});
 });

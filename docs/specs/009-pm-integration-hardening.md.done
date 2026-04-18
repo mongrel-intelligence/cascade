@@ -9,6 +9,8 @@ status: done
 
 # 009: PM Integration Hardening — Make the Next Provider Boring
 
+> **Forward reference (2026-04-18):** follow-ups landed in spec [010 — PM Integration Hardening Follow-ups](./010-pm-integration-hardening-followups.md.done). That spec generalizes `createLabel` / `createCustomField` into `pm.discovery.*` mutation endpoints + manifest hooks, adds the `currentUser` discovery capability, and upgrades the wizard generator to dispatch to real shared React components for every `StandardStepKind`.
+
 ## Problem & Motivation
 
 Over the last ten days CASCADE shipped its third PM provider (Linear) and the workstream exposed that the plug-and-play manifest pattern delivered by spec 006 is **structurally correct but contractually thin**. The initial Linear integration landed in ~15 PRs of expected work (#1094–#1108). Another **18 PRs of corrective work** followed (#1112–#1142), each a real production defect or papercut. Those 18 PRs cluster into six repeating shapes — every one a case where the manifest *allowed* drift rather than *preventing* it:
