@@ -169,4 +169,102 @@ describe('pmDiscoveryRouter', () => {
 			).rejects.toThrow(/UNIMPLEMENTED|does not declare|capability/);
 		});
 	});
+
+	describe('createLabel (plan 010/1 task 2)', () => {
+		beforeEach(async () => {
+			_resetPMProviderRegistryForTesting();
+			const { createFakePMManifest } = await import('../../helpers/fakePMProvider.js');
+			registerPMProvider(createFakePMManifest());
+		});
+
+		it('returns { id, name, color } on success', async () => {
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			const result = await caller.createLabel({
+				providerId: 'fake',
+				containerId: 'fake-container-a',
+				name: 'bug',
+				color: 'red',
+				credentials: {},
+			});
+			expect(result).toMatchObject({ name: 'bug', color: 'red' });
+			expect((result as { id: string }).id).toBeTruthy();
+		});
+
+		it('throws NOT_FOUND for an unknown providerId', async () => {
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await expect(
+				caller.createLabel({
+					providerId: 'does-not-exist',
+					containerId: 'x',
+					name: 'bug',
+					credentials: {},
+				}),
+			).rejects.toThrow(/does-not-exist|NOT_FOUND|Unknown/);
+		});
+
+		it('throws UNIMPLEMENTED when the provider does not declare createLabel', async () => {
+			const { createFakePMManifest } = await import('../../helpers/fakePMProvider.js');
+			const base = createFakePMManifest();
+			registerPMProvider({ ...base, id: 'fake-no-create', createLabel: undefined });
+
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await expect(
+				caller.createLabel({
+					providerId: 'fake-no-create',
+					containerId: 'x',
+					name: 'bug',
+					credentials: {},
+				}),
+			).rejects.toThrow(/UNIMPLEMENTED|does not declare|createLabel/);
+		});
+	});
+
+	describe('createCustomField (plan 010/1 task 2)', () => {
+		beforeEach(async () => {
+			_resetPMProviderRegistryForTesting();
+			const { createFakePMManifest } = await import('../../helpers/fakePMProvider.js');
+			registerPMProvider(createFakePMManifest());
+		});
+
+		it('returns { id, name, type } on success', async () => {
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			const result = await caller.createCustomField({
+				providerId: 'fake',
+				containerId: 'fake-container-a',
+				name: 'Cost',
+				credentials: {},
+			});
+			expect(result).toMatchObject({ name: 'Cost' });
+			expect((result as { id: string }).id).toBeTruthy();
+			expect((result as { type: string }).type).toBeTruthy();
+		});
+
+		it('throws NOT_FOUND for an unknown providerId', async () => {
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await expect(
+				caller.createCustomField({
+					providerId: 'does-not-exist',
+					containerId: 'x',
+					name: 'Cost',
+					credentials: {},
+				}),
+			).rejects.toThrow(/does-not-exist|NOT_FOUND|Unknown/);
+		});
+
+		it('throws UNIMPLEMENTED when the provider does not declare createCustomField', async () => {
+			const { createFakePMManifest } = await import('../../helpers/fakePMProvider.js');
+			const base = createFakePMManifest();
+			registerPMProvider({ ...base, id: 'fake-no-cf', createCustomField: undefined });
+
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await expect(
+				caller.createCustomField({
+					providerId: 'fake-no-cf',
+					containerId: 'x',
+					name: 'Cost',
+					credentials: {},
+				}),
+			).rejects.toThrow(/UNIMPLEMENTED|does not declare|createCustomField/);
+		});
+	});
 });

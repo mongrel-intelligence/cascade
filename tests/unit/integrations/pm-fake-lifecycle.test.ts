@@ -94,6 +94,39 @@ describe('FakePMProvider — lifecycle', () => {
 		expect((result ?? []).length).toBeGreaterThan(0);
 	});
 
+	it('createLabel hook (plan 010/1) returns { id, name, color }', async () => {
+		const m = createFakePMManifest();
+		const result = await m.createLabel?.({
+			credentials: {},
+			containerId: 'fake-container-a',
+			name: 'bug',
+			color: 'red',
+		});
+		expect(result).toMatchObject({ name: 'bug', color: 'red' });
+		expect(result?.id).toBeTruthy();
+	});
+
+	it('createLabel hook defaults color when omitted', async () => {
+		const m = createFakePMManifest();
+		const result = await m.createLabel?.({
+			credentials: {},
+			containerId: 'fake-container-a',
+			name: 'feature',
+		});
+		expect(result?.color).toBe('gray');
+	});
+
+	it('createCustomField hook (plan 010/1) returns { id, name, type }', async () => {
+		const m = createFakePMManifest();
+		const result = await m.createCustomField?.({
+			credentials: {},
+			containerId: 'fake-container-a',
+			name: 'Cost',
+		});
+		expect(result).toMatchObject({ name: 'Cost', type: 'text' });
+		expect(result?.id).toBeTruthy();
+	});
+
 	it('configSchema round-trip identity (save → load → save → deep-equal)', () => {
 		const m = createFakePMManifest();
 		const schema = m.configSchema;

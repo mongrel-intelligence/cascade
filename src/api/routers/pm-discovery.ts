@@ -37,6 +37,21 @@ const discoverInput = z.object({
 	credentials: z.record(z.string(), z.string()).optional(),
 });
 
+const createLabelInput = z.object({
+	providerId: z.string().min(1),
+	containerId: z.string().min(1),
+	name: z.string().min(1),
+	color: z.string().optional(),
+	credentials: z.record(z.string(), z.string()).default({}),
+});
+
+const createCustomFieldInput = z.object({
+	providerId: z.string().min(1),
+	containerId: z.string().min(1),
+	name: z.string().min(1),
+	credentials: z.record(z.string(), z.string()).default({}),
+});
+
 export const pmDiscoveryRouter = router({
 	/**
 	 * List every registered PM provider with the minimal metadata the
@@ -113,4 +128,71 @@ export const pmDiscoveryRouter = router({
 		// typing is enforced at the adapter's method signature in plans 2/3/4.
 		return provider.discover(input.capability, input.args as never);
 	}),
+
+	/**
+	 * Generic label-creation dispatch (plan 010/1). Resolves the manifest,
+	 * checks the `createLabel` hook is declared, calls it with credentials
+	 * + containerId + name + color. Each provider's hook internally
+	 * establishes credential scope via its own `withXxxCredentials` helper.
+	 *
+	 * Replaces the legacy per-provider `createTrelloLabel` /
+	 * `createLinearLabel` procedures.
+	 */
+	createLabel: protectedProcedure.input(createLabelInput).mutation(async ({ input }) => {
+		const manifest = getPMProvider(input.providerId);
+		if (!manifest) {
+			throw new TRPCError({
+				code: 'NOT_FOUND',
+				message: `Unknown PM provider '${input.providerId}'. Registered providers: ${listPMProviders()
+					.map((m) => m.id)
+					.join(', ')}`,
+			});
+		}
+		if (!manifest.createLabel) {
+			throw new TRPCError({
+				code: 'NOT_IMPLEMENTED',
+				message:
+					`Provider '${input.providerId}' does not declare createLabel. ` +
+					`Declare it on manifest in ${input.providerId}/manifest.ts to serve label creation.`,
+			});
+		}
+		return manifest.createLabel({
+			credentials: input.credentials,
+			containerId: input.containerId,
+			name: input.name,
+			color: input.color,
+		});
+	}),
+
+	/**
+	 * Generic custom-field-creation dispatch (plan 010/1). Replaces the
+	 * legacy per-provider `createTrelloCustomField` / `createJiraCustomField`
+	 * procedures.
+	 */
+	createCustomField: protectedProcedure
+		.input(createCustomFieldInput)
+		.mutation(async ({ input }) => {
+			const manifest = getPMProvider(input.providerId);
+			if (!manifest) {
+				throw new TRPCError({
+					code: 'NOT_FOUND',
+					message: `Unknown PM provider '${input.providerId}'. Registered providers: ${listPMProviders()
+						.map((m) => m.id)
+						.join(', ')}`,
+				});
+			}
+			if (!manifest.createCustomField) {
+				throw new TRPCError({
+					code: 'NOT_IMPLEMENTED',
+					message:
+						`Provider '${input.providerId}' does not declare createCustomField. ` +
+						`Declare it on manifest in ${input.providerId}/manifest.ts to serve custom-field creation.`,
+				});
+			}
+			return manifest.createCustomField({
+				credentials: input.credentials,
+				containerId: input.containerId,
+				name: input.name,
+			});
+		}),
 });

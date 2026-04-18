@@ -90,6 +90,31 @@ describe('PMProviderManifest — additive optional fields', () => {
 	});
 });
 
+describe('createCustomField? hook (plan 010/1 task 1)', () => {
+	it('is optional — manifests without it still satisfy PMProviderManifest', () => {
+		const m: PMProviderManifest = testPMProvider;
+		expect(m.createCustomField).toBeUndefined();
+	});
+
+	it('when declared, accepts { credentials, containerId, name } and returns { id, name, type }', async () => {
+		const m: PMProviderManifest = {
+			...testPMProvider,
+			createCustomField: async ({ containerId, name }) => ({
+				id: `cf-${containerId}-${name}`,
+				name,
+				type: 'text',
+			}),
+		};
+		expect(typeof m.createCustomField).toBe('function');
+		const result = await m.createCustomField!({
+			credentials: {},
+			containerId: 'board-1',
+			name: 'Cost',
+		});
+		expect(result).toEqual({ id: 'cf-board-1-Cost', name: 'Cost', type: 'text' });
+	});
+});
+
 describe('validateManifestAgainstSchema', () => {
 	it('exists and returns void on a clean manifest', async () => {
 		const mod = await import('../../../src/integrations/pm/manifest.js');

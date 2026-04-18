@@ -473,6 +473,30 @@ export function createFakePMManifest(): PMProviderManifest {
 		},
 		lifecycle: { enabled: true, fixtureKey: 'fake' },
 		createDiscoveryProvider: () => createFakePMProvider().provider,
+
+		// ── Plan 010/1 mutation hooks ──────────────────────────────────
+		//
+		// The fake doesn't share a persistent store across calls (each
+		// caller creates a fresh instance) — so "created" labels and
+		// custom fields here are synthesized inline. The returned shape
+		// matches the interface contract; tests assert on shape, not
+		// store retention.
+		createLabel: async ({ containerId, name, color }) => {
+			_idCounter += 1;
+			return {
+				id: `fake-label-${_idCounter}`,
+				name,
+				color: color ?? 'gray',
+			};
+		},
+		createCustomField: async ({ containerId, name }) => {
+			_idCounter += 1;
+			return {
+				id: `fake-cf-${_idCounter}`,
+				name,
+				type: 'text',
+			};
+		},
 	};
 }
 
