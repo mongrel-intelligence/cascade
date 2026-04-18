@@ -19,7 +19,9 @@ describe('WebhookUrlDisplayStep', () => {
 				webhookUrl: 'https://router.example.com/trello/webhook',
 			}),
 		);
-		expect(html).toContain('<code>https://router.example.com/trello/webhook</code>');
+		// The <code> element may carry Tailwind classes; match loosely on the
+		// tag + URL + closing tag rather than the exact attribute-free opener.
+		expect(html).toMatch(/<code[^>]*>https:\/\/router\.example\.com\/trello\/webhook<\/code>/);
 		expect(html).toContain('data-url="https://router.example.com/trello/webhook"');
 	});
 

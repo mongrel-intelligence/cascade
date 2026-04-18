@@ -1,5 +1,6 @@
 /**
- * Shared label-mapping step component (plan 010/3).
+ * Shared label-mapping step component (plan 010/3; styling restored
+ * post-spec-012 follow-up).
  *
  * Two modes:
  * - When `providerLabels.length > 0` (Trello, Linear): render a dropdown
@@ -12,6 +13,11 @@
  */
 
 import { createElement, useState } from 'react';
+import { Button } from '@/components/ui/button.js';
+import { Input } from '@/components/ui/input.js';
+import { Label } from '@/components/ui/label.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import type { DataProps } from '@/lib/data-props.js';
 import type { StandardStep } from '../../../../../../src/integrations/pm/manifest.js';
 
 export interface ProviderLabel {
@@ -73,15 +79,23 @@ export function LabelMappingStep({
 			'data-provider-id': providerId,
 			'data-step-id': step.id,
 			'data-mode': useFreeText ? 'free-text' : 'enum',
-			className: 'pm-wizard-step pm-wizard-step-label-mapping',
+			className: 'space-y-3',
 		},
 		loading
-			? createElement('p', { 'data-state': 'loading' }, 'Loading labels…')
+			? createElement(
+					'p',
+					{ 'data-state': 'loading', className: 'text-sm text-muted-foreground' },
+					'Loading labels…',
+				)
 			: error
-				? createElement('p', { 'data-state': 'error' }, `Error: ${error}`)
+				? createElement(
+						'p',
+						{ 'data-state': 'error', className: 'text-sm text-destructive' },
+						`Error: ${error}`,
+					)
 				: createElement(
 						'div',
-						{ className: 'pm-wizard-label-mappings' },
+						{ className: 'space-y-2' },
 						...labelSlots.map((slot) => {
 							const currentValue = mappings[slot.key] ?? '';
 							const fieldId = `label-${slot.key}`;
@@ -89,59 +103,86 @@ export function LabelMappingStep({
 							if (useFreeText) {
 								return createElement(
 									'div',
-									{ key: slot.key, className: 'pm-wizard-label-row', 'data-slot': slot.key },
-									createElement('label', { htmlFor: fieldId }, slot.label),
-									createElement('input', {
+									{
+										key: slot.key,
+										className: 'flex items-center gap-3',
+										'data-slot': slot.key,
+									},
+									createElement(
+										Label,
+										{
+											htmlFor: fieldId,
+											className: 'w-32 shrink-0 text-xs text-muted-foreground',
+										},
+										slot.label,
+									),
+									createElement(Input, {
 										id: fieldId,
 										type: 'text',
 										value: currentValue,
 										onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
 											onMappingChange(slot.key, e.target.value),
 										placeholder: 'Label name',
+										className: 'flex-1',
 									}),
 								);
 							}
 
 							return createElement(
 								'div',
-								{ key: slot.key, className: 'pm-wizard-label-row', 'data-slot': slot.key },
-								createElement('label', { htmlFor: fieldId }, slot.label),
+								{ key: slot.key, className: 'space-y-2', 'data-slot': slot.key },
 								createElement(
-									'select',
-									{
-										id: fieldId,
-										value: currentValue,
-										onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-											onMappingChange(slot.key, e.target.value),
-									},
-									createElement('option', { value: '' }, '— Select —'),
-									...providerLabels.map((label) =>
-										createElement(
-											'option',
-											{
-												key: label.id,
-												value: label.id,
-												'data-color': label.color ?? undefined,
-											},
-											label.name,
+									'div',
+									{ className: 'flex items-center gap-3' },
+									createElement(
+										Label,
+										{
+											htmlFor: fieldId,
+											className: 'w-32 shrink-0 text-xs text-muted-foreground',
+										},
+										slot.label,
+									),
+									createElement(
+										NativeSelect,
+										{
+											id: fieldId,
+											value: currentValue,
+											onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+												onMappingChange(slot.key, e.target.value),
+											className: 'flex-1',
+										},
+										createElement('option', { value: '' }, '— Select —'),
+										...providerLabels.map((label) =>
+											createElement(
+												'option',
+												{
+													key: label.id,
+													value: label.id,
+													'data-color': label.color ?? undefined,
+												},
+												label.name,
+											),
 										),
 									),
 								),
 								onCreateLabel
 									? createElement(
 											'div',
-											{ className: 'pm-wizard-create-label' },
-											createElement('input', {
+											{ className: 'flex items-center gap-2 pl-32' },
+											createElement(Input, {
 												type: 'text',
 												placeholder: 'New label name',
 												value: newLabelNames[slot.key] ?? '',
 												onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
 													setNewLabelNames((prev) => ({ ...prev, [slot.key]: e.target.value })),
+												className: 'h-8 text-xs flex-1',
 											}),
 											createElement(
-												'button',
+												Button,
 												{
 													type: 'button',
+													variant: 'outline',
+													size: 'sm',
 													onClick: () => {
 														const name = newLabelNames[slot.key];
 														if (name) {
@@ -152,7 +193,7 @@ export function LabelMappingStep({
 													},
 													'data-action': 'create-label',
 													'data-create-color': labelDefaults?.[slot.key]?.color,
-												},
+												} as React.ComponentProps<typeof Button> & DataProps,
 												'Create label',
 											),
 										)

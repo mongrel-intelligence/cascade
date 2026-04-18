@@ -56,8 +56,12 @@ describe('CredentialsStep', () => {
 				onChange: () => {},
 			}),
 		);
-		// api_token → password; api_key → text (role doesn't include 'token'/'password')
-		expect(html).toMatch(/id="cred-api_token"[^>]*type="password"/);
+		// api_token → password; api_key → text (role doesn't include 'token'/'password').
+		// Order-agnostic: the <input> element can emit attributes in any order depending
+		// on the wrapper (shadcn Input sets type before spread-in id).
+		expect(html).toMatch(
+			/<input[^>]*id="cred-api_token"[^>]*type="password"|<input[^>]*type="password"[^>]*id="cred-api_token"/,
+		);
 	});
 
 	it('renders verify button when onVerify is supplied', () => {

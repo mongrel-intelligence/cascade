@@ -1,5 +1,6 @@
 /**
- * Shared custom-field-mapping step component (plan 011/1 — 7th StandardStepKind).
+ * Shared custom-field-mapping step component (plan 011/1 — 7th StandardStepKind;
+ * styling restored post-spec-012 follow-up).
  *
  * Renders one dropdown per CASCADE custom-field slot (e.g. cost, effort)
  * with every discovered provider custom field as an option. When the
@@ -14,6 +15,11 @@
  */
 
 import { createElement, useState } from 'react';
+import { Button } from '@/components/ui/button.js';
+import { Input } from '@/components/ui/input.js';
+import { Label } from '@/components/ui/label.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import type { DataProps } from '@/lib/data-props.js';
 import type { StandardStep } from '../../../../../../src/integrations/pm/manifest.js';
 
 export interface ProviderCustomField {
@@ -59,17 +65,20 @@ function CreateCustomFieldForm({
 	const [name, setName] = useState(defaultName ?? '');
 	return createElement(
 		'div',
-		{ className: 'pm-wizard-create-custom-field' },
-		createElement('input', {
+		{ className: 'flex items-center gap-2 pl-32' },
+		createElement(Input, {
 			type: 'text',
 			placeholder: 'New custom field name',
 			value: name,
 			onChange: (e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value),
+			className: 'h-8 text-xs flex-1',
 		}),
 		createElement(
-			'button',
+			Button,
 			{
 				type: 'button',
+				variant: 'outline',
+				size: 'sm',
 				'data-action': 'create-custom-field',
 				'data-slot-key': slotKey,
 				disabled: name.trim() === '',
@@ -79,7 +88,7 @@ function CreateCustomFieldForm({
 					onCreate(slotKey, trimmed);
 					setName('');
 				},
-			},
+			} as React.ComponentProps<typeof Button> & DataProps,
 			'Create',
 		),
 	);
@@ -103,38 +112,58 @@ export function CustomFieldMappingStep({
 			'data-step-component': 'custom-field-mapping',
 			'data-provider-id': providerId,
 			'data-step-id': step.id,
-			className: 'pm-wizard-step pm-wizard-step-custom-field-mapping',
+			className: 'space-y-3',
 		},
 		loading
-			? createElement('p', { 'data-state': 'loading' }, 'Loading custom fields…')
+			? createElement(
+					'p',
+					{ 'data-state': 'loading', className: 'text-sm text-muted-foreground' },
+					'Loading custom fields…',
+				)
 			: error
-				? createElement('p', { 'data-state': 'error' }, `Error: ${error}`)
+				? createElement(
+						'p',
+						{ 'data-state': 'error', className: 'text-sm text-destructive' },
+						`Error: ${error}`,
+					)
 				: createElement(
 						'div',
-						{ className: 'pm-wizard-custom-field-mappings' },
+						{ className: 'space-y-2' },
 						...cascadeSlots.map((slot) =>
 							createElement(
 								'div',
 								{
 									key: slot.key,
-									className: 'pm-wizard-custom-field-row',
+									className: 'space-y-2',
 									'data-cascade-slot': slot.key,
 								},
-								createElement('label', { htmlFor: `custom-field-${slot.key}` }, slot.label),
 								createElement(
-									'select',
-									{
-										id: `custom-field-${slot.key}`,
-										value: mappings[slot.key] ?? '',
-										onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-											onMappingChange(slot.key, e.target.value),
-									},
-									createElement('option', { value: '' }, '— Select —'),
-									...providerCustomFields.map((field) =>
-										createElement(
-											'option',
-											{ key: field.id, value: field.id, 'data-type': field.type },
-											field.name,
+									'div',
+									{ className: 'flex items-center gap-3' },
+									createElement(
+										Label,
+										{
+											htmlFor: `custom-field-${slot.key}`,
+											className: 'w-32 shrink-0 text-xs text-muted-foreground',
+										},
+										slot.label,
+									),
+									createElement(
+										NativeSelect,
+										{
+											id: `custom-field-${slot.key}`,
+											value: mappings[slot.key] ?? '',
+											onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
+												onMappingChange(slot.key, e.target.value),
+											className: 'flex-1',
+										},
+										createElement('option', { value: '' }, '— Select —'),
+										...providerCustomFields.map((field) =>
+											createElement(
+												'option',
+												{ key: field.id, value: field.id, 'data-type': field.type },
+												field.name,
+											),
 										),
 									),
 								),

@@ -7,6 +7,9 @@
  */
 
 import { createElement } from 'react';
+import { Label } from '@/components/ui/label.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
+import type { DataProps } from '@/lib/data-props.js';
 import type { StandardStep } from '../../../../../../src/integrations/pm/manifest.js';
 
 export interface ProviderState {
@@ -42,37 +45,63 @@ export function StatusMappingStep({
 			'data-step-component': 'status-mapping',
 			'data-provider-id': providerId,
 			'data-step-id': step.id,
-			className: 'pm-wizard-step pm-wizard-step-status-mapping',
-		},
+			className: 'space-y-3',
+		} as React.ComponentProps<'div'> & DataProps,
 		loading
-			? createElement('p', { 'data-state': 'loading' }, 'Loading states…')
+			? createElement(
+					'p',
+					{
+						'data-state': 'loading',
+						className: 'text-sm text-muted-foreground',
+					} as React.ComponentProps<'p'> & DataProps,
+					'Loading states…',
+				)
 			: error
-				? createElement('p', { 'data-state': 'error' }, `Error: ${error}`)
+				? createElement(
+						'p',
+						{
+							'data-state': 'error',
+							className: 'text-sm text-destructive',
+						} as React.ComponentProps<'p'> & DataProps,
+						`Error: ${error}`,
+					)
 				: createElement(
 						'div',
-						{ className: 'pm-wizard-status-mappings' },
+						{ className: 'space-y-2' },
 						...cascadeStatuses.map((cascade) =>
 							createElement(
 								'div',
 								{
 									key: cascade.key,
-									className: 'pm-wizard-status-row',
+									className: 'flex items-center gap-3',
 									'data-cascade-status': cascade.key,
-								},
-								createElement('label', { htmlFor: `status-${cascade.key}` }, cascade.label),
+								} as React.ComponentProps<'div'> & DataProps,
 								createElement(
-									'select',
+									Label,
+									{
+										htmlFor: `status-${cascade.key}`,
+										className: 'w-32 shrink-0 text-xs text-muted-foreground',
+									},
+									cascade.label,
+								),
+								createElement(
+									NativeSelect,
 									{
 										id: `status-${cascade.key}`,
 										value: mappings[cascade.key] ?? '',
 										onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
 											onMappingChange(cascade.key, e.target.value),
+										className: 'flex-1',
 									},
 									createElement('option', { value: '' }, '— Select —'),
 									...providerStates.map((state) =>
 										createElement(
 											'option',
-											{ key: state.id, value: state.id, 'data-category': state.category },
+											{
+												key: state.id,
+												value: state.id,
+												'data-category': state.category,
+											} as React.ComponentProps<'option'> & DataProps,
 											state.name,
 										),
 									),

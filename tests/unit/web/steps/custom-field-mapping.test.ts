@@ -124,13 +124,15 @@ describe('CustomFieldMappingStep', () => {
 		});
 		const elements: ReactElement[] = [];
 		flatten(tree, elements);
-		const selects = elements.filter((el) => el.type === 'select');
-		expect(selects.length).toBe(2);
-		const costSelect = selects.find(
-			(el) => (el.props as { id?: string }).id === 'custom-field-cost',
+		// Post-styling-restoration: the select is wrapped in `NativeSelect`
+		// (shadcn primitive) rather than raw `<select>`. Walk by prop id
+		// instead of element type — the primitive forwards the `id` prop and
+		// `onChange` handler unchanged, so wiring assertions are preserved.
+		const costSelectEl = elements.find(
+			(el) => (el.props as { id?: string } | undefined)?.id === 'custom-field-cost',
 		);
-		expect(costSelect).toBeDefined();
-		const onChange = (costSelect?.props as { onChange?: (e: unknown) => void }).onChange;
+		expect(costSelectEl).toBeDefined();
+		const onChange = (costSelectEl?.props as { onChange?: (e: unknown) => void }).onChange;
 		expect(onChange).toBeTypeOf('function');
 		onChange?.({ target: { value: 'fld-2' } });
 		expect(onMappingChange).toHaveBeenCalledWith('cost', 'fld-2');
