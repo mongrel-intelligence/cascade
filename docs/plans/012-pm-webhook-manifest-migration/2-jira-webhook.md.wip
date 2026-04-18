@@ -6,7 +6,7 @@ plan_slug: jira-webhook
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: [1-trello-webhook.md]
-status: pending
+status: wip
 ---
 
 # 012/2: JIRA Webhook — Migrate Creation UX Into Manifest Path
