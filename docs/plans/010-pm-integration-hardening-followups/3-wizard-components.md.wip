@@ -6,7 +6,7 @@ plan_slug: wizard-components
 level: plan
 parent_spec: docs/specs/010-pm-integration-hardening-followups.md
 depends_on: [2-read-cleanup.md]
-status: pending
+status: wip
 ---
 
 # 010/3: Wizard Components — Real Shared Components for Every StandardStepKind
@@ -15,9 +15,29 @@ status: pending
 
 ## Summary
 
-Replace the plan 009/1 placeholder-only `renderStandardStep` with real shared React components for each of the six `StandardStepKind` values: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`. Each component is a standalone React component under a dedicated shared folder; each consumes data through `pm.discovery.discover` (hooks built in plan 2) + the wizard state shape the `pm-wizard-state.ts` module already defines.
+**Narrowed scope (from plan-3-original):** replace the plan 009/1 placeholder-only `renderStandardStep` with real shared React components for each of the six `StandardStepKind` values, tighten the `new-provider-surface` snapshot to include the new components folder, finalize documentation (provider migration status, root `CLAUDE.md`, spec 009 forward-reference). **Do NOT migrate Trello/JIRA/Linear wizards to the shared components in this plan** — the existing 1,085 lines of per-provider wizard UI are working and tested; forcing a migration plus the 6-component build into a single plan is too much for one reviewable unit. A future plan can migrate the existing wizards one at a time.
 
-Migrate Trello, JIRA, and Linear wizards to render their standard steps through the shared components via `renderStandardStep`. Shrink the per-provider `pm-wizard-<provider>-steps.tsx` files to contain only genuinely provider-specific custom steps (if any). This plan tightens the `new-provider-surface` snapshot to include the new shared-component folder, and finalizes documentation (provider migration status, root `CLAUDE.md`, spec 009 forward-reference).
+The user-visible win: **a new PM provider can opt into the shared components**, skipping the need to re-implement credentials / container-pick / status-mapping / label-mapping / webhook-url-display / project-scope from scratch. Existing providers keep their tested UI paths untouched.
+
+**Components delivered:**
+- `web/src/components/projects/pm-providers/steps/credentials.tsx` — shared credentials step.
+- `web/src/components/projects/pm-providers/steps/container-pick.tsx` — shared container/board/project/team picker.
+- `web/src/components/projects/pm-providers/steps/status-mapping.tsx` — shared CASCADE-status → provider-state mapping.
+- `web/src/components/projects/pm-providers/steps/label-mapping.tsx` — shared label-mapping (accepts free text for providers that return no curated labels, like JIRA).
+- `web/src/components/projects/pm-providers/steps/webhook-url-display.tsx` — webhook URL display step.
+- `web/src/components/projects/pm-providers/steps/project-scope.tsx` — Linear-style project-scope narrowing.
+- `web/src/components/projects/pm-providers/generator.tsx` — replace placeholder switch with real component rendering; preserve unknown-kind warn-and-placeholder fallback.
+- `tests/unit/web/steps/*.test.tsx` — one test file per shared component.
+- `tests/unit/web/wizard-generator.test.ts` — update to assert real components render (no more placeholder divs for known kinds).
+- `tests/unit/integrations/new-provider-surface.test.ts` — extend shared-surface list with the 6 shared-component files.
+- `src/integrations/README.md` — rewrite "Adding a new PM provider" + provider migration status table to reflect post-spec-010.
+- `CLAUDE.md` — update PM-integration summary.
+- `docs/specs/009-pm-integration-hardening.md.done` — forward-reference to spec 010.
+
+**Deferred to follow-up spec (was in plan-3-original, scope cut for this plan):**
+- Migrating existing Trello/JIRA/Linear wizards to use the shared components via `renderStandardStep`.
+- Deleting per-provider `pm-wizard-<provider>-steps.tsx` standard-kind step components.
+- Migrating the 6 composite `*Details(ByProject)` procedures from `integrationsDiscovery.ts` (carried over from plan 2's narrowed scope).
 
 **Components delivered:**
 - `web/src/components/projects/pm-providers/steps/credentials.tsx` — standard credentials step.
@@ -229,13 +249,13 @@ Migrate Trello, JIRA, and Linear wizards to render their standard steps through 
 
 1. Six new React components exist at `web/src/components/projects/pm-providers/steps/*.tsx`, one per `StandardStepKind`.
 2. `renderStandardStep` in the generator returns the corresponding real component for each `StandardStepKind`; the unknown-kind fallback still warns and renders a placeholder.
-3. All three provider wizards (Trello/JIRA/Linear) render their standard steps through the shared components via `renderStandardStep`.
-4. Per-provider `pm-wizard-<provider>-steps.tsx` files retain only genuinely provider-specific custom steps; files with no custom UI are deleted.
+3. (**deferred**) Provider wizards keep their existing step files; a future plan migrates them to shared components.
+4. (**deferred**) Per-provider step file shrinking deferred together with AC #3.
 5. `new-provider-surface` snapshot is tightened to include the 6 shared step files.
-6. `src/integrations/README.md` is fully rewritten to reflect post-spec-010 state.
+6. `src/integrations/README.md` is rewritten to reflect post-spec-010 state.
 7. Root `CLAUDE.md` PM-integration summary reflects post-spec-010 state.
 8. `docs/specs/009-pm-integration-hardening.md.done` has a forward-reference to spec 010.
-9. No user-visible regression in the Trello/JIRA/Linear wizards (snapshot or manual smoke).
+9. No user-visible regression in the Trello/JIRA/Linear wizards (they continue to use their tested step paths; shared components are additive, not swapped in).
 10. All new/modified code has tests.
 11. `npm run build` passes.
 12. `npm test` passes.
