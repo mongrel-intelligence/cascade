@@ -3,18 +3,27 @@
  *
  * Assumes linearClient credentials are already in scope via withLinearCredentials().
  *
- * Linear does not have native checklists. We model them using child issues
- * (sub-issues), following the same pattern used by JiraPMProvider for subtasks.
+ * Linear does not have native checklists. We model them as inline markdown
+ * checkboxes in the parent issue's description. See `src/pm/_shared/inline-checklist.ts`
+ * for the engine, and spec 008 for rationale.
  */
 
 import { resolveLabelId as sharedResolveLabelId } from '../../integrations/pm/_shared/label-id-resolver.js';
 import { linearClient } from '../../linear/client.js';
 import { logger } from '../../utils/logging.js';
+import {
+	addItemToChecklist,
+	appendChecklistSection,
+	findChecklistNameByHash,
+	hashChecklistItemId,
+	parseInlineChecklists,
+	removeChecklistItem,
+	toggleChecklistItem,
+} from '../_shared/inline-checklist.js';
 import type { LinearConfig } from '../config.js';
 import type {
 	Attachment,
 	Checklist,
-	ChecklistItem,
 	CreateWorkItemConfig,
 	ListWorkItemsFilter,
 	PMProvider,
@@ -22,6 +31,22 @@ import type {
 	WorkItemComment,
 	WorkItemLabel,
 } from '../types.js';
+
+const INLINE_CHECKLIST_ID_PREFIX = 'inline-';
+
+function buildChecklistId(workItemId: string, checklistName: string): string {
+	const hash = hashChecklistItemId('', checklistName).slice(3); // strip 'cl-' prefix
+	return `${INLINE_CHECKLIST_ID_PREFIX}${workItemId}-${hash}`;
+}
+
+function parseChecklistId(checklistId: string): { workItemId: string; nameHash: string } | null {
+	if (!checklistId.startsWith(INLINE_CHECKLIST_ID_PREFIX)) return null;
+	const rest = checklistId.slice(INLINE_CHECKLIST_ID_PREFIX.length);
+	// Last segment is 8-char hex hash; everything before is the workItemId
+	const m = rest.match(/^(.+)-([0-9a-f]{8})$/);
+	if (!m) return null;
+	return { workItemId: m[1], nameHash: m[2] };
+}
 
 export class LinearPMProvider implements PMProvider {
 	readonly type = 'linear' as const;
@@ -172,38 +197,20 @@ export class LinearPMProvider implements PMProvider {
 	}
 
 	async getChecklists(workItemId: string): Promise<Checklist[]> {
-		// Linear doesn't have native checklists — map child issues (sub-issues)
-		// We fetch the issue's children by listing issues with parentId filter.
-		// The linearClient doesn't expose a direct children query, so we use
-		// a workaround: list issues filtered by parent identifier.
-		// Since linearClient.listIssues() doesn't support parentId filter
-		// directly, we fall back to getting the issue and checking its
-		// children via the GraphQL API through getIssue() which doesn't
-		// return children. We'll use a workaround using the attachment/comment
-		// based "pseudo-checklist" pattern with a dedicated sub-issue list call.
-		//
-		// For now, use listIssues with a parent identifier approach:
-		// Linear's filter supports parent.id, but our client doesn't expose that.
-		// Return an empty list and rely on the item-level operations for now.
-		// This is consistent with how the JIRA implementation works for empty subtask lists.
-		logger.debug('[Linear] getChecklists — returning empty list (sub-issues not yet cached)', {
+		const issue = await linearClient.getIssue(workItemId);
+		const parsed = parseInlineChecklists(issue.description ?? '');
+		return parsed.map((c) => ({
+			id: buildChecklistId(workItemId, c.name),
+			name: c.name,
 			workItemId,
-		});
-		return [
-			{
-				id: `subtasks-${workItemId}`,
-				name: 'Sub-issues',
-				workItemId,
-				items: [] as ChecklistItem[],
-			},
-		];
+			items: c.items.map((i) => ({ id: i.id, name: i.name, complete: i.complete })),
+		}));
 	}
 
 	async createChecklist(workItemId: string, name: string): Promise<Checklist> {
-		// In Linear, "create checklist" = create a parent context.
-		// Items will be sub-issues created via addChecklistItem.
+		await this.updateDescription(workItemId, (desc) => appendChecklistSection(desc, name, []));
 		return {
-			id: `checklist-${workItemId}-${Date.now()}`,
+			id: buildChecklistId(workItemId, name),
 			name,
 			workItemId,
 			items: [],
@@ -213,64 +220,66 @@ export class LinearPMProvider implements PMProvider {
 	async addChecklistItem(
 		checklistId: string,
 		name: string,
-		_checked = false,
-		description?: string,
+		checked = false,
+		_description?: string,
 	): Promise<void> {
-		// Extract parent issue ID from checklistId format:
-		// "checklist-<parentId>-<timestamp>" or "subtasks-<parentId>"
-		const match = checklistId.match(/(?:checklist|subtasks)-(.+?)(?:-\d{10,})?$/);
-		const parentId = match?.[1];
-		if (!parentId) {
-			throw new Error(`Cannot extract parent issue ID from checklist ID: ${checklistId}`);
+		const parsed = parseChecklistId(checklistId);
+		if (!parsed) {
+			throw new Error(`Invalid Linear checklist ID: ${checklistId}`);
 		}
 
-		await linearClient.createIssue({
-			teamId: this.config.teamId,
-			...(this.config.projectId ? { projectId: this.config.projectId } : {}),
-			...(this.config.statuses?.backlog ? { stateId: this.config.statuses.backlog } : {}),
-			title: name,
-			description,
-			parentId,
+		await this.updateDescription(parsed.workItemId, (desc) => {
+			const checklistName = findChecklistNameByHash(desc, parsed.nameHash);
+			if (!checklistName) {
+				throw new Error(`Checklist not found in description: ${checklistId}`);
+			}
+			return addItemToChecklist(desc, checklistName, name, checked);
 		});
-		logger.debug('[Linear] addChecklistItem — created sub-issue', { parentId, title: name });
+		logger.debug('[Linear] addChecklistItem — appended inline checkbox', {
+			workItemId: parsed.workItemId,
+			name,
+		});
 	}
 
 	async updateChecklistItem(
-		_workItemId: string,
+		workItemId: string,
 		checkItemId: string,
 		complete: boolean,
 	): Promise<void> {
-		// checkItemId is a Linear issue ID (sub-issue)
-		const targetStatus = complete
-			? (this.config.statuses?.done ?? 'Done')
-			: (this.config.statuses?.backlog ?? 'Todo');
-		await this.moveWorkItem(checkItemId, targetStatus);
+		await this.updateDescription(workItemId, (desc) => {
+			const checklists = parseInlineChecklists(desc);
+			return toggleChecklistItem(desc, checkItemId, complete, checklists);
+		});
 	}
 
-	async deleteChecklistItem(_workItemId: string, checkItemId: string): Promise<void> {
-		// Linear doesn't support issue deletion via API — transition to cancelled state
-		// We try to find a cancelled/done state and transition to it.
-		const cancelledStateId = this.config.statuses?.cancelled ?? this.config.statuses?.done ?? null;
-
-		if (cancelledStateId) {
-			try {
-				await linearClient.updateIssueState(checkItemId, cancelledStateId);
-				logger.info('[Linear] deleteChecklistItem — transitioned sub-issue to terminal state', {
-					checkItemId,
-					stateId: cancelledStateId,
-				});
-				return;
-			} catch (err) {
-				logger.warn('[Linear] Failed to transition sub-issue to terminal state', {
-					checkItemId,
-					error: String(err),
-				});
-			}
-		}
-
-		logger.warn('[Linear] deleteChecklistItem — no terminal state configured, skipping', {
-			checkItemId,
+	async deleteChecklistItem(workItemId: string, checkItemId: string): Promise<void> {
+		await this.updateDescription(workItemId, (desc) => {
+			const checklists = parseInlineChecklists(desc);
+			return removeChecklistItem(desc, checkItemId, checklists);
 		});
+	}
+
+	/**
+	 * Read-modify-write the issue description with one retry on conflict.
+	 * Used by all checklist mutation methods.
+	 */
+	private async updateDescription(
+		issueId: string,
+		mutate: (desc: string) => string,
+	): Promise<void> {
+		try {
+			const issue = await linearClient.getIssue(issueId);
+			const newDesc = mutate(issue.description ?? '');
+			await linearClient.updateIssue(issueId, { description: newDesc });
+		} catch (err) {
+			logger.warn('[Linear] Description update failed; retrying once', {
+				issueId,
+				error: String(err),
+			});
+			const issue = await linearClient.getIssue(issueId);
+			const newDesc = mutate(issue.description ?? '');
+			await linearClient.updateIssue(issueId, { description: newDesc });
+		}
 	}
 
 	async getAttachments(workItemId: string): Promise<Attachment[]> {

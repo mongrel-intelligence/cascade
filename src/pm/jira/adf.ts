@@ -62,6 +62,12 @@ function convertAdfNode(n: AdfNode): string[] {
 			return [...(n.content ?? []).map((item) => `- ${adfToPlainText(item)}`), ''];
 		case 'listItem':
 			return [adfToPlainText(n)];
+		case 'taskList':
+			return [...((n.content ?? []) as AdfNode[]).flatMap((item) => convertAdfNode(item)), ''];
+		case 'taskItem': {
+			const checked = n.attrs?.state === 'DONE';
+			return [`- [${checked ? 'x' : ' '}] ${adfToPlainText(n)}`];
+		}
 		case 'codeBlock':
 			return ['```', adfToPlainText(n), '```', ''];
 		case 'text':

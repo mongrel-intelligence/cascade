@@ -356,106 +356,157 @@ describe('LinearPMProvider', () => {
 	});
 
 	// =========================================================================
-	// getChecklists
+	// Inline checklist methods (spec 008)
 	// =========================================================================
-	describe('getChecklists', () => {
-		it('returns a placeholder checklist', async () => {
+	describe('getChecklists (inline)', () => {
+		it('parses inline checklists from issue description', async () => {
+			mockGetIssue.mockResolvedValue(
+				makeIssue({
+					description: '### ✅ AC\n- [ ] First\n- [x] Second',
+				}),
+			);
+
 			const result = await provider.getChecklists('issue-uuid');
+
 			expect(result).toHaveLength(1);
-			expect(result[0].id).toBe('subtasks-issue-uuid');
-			expect(result[0].name).toBe('Sub-issues');
+			expect(result[0].name).toBe('✅ AC');
 			expect(result[0].workItemId).toBe('issue-uuid');
-			expect(result[0].items).toEqual([]);
+			expect(result[0].items).toHaveLength(2);
+			expect(result[0].items[0]).toMatchObject({ name: 'First', complete: false });
+			expect(result[0].items[1]).toMatchObject({ name: 'Second', complete: true });
+			expect(result[0].items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
+		});
+
+		it('returns empty array for description with no checklists', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: 'Just text.' }));
+			const result = await provider.getChecklists('issue-uuid');
+			expect(result).toEqual([]);
+		});
+
+		it('returns empty array for empty description', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: null }));
+			const result = await provider.getChecklists('issue-uuid');
+			expect(result).toEqual([]);
 		});
 	});
 
-	// =========================================================================
-	// createChecklist
-	// =========================================================================
-	describe('createChecklist', () => {
-		it('returns a synthetic checklist object', async () => {
-			const result = await provider.createChecklist('issue-uuid', 'Acceptance Criteria');
+	describe('createChecklist (inline)', () => {
+		it('appends new checklist section to description and returns Checklist', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: 'Existing.' }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
+
+			const result = await provider.createChecklist('issue-uuid', '✅ AC');
+
+			expect(mockUpdateIssue).toHaveBeenCalledWith(
+				'issue-uuid',
+				expect.objectContaining({ description: 'Existing.\n\n### ✅ AC' }),
+			);
 			expect(result.workItemId).toBe('issue-uuid');
-			expect(result.name).toBe('Acceptance Criteria');
-			expect(result.id).toMatch(/^checklist-issue-uuid-\d+$/);
+			expect(result.name).toBe('✅ AC');
+			expect(result.id).toMatch(/^inline-issue-uuid-[0-9a-f]{8}$/);
 			expect(result.items).toEqual([]);
 		});
 	});
 
-	// =========================================================================
-	// addChecklistItem
-	// =========================================================================
-	describe('addChecklistItem', () => {
-		it('creates a sub-issue when parent ID is extractable', async () => {
-			mockCreateIssue.mockResolvedValue(makeIssue());
+	describe('addChecklistItem (inline)', () => {
+		it('appends a markdown checkbox to the description', async () => {
+			// Pre-existing checklist section in description
+			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] Existing' }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
 
-			await provider.addChecklistItem('subtasks-issue-uuid', 'Sub-task 1');
+			// Build the checklistId for this checklist (without calling createChecklist)
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'New item');
 
-			expect(mockCreateIssue).toHaveBeenCalledWith(
-				expect.objectContaining({ title: 'Sub-task 1', teamId: 'team-abc' }),
+			const lastCall = mockUpdateIssue.mock.calls[mockUpdateIssue.mock.calls.length - 1];
+			expect(lastCall[1].description).toContain('- [ ] New item');
+		});
+
+		it('does NOT call createIssue (no sub-issue creation)', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] Existing' }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
+
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'Item');
+
+			expect(mockCreateIssue).not.toHaveBeenCalled();
+		});
+
+		it('throws when checklistId has wrong format', async () => {
+			await expect(provider.addChecklistItem('invalid-id', 'X')).rejects.toThrow(
+				'Invalid Linear checklist ID',
 			);
 		});
 
-		it('passes stateId for backlog on sub-issue creation', async () => {
-			mockCreateIssue.mockResolvedValue(makeIssue());
+		it('supports checked=true', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] First' }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
 
-			await provider.addChecklistItem('subtasks-issue-uuid', 'Sub-task 1');
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'Done item', true);
 
-			expect(mockCreateIssue).toHaveBeenCalledWith(
-				expect.objectContaining({ stateId: 'state-backlog' }),
+			const lastCall = mockUpdateIssue.mock.calls[mockUpdateIssue.mock.calls.length - 1];
+			expect(lastCall[1].description).toContain('- [x] Done item');
+		});
+	});
+
+	describe('updateChecklistItem (inline)', () => {
+		it('toggles a checkbox in the description', async () => {
+			const desc = '### ✅ AC\n- [ ] Item A';
+			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
+
+			const checklists = await provider.getChecklists('issue-uuid');
+			const itemId = checklists[0].items[0].id;
+
+			await provider.updateChecklistItem('issue-uuid', itemId, true);
+
+			expect(mockUpdateIssue).toHaveBeenCalledWith(
+				'issue-uuid',
+				expect.objectContaining({ description: '### ✅ AC\n- [x] Item A' }),
 			);
 		});
 
-		it('throws when checklistId has no extractable parent', async () => {
-			await expect(provider.addChecklistItem('invalid-id', 'Sub-task')).rejects.toThrow(
-				'Cannot extract parent issue ID from checklist ID: invalid-id',
+		it('does NOT call updateIssueState (no transition)', async () => {
+			const desc = '### ✅ AC\n- [ ] Item A';
+			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
+
+			const checklists = await provider.getChecklists('issue-uuid');
+			const itemId = checklists[0].items[0].id;
+			await provider.updateChecklistItem('issue-uuid', itemId, true);
+
+			expect(mockUpdateIssueState).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('deleteChecklistItem (inline)', () => {
+		it('removes the item line from the description', async () => {
+			const desc = '### ✅ AC\n- [ ] Keep\n- [ ] Remove';
+			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
+			mockUpdateIssue.mockResolvedValue(makeIssue());
+
+			const checklists = await provider.getChecklists('issue-uuid');
+			const removeId = checklists[0].items[1].id;
+			await provider.deleteChecklistItem('issue-uuid', removeId);
+
+			expect(mockUpdateIssue).toHaveBeenCalledWith(
+				'issue-uuid',
+				expect.objectContaining({ description: '### ✅ AC\n- [ ] Keep' }),
 			);
 		});
 	});
 
-	// =========================================================================
-	// updateChecklistItem
-	// =========================================================================
-	describe('updateChecklistItem', () => {
-		it('transitions sub-issue to done state when complete=true', async () => {
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
+	describe('checklist update retry on conflict', () => {
+		it('retries description update once on failure', async () => {
+			const desc = '### ✅ AC\n- [ ] Item';
+			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
+			mockUpdateIssue.mockRejectedValueOnce(new Error('stale')).mockResolvedValueOnce(makeIssue());
 
-			await provider.updateChecklistItem('parent-uuid', 'sub-uuid', true);
+			const checklists = await provider.getChecklists('issue-uuid');
+			await provider.updateChecklistItem('issue-uuid', checklists[0].items[0].id, true);
 
-			expect(mockUpdateIssueState).toHaveBeenCalledWith('sub-uuid', 'state-done');
-		});
-
-		it('transitions sub-issue to backlog state when complete=false', async () => {
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
-
-			await provider.updateChecklistItem('parent-uuid', 'sub-uuid', false);
-
-			expect(mockUpdateIssueState).toHaveBeenCalledWith('sub-uuid', 'state-backlog');
-		});
-	});
-
-	// =========================================================================
-	// deleteChecklistItem
-	// =========================================================================
-	describe('deleteChecklistItem', () => {
-		it('transitions to cancelled state when configured', async () => {
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
-
-			await provider.deleteChecklistItem('parent-uuid', 'sub-uuid');
-
-			expect(mockUpdateIssueState).toHaveBeenCalledWith('sub-uuid', 'state-cancelled');
-		});
-
-		it('falls back to done state when no cancelled state configured', async () => {
-			const providerNoCancelled = new LinearPMProvider({
-				teamId: 'team-abc',
-				statuses: { done: 'state-done' },
-			});
-			mockUpdateIssueState.mockResolvedValue(makeIssue());
-
-			await providerNoCancelled.deleteChecklistItem('parent-uuid', 'sub-uuid');
-
-			expect(mockUpdateIssueState).toHaveBeenCalledWith('sub-uuid', 'state-done');
+			expect(mockUpdateIssue).toHaveBeenCalledTimes(2);
 		});
 	});
 

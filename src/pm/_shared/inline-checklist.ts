@@ -84,6 +84,27 @@ function classifyLine(line: string, current: { name: string } | null): LineClass
 }
 
 // ---------------------------------------------------------------------------
+// Find a checklist section name by hash (includes empty sections)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the name of the first `### ` heading in `description` whose hash of
+ * its name (via `hashChecklistItemId('', name).slice(3)`) matches `nameHash`.
+ * Useful for finding empty checklist sections that the parser drops.
+ */
+export function findChecklistNameByHash(description: string, nameHash: string): string | null {
+	if (!description) return null;
+	for (const line of description.split('\n')) {
+		const m = line.match(H3_REGEX);
+		if (m) {
+			const name = m[1];
+			if (hashChecklistItemId('', name).slice(3) === nameHash) return name;
+		}
+	}
+	return null;
+}
+
+// ---------------------------------------------------------------------------
 // Appending a new checklist section
 // ---------------------------------------------------------------------------
 

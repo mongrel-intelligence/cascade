@@ -552,274 +552,196 @@ describe('JiraPMProvider', () => {
 		});
 	});
 
-	describe('getChecklists', () => {
-		it('maps subtasks to checklist items', async () => {
+	// =========================================================================
+	// Inline checklist methods (spec 008) — ADF round-trip
+	// =========================================================================
+
+	describe('getChecklists (inline)', () => {
+		it('parses inline checklists from ADF description via markdown round-trip', async () => {
 			mockJiraClient.getIssue.mockResolvedValue({
-				fields: {
-					subtasks: [
-						{ key: 'PROJ-2', id: '2', fields: { summary: 'Subtask 1', status: { name: 'Done' } } },
-						{
-							key: 'PROJ-3',
-							id: '3',
-							fields: { summary: 'Subtask 2', status: { name: 'To Do' } },
-						},
-					],
-				},
+				fields: { description: { type: 'doc', content: [] } },
 			});
+			mockAdfToPlainText.mockReturnValue('### ✅ AC\n- [ ] First\n- [x] Second');
 
 			const result = await provider.getChecklists('PROJ-1');
 
-			expect(result).toEqual([
-				{
-					id: 'subtasks-PROJ-1',
-					name: 'Subtasks',
-					workItemId: 'PROJ-1',
-					items: [
-						{ id: 'PROJ-2', name: 'Subtask 1', complete: true },
-						{ id: 'PROJ-3', name: 'Subtask 2', complete: false },
-					],
-				},
-			]);
+			expect(result).toHaveLength(1);
+			expect(result[0].name).toBe('✅ AC');
+			expect(result[0].workItemId).toBe('PROJ-1');
+			expect(result[0].items).toHaveLength(2);
+			expect(result[0].items[0]).toMatchObject({ name: 'First', complete: false });
+			expect(result[0].items[1]).toMatchObject({ name: 'Second', complete: true });
+			expect(result[0].id).toMatch(/^inline-PROJ-1-[0-9a-f]{8}$/);
 		});
 
-		it('returns empty array when no subtasks', async () => {
+		it('returns empty array when description has no checklist sections', async () => {
 			mockJiraClient.getIssue.mockResolvedValue({
-				fields: { subtasks: [] },
+				fields: { description: { type: 'doc', content: [] } },
 			});
+			mockAdfToPlainText.mockReturnValue('Just text.');
 
 			const result = await provider.getChecklists('PROJ-1');
+			expect(result).toEqual([]);
+		});
 
+		it('returns empty array when description is missing', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({ fields: {} });
+			const result = await provider.getChecklists('PROJ-1');
 			expect(result).toEqual([]);
 		});
 	});
 
-	describe('createChecklist', () => {
-		it('returns checklist object without calling JIRA API', async () => {
-			const result = await provider.createChecklist('PROJ-1', 'My Checklist');
+	describe('createChecklist (inline)', () => {
+		it('appends checklist section to ADF description via round-trip', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue('Existing.');
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			expect(result.name).toBe('My Checklist');
+			const result = await provider.createChecklist('PROJ-1', '✅ AC');
+
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith('Existing.\n\n### ✅ AC');
+			expect(mockJiraClient.updateIssue).toHaveBeenCalledWith('PROJ-1', { description: adfDoc });
 			expect(result.workItemId).toBe('PROJ-1');
-			expect(result.items).toEqual([]);
+			expect(result.id).toMatch(/^inline-PROJ-1-[0-9a-f]{8}$/);
+		});
+
+		it('does NOT call createIssue (no subtask creation)', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue('');
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
+
+			await provider.createChecklist('PROJ-1', 'AC');
+
 			expect(mockJiraClient.createIssue).not.toHaveBeenCalled();
 		});
 	});
 
-	describe('addChecklistItem', () => {
-		it('creates a subtask from checklist-format checklistId', async () => {
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-99' });
-
-			await provider.addChecklistItem('checklist-PROJ-1-1234567890', 'New subtask item');
-
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					project: { key: 'PROJ' },
-					parent: { key: 'PROJ-1' },
-					summary: 'New subtask item',
-					issuetype: { name: 'Sub-task' },
-				}),
-			);
-		});
-
-		it('creates a subtask from subtasks-format checklistId', async () => {
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-100' });
-
-			await provider.addChecklistItem('subtasks-PROJ-5', 'Another subtask');
-
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					parent: { key: 'PROJ-5' },
-					summary: 'Another subtask',
-				}),
-			);
-		});
-
-		it('strips timestamp from checklist-format ID', async () => {
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-101' });
-
-			await provider.addChecklistItem('checklist-BTS-15-1234567890123', 'Subtask with ts');
-
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					parent: { key: 'BTS-15' },
-				}),
-			);
-		});
-
-		it('throws when parent key cannot be extracted', async () => {
-			await expect(provider.addChecklistItem('invalid-format', 'Subtask')).rejects.toThrow(
-				'Cannot extract parent issue key from checklist ID: invalid-format',
-			);
-		});
-
-		it('auto-detects subtask type when not configured', async () => {
-			const providerNoConfig = new JiraPMProvider({
-				...mockConfig,
-				issueTypes: undefined,
+	describe('addChecklistItem (inline)', () => {
+		it('appends a markdown checkbox via ADF round-trip', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
 			});
-			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
-				{ name: 'Task', subtask: false },
-				{ name: 'Subtask', subtask: true },
-			]);
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-102' });
+			mockAdfToPlainText.mockReturnValue('### ✅ AC\n- [ ] Existing');
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Auto-detected subtask');
+			const checklist = await provider.createChecklist('PROJ-1', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'New item');
 
-			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalled();
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					issuetype: { name: 'Subtask' },
-				}),
-			);
+			const lastCall = mockMarkdownToAdf.mock.calls[mockMarkdownToAdf.mock.calls.length - 1];
+			expect(lastCall[0]).toContain('- [ ] New item');
 		});
 
-		it('caches resolved subtask type across calls', async () => {
-			const providerNoConfig = new JiraPMProvider({
-				...mockConfig,
-				issueTypes: undefined,
+		it('does NOT call createIssue (no subtask creation)', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
 			});
-			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
-				{ name: 'Sub-task', subtask: true },
-			]);
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-103' });
+			mockAdfToPlainText.mockReturnValue('### ✅ AC');
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'First');
-			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Second');
+			const checklist = await provider.createChecklist('PROJ-1', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'Item');
 
-			// getIssueTypes should only be called once
-			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalledOnce();
+			expect(mockJiraClient.createIssue).not.toHaveBeenCalled();
 		});
 
-		it('passes description as ADF to createIssue when provided', async () => {
-			const adfDoc = { type: 'doc', version: 1, content: [{ type: 'paragraph' }] };
-			mockMarkdownToAdf.mockReturnValue(adfDoc);
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-105' });
-
-			await provider.addChecklistItem(
-				'checklist-PROJ-1-1234567890',
-				'Subtask with description',
-				false,
-				'**Files:** `src/api.ts`\n- Add POST route',
-			);
-
-			expect(mockMarkdownToAdf).toHaveBeenCalledWith('**Files:** `src/api.ts`\n- Add POST route');
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					project: { key: 'PROJ' },
-					parent: { key: 'PROJ-1' },
-					summary: 'Subtask with description',
-					issuetype: { name: 'Sub-task' },
-					description: adfDoc,
-				}),
-			);
-		});
-
-		it('omits description from createIssue when not provided', async () => {
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-106' });
-
-			await provider.addChecklistItem('checklist-PROJ-1-1234567890', 'No description subtask');
-
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.not.objectContaining({ description: expect.anything() }),
-			);
-		});
-
-		it('falls back to "Subtask" when no subtask type found', async () => {
-			const providerNoConfig = new JiraPMProvider({
-				...mockConfig,
-				issueTypes: undefined,
-			});
-			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
-				{ name: 'Task', subtask: false },
-				{ name: 'Bug', subtask: false },
-			]);
-			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-104' });
-
-			await providerNoConfig.addChecklistItem('subtasks-PROJ-10', 'Fallback subtask');
-
-			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
-				expect.objectContaining({
-					issuetype: { name: 'Subtask' },
-				}),
+		it('throws when checklistId has wrong format', async () => {
+			await expect(provider.addChecklistItem('invalid-format', 'Item')).rejects.toThrow(
+				'Invalid JIRA checklist ID',
 			);
 		});
 	});
 
-	describe('updateChecklistItem', () => {
-		it('moves subtask to Done when complete=true', async () => {
-			mockJiraClient.getTransitions.mockResolvedValue([
-				{ id: 't-done', name: 'Done', to: { name: 'Done' } },
-			]);
-			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+	describe('updateChecklistItem (inline)', () => {
+		it('toggles a checkbox in the ADF description', async () => {
+			const desc = '### ✅ AC\n- [ ] Item A';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue(desc);
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			await provider.updateChecklistItem('PROJ-1', 'PROJ-2', true);
+			const checklists = await provider.getChecklists('PROJ-1');
+			const itemId = checklists[0].items[0].id;
+			await provider.updateChecklistItem('PROJ-1', itemId, true);
 
-			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-2', 't-done');
+			const lastCall = mockMarkdownToAdf.mock.calls[mockMarkdownToAdf.mock.calls.length - 1];
+			expect(lastCall[0]).toContain('- [x] Item A');
+		});
+
+		it('does NOT call transitionIssue', async () => {
+			const desc = '### ✅ AC\n- [ ] Item A';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue(desc);
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
+
+			const checklists = await provider.getChecklists('PROJ-1');
+			await provider.updateChecklistItem('PROJ-1', checklists[0].items[0].id, true);
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
 		});
 	});
 
-	describe('deleteChecklistItem', () => {
-		it('delegates to jiraClient.deleteIssue with the subtask key', async () => {
-			mockJiraClient.deleteIssue.mockResolvedValue(undefined);
+	describe('deleteChecklistItem (inline)', () => {
+		it('removes the item line from the ADF description', async () => {
+			const desc = '### ✅ AC\n- [ ] Keep\n- [ ] Remove';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue(desc);
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+			const checklists = await provider.getChecklists('PROJ-1');
+			const removeId = checklists[0].items[1].id;
+			await provider.deleteChecklistItem('PROJ-1', removeId);
 
-			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
+			const lastCall = mockMarkdownToAdf.mock.calls[mockMarkdownToAdf.mock.calls.length - 1];
+			expect(lastCall[0]).toBe('### ✅ AC\n- [ ] Keep');
 		});
 
-		it('ignores workItemId (not needed for JIRA subtask deletion)', async () => {
-			mockJiraClient.deleteIssue.mockResolvedValue(undefined);
+		it('does NOT call deleteIssue', async () => {
+			const desc = '### ✅ AC\n- [ ] Item';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue(desc);
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
 
-			await provider.deleteChecklistItem('PROJ-99', 'PROJ-5');
+			const checklists = await provider.getChecklists('PROJ-1');
+			await provider.deleteChecklistItem('PROJ-1', checklists[0].items[0].id);
 
-			expect(mockJiraClient.deleteIssue).toHaveBeenCalledWith('PROJ-5');
+			expect(mockJiraClient.deleteIssue).not.toHaveBeenCalled();
 		});
+	});
 
-		it('falls back to transition when deleteIssue returns 403', async () => {
-			mockJiraClient.deleteIssue.mockRejectedValue(new Error('Request failed with status 403'));
-			mockJiraClient.getTransitions.mockResolvedValue([
-				{ id: 't-1', name: 'In Progress', to: { name: 'In Progress' } },
-				{ id: 't-2', name: 'Cancelled', to: { name: 'Cancelled' } },
-			]);
-			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+	describe('checklist update retry on conflict', () => {
+		it('retries description update once on failure', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue('### ✅ AC\n- [ ] Item');
+			mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
+			mockJiraClient.updateIssue
+				.mockRejectedValueOnce(new Error('stale'))
+				.mockResolvedValueOnce(undefined);
 
-			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
+			const checklists = await provider.getChecklists('PROJ-1');
+			await provider.updateChecklistItem('PROJ-1', checklists[0].items[0].id, true);
 
-			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-5', 't-2');
-		});
-
-		it('tries terminal statuses in priority order (cancelled preferred over done)', async () => {
-			mockJiraClient.deleteIssue.mockRejectedValue(new Error('403 Forbidden'));
-			mockJiraClient.getTransitions.mockResolvedValue([
-				{ id: 't-done', name: 'Done', to: { name: 'Done' } },
-				{ id: 't-cancel', name: 'Cancel', to: { name: 'Cancelled' } },
-			]);
-			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
-
-			await provider.deleteChecklistItem('PROJ-1', 'PROJ-5');
-
-			// Should pick "Cancelled" (higher priority) over "Done"
-			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-5', 't-cancel');
-		});
-
-		it('throws when no terminal transition available after 403', async () => {
-			mockJiraClient.deleteIssue.mockRejectedValue(new Error('403 Forbidden'));
-			mockJiraClient.getTransitions.mockResolvedValue([
-				{ id: 't-1', name: 'In Progress', to: { name: 'In Progress' } },
-				{ id: 't-2', name: 'In Review', to: { name: 'In Review' } },
-			]);
-
-			await expect(provider.deleteChecklistItem('PROJ-1', 'PROJ-5')).rejects.toThrow(
-				'Cannot delete subtask PROJ-5: deletion returned 403 and no terminal transition found',
-			);
-		});
-
-		it('re-throws non-403 errors without fallback', async () => {
-			mockJiraClient.deleteIssue.mockRejectedValue(new Error('500 Internal Server Error'));
-
-			await expect(provider.deleteChecklistItem('PROJ-1', 'PROJ-5')).rejects.toThrow(
-				'500 Internal Server Error',
-			);
-			expect(mockJiraClient.getTransitions).not.toHaveBeenCalled();
+			expect(mockJiraClient.updateIssue).toHaveBeenCalledTimes(2);
 		});
 	});
 

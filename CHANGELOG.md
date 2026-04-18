@@ -4,6 +4,10 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ## Unreleased
 
+### Changed
+
+- **Linear and JIRA checklists are now inline markdown, not sub-issues / subtasks.** Acceptance criteria, implementation steps, and other checklist items added by CASCADE agents (via `AddChecklist` / `AddChecklistItem`) now live as `- [ ]` / `- [x]` markdown checkboxes inside the parent issue's description, under a `### {Checklist Name}` heading. Previously these created full sub-issues (Linear) or subtasks (JIRA) — one per item — which cluttered boards and inflated backlog counts (a single split could create 30+ orphan items). The PMProvider interface is unchanged; only the Linear and JIRA adapter internals changed. Trello continues to use its native checklist API. Forward-only — existing sub-issues / subtasks created before this change are not migrated. See [spec 008](docs/specs/008-inline-checklists.md.done) and the new "Checklist implementation by provider" section in [src/integrations/README.md](src/integrations/README.md).
+
 ### Internal
 
 - **PM integration plug-and-play (infrastructure).** Introduced `PMProviderManifest` as the canonical per-provider contract — one object declares credentials, webhook route and verifier, router adapter, trigger handlers, platform client, job-id extractor, and optional label-creation hook. Landed `pmProviderRegistry`, a conformance test harness (`tests/unit/integrations/pm-conformance.test.ts`), shared helpers (`_shared/auth-headers.ts`, `_shared/webhook-verifier.ts`, `_shared/label-id-resolver.ts`, `_shared/project-id-extractor.ts`), a new `pm.discovery` tRPC router, and a frontend provider-wizard registry with a generic step renderer. Dormant in this release — Trello, JIRA, and Linear continue to register through the legacy path; they migrate onto the manifest in follow-up PRs. No operator-visible changes. Closes plan 006/1 of spec [006](docs/specs/006-pm-integration-plug-and-play.md).

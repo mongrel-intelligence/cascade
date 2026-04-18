@@ -734,3 +734,77 @@ describe('extractAdfMediaNodes', () => {
 		expect(refs[0].mediaType).toBe('file');
 	});
 });
+
+describe('adfToPlainText — taskList / taskItem', () => {
+	it('renders taskItem with state TODO as unchecked checkbox', () => {
+		const adf = {
+			type: 'taskList',
+			content: [
+				{
+					type: 'taskItem',
+					attrs: { state: 'TODO' },
+					content: [{ type: 'text', text: 'Item 1' }],
+				},
+			],
+		};
+		expect(adfToPlainText(adf)).toContain('- [ ] Item 1');
+	});
+
+	it('renders taskItem with state DONE as checked checkbox', () => {
+		const adf = {
+			type: 'taskList',
+			content: [
+				{
+					type: 'taskItem',
+					attrs: { state: 'DONE' },
+					content: [{ type: 'text', text: 'Item 2' }],
+				},
+			],
+		};
+		expect(adfToPlainText(adf)).toContain('- [x] Item 2');
+	});
+
+	it('renders mixed taskList with TODO and DONE items', () => {
+		const adf = {
+			type: 'taskList',
+			content: [
+				{
+					type: 'taskItem',
+					attrs: { state: 'TODO' },
+					content: [{ type: 'text', text: 'Pending' }],
+				},
+				{
+					type: 'taskItem',
+					attrs: { state: 'DONE' },
+					content: [{ type: 'text', text: 'Done' }],
+				},
+			],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('- [ ] Pending');
+		expect(result).toContain('- [x] Done');
+	});
+
+	it('renders taskList nested inside document with other content', () => {
+		const adf = {
+			type: 'doc',
+			version: 1,
+			content: [
+				{ type: 'paragraph', content: [{ type: 'text', text: 'Intro' }] },
+				{
+					type: 'taskList',
+					content: [
+						{
+							type: 'taskItem',
+							attrs: { state: 'TODO' },
+							content: [{ type: 'text', text: 'Item A' }],
+						},
+					],
+				},
+			],
+		};
+		const result = adfToPlainText(adf);
+		expect(result).toContain('Intro');
+		expect(result).toContain('- [ ] Item A');
+	});
+});

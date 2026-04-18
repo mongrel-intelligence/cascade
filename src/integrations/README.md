@@ -143,3 +143,19 @@ That's it. No edits to shared router code, shared trigger registration, shared j
 ## Non-PM integrations
 
 SCM (GitHub) and alerting (Sentry) integrations retain the legacy `IntegrationModule` pattern with self-registration in `src/github/register.ts` and `src/sentry/register.ts`. A future spec may extend the manifest pattern to those categories.
+
+---
+
+## Checklist implementation by provider
+
+Different PM providers have different native concepts of "checklist". The `PMProvider` interface exposes a uniform API (`getChecklists`, `createChecklist`, `addChecklistItem`, `updateChecklistItem`, `deleteChecklistItem`), but adapters implement them differently:
+
+| Provider | Implementation | Where items live |
+|---|---|---|
+| **Trello** | Native Trello checklist API | In-card checklists (lightweight items, not separate cards) |
+| **Linear** | Inline markdown in description | `### {Checklist Name}` heading + `- [ ]` / `- [x]` lines in the issue's description |
+| **JIRA** | Inline markdown in description (via ADF round-trip) | `### {Checklist Name}` heading + `- [ ]` / `- [x]` lines in the issue's description |
+
+**Why inline markdown for Linear and JIRA?** Both providers support markdown checkboxes natively in their description editors but lack a dedicated lightweight checklist primitive — sub-issues and subtasks are full work items, which clutters boards when used for things like acceptance criteria or implementation steps. Inline markdown matches Trello's lightweight semantics without creating orphan issues. See [spec 008](../../docs/specs/008-inline-checklists.md) for full rationale.
+
+The shared engine that parses, appends, toggles, and removes inline checklist items lives at `src/pm/_shared/inline-checklist.ts` and is consumed by both the Linear and JIRA adapters.

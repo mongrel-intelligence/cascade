@@ -6,11 +6,19 @@
 
 import { jiraClient } from '../../jira/client.js';
 import { logger } from '../../utils/logging.js';
+import {
+	addItemToChecklist,
+	appendChecklistSection,
+	findChecklistNameByHash,
+	hashChecklistItemId,
+	parseInlineChecklists,
+	removeChecklistItem,
+	toggleChecklistItem,
+} from '../_shared/inline-checklist.js';
 import { resolveJiraMediaUrls } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
-	ChecklistItem,
 	CreateWorkItemConfig,
 	ListWorkItemsFilter,
 	PMProvider,
@@ -19,6 +27,21 @@ import type {
 	WorkItemLabel,
 } from '../types.js';
 import { adfToPlainText, extractAdfMediaNodes, markdownToAdf } from './adf.js';
+
+const INLINE_CHECKLIST_ID_PREFIX = 'inline-';
+
+function buildChecklistId(workItemId: string, checklistName: string): string {
+	const hash = hashChecklistItemId('', checklistName).slice(3); // strip 'cl-' prefix
+	return `${INLINE_CHECKLIST_ID_PREFIX}${workItemId}-${hash}`;
+}
+
+function parseChecklistId(checklistId: string): { workItemId: string; nameHash: string } | null {
+	if (!checklistId.startsWith(INLINE_CHECKLIST_ID_PREFIX)) return null;
+	const rest = checklistId.slice(INLINE_CHECKLIST_ID_PREFIX.length);
+	const m = rest.match(/^(.+)-([0-9a-f]{8})$/);
+	if (!m) return null;
+	return { workItemId: m[1], nameHash: m[2] };
+}
 
 interface JiraConfig {
 	projectKey: string;
@@ -41,6 +64,7 @@ interface JiraSearchIssue {
 	key?: string;
 	fields?: {
 		summary?: string;
+		description?: unknown;
 		status?: { name?: string };
 		labels?: string[];
 		subtasks?: JiraSubtask[];
@@ -74,20 +98,8 @@ interface JiraTransition {
 
 export class JiraPMProvider implements PMProvider {
 	readonly type = 'jira' as const;
-	private resolvedSubtaskType: string | null = null;
 
 	constructor(private config: JiraConfig) {}
-
-	private async getSubtaskTypeName(): Promise<string> {
-		if (this.config.issueTypes?.subtask) return this.config.issueTypes.subtask;
-		if (this.resolvedSubtaskType) return this.resolvedSubtaskType;
-
-		const types = await jiraClient.getIssueTypesForProject(this.config.projectKey);
-		const subtaskType = types.find((t) => t.subtask);
-		this.resolvedSubtaskType = subtaskType?.name ?? 'Subtask';
-		logger.info('Resolved JIRA subtask issue type', { name: this.resolvedSubtaskType });
-		return this.resolvedSubtaskType;
-	}
 
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const issue = await jiraClient.getIssue(id);
@@ -250,32 +262,22 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async getChecklists(workItemId: string): Promise<Checklist[]> {
-		// JIRA doesn't have native checklists — map subtasks
 		const issue = await jiraClient.getIssue(workItemId);
-		const subtasks = ((issue.fields as JiraSearchIssue['fields'])?.subtasks as JiraSubtask[]) ?? [];
-		if (subtasks.length === 0) return [];
-
-		const items: ChecklistItem[] = subtasks.map((st: JiraSubtask) => ({
-			id: st.key ?? st.id ?? '',
-			name: st.fields?.summary ?? '',
-			complete: st.fields?.status?.name === 'Done',
+		const adfDesc = (issue.fields as JiraSearchIssue['fields'])?.description;
+		const markdown = adfDesc ? adfToPlainText(adfDesc) : '';
+		const parsed = parseInlineChecklists(markdown);
+		return parsed.map((c) => ({
+			id: buildChecklistId(workItemId, c.name),
+			name: c.name,
+			workItemId,
+			items: c.items.map((i) => ({ id: i.id, name: i.name, complete: i.complete })),
 		}));
-
-		return [
-			{
-				id: `subtasks-${workItemId}`,
-				name: 'Subtasks',
-				workItemId,
-				items,
-			},
-		];
 	}
 
 	async createChecklist(workItemId: string, name: string): Promise<Checklist> {
-		// In JIRA, "create checklist" = create a parent concept.
-		// Items will be subtasks created via addChecklistItem.
+		await this.updateDescription(workItemId, (desc) => appendChecklistSection(desc, name, []));
 		return {
-			id: `checklist-${workItemId}-${Date.now()}`,
+			id: buildChecklistId(workItemId, name),
 			name,
 			workItemId,
 			items: [],
@@ -283,71 +285,68 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async addChecklistItem(
-		_checklistId: string,
+		checklistId: string,
 		name: string,
-		_checked = false,
-		description?: string,
+		checked = false,
+		_description?: string,
 	): Promise<void> {
-		// Extract parent issue key from checklistId format: "checklist-PROJ-123-timestamp"
-		// or "subtasks-PROJ-123"
-		// Use \d{10,} to only strip timestamps (10+ digits), not issue numbers like PROJ-5
-		const match = _checklistId.match(/(?:checklist|subtasks)-(.+?)(?:-\d{10,})?$/);
-		const parentKey = match?.[1];
-		if (!parentKey) {
-			throw new Error(`Cannot extract parent issue key from checklist ID: ${_checklistId}`);
+		const parsed = parseChecklistId(checklistId);
+		if (!parsed) {
+			throw new Error(`Invalid JIRA checklist ID: ${checklistId}`);
 		}
 
-		const issueType = await this.getSubtaskTypeName();
-		await jiraClient.createIssue({
-			project: { key: this.config.projectKey },
-			parent: { key: parentKey },
-			summary: name,
-			issuetype: { name: issueType },
-			...(description ? { description: markdownToAdf(description) } : {}),
+		await this.updateDescription(parsed.workItemId, (desc) => {
+			const checklistName = findChecklistNameByHash(desc, parsed.nameHash);
+			if (!checklistName) {
+				throw new Error(`Checklist not found in description: ${checklistId}`);
+			}
+			return addItemToChecklist(desc, checklistName, name, checked);
 		});
 	}
 
 	async updateChecklistItem(
-		_workItemId: string,
+		workItemId: string,
 		checkItemId: string,
 		complete: boolean,
 	): Promise<void> {
-		// checkItemId is a JIRA issue key (subtask)
-		const targetStatus = complete ? 'Done' : 'To Do';
-		await this.moveWorkItem(checkItemId, targetStatus);
+		await this.updateDescription(workItemId, (desc) => {
+			const checklists = parseInlineChecklists(desc);
+			return toggleChecklistItem(desc, checkItemId, complete, checklists);
+		});
 	}
 
-	async deleteChecklistItem(_workItemId: string, checkItemId: string): Promise<void> {
-		// checkItemId is a JIRA issue key (subtask)
-		try {
-			await jiraClient.deleteIssue(checkItemId);
-		} catch (error) {
-			const is403 =
-				error instanceof Error &&
-				(error.message.includes('403') || error.message.includes('Forbidden'));
-			if (!is403) throw error;
+	async deleteChecklistItem(workItemId: string, checkItemId: string): Promise<void> {
+		await this.updateDescription(workItemId, (desc) => {
+			const checklists = parseInlineChecklists(desc);
+			return removeChecklistItem(desc, checkItemId, checklists);
+		});
+	}
 
-			// Deletion not permitted — transition to a terminal status instead
-			logger.info('Delete not permitted, transitioning subtask to terminal status', {
-				issueKey: checkItemId,
+	/**
+	 * Read-modify-write the issue description as ADF round-trip.
+	 * ADF → markdown → mutate → ADF. Retries once on conflict.
+	 */
+	private async updateDescription(
+		issueKey: string,
+		mutate: (desc: string) => string,
+	): Promise<void> {
+		const apply = async () => {
+			const issue = await jiraClient.getIssue(issueKey);
+			const adfDesc = (issue.fields as JiraSearchIssue['fields'])?.description;
+			const markdown = adfDesc ? adfToPlainText(adfDesc) : '';
+			const newMarkdown = mutate(markdown);
+			await jiraClient.updateIssue(issueKey, {
+				description: markdownToAdf(newMarkdown),
 			});
-			const transitions = await jiraClient.getTransitions(checkItemId);
-			const terminalNames = ['cancelled', "won't do", 'rejected', 'closed', 'done'];
-			let match: JiraTransition | undefined;
-			for (const name of terminalNames) {
-				match = transitions.find((t: JiraTransition) => {
-					const toName = (t.to?.name ?? '').toLowerCase();
-					const tName = (t.name ?? '').toLowerCase();
-					return toName === name || tName === name;
-				});
-				if (match) break;
-			}
-			if (!match?.id) {
-				throw new Error(
-					`Cannot delete subtask ${checkItemId}: deletion returned 403 and no terminal transition found (available: ${transitions.map((t: JiraTransition) => t.name).join(', ')})`,
-				);
-			}
-			await jiraClient.transitionIssue(checkItemId, match.id);
+		};
+		try {
+			await apply();
+		} catch (err) {
+			logger.warn('[JIRA] Description update failed; retrying once', {
+				issueKey,
+				error: String(err),
+			});
+			await apply();
 		}
 	}
 
