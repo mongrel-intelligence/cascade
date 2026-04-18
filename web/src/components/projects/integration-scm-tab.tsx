@@ -1,14 +1,13 @@
 /**
  * SCM (GitHub) integration tab components.
- * Contains: CopyButton, GitHubCredentialSlots, GitHubWebhookSection, SCMTab.
- * CopyButton is co-located here and also exported for use by AlertingTab.
+ * Contains: GitHubCredentialSlots, GitHubWebhookSection, SCMTab.
+ * `CopyButton` lives at `@/components/ui/copy-button.js` (extracted during
+ * PM wizard styling restoration).
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
 	AlertTriangle,
-	Check,
-	Clipboard,
 	ExternalLink,
 	Info,
 	Loader2,
@@ -16,35 +15,12 @@ import {
 	Trash2,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { CopyButton } from '@/components/ui/copy-button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { ProjectSecretField } from './project-secret-field.js';
-
-// ============================================================================
-// CopyButton (shared with AlertingTab)
-// ============================================================================
-
-export function CopyButton({ text }: { text: string }) {
-	const [copied, setCopied] = useState(false);
-	const handleCopy = async () => {
-		await navigator.clipboard.writeText(text);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
-	};
-	return (
-		<button
-			type="button"
-			onClick={handleCopy}
-			className="inline-flex items-center gap-1 shrink-0 rounded px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-			title="Copy to clipboard"
-		>
-			{copied ? <Check className="h-3 w-3 text-green-600" /> : <Clipboard className="h-3 w-3" />}
-			{copied ? 'Copied' : 'Copy'}
-		</button>
-	);
-}
 
 // ============================================================================
 // GitHub Credential Slots (replaces the old CredentialSelector dropdowns)
