@@ -34,25 +34,41 @@ const CHECKBOX_REGEX = /^- \[([ x])\] (.+)$/;
 export function parseInlineChecklists(description: string): ParsedChecklist[] {
 	if (!description) return [];
 
-	const lines = description.split('\n');
-	const checklists: ParsedChecklist[] = [];
-	let current: { name: string; items: ParsedChecklistItem[] } | null = null;
-
-	for (const line of lines) {
-		const result = classifyLine(line, current);
-		if (result.action === 'new-section') {
-			if (current && current.items.length > 0) checklists.push(current);
-			current = { name: result.name, items: [] };
-		} else if (result.action === 'add-item' && current) {
-			current.items.push(result.item);
-		} else if (result.action === 'end-section' && current) {
-			if (current.items.length > 0) checklists.push(current);
-			current = null;
-		}
+	const state: ParseState = { checklists: [], current: null };
+	for (const line of description.split('\n')) {
+		applyLineToParseState(state, classifyLine(line, state.current));
 	}
+	flushCurrent(state);
+	return state.checklists;
+}
 
-	if (current && current.items.length > 0) checklists.push(current);
-	return checklists;
+interface ParseState {
+	checklists: ParsedChecklist[];
+	current: ParsedChecklist | null;
+}
+
+function applyLineToParseState(state: ParseState, action: LineClassification): void {
+	switch (action.action) {
+		case 'new-section':
+			flushCurrent(state);
+			state.current = { name: action.name, items: [] };
+			return;
+		case 'add-item':
+			state.current?.items.push(action.item);
+			return;
+		case 'end-section':
+			flushCurrent(state);
+			state.current = null;
+			return;
+		case 'skip':
+			return;
+	}
+}
+
+function flushCurrent(state: ParseState): void {
+	if (state.current && state.current.items.length > 0) {
+		state.checklists.push(state.current);
+	}
 }
 
 type LineClassification =

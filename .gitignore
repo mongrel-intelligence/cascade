@@ -42,6 +42,8 @@ test-results/
 
 # Claude Code — commit settings.json but exclude local settings (may contain secrets)
 .claude/settings.local.json
+# Claude Code — local scheduled-task state (per-machine, not for sharing)
+.claude/scheduled_tasks.lock
 
 # Progress comment state file (legacy — kept to ignore stale files from older runs)
 .cascade-progress-comment-id
