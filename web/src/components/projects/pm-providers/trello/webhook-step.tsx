@@ -1,10 +1,10 @@
 /**
- * Trello webhook step adapter (plan 012/1).
+ * Trello webhook step adapter (plan 012/1; styling restored post-spec-012
+ * follow-up).
  *
- * Replaces the Trello branch of the legacy `WebhookStep` (plan 012/4
- * deletes that). Fragment composing the shared `WebhookUrlDisplayStep`
- * (URL + copy) with Trello-specific UX: active-webhooks list,
- * programmatic "Create Webhook" button, delete buttons, curl fallback.
+ * Fragment composing the shared `WebhookUrlDisplayStep` (URL + copy) with
+ * Trello-specific UX: active-webhooks list, programmatic "Create Webhook"
+ * button, delete buttons, curl fallback.
  *
  * Rendered as the Trello wizard's `trello-webhook` step Component via the
  * manifest path. All tRPC wiring (webhooks.list/create/delete with
@@ -12,7 +12,11 @@
  * component just renders what it receives.
  */
 
+import { Loader2, Trash2 } from 'lucide-react';
 import { createElement, Fragment, type ReactElement } from 'react';
+import { Button } from '@/components/ui/button.js';
+import { CopyButton } from '@/components/ui/copy-button.js';
+import type { DataProps } from '@/lib/data-props.js';
 import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
 import type { ProviderWizardStepProps } from '../types.js';
 
@@ -62,6 +66,7 @@ export function TrelloWebhookAdapter({
 }: ProviderWizardStepProps): ReactElement {
 	const h = asTrelloWebhookHooks(providerHooks);
 	const createDisabled = !h.callbackBaseUrl || h.createLoading;
+	const curlCommand = buildTrelloCurl(state.trelloBoardId ?? '', h.callbackBaseUrl);
 
 	return createElement(
 		Fragment,
@@ -83,35 +88,52 @@ export function TrelloWebhookAdapter({
 		// Active-webhooks list.
 		createElement(
 			'div',
-			{ className: 'pm-wizard-webhook-active-list', 'data-section': 'active-webhooks' },
+			{
+				className: 'space-y-2',
+				'data-section': 'active-webhooks',
+			},
 			h.webhooksLoading
-				? createElement('p', { 'data-state': 'loading' }, 'Loading webhooks…')
+				? createElement(
+						'p',
+						{
+							'data-state': 'loading',
+							className: 'flex items-center gap-2 text-sm text-muted-foreground',
+						},
+						createElement(Loader2, { className: 'h-4 w-4 animate-spin' }),
+						'Loading webhooks…',
+					)
 				: h.activeTrelloWebhooks.length === 0
 					? createElement(
 							'p',
-							{ className: 'pm-wizard-webhook-empty' },
+							{ className: 'text-sm text-amber-600 dark:text-amber-400' },
 							'No Trello webhooks configured for this project.',
 						)
 					: createElement(
 							'ul',
-							{ className: 'pm-wizard-webhook-list' },
+							{ className: 'space-y-1' },
 							...h.activeTrelloWebhooks.map((wh) =>
 								createElement(
 									'li',
-									{ key: wh.id, className: 'pm-wizard-webhook-row', 'data-webhook-id': wh.id },
+									{
+										key: wh.id,
+										className: 'flex items-center justify-between rounded-md border px-3 py-2',
+										'data-webhook-id': wh.id,
+									},
 									createElement(
-										'span',
-										{
-											className: 'pm-wizard-webhook-status',
+										'div',
+										{ className: 'flex items-center gap-2 text-sm' },
+										createElement('span', {
+											className: `inline-block h-2 w-2 rounded-full ${wh.active ? 'bg-green-500 dark:bg-green-400' : 'bg-amber-500 dark:bg-amber-400'}`,
 											'data-active': wh.active ? 'true' : 'false',
-										},
-										wh.active ? '●' : '○',
+										}),
+										createElement('code', { className: 'font-mono text-xs break-all' }, wh.url),
 									),
-									createElement('code', { className: 'pm-wizard-webhook-url' }, wh.url),
 									createElement(
-										'button',
+										Button,
 										{
 											type: 'button',
+											variant: 'ghost',
+											size: 'icon-sm',
 											'data-action': 'delete-webhook',
 											'data-webhook-id': wh.id,
 											disabled: h.deleteLoading,
@@ -121,8 +143,9 @@ export function TrelloWebhookAdapter({
 												const base = wh.url.replace(/\/trello\/webhook$/, '');
 												h.deleteTrelloWebhook(base);
 											},
-										},
-										'Delete',
+											title: 'Delete webhook',
+										} as React.ComponentProps<typeof Button> & DataProps,
+										createElement(Trash2, { className: 'h-4 w-4' }),
 									),
 								),
 							),
@@ -132,21 +155,23 @@ export function TrelloWebhookAdapter({
 		// Create button.
 		createElement(
 			'div',
-			{ className: 'pm-wizard-webhook-create' },
+			{ className: 'space-y-2' },
 			createElement(
-				'button',
+				Button,
 				{
 					type: 'button',
+					variant: 'default',
 					'data-action': 'create-webhook',
 					disabled: createDisabled,
 					onClick: () => h.createTrelloWebhook(),
-				},
+				} as React.ComponentProps<typeof Button> & DataProps,
+				h.createLoading ? createElement(Loader2, { className: 'h-4 w-4 animate-spin' }) : null,
 				h.createLoading ? 'Creating…' : 'Create Webhook',
 			),
 			h.createError
 				? createElement(
 						'p',
-						{ className: 'pm-wizard-webhook-error', 'data-state': 'error' },
+						{ className: 'text-sm text-destructive', 'data-state': 'error' },
 						h.createError,
 					)
 				: null,
@@ -155,16 +180,33 @@ export function TrelloWebhookAdapter({
 		// Curl fallback.
 		createElement(
 			'details',
-			{ className: 'pm-wizard-webhook-curl' },
+			{
+				className:
+					'rounded-md border border-blue-200 bg-blue-50 px-3 py-2 dark:border-blue-900/50 dark:bg-blue-900/20',
+			},
 			createElement(
 				'summary',
-				null,
-				'Manual webhook creation (alternative: if the button above doesn\u0027t work)',
+				{
+					className:
+						'cursor-pointer select-none text-xs text-blue-700 dark:text-blue-300 font-medium',
+				},
+				"Manual webhook creation (alternative: if the button above doesn't work)",
 			),
 			createElement(
-				'pre',
-				{ className: 'pm-wizard-webhook-curl-command' },
-				buildTrelloCurl(state.trelloBoardId ?? '', h.callbackBaseUrl),
+				'div',
+				{ className: 'mt-2 relative rounded-md bg-muted border' },
+				createElement(
+					'div',
+					{ className: 'absolute top-2 right-2' },
+					createElement(CopyButton, { text: curlCommand }),
+				),
+				createElement(
+					'pre',
+					{
+						className: 'text-xs font-mono whitespace-pre-wrap break-all p-3 pr-16 overflow-x-auto',
+					},
+					curlCommand,
+				),
 			),
 		),
 	);
