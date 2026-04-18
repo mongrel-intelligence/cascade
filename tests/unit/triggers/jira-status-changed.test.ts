@@ -11,7 +11,7 @@ vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModu
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 import { JiraStatusChangedTrigger } from '../../../src/triggers/jira/status-changed.js';
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 
 const mockProject = {
@@ -51,26 +51,15 @@ function buildCtx(
 		source: overrides.source ?? 'jira',
 		payload: {
 			webhookEvent: overrides.webhookEvent ?? 'jira:issue_updated',
-			issue:
-				overrides.issueKey !== undefined
-					? {
-							key: overrides.issueKey,
-							fields: {
-								summary: 'Test Issue',
-								...(overrides.issueStatusName !== undefined
-									? { status: { name: overrides.issueStatusName } }
-									: {}),
-							},
-						}
-					: {
-							key: 'PROJ-42',
-							fields: {
-								summary: 'Test Issue',
-								...(overrides.issueStatusName !== undefined
-									? { status: { name: overrides.issueStatusName } }
-									: {}),
-							},
-						},
+			issue: {
+				key: overrides.issueKey ?? 'PROJ-42',
+				fields: {
+					summary: 'Test Issue',
+					...(overrides.issueStatusName !== undefined
+						? { status: { name: overrides.issueStatusName } }
+						: {}),
+				},
+			},
 			changelog: {
 				items: overrides.statusChangeItems ?? [
 					{ field: 'status', fromString: 'Backlog', toString: 'Splitting' },
@@ -80,12 +69,20 @@ function buildCtx(
 	};
 }
 
+/** Configure what checkTriggerEnabledWithParams returns for the next call(s). */
+function mockTriggerConfig(
+	enabled: boolean,
+	parameters: Record<string, unknown> = { onCreate: false, onMove: true },
+) {
+	vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({ enabled, parameters });
+}
+
 describe('JiraStatusChangedTrigger', () => {
 	let trigger: JiraStatusChangedTrigger;
 
 	beforeEach(() => {
 		vi.resetAllMocks();
-		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+		mockTriggerConfig(true);
 		trigger = new JiraStatusChangedTrigger();
 	});
 
@@ -102,18 +99,25 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(trigger.matches(buildCtx({ webhookEvent: 'jira:issue_deleted' }))).toBe(false);
 		});
 
-		it('matches jira:issue_created events (issue created directly in a status)', () => {
-			expect(trigger.matches(buildCtx({ webhookEvent: 'jira:issue_created' }))).toBe(true);
+		it('matches jira:issue_created events when fields.status.name is present', () => {
+			expect(
+				trigger.matches(buildCtx({ webhookEvent: 'jira:issue_created', issueStatusName: 'To Do' })),
+			).toBe(true);
 		});
 
-		it('does not match when no status change in changelog', () => {
+		it('does not match jira:issue_created events without a status field', () => {
+			// issueStatusName omitted → no fields.status.name
+			expect(trigger.matches(buildCtx({ webhookEvent: 'jira:issue_created' }))).toBe(false);
+		});
+
+		it('does not match update events with no status change in changelog', () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'assignee', fromString: 'Alice', toString: 'Bob' }],
 			});
 			expect(trigger.matches(ctx)).toBe(false);
 		});
 
-		it('does not match when changelog items is empty', () => {
+		it('does not match update events with empty changelog items', () => {
 			const ctx = buildCtx({ statusChangeItems: [] });
 			expect(trigger.matches(ctx)).toBe(false);
 		});
@@ -125,7 +129,7 @@ describe('JiraStatusChangedTrigger', () => {
 		});
 	});
 
-	describe('handle', () => {
+	describe('handle — move events (update)', () => {
 		it('returns implementation agent for "To Do" transition', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
@@ -146,40 +150,28 @@ describe('JiraStatusChangedTrigger', () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 			});
-
-			const result = await trigger.handle(ctx);
-
-			expect(result?.agentType).toBe('splitting');
+			expect((await trigger.handle(ctx))?.agentType).toBe('splitting');
 		});
 
 		it('returns planning agent for "Planning" transition', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Splitting', toString: 'Planning' }],
 			});
-
-			const result = await trigger.handle(ctx);
-
-			expect(result?.agentType).toBe('planning');
+			expect((await trigger.handle(ctx))?.agentType).toBe('planning');
 		});
 
 		it('is case insensitive when matching status names', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'splitting' }],
 			});
-
-			const result = await trigger.handle(ctx);
-
-			expect(result?.agentType).toBe('splitting');
+			expect((await trigger.handle(ctx))?.agentType).toBe('splitting');
 		});
 
 		it('returns backlog-manager agent for Backlog transition', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Done', toString: 'Backlog' }],
 			});
-
 			const result = await trigger.handle(ctx);
-
-			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('backlog-manager');
 			expect(result?.workItemId).toBe('PROJ-42');
 		});
@@ -188,157 +180,160 @@ describe('JiraStatusChangedTrigger', () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'To Do', toString: 'Done' }],
 			});
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
+			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
 		it('returns null when issue key is missing', async () => {
 			const ctx = buildCtx({ issueKey: '' });
 			(ctx.payload as Record<string, unknown>).issue = undefined;
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
-		});
-
-		it('returns null when no status change item in changelog', async () => {
-			const ctx = buildCtx({
-				statusChangeItems: [{ field: 'assignee' }],
-			});
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
+			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
 		it('returns null when JIRA config is missing', async () => {
 			const ctx = buildCtx({ noJiraConfig: true });
-
-			const result = await trigger.handle(ctx);
-
-			expect(result).toBeNull();
+			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
 		it('returns null when status change has an empty toString value', async () => {
 			const ctx = buildCtx({
-				// Use an empty string for toString so that !newStatus is true
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: '' }],
+			});
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
+
+		it('logs fromStatus on the update path', async () => {
+			const ctx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
+			});
+			await trigger.handle(ctx);
+
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				expect.stringContaining('JIRA'),
+				expect.objectContaining({
+					fromStatus: 'Backlog',
+					toStatus: 'Splitting',
+					eventKind: 'move',
+				}),
+			);
+		});
+	});
+
+	describe('handle — create events (jira:issue_created)', () => {
+		it('returns null when onCreate is false (default)', async () => {
+			// Default mock already sets onCreate: false
+			const ctx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				issueStatusName: 'To Do',
+			});
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
+
+		it('returns implementation agent when onCreate is true and created in "To Do"', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+			const ctx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				issueStatusName: 'To Do',
 			});
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBe('implementation');
+			expect(result?.workItemId).toBe('PROJ-42');
+			expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
+			expect(result?.workItemTitle).toBe('Test Issue');
+			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
 		});
 
-		describe('creation events (jira:issue_created)', () => {
-			it('returns implementation agent when created in "To Do" status', async () => {
-				const ctx = buildCtx({
-					webhookEvent: 'jira:issue_created',
-					issueStatusName: 'To Do',
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).not.toBeNull();
-				expect(result?.agentType).toBe('implementation');
-				expect(result?.workItemId).toBe('PROJ-42');
-				expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
-				expect(result?.workItemTitle).toBe('Test Issue');
-				expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
+		it('returns splitting agent when onCreate is true and created in "Splitting"', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+			const ctx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				issueStatusName: 'Splitting',
 			});
-
-			it('returns splitting agent when created in "Splitting" status', async () => {
-				const ctx = buildCtx({
-					webhookEvent: 'jira:issue_created',
-					issueStatusName: 'Splitting',
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result?.agentType).toBe('splitting');
-			});
-
-			it('returns null when created in unmapped status', async () => {
-				const ctx = buildCtx({
-					webhookEvent: 'jira:issue_created',
-					issueStatusName: 'Done',
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).toBeNull();
-			});
-
-			it('returns null when issue has no status field on creation', async () => {
-				const ctx = buildCtx({ webhookEvent: 'jira:issue_created' });
-				// No issueStatusName provided → fields.status is undefined
-				(ctx.payload as Record<string, unknown>).issue = {
-					key: 'PROJ-42',
-					fields: { summary: 'Test Issue' },
-				};
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).toBeNull();
-			});
+			expect((await trigger.handle(ctx))?.agentType).toBe('splitting');
 		});
 
-		describe('per-agent statusChanged toggle (via checkTriggerEnabled)', () => {
-			it('fires when trigger is enabled for agent', async () => {
-				vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+		it('returns null when onCreate is true but status is unmapped', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+			const ctx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				issueStatusName: 'Done',
+			});
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
 
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-				});
+		it('does NOT log fromStatus on the create path', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+			const ctx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				issueStatusName: 'To Do',
+			});
+			await trigger.handle(ctx);
 
-				const result = await trigger.handle(ctx);
+			const call = mockLogger.info.mock.calls.find(
+				(args) => typeof args[0] === 'string' && args[0].includes('JIRA'),
+			);
+			expect(call).toBeTruthy();
+			expect(call?.[1]).not.toHaveProperty('fromStatus');
+			expect(call?.[1]).toMatchObject({ toStatus: 'To Do', eventKind: 'create' });
+		});
+	});
 
-				expect(result?.agentType).toBe('splitting');
-				expect(checkTriggerEnabled).toHaveBeenCalledWith(
-					'test-project',
-					'splitting',
-					'pm:status-changed',
-					'jira-status-changed',
-				);
+	describe('handle — onMove gating', () => {
+		it('returns null when onMove is false and event is a move', async () => {
+			mockTriggerConfig(true, { onCreate: false, onMove: false });
+			const ctx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
+			});
+			expect(await trigger.handle(ctx)).toBeNull();
+		});
+
+		it('fires only for create when onMove is false and onCreate is true', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: false });
+
+			const createCtx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				issueStatusName: 'To Do',
+			});
+			expect((await trigger.handle(createCtx))?.agentType).toBe('implementation');
+
+			mockTriggerConfig(true, { onCreate: true, onMove: false });
+			const moveCtx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
+			});
+			expect(await trigger.handle(moveCtx)).toBeNull();
+		});
+	});
+
+	describe('per-agent statusChanged toggle', () => {
+		it('returns null when trigger is disabled for the resolved agent', async () => {
+			mockTriggerConfig(false);
+
+			const ctx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 			});
 
-			it('returns null when trigger is disabled for splitting agent', async () => {
-				vi.mocked(checkTriggerEnabled).mockResolvedValue(false);
+			expect(await trigger.handle(ctx)).toBeNull();
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
+				'test-project',
+				'splitting',
+				'pm:status-changed',
+				'jira-status-changed',
+			);
+		});
 
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).toBeNull();
+		it('calls checkTriggerEnabledWithParams with correct args for implementation agent', async () => {
+			const ctx = buildCtx({
+				statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
 			});
+			await trigger.handle(ctx);
 
-			it('fires planning agent when trigger is enabled', async () => {
-				vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
-
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Splitting', toString: 'Planning' }],
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result?.agentType).toBe('planning');
-			});
-
-			it('returns null when trigger is disabled for implementation agent', async () => {
-				vi.mocked(checkTriggerEnabled).mockResolvedValue(false);
-
-				const ctx = buildCtx({
-					statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
-				});
-
-				const result = await trigger.handle(ctx);
-
-				expect(result).toBeNull();
-			});
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
+				'test-project',
+				'implementation',
+				'pm:status-changed',
+				'jira-status-changed',
+			);
 		});
 	});
 });

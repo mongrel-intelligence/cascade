@@ -31,7 +31,7 @@ vi.mock('../../../src/router/snapshot-manager.js', () => ({
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 import { TrelloStatusChangedMergedTrigger } from '../../../src/triggers/trello/status-changed.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject, createTrelloActionPayload } from '../../helpers/factories.js';
@@ -202,7 +202,10 @@ describe('TrelloStatusChangedMergedTrigger', () => {
 	});
 
 	it('returns null when trigger is disabled', async () => {
-		vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+		vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+			enabled: false,
+			parameters: {},
+		});
 
 		const ctx: TriggerContext = {
 			project: mockProject,
@@ -224,7 +227,7 @@ describe('TrelloStatusChangedMergedTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 		expect(result).toBeNull();
-		expect(checkTriggerEnabled).toHaveBeenCalledWith(
+		expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 			mockProject.id,
 			'backlog-manager',
 			'pm:status-changed',
@@ -283,7 +286,10 @@ describe('TrelloStatusChangedMergedTrigger', () => {
 
 	it('does not invalidate snapshot when trigger is disabled (returns null before invalidation)', async () => {
 		mockInvalidateSnapshot.mockClear();
-		vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+		vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+			enabled: false,
+			parameters: {},
+		});
 
 		const ctx: TriggerContext = {
 			project: mockProject,

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	mockAcknowledgmentsModule,
 	mockConfigProvider,
@@ -25,7 +25,7 @@ vi.mock('../../../src/router/reactions.js', () => mockReactionsModule);
 // Register PM integrations in the registry
 import '../../../src/pm/index.js';
 
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 import {
 	TrelloStatusChangedSplittingTrigger,
 	TrelloStatusChangedTodoTrigger,
@@ -33,10 +33,23 @@ import {
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject, createTrelloActionPayload } from '../../helpers/factories.js';
 
+/** Default mock: enabled, onCreate=true onMove=true (matches Trello's backfilled state). */
+function mockTriggerConfig(
+	enabled: boolean,
+	parameters: Record<string, unknown> = { onCreate: true, onMove: true },
+) {
+	vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({ enabled, parameters });
+}
+
 describe('TrelloStatusChangedSplittingTrigger', () => {
 	const trigger = TrelloStatusChangedSplittingTrigger;
 
 	const mockProject = createMockProject();
+
+	beforeEach(() => {
+		// Default: trigger enabled with Trello's backfilled params (both toggles on)
+		mockTriggerConfig(true);
+	});
 
 	it('matches when card moved to splitting list', () => {
 		const ctx: TriggerContext = {
@@ -123,7 +136,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 	});
 
 	it('should return null when trigger is disabled', async () => {
-		vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+		mockTriggerConfig(false);
 
 		const ctx: TriggerContext = {
 			project: mockProject,
@@ -145,7 +158,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 		expect(result).toBeNull();
-		expect(checkTriggerEnabled).toHaveBeenCalledWith(
+		expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 			'test',
 			'splitting',
 			'pm:status-changed',
@@ -212,6 +225,10 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 	const trigger = TrelloStatusChangedTodoTrigger;
 
 	const mockProject = createMockProject();
+
+	beforeEach(() => {
+		mockTriggerConfig(true);
+	});
 
 	it('matches when card moved to todo list', () => {
 		const ctx: TriggerContext = {
@@ -281,5 +298,115 @@ describe('TrelloStatusChangedTodoTrigger', () => {
 
 		const result = await trigger.handle(ctx);
 		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// onCreate / onMove matrix — exercises the factory's gating, not per-list
+// ---------------------------------------------------------------------------
+
+describe('Trello status-changed onCreate/onMove matrix (splitting trigger)', () => {
+	const trigger = TrelloStatusChangedSplittingTrigger;
+	const mockProject = createMockProject();
+
+	function movePayload() {
+		return createTrelloActionPayload({
+			action: {
+				id: 'action1',
+				idMemberCreator: 'member1',
+				type: 'updateCard',
+				date: '2024-01-01',
+				data: {
+					card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+					listBefore: { id: 'other-list', name: 'Other' },
+					listAfter: { id: 'splitting-list-id', name: 'Splitting' },
+				},
+			},
+		});
+	}
+
+	function createPayload() {
+		return createTrelloActionPayload({
+			action: {
+				id: 'action1',
+				idMemberCreator: 'member1',
+				type: 'createCard',
+				date: '2024-01-01',
+				data: {
+					card: { id: 'card1', name: 'Test Card', idShort: 1, shortLink: 'abc' },
+					list: { id: 'splitting-list-id', name: 'Splitting' },
+				},
+			},
+		});
+	}
+
+	it('fires on move when onMove=true and onCreate=true (backfilled default)', async () => {
+		mockTriggerConfig(true, { onCreate: true, onMove: true });
+		const ctx: TriggerContext = { project: mockProject, source: 'trello', payload: movePayload() };
+		expect((await trigger.handle(ctx))?.agentType).toBe('splitting');
+	});
+
+	it('fires on create when onMove=true and onCreate=true (backfilled default)', async () => {
+		mockTriggerConfig(true, { onCreate: true, onMove: true });
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: createPayload(),
+		};
+		expect((await trigger.handle(ctx))?.agentType).toBe('splitting');
+	});
+
+	it('does NOT fire on create when onCreate=false', async () => {
+		mockTriggerConfig(true, { onCreate: false, onMove: true });
+		const ctx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: createPayload(),
+		};
+		expect(await trigger.handle(ctx)).toBeNull();
+	});
+
+	it('does NOT fire on move when onMove=false', async () => {
+		mockTriggerConfig(true, { onCreate: true, onMove: false });
+		const ctx: TriggerContext = { project: mockProject, source: 'trello', payload: movePayload() };
+		expect(await trigger.handle(ctx)).toBeNull();
+	});
+
+	it('fires only on create when onCreate=true and onMove=false', async () => {
+		mockTriggerConfig(true, { onCreate: true, onMove: false });
+
+		const createCtx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: createPayload(),
+		};
+		expect((await trigger.handle(createCtx))?.agentType).toBe('splitting');
+
+		mockTriggerConfig(true, { onCreate: true, onMove: false });
+		const moveCtx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: movePayload(),
+		};
+		expect(await trigger.handle(moveCtx)).toBeNull();
+	});
+
+	it('fires only on move when onCreate=false and onMove=true (YAML default for new projects)', async () => {
+		mockTriggerConfig(true, { onCreate: false, onMove: true });
+
+		const moveCtx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: movePayload(),
+		};
+		expect((await trigger.handle(moveCtx))?.agentType).toBe('splitting');
+
+		mockTriggerConfig(true, { onCreate: false, onMove: true });
+		const createCtx: TriggerContext = {
+			project: mockProject,
+			source: 'trello',
+			payload: createPayload(),
+		};
+		expect(await trigger.handle(createCtx)).toBeNull();
 	});
 });

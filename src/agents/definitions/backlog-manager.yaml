@@ -36,6 +36,17 @@ triggers:
       backlog item to be pulled into TODO. Note: when enabled, this fires for both
       list moves — they cannot be independently toggled.
     defaultEnabled: false
+    parameters:
+      - name: onMove
+        type: boolean
+        label: Fire when moved into this status
+        description: Fire when an existing work item is moved into the target status
+        defaultValue: true
+      - name: onCreate
+        type: boolean
+        label: Fire when created in this status
+        description: Fire when a work item is created directly in the target status
+        defaultValue: false
     contextPipeline: [pipelineSnapshot]
   - event: internal:auto-chain
     label: Auto-chain after Splitting

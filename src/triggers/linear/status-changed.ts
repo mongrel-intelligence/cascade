@@ -1,20 +1,41 @@
 /**
  * Linear status-changed trigger.
  *
- * Fires when a Linear issue transitions to a configured state (by state ID)
- * that maps to a CASCADE agent type (splitting, planning, implementation).
+ * Fires when a Linear issue either transitions into or is created in a
+ * configured state (by state ID) that maps to a CASCADE agent type.
  *
- * Linear webhook structure for status changes:
- *   action: 'update', type: 'Issue'
- *   data.stateId: new state ID
- *   updatedFrom.stateId: previous state ID (only present when stateId changed)
+ * Two independent triggers, gated by params:
+ *   onMove   (default true)  — fire when data.stateId changed on an update event
+ *   onCreate (default false) — fire when an issue is created directly in a mapped state
+ *
+ * Linear webhook shapes:
+ *   Update: action='update', type='Issue', data.stateId=new, updatedFrom.stateId=old
+ *   Create: action='create', type='Issue', data.stateId=initial, no updatedFrom
  */
 
 import { getLinearConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { type LinearWebhookTriggerPayload, STATUS_TO_AGENT } from './types.js';
+
+function resolveAgentType(
+	newStateId: string,
+	configStatuses: Record<string, string>,
+): { agentType: string; cascadeStatus: string } | undefined {
+	for (const [cascadeStatus, linearStateId] of Object.entries(configStatuses)) {
+		if (linearStateId === newStateId) {
+			const agentType = STATUS_TO_AGENT[cascadeStatus];
+			if (agentType) return { agentType, cascadeStatus };
+		}
+	}
+	return undefined;
+}
+
+function shouldFireOnEvent(isCreate: boolean, parameters: Record<string, unknown>): boolean {
+	if (isCreate) return parameters.onCreate === true;
+	return parameters.onMove !== false; // default true
+}
 
 export class LinearStatusChangedTrigger implements TriggerHandler {
 	name = 'linear-status-changed';
@@ -26,10 +47,13 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 		const payload = ctx.payload as LinearWebhookTriggerPayload;
 		if (payload.type !== 'Issue') return false;
 
-		// Issue created directly in a state (no updatedFrom on create events)
-		if (payload.action === 'create') return true;
+		// Create path: require data.stateId so handle() has something to map
+		if (payload.action === 'create') {
+			const data = payload.data as Record<string, unknown>;
+			return typeof data.stateId === 'string';
+		}
 
-		// Issue updated with a state change indicated by updatedFrom.stateId
+		// Update path: state change indicated by updatedFrom.stateId
 		if (payload.action === 'update') {
 			return typeof payload.updatedFrom?.stateId === 'string';
 		}
@@ -60,18 +84,8 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Find which CASCADE status key maps to this Linear state ID
-		let agentType: string | undefined;
-		let matchedCascadeStatus: string | undefined;
-		for (const [cascadeStatus, linearStateId] of Object.entries(linearConfig.statuses)) {
-			if (linearStateId === newStateId) {
-				agentType = STATUS_TO_AGENT[cascadeStatus];
-				matchedCascadeStatus = cascadeStatus;
-				break;
-			}
-		}
-
-		if (!agentType) {
+		const resolved = resolveAgentType(newStateId, linearConfig.statuses);
+		if (!resolved) {
 			logger.debug('Linear state transition does not map to any agent', {
 				issueIdentifier,
 				newStateId,
@@ -79,21 +93,36 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			});
 			return null;
 		}
+		const { agentType, cascadeStatus: matchedCascadeStatus } = resolved;
 
-		// Check per-agent toggle for statusChanged via DB-driven system
-		if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:status-changed', this.name))) {
+		const { enabled, parameters } = await checkTriggerEnabledWithParams(
+			ctx.project.id,
+			agentType,
+			'pm:status-changed',
+			this.name,
+		);
+		if (!enabled) return null;
+
+		const isCreate = payload.action === 'create';
+		if (!shouldFireOnEvent(isCreate, parameters)) {
+			logger.debug('Linear status-changed event gated by trigger params', {
+				issueIdentifier,
+				agentType,
+				eventKind: isCreate ? 'create' : 'move',
+				parameters,
+			});
 			return null;
 		}
 
-		logger.info('Linear issue transitioned to agent-triggering state', {
+		logger.info('Linear issue entered agent-triggering state', {
 			issueIdentifier,
-			previousStateId: payload.updatedFrom?.stateId,
+			eventKind: isCreate ? 'create' : 'move',
+			previousStateId: isCreate ? undefined : payload.updatedFrom?.stateId,
 			newStateId,
 			cascadeStatus: matchedCascadeStatus,
 			agentType,
 		});
 
-		// Use issueIdentifier (e.g. TEAM-123) as the workItemId, falling back to id
 		const workItemId = issueIdentifier;
 		const workItemUrl = issueUrl;
 		const workItemTitle = issueTitle;

@@ -10,7 +10,7 @@ vi.mock('../../../src/pm/config.js', () => ({
 }));
 
 import { LinearStatusChangedTrigger } from '../../../src/triggers/linear/status-changed.js';
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -84,6 +84,14 @@ function buildCtx(
 	};
 }
 
+/** Configure what checkTriggerEnabledWithParams returns for the next call(s). */
+function mockTriggerConfig(
+	enabled: boolean,
+	parameters: Record<string, unknown> = { onCreate: false, onMove: true },
+) {
+	vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({ enabled, parameters });
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -93,7 +101,8 @@ describe('LinearStatusChangedTrigger', () => {
 
 	beforeEach(() => {
 		vi.resetAllMocks();
-		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+		// Default: trigger enabled with YAML-default params (onCreate: false, onMove: true)
+		mockTriggerConfig(true);
 		mockGetLinearConfig.mockReturnValue(baseLinearConfig);
 		trigger = new LinearStatusChangedTrigger();
 	});
@@ -114,19 +123,29 @@ describe('LinearStatusChangedTrigger', () => {
 			expect(trigger.matches(buildCtx({ action: 'remove' }))).toBe(false);
 		});
 
-		it('matches create/Issue events (issue created directly in a state)', () => {
+		it('matches create/Issue events when data.stateId is present', () => {
 			expect(trigger.matches(buildCtx({ action: 'create', noUpdatedFrom: true }))).toBe(true);
+		});
+
+		it('does not match create events without data.stateId', () => {
+			const ctx = buildCtx({ action: 'create', noUpdatedFrom: true });
+			(ctx.payload as Record<string, unknown>).data = {
+				identifier: 'TEAM-1',
+				title: 'No state',
+				// no stateId
+			};
+			expect(trigger.matches(ctx)).toBe(false);
 		});
 
 		it('does not match non-Issue types', () => {
 			expect(trigger.matches(buildCtx({ type: 'Comment' }))).toBe(false);
 		});
 
-		it('does not match when updatedFrom is missing', () => {
+		it('does not match update events when updatedFrom is missing', () => {
 			expect(trigger.matches(buildCtx({ noUpdatedFrom: true }))).toBe(false);
 		});
 
-		it('does not match when updatedFrom.stateId is not a string', () => {
+		it('does not match update events when updatedFrom.stateId is not a string', () => {
 			const ctx = buildCtx();
 			(ctx.payload as Record<string, unknown>).updatedFrom = { stateId: 123 };
 			expect(trigger.matches(ctx)).toBe(false);
@@ -138,10 +157,10 @@ describe('LinearStatusChangedTrigger', () => {
 	});
 
 	// =========================================================================
-	// handle
+	// handle — update path (default onMove: true)
 	// =========================================================================
-	describe('handle', () => {
-		it('returns implementation agent when new state maps to "todo"', async () => {
+	describe('handle — move events', () => {
+		it('returns implementation agent when moved to "todo"', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
 
 			expect(result).not.toBeNull();
@@ -153,37 +172,30 @@ describe('LinearStatusChangedTrigger', () => {
 			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
 		});
 
-		it('returns splitting agent when new state maps to "splitting"', async () => {
+		it('returns splitting agent when moved to "splitting"', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-splitting' }));
-
-			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('splitting');
 		});
 
-		it('returns planning agent when new state maps to "planning"', async () => {
+		it('returns planning agent when moved to "planning"', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-planning' }));
-
-			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('planning');
 		});
 
-		it('returns backlog-manager agent when new state maps to "backlog"', async () => {
+		it('returns backlog-manager agent when moved to "backlog"', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-backlog' }));
-
-			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('backlog-manager');
 		});
 
-		it('returns null when new state does not map to any agent', async () => {
+		it('returns null when moved to an unmapped state', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-done' }));
 			expect(result).toBeNull();
 		});
 
-		it('returns null when newStateId is missing from data', async () => {
+		it('returns null when data.stateId is missing', async () => {
 			const ctx = buildCtx();
 			(ctx.payload as Record<string, unknown>).data = {
 				identifier: 'TEAM-1',
-				// no stateId
 			};
 			const result = await trigger.handle(ctx);
 			expect(result).toBeNull();
@@ -191,16 +203,13 @@ describe('LinearStatusChangedTrigger', () => {
 
 		it('returns null when issueIdentifier is missing', async () => {
 			const ctx = buildCtx();
-			(ctx.payload as Record<string, unknown>).data = {
-				stateId: 'state-todo',
-				// no identifier or id
-			};
+			(ctx.payload as Record<string, unknown>).data = { stateId: 'state-todo' };
 			const result = await trigger.handle(ctx);
 			expect(result).toBeNull();
 		});
 
 		it('returns null when linear config is missing statuses', async () => {
-			mockGetLinearConfig.mockReturnValue({ teamId: 'team-abc' }); // no statuses
+			mockGetLinearConfig.mockReturnValue({ teamId: 'team-abc' });
 			const result = await trigger.handle(buildCtx());
 			expect(result).toBeNull();
 		});
@@ -212,12 +221,12 @@ describe('LinearStatusChangedTrigger', () => {
 		});
 
 		it('returns null when trigger is disabled for the resolved agent', async () => {
-			vi.mocked(checkTriggerEnabled).mockResolvedValue(false);
+			mockTriggerConfig(false);
 
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
 
 			expect(result).toBeNull();
-			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'proj-linear',
 				'implementation',
 				'pm:status-changed',
@@ -225,12 +234,10 @@ describe('LinearStatusChangedTrigger', () => {
 			);
 		});
 
-		it('calls checkTriggerEnabled with correct args for splitting agent', async () => {
-			vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
-
+		it('calls checkTriggerEnabledWithParams with correct args for splitting agent', async () => {
 			await trigger.handle(buildCtx({ newStateId: 'state-splitting' }));
 
-			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'proj-linear',
 				'splitting',
 				'pm:status-changed',
@@ -242,7 +249,6 @@ describe('LinearStatusChangedTrigger', () => {
 			const result = await trigger.handle(
 				buildCtx({ newStateId: 'state-todo', issueId: 'issue-uuid-123' }),
 			);
-
 			expect(result?.agentInput.linearIssueId).toBe('issue-uuid-123');
 		});
 
@@ -253,40 +259,95 @@ describe('LinearStatusChangedTrigger', () => {
 			(data.data as Record<string, unknown>).id = 'fallback-id';
 
 			const result = await trigger.handle(ctx);
-
 			expect(result?.workItemId).toBe('fallback-id');
 		});
+	});
 
-		describe('create events (issue created directly in a state)', () => {
-			it('returns implementation agent when created in "todo" state', async () => {
-				const result = await trigger.handle(
-					buildCtx({ action: 'create', newStateId: 'state-todo', noUpdatedFrom: true }),
-				);
+	// =========================================================================
+	// handle — create path + onCreate/onMove matrix
+	// =========================================================================
+	describe('handle — create events', () => {
+		it('returns null when onCreate is false (default)', async () => {
+			// Default mock already sets onCreate: false
+			const result = await trigger.handle(
+				buildCtx({ action: 'create', newStateId: 'state-todo', noUpdatedFrom: true }),
+			);
+			expect(result).toBeNull();
+		});
 
-				expect(result).not.toBeNull();
-				expect(result?.agentType).toBe('implementation');
-				expect(result?.workItemId).toBe('TEAM-123');
-				expect(result?.workItemTitle).toBe('Fix the bug');
-				expect(result?.workItemUrl).toBe('https://linear.app/org/issue/TEAM-123');
-				expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
-			});
+		it('returns implementation agent when onCreate is true and created in "todo"', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
 
-			it('returns planning agent when created in "planning" state', async () => {
-				const result = await trigger.handle(
-					buildCtx({ action: 'create', newStateId: 'state-planning', noUpdatedFrom: true }),
-				);
+			const result = await trigger.handle(
+				buildCtx({ action: 'create', newStateId: 'state-todo', noUpdatedFrom: true }),
+			);
 
-				expect(result).not.toBeNull();
-				expect(result?.agentType).toBe('planning');
-			});
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('implementation');
+			expect(result?.workItemId).toBe('TEAM-123');
+			expect(result?.workItemTitle).toBe('Fix the bug');
+			expect(result?.workItemUrl).toBe('https://linear.app/org/issue/TEAM-123');
+			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
+		});
 
-			it('returns null when created in unmapped state', async () => {
-				const result = await trigger.handle(
-					buildCtx({ action: 'create', newStateId: 'state-done', noUpdatedFrom: true }),
-				);
+		it('returns planning agent when onCreate is true and created in "planning"', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
 
-				expect(result).toBeNull();
-			});
+			const result = await trigger.handle(
+				buildCtx({ action: 'create', newStateId: 'state-planning', noUpdatedFrom: true }),
+			);
+			expect(result?.agentType).toBe('planning');
+		});
+
+		it('returns null when onCreate is true but state is unmapped', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+
+			const result = await trigger.handle(
+				buildCtx({ action: 'create', newStateId: 'state-done', noUpdatedFrom: true }),
+			);
+			expect(result).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// handle — onMove gating
+	// =========================================================================
+	describe('handle — onMove gating', () => {
+		it('returns null when onMove is false and event is a move', async () => {
+			mockTriggerConfig(true, { onCreate: false, onMove: false });
+
+			const result = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
+			expect(result).toBeNull();
+		});
+
+		it('fires for move when onMove is true and onCreate is false (default)', async () => {
+			// Default already has onMove: true, onCreate: false
+			const result = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
+			expect(result?.agentType).toBe('implementation');
+		});
+
+		it('does not fire for create when onMove is true but onCreate is false', async () => {
+			mockTriggerConfig(true, { onCreate: false, onMove: true });
+
+			const result = await trigger.handle(
+				buildCtx({ action: 'create', newStateId: 'state-todo', noUpdatedFrom: true }),
+			);
+			expect(result).toBeNull();
+		});
+
+		it('fires only for create when onMove is false and onCreate is true', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: false });
+
+			const createResult = await trigger.handle(
+				buildCtx({ action: 'create', newStateId: 'state-todo', noUpdatedFrom: true }),
+			);
+			expect(createResult?.agentType).toBe('implementation');
+
+			// Reset mock since it's mockResolvedValueOnce-like behavior vs mockResolvedValue
+			mockTriggerConfig(true, { onCreate: true, onMove: false });
+
+			const moveResult = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
+			expect(moveResult).toBeNull();
 		});
 	});
 });

@@ -32,6 +32,16 @@ triggers:
         label: Target Status
         options: [planning]
         defaultValue: planning
+      - name: onMove
+        type: boolean
+        label: Fire when moved into this status
+        description: Fire when an existing work item is moved into the target status
+        defaultValue: true
+      - name: onCreate
+        type: boolean
+        label: Fire when created in this status
+        description: Fire when a work item is created directly in the target status
+        defaultValue: false
     contextPipeline: [directoryListing, contextFiles, workItem]
   - event: pm:label-added
     label: Ready to Process Label

@@ -1,12 +1,19 @@
 import { getTrelloConfig } from '../../pm/config.js';
 import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import { logger } from '../../utils/logging.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload, type TrelloWebhookPayload } from './types.js';
 
 // ============================================================================
 // Status Changed Trigger Factory (Trello)
+//
+// Two independent toggles, gated by params resolved from the DB-driven config:
+//   onMove   (default true)  — fire when a card is moved into the target list
+//   onCreate (default false) — fire when a card is created directly in the target list
+//
+// Existing Trello projects are backfilled to { onCreate: true, onMove: true } via
+// a data migration so behavior is preserved without relying on YAML defaults.
 // ============================================================================
 
 interface StatusChangedConfig {
@@ -16,6 +23,11 @@ interface StatusChangedConfig {
 	agentType: 'splitting' | 'planning' | 'implementation' | 'backlog-manager';
 	/** When true, invalidate any snapshot for the card when it reaches this status */
 	invalidateSnapshotOnMove?: boolean;
+}
+
+function shouldFireOnEvent(isCreate: boolean, parameters: Record<string, unknown>): boolean {
+	if (isCreate) return parameters.onCreate === true;
+	return parameters.onMove !== false; // default true
 }
 
 function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
@@ -31,13 +43,11 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 			const payload = ctx.payload;
 			const targetListId = trelloConfig?.lists[config.listKey];
 
-			// Card moved into the target list
 			const isMove =
 				payload.action.type === 'updateCard' &&
 				payload.action.data.listAfter?.id === targetListId &&
 				payload.action.data.listBefore?.id !== targetListId;
 
-			// Card created directly in the target list
 			const isCreate =
 				payload.action.type === 'createCard' && payload.action.data.list?.id === targetListId;
 
@@ -45,19 +55,27 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 		},
 
 		async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-			// Check trigger config via new DB-driven system
-			if (
-				!(await checkTriggerEnabled(
-					ctx.project.id,
-					config.agentType,
-					'pm:status-changed',
-					config.name,
-				))
-			) {
+			const { enabled, parameters } = await checkTriggerEnabledWithParams(
+				ctx.project.id,
+				config.agentType,
+				'pm:status-changed',
+				config.name,
+			);
+			if (!enabled) {
 				return null;
 			}
 
 			const payload = ctx.payload as TrelloWebhookPayload;
+			const isCreate = payload.action.type === 'createCard';
+			if (!shouldFireOnEvent(isCreate, parameters)) {
+				logger.debug('Trello status-changed event gated by trigger params', {
+					trigger: config.name,
+					eventKind: isCreate ? 'create' : 'move',
+					parameters,
+				});
+				return null;
+			}
+
 			const cardId = payload.action.data.card?.id;
 
 			if (!cardId) {
@@ -65,7 +83,6 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 				return null;
 			}
 
-			// Capture work item display data from the webhook payload
 			const cardShortLink = payload.action.data.card?.shortLink;
 			const cardName = payload.action.data.card?.name;
 			const workItemUrl = cardShortLink ? `https://trello.com/c/${cardShortLink}` : undefined;
