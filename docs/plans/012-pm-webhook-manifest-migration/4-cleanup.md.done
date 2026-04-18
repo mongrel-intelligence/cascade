@@ -6,7 +6,7 @@ plan_slug: cleanup
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: [3-linear-webhook.md]
-status: wip
+status: done
 ---
 
 # 012/4: Cleanup — Delete Legacy Webhook UX + Rewrite Docs + Close Spec
@@ -221,20 +221,20 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (WebhookStep export deleted)
-- [ ] AC #2 (LinearWebhookInfoPanel export deleted)
-- [ ] AC #3 (useWebhookManagement + useLinearWebhookInfo deleted)
-- [ ] AC #4 (pm-wizard.tsx legacy slot + imports removed)
-- [ ] AC #5 (legacy test file deleted)
-- [ ] AC #6 (dead-code grep clean)
-- [ ] AC #7 (README rewritten)
-- [ ] AC #8 (CLAUDE.md updated)
-- [ ] AC #9 (CHANGELOG entry)
-- [ ] AC #10 (spec 011 forward-ref)
-- [ ] AC #11 (spec 011 _coverage.md updated)
-- [ ] AC #12 (conformance harness green)
-- [ ] AC #13 (build)
-- [ ] AC #14 (test)
-- [ ] AC #15 (lint)
-- [ ] AC #16 (typecheck)
-- [ ] AC #17 (spec marked .done)
+- [x] AC #1 (`WebhookStep` export removed from `pm-wizard-common-steps.tsx`)
+- [x] AC #2 (`LinearWebhookInfoPanel` export removed)
+- [x] AC #3 (`useWebhookManagement` + `useLinearWebhookInfo` removed from `pm-wizard-hooks.ts`)
+- [x] AC #4 (`pm-wizard.tsx` legacy webhook slot + imports deleted; `webhookStepNumber` removed)
+- [x] AC #5 (`tests/unit/web/pm-wizard-webhooks-step.test.ts` deleted)
+- [x] AC #6 (dead-code grep: only doc-comment references remain; no live imports/usages)
+- [x] AC #7 (`src/integrations/README.md` five-specs preamble + Post-spec-012 additions + updated step-3 webhook guidance)
+- [x] AC #8 (root `CLAUDE.md` PM-integration summary references spec 012)
+- [x] AC #9 (`CHANGELOG.md` Internal entry for spec 012)
+- [x] AC #10 (spec 011 forward-reference blockquote to spec 012 added)
+- [x] AC #11 (spec 011 `_coverage.md` AC #3 marked "closed by spec 012"; plan 011/4 ACs #3 + #6 marked closed downstream)
+- [x] AC #12 (conformance harness green — full suite 8186/8186)
+- [x] AC #13 (`npm run build` green)
+- [x] AC #14 (`npm test` green — 8186/8186)
+- [x] AC #15 (`npm run lint` green)
+- [x] AC #16 (`npm run typecheck` green)
+- [x] AC #17 (spec 012 `.done` rename — handled by Phase 8 in the trailing commit)

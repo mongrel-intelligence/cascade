@@ -210,10 +210,10 @@ Originally out of scope for the spec (repeated for clarity):
 
 - [x] AC #1 (all 6 Linear standard steps render via the generator in the refactored pm-wizard.tsx)
 - [x] AC #2 (team picker passes `searchable: true`)
-- [ ] AC #3 — **partial**: `LinearWebhookDisplayAdapter` composes shared `WebhookUrlDisplayStep` + `ProjectSecretField` for `LINEAR_WEBHOOK_SECRET`. Currently dormant; legacy `WebhookStep` still renders Linear's webhook UX. Functionality is preserved via legacy path; the shared path activates in a future plan.
+- [x] AC #3 — **closed downstream by spec 012** (plans 012/3 + 012/4): `LinearWebhookAdapter` renders via the manifest path; `ProjectSecretField` for `LINEAR_WEBHOOK_SECRET` is inline; legacy `WebhookStep` deleted. Originally landed partial because the widened shared step was dormant; spec 012 activated it.
 - [x] AC #4 (project-scope via shared component; spec 005 preserved)
 - [x] AC #5 (label-mapping dropdown mode + Create affordance with `LINEAR_LABEL_DEFAULTS`)
-- [ ] AC #6 — **partial**: `linear-webhook-info-panel.test.ts` deleted; `LinearWebhookInfoPanel` still referenced by legacy `WebhookStep`. Full retirement follows webhook-creation migration.
+- [x] AC #6 — **closed downstream by spec 012** (plan 012/4): `LinearWebhookInfoPanel` + legacy `WebhookStep` both deleted. Webhook-creation migration completed; retirement is total.
 - [x] AC #7 (`pm-wizard-linear-steps.tsx` retained with "Retained until 011/5" marker; no live importers)
 - [x] AC #8 (8 new tests in `linear-wizard-generator.test.ts`; 3 legacy step tests deleted net -450 lines)
 - [x] AC #9 (conformance harness green)

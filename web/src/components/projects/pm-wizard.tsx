@@ -11,21 +11,17 @@ import './pm-providers/jira/index.js';
 import './pm-providers/linear/index.js';
 import { ManifestProviderWizardSection } from './pm-providers/manifest-section.js';
 import { getProviderWizard } from './pm-providers/registry.js';
-import { SaveStep, WebhookStep } from './pm-wizard-common-steps.js';
-import {
-	useLinearWebhookInfo,
-	useSaveMutation,
-	useVerification,
-	useWebhookManagement,
-} from './pm-wizard-hooks.js';
+import { SaveStep } from './pm-wizard-common-steps.js';
+import { useSaveMutation, useVerification } from './pm-wizard-hooks.js';
 // Plan 011/5: the three legacy `pm-wizard-{trello,jira,linear}-steps.tsx`
 // files were deleted; all three providers now render exclusively through
 // the manifest path (see `./pm-providers/<provider>/wizard.ts`).
+// Plan 012/4: `WebhookStep` + `LinearWebhookInfoPanel` + supporting hooks
+// deleted; every provider owns its webhook UX via the manifest path.
 import {
 	areCredentialsReady,
 	buildEditState,
 	createInitialState,
-	deriveActiveWebhooks,
 	isStep1Complete,
 	wizardReducer,
 } from './pm-wizard-state.js';
@@ -67,7 +63,6 @@ export function PMWizard({
 	initialProvider: string;
 	initialConfig?: Record<string, unknown>;
 }) {
-	const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId }));
 	const credentialsQuery = useQuery(trpc.projects.credentials.list.queryOptions({ projectId }));
 
 	const [state, dispatch] = useReducer(wizardReducer, undefined, createInitialState);
@@ -123,18 +118,10 @@ export function PMWizard({
 
 	const { verifyMutation } = useVerification(state, dispatch, advanceToStep);
 	// Every PM provider (Trello 006/2, JIRA 006/3, Linear 006/4) composes its
-	// discovery / label / custom-field hooks inside its own useProviderHooks.
-	// The parent wizard no longer calls any provider-specific React hook.
-	const webhookManagement = useWebhookManagement(projectId, state);
-	const { webhookUrl: linearWebhookUrl } = useLinearWebhookInfo();
+	// discovery / label / custom-field / webhook hooks inside its own
+	// useProviderHooks. The parent wizard no longer calls any provider-
+	// specific React hook.
 	const { saveMutation } = useSaveMutation(projectId, state);
-
-	const linearWebhookSecretCredential = credentialsQuery.data?.find(
-		(c) => c.envVarKey === 'LINEAR_WEBHOOK_SECRET',
-	);
-
-	// Label creation + discovery handlers now live inside each provider's
-	// useProviderHooks (Trello 006/2, JIRA 006/3, Linear 006/4).
 
 	// ---- Step status ----
 
@@ -149,19 +136,15 @@ export function PMWizard({
 		return 'pending';
 	}
 
-	// ---- Active webhooks for this provider ----
-	const activeWebhooks = deriveActiveWebhooks(state.provider, webhooksQuery.data);
-
-	// ---- Manifest step layout (plans 011/4 + 012/1-3) ----
-	// Iterate over `manifestDef.steps`. All three providers own their
-	// webhook UX via the manifest path now. The legacy `WebhookStep`
-	// below is a no-op (no provider routes to its branches); plan 012/4
-	// deletes the slot + legacy surface entirely.
+	// ---- Manifest step layout (plans 011/4 + 012/1-4) ----
+	// Iterate over `manifestDef.steps`. Every PM provider owns every
+	// wizard step via the manifest path — credentials, container-pick,
+	// mappings, webhook, everything. Parent wizard only owns the provider
+	// picker (step 1) and the final Save step.
 	const renderedManifestSteps = manifestDef
 		? manifestDef.steps.map((step, index) => ({ step, index }))
 		: [];
-	const webhookStepNumber = renderedManifestSteps.length + 2; // +1 for provider, +1 for 1-indexed
-	const saveStepNumber = webhookStepNumber + 1;
+	const saveStepNumber = renderedManifestSteps.length + 2; // +1 for provider picker, +1 for 1-indexed
 
 	// ---- Render ----
 
@@ -202,14 +185,11 @@ export function PMWizard({
 			</WizardStep>
 
 			{/*
-			 * Plan 011/4: dynamic manifest-step rendering. Each provider's
-			 * `wizardSpec.steps` drives its own slot count. We skip steps of
-			 * kind `webhook-url-display` because the legacy WebhookStep below
-			 * still owns programmatic webhook creation (Trello/JIRA API calls)
-			 * and per-provider setup UX. The shared `webhook-url-display`
-			 * component (widened in plan 011/1) is dormant for the three
-			 * existing providers until a future plan ports webhook-creation
-			 * UX into the manifest path.
+			 * Plan 011/4 + 012/4: dynamic manifest-step rendering. Each
+			 * provider's `wizardSpec.steps` drives its own slot count. Every
+			 * step — including webhook-url-display — renders via the manifest
+			 * path. Parent wizard owns only the provider picker (step 1) and
+			 * the final Save step.
 			 */}
 			{manifestDef &&
 				renderedManifestSteps.map((entry, idx) => {
@@ -270,28 +250,6 @@ export function PMWizard({
 						</WizardStep>
 					);
 				})}
-
-			{/* Legacy Webhook slot — still handles programmatic webhook
-			    registration for Trello/JIRA + the signing-secret UX for
-			    Linear. Scheduled for migration into the manifest path in a
-			    future plan. */}
-			<WizardStep
-				stepNumber={webhookStepNumber}
-				title="Webhooks"
-				status={getStatus(webhookStepNumber, true)}
-				isOpen={openSteps.has(webhookStepNumber)}
-				onToggle={() => toggleStep(webhookStepNumber)}
-			>
-				<WebhookStep
-					state={state}
-					webhooksQuery={webhooksQuery}
-					activeWebhooks={activeWebhooks}
-					linearWebhookUrl={linearWebhookUrl}
-					projectId={projectId}
-					linearWebhookSecretCredential={linearWebhookSecretCredential}
-					{...webhookManagement}
-				/>
-			</WizardStep>
 
 			{/* Save slot. */}
 			<WizardStep

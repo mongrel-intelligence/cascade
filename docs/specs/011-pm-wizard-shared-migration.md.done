@@ -9,6 +9,8 @@ status: done
 
 # 011: PM Wizard Migration — Existing Providers Onto Shared Components
 
+> **Forward reference (2026-04-18+):** the remaining webhook-UX migration (deferred at close of plan 011/4 — legacy `WebhookStep` + `LinearWebhookInfoPanel` still owned webhook registration + signing-secret UX) landed in spec [012 — PM Webhook Manifest Migration](./012-pm-webhook-manifest-migration.md.done). That spec migrated Trello/JIRA/Linear webhook steps into the manifest path, deleted the legacy surface, and fully closed plan 011/4 ACs #3 + #6.
+
 ## Problem & Motivation
 
 Spec 010 shipped six real shared React step components — one per `StandardStepKind` — so a new PM provider could configure its wizard with zero per-provider step UI. The shared path works: the wizard generator dispatches to the shared registry, every component has tests, the `new-provider-surface` guard pins them. But the three **existing** production providers (Trello, JIRA, Linear) never migrated. They still fork their own step components in per-provider wizard-step files — roughly 1,085 lines of UI that duplicates what the shared components already do.

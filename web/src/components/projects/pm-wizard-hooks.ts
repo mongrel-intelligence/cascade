@@ -457,68 +457,10 @@ export function useVerification(
 	return { verifyMutation };
 }
 
-// ============================================================================
-// Webhook Management
-// ============================================================================
-
-export function useWebhookManagement(projectId: string, state: WizardState) {
-	const queryClient = useQueryClient();
-	const callbackBaseUrl =
-		API_URL ||
-		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
-
-	const createWebhookMutation = useMutation({
-		mutationFn: () =>
-			trpcClient.webhooks.create.mutate({
-				projectId,
-				callbackBaseUrl,
-				trelloOnly: state.provider === 'trello' ? true : undefined,
-				jiraOnly: state.provider === 'jira' ? true : undefined,
-			}),
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
-			});
-		},
-	});
-
-	const deleteWebhookMutation = useMutation({
-		mutationFn: (deleteCallbackBaseUrl: string) =>
-			trpcClient.webhooks.delete.mutate({
-				projectId,
-				callbackBaseUrl: deleteCallbackBaseUrl,
-				trelloOnly: state.provider === 'trello' ? true : undefined,
-				jiraOnly: state.provider === 'jira' ? true : undefined,
-			}),
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: trpc.webhooks.list.queryOptions({ projectId }).queryKey,
-			});
-		},
-	});
-
-	return {
-		callbackBaseUrl,
-		createWebhookMutation,
-		deleteWebhookMutation,
-	};
-}
-
-// ============================================================================
-// Linear Webhook Info (display-only)
-// ============================================================================
-
-export function useLinearWebhookInfo() {
-	const callbackBaseUrl =
-		API_URL ||
-		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
-
-	const webhookUrl = callbackBaseUrl
-		? `${callbackBaseUrl}/linear/webhook`
-		: '<YOUR_CASCADE_HOST>/linear/webhook';
-
-	return { webhookUrl };
-}
+// Plan 012/4: `useWebhookManagement` + `useLinearWebhookInfo` deleted.
+// Each provider's `useProviderHooks` now inlines the webhook plumbing
+// (`webhooks.list/create/delete` + `callbackBaseUrl` formula) —
+// see `./pm-providers/{trello,jira,linear}/wizard.ts`.
 
 // ============================================================================
 // Trello Label Creation
