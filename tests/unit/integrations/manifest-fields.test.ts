@@ -106,7 +106,9 @@ describe('createCustomField? hook (plan 010/1 task 1)', () => {
 			}),
 		};
 		expect(typeof m.createCustomField).toBe('function');
-		const result = await m.createCustomField!({
+		const hook = m.createCustomField;
+		if (!hook) throw new Error('createCustomField should be defined');
+		const result = await hook({
 			credentials: {},
 			containerId: 'board-1',
 			name: 'Cost',

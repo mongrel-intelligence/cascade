@@ -480,12 +480,13 @@ export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispa
 			if (!state.trelloApiKey || !state.trelloToken || !state.trelloBoardId) {
 				throw new Error('Missing credentials or board selection');
 			}
-			return trpcClient.integrationsDiscovery.createTrelloLabel.mutate({
-				apiKey: state.trelloApiKey,
-				token: state.trelloToken,
-				boardId: state.trelloBoardId,
+			// Plan 010/1: routes through generic pm.discovery.createLabel.
+			return trpcClient.pm.discovery.createLabel.mutate({
+				providerId: 'trello',
+				containerId: state.trelloBoardId,
 				name: vars.name,
 				color: vars.color,
+				credentials: { api_key: state.trelloApiKey, token: state.trelloToken },
 			});
 		},
 		onSuccess: (label, vars) => {
@@ -499,16 +500,30 @@ export function useTrelloLabelCreation(state: WizardState, dispatch: React.Dispa
 	});
 
 	const createMissingLabelsMutation = useMutation({
-		mutationFn: (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
+		mutationFn: async (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
 			if (!state.trelloApiKey || !state.trelloToken || !state.trelloBoardId) {
 				throw new Error('Missing credentials or board selection');
 			}
-			return trpcClient.integrationsDiscovery.createTrelloLabels.mutate({
-				apiKey: state.trelloApiKey,
-				token: state.trelloToken,
-				boardId: state.trelloBoardId,
-				labels: labelsToCreate.map(({ name, color }) => ({ name, color })),
-			});
+			// Plan 010/1: iterate single-item pm.discovery.createLabel client-side.
+			// Collect successes + errors into the same shape the old batch endpoint
+			// returned so onSuccess downstream logic doesn't need to change.
+			const successes: Array<{ id: string; name: string; color: string }> = [];
+			const errors: Array<{ name: string; error: string }> = [];
+			for (const { name, color } of labelsToCreate) {
+				try {
+					const label = await trpcClient.pm.discovery.createLabel.mutate({
+						providerId: 'trello',
+						containerId: state.trelloBoardId,
+						name,
+						color,
+						credentials: { api_key: state.trelloApiKey, token: state.trelloToken },
+					});
+					successes.push(label);
+				} catch (err) {
+					errors.push({ name, error: err instanceof Error ? err.message : String(err) });
+				}
+			}
+			return { successes, errors };
 		},
 		onSuccess: (result, labelsToCreate) => {
 			// Handle successful label creations
@@ -593,11 +608,18 @@ export function useJiraCustomFieldCreation(
 			if (!state.jiraEmail || !state.jiraApiToken || !state.jiraBaseUrl) {
 				throw new Error('Missing JIRA credentials or base URL');
 			}
-			return trpcClient.integrationsDiscovery.createJiraCustomField.mutate({
-				email: state.jiraEmail,
-				apiToken: state.jiraApiToken,
-				baseUrl: state.jiraBaseUrl,
+			// Plan 010/1: routes through generic pm.discovery.createCustomField.
+			// JIRA's project key isn't needed for the mutation (fields are global)
+			// but we pass the configured projectKey as containerId for uniform shape.
+			return trpcClient.pm.discovery.createCustomField.mutate({
+				providerId: 'jira',
+				containerId: state.jiraProjectKey || 'global',
 				name: 'Cost',
+				credentials: {
+					email: state.jiraEmail,
+					api_token: state.jiraApiToken,
+					base_url: state.jiraBaseUrl,
+				},
 			});
 		},
 		onSuccess: (field) => {
@@ -756,11 +778,13 @@ export function useLinearLabelCreation(state: WizardState, dispatch: React.Dispa
 			if (!state.linearApiKey || !state.linearTeamId) {
 				throw new Error('Missing credentials or team selection');
 			}
-			return trpcClient.integrationsDiscovery.createLinearLabel.mutate({
-				apiKey: state.linearApiKey,
-				teamId: state.linearTeamId,
+			// Plan 010/1: routes through generic pm.discovery.createLabel.
+			return trpcClient.pm.discovery.createLabel.mutate({
+				providerId: 'linear',
+				containerId: state.linearTeamId,
 				name: vars.name,
 				color: vars.color,
+				credentials: { api_key: state.linearApiKey },
 			});
 		},
 		onSuccess: (label, vars) => {
@@ -774,15 +798,28 @@ export function useLinearLabelCreation(state: WizardState, dispatch: React.Dispa
 	});
 
 	const createMissingLabelsMutation = useMutation({
-		mutationFn: (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
+		mutationFn: async (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
 			if (!state.linearApiKey || !state.linearTeamId) {
 				throw new Error('Missing credentials or team selection');
 			}
-			return trpcClient.integrationsDiscovery.createLinearLabels.mutate({
-				apiKey: state.linearApiKey,
-				teamId: state.linearTeamId,
-				labels: labelsToCreate.map(({ name, color }) => ({ name, color })),
-			});
+			// Plan 010/1: iterate single-item pm.discovery.createLabel client-side.
+			const successes: Array<{ id: string; name: string; color: string }> = [];
+			const errors: Array<{ name: string; error: string }> = [];
+			for (const { name, color } of labelsToCreate) {
+				try {
+					const label = await trpcClient.pm.discovery.createLabel.mutate({
+						providerId: 'linear',
+						containerId: state.linearTeamId,
+						name,
+						color,
+						credentials: { api_key: state.linearApiKey },
+					});
+					successes.push(label);
+				} catch (err) {
+					errors.push({ name, error: err instanceof Error ? err.message : String(err) });
+				}
+			}
+			return { successes, errors };
 		},
 		onSuccess: (result, labelsToCreate) => {
 			for (const label of result.successes) {

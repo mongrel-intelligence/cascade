@@ -37,22 +37,22 @@ describe('integrationsDiscoveryRouter — plan 009/5 legacy cleanup', () => {
 	});
 
 	/**
-	 * Deferred — these stay until a follow-up spec adds a generic
-	 * `pm.create*` endpoint + per-manifest factory hooks. When that
-	 * ships, this describe block flips from "still defined" to
-	 * "removed" in the same commit.
+	 * Spec 010/1 flipped the mutation procedures from "deferred" to
+	 * "removed". Callers migrated to `pm.discovery.createLabel` /
+	 * `pm.discovery.createCustomField`.
 	 */
-	describe('deferred (TODO — follow-up spec)', () => {
+	describe('spec 010/1 cleanup (mutation procedures removed)', () => {
 		it.each([
 			'createTrelloLabel',
 			'createTrelloLabels',
+			'createTrelloCustomField',
 			'createJiraCustomField',
 			'createLinearLabel',
 			'createLinearLabels',
-		])('%s is still defined (pending generic pm.create endpoint)', (name) => {
+		])('%s is removed (migrated to pm.discovery.create*)', (name) => {
 			expect(
 				(integrationsDiscoveryRouter._def.procedures as Record<string, unknown>)[name],
-			).toBeDefined();
+			).toBeUndefined();
 		});
 	});
 

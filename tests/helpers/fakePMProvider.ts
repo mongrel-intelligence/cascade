@@ -481,7 +481,7 @@ export function createFakePMManifest(): PMProviderManifest {
 		// custom fields here are synthesized inline. The returned shape
 		// matches the interface contract; tests assert on shape, not
 		// store retention.
-		createLabel: async ({ containerId, name, color }) => {
+		createLabel: async ({ name, color }) => {
 			_idCounter += 1;
 			return {
 				id: `fake-label-${_idCounter}`,
@@ -489,7 +489,7 @@ export function createFakePMManifest(): PMProviderManifest {
 				color: color ?? 'gray',
 			};
 		},
-		createCustomField: async ({ containerId, name }) => {
+		createCustomField: async ({ name }) => {
 			_idCounter += 1;
 			return {
 				id: `fake-cf-${_idCounter}`,

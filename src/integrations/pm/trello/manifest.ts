@@ -99,6 +99,25 @@ export const trelloManifest: PMProviderManifest = {
 
 	platformClientFactory: (projectId) => new TrelloPlatformClient(projectId),
 
+	// ── Plan 010/1 mutation hooks ──────────────────────────────────────
+	createLabel: async ({ credentials, containerId, name, color }) => {
+		const apiKey = credentials.api_key ?? '';
+		const token = credentials.token ?? '';
+		return withTrelloCredentials({ apiKey, token }, () =>
+			trelloClient.createBoardLabel(containerId, name, color ?? 'blue'),
+		);
+	},
+
+	createCustomField: async ({ credentials, containerId, name }) => {
+		const apiKey = credentials.api_key ?? '';
+		const token = credentials.token ?? '';
+		// Trello custom fields default to 'number' type for CASCADE's use
+		// case (cost tracking). Future: accept type in the input shape.
+		return withTrelloCredentials({ apiKey, token }, () =>
+			trelloClient.createBoardCustomField(containerId, name, 'number'),
+		);
+	},
+
 	// ── Plan 009/2 behavioral contract fields ─────────────────────────
 	lifecycle: { enabled: true, fixtureKey: 'trello' },
 

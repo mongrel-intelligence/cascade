@@ -53,7 +53,8 @@ See [`src/integrations/pm/manifest.ts`](./pm/manifest.ts) for the authoritative 
 | `triggerHandlers` | Array of `TriggerHandler` instances for webhook events. |
 | `platformClientFactory` | `(projectId) => PlatformCommentClient`. Used by the router to post ack comments; must pull auth headers from `_shared/auth-headers.ts`. |
 | `isSelfAuthoredHook?` | Optional — returns `true` when the event was authored by CASCADE itself (for loop prevention). |
-| `createLabel?` | Optional — enables the wizard's "Create label" button for this provider. |
+| `createLabel?` | Optional — enables the wizard's "Create label" button. Called via the generic `pm.discovery.createLabel` tRPC endpoint; signature is `({credentials, containerId, name, color?}) => {id, name, color}`. |
+| `createCustomField?` | Optional — enables wizard-driven custom-field creation. Called via `pm.discovery.createCustomField`; signature is `({credentials, containerId, name}) => {id, name, type}`. JIRA fields are global (the hook ignores containerId). |
 
 ### Plan 009 hardened-contract fields (all optional; providers opt in)
 

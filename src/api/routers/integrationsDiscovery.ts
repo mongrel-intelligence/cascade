@@ -280,110 +280,11 @@ export const integrationsDiscoveryRouter = router({
 			);
 		}),
 
-	// TODO (spec 009 follow-up): migrate the five `create*Label` /
-	// `create*CustomField` procedures below to a generic `pm.create*`
-	// endpoint backed by per-manifest factory hooks. They remain here
-	// because they're mutations and `pm.discover` is read-only.
-	createTrelloLabel: protectedProcedure
-		.input(
-			trelloCredsInput.extend({
-				boardId: z
-					.string()
-					.regex(/^[a-zA-Z0-9]+$/)
-					.max(32),
-				name: z.string().min(1).max(100),
-				color: z.string().optional(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.createTrelloLabel called', {
-				orgId: ctx.effectiveOrgId,
-				boardId: input.boardId,
-				name: input.name,
-			});
-			return withTrelloCreds(input, 'Failed to create Trello label', (creds) =>
-				withTrelloCredentials(creds, () =>
-					trelloClient.createBoardLabel(input.boardId, input.name, input.color),
-				),
-			);
-		}),
-
-	createTrelloLabels: protectedProcedure
-		.input(
-			trelloCredsInput.extend({
-				boardId: z
-					.string()
-					.regex(/^[a-zA-Z0-9]+$/)
-					.max(32),
-				labels: z
-					.array(
-						z.object({
-							name: z.string().min(1).max(100),
-							color: z.string().optional(),
-						}),
-					)
-					.min(1)
-					.max(10),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.createTrelloLabels called', {
-				orgId: ctx.effectiveOrgId,
-				boardId: input.boardId,
-				count: input.labels.length,
-			});
-			const creds = { apiKey: input.apiKey, token: input.token };
-
-			const results = await Promise.allSettled(
-				input.labels.map((label) =>
-					withTrelloCredentials(creds, () =>
-						trelloClient.createBoardLabel(input.boardId, label.name, label.color),
-					),
-				),
-			);
-
-			const successes: Array<{ id: string; name: string; color: string }> = [];
-			const errors: Array<{ name: string; error: string }> = [];
-
-			for (let i = 0; i < results.length; i++) {
-				const result = results[i];
-				if (result.status === 'fulfilled') {
-					successes.push(result.value);
-				} else {
-					errors.push({
-						name: input.labels[i].name,
-						error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-					});
-				}
-			}
-
-			return { successes, errors };
-		}),
-
-	createTrelloCustomField: protectedProcedure
-		.input(
-			trelloCredsInput.extend({
-				boardId: z
-					.string()
-					.regex(/^[a-zA-Z0-9]+$/)
-					.max(32),
-				name: z.string().min(1).max(100),
-				type: z.enum(['number', 'text', 'checkbox', 'date', 'list']),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.createTrelloCustomField called', {
-				orgId: ctx.effectiveOrgId,
-				boardId: input.boardId,
-				name: input.name,
-				type: input.type,
-			});
-			return withTrelloCreds(input, 'Failed to create Trello custom field', (creds) =>
-				withTrelloCredentials(creds, () =>
-					trelloClient.createBoardCustomField(input.boardId, input.name, input.type),
-				),
-			);
-		}),
+	// Plan 010/1 removed createTrelloLabel, createTrelloLabels,
+	// createTrelloCustomField. Callers migrated to pm.discovery.createLabel
+	// and pm.discovery.createCustomField (generic endpoints dispatching
+	// through trelloManifest.createLabel / createCustomField hooks).
+	// See web/src/components/projects/pm-wizard-hooks.ts.
 
 	jiraProjects: protectedProcedure.input(jiraCredsInput).mutation(async ({ ctx, input }) => {
 		logger.debug('integrationsDiscovery.jiraProjects called', { orgId: ctx.effectiveOrgId });
@@ -421,28 +322,9 @@ export const integrationsDiscoveryRouter = router({
 			);
 		}),
 
-	createJiraCustomField: protectedProcedure
-		.input(
-			jiraCredsInput.extend({
-				name: z.string().min(1).max(100),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.createJiraCustomField called', {
-				orgId: ctx.effectiveOrgId,
-				name: input.name,
-			});
-			return withJiraCreds(input, 'Failed to create JIRA custom field', (creds) =>
-				withJiraCredentials(creds, () =>
-					jiraClient.createCustomField(
-						input.name,
-						'com.atlassian.jira.plugin.system.customfieldtypes:float',
-						// exactnumber searcher enables JQL queries like `"Cost" > 100`
-						'com.atlassian.jira.plugin.system.customfieldtypes:exactnumber',
-					),
-				),
-			);
-		}),
+	// Plan 010/1 removed createJiraCustomField. Callers migrated to
+	// pm.discovery.createCustomField (generic endpoint dispatching through
+	// jiraManifest.createCustomField hook).
 
 	/**
 	 * Verify a raw GitHub token (not a stored credential ID).
@@ -681,73 +563,8 @@ export const integrationsDiscoveryRouter = router({
 			);
 		}),
 
-	createLinearLabel: protectedProcedure
-		.input(
-			linearCredsInput.extend({
-				teamId: z.string().min(1),
-				name: z.string().min(1).max(100),
-				color: z.string().optional(),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.createLinearLabel called', {
-				orgId: ctx.effectiveOrgId,
-				teamId: input.teamId,
-				name: input.name,
-			});
-			return withLinearCreds(input, 'Failed to create Linear label', (creds) =>
-				withLinearCredentials(creds, () =>
-					linearClient.createLabel(input.teamId, input.name, input.color),
-				),
-			);
-		}),
-
-	createLinearLabels: protectedProcedure
-		.input(
-			linearCredsInput.extend({
-				teamId: z.string().min(1),
-				labels: z
-					.array(
-						z.object({
-							name: z.string().min(1).max(100),
-							color: z.string().optional(),
-						}),
-					)
-					.min(1)
-					.max(10),
-			}),
-		)
-		.mutation(async ({ ctx, input }) => {
-			logger.debug('integrationsDiscovery.createLinearLabels called', {
-				orgId: ctx.effectiveOrgId,
-				teamId: input.teamId,
-				count: input.labels.length,
-			});
-			const creds = { apiKey: input.apiKey };
-
-			const results = await Promise.allSettled(
-				input.labels.map((label) =>
-					withLinearCredentials(creds, () =>
-						linearClient.createLabel(input.teamId, label.name, label.color),
-					),
-				),
-			);
-
-			const successes: Array<{ id: string; name: string; color: string }> = [];
-			const errors: Array<{ name: string; error: string }> = [];
-
-			for (let i = 0; i < results.length; i++) {
-				const result = results[i];
-				if (result.status === 'fulfilled') {
-					successes.push(result.value);
-				} else {
-					errors.push({
-						name: input.labels[i].name,
-						error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-					});
-				}
-			}
-
-			return { successes, errors };
-		}),
+	// Plan 010/1 removed createLinearLabel + createLinearLabels. Callers
+	// migrated to pm.discovery.createLabel (generic endpoint dispatching
+	// through linearManifest.createLabel hook; the batch variant is now
+	// implemented client-side as an iteration over the single-item endpoint).
 });

@@ -97,6 +97,17 @@ export const linearManifest: PMProviderManifest = {
 
 	platformClientFactory: (projectId) => new LinearPlatformClient(projectId),
 
+	// ── Plan 010/1 mutation hooks ──────────────────────────────────────
+	// Linear exposes label creation through its GraphQL mutation
+	// `issueLabelCreate`. Linear custom fields aren't exposed through the
+	// CASCADE Linear client, so `createCustomField` stays unimplemented.
+	createLabel: async ({ credentials, containerId, name, color }) => {
+		const apiKey = credentials.api_key ?? '';
+		return withLinearCredentials({ apiKey }, () =>
+			linearClient.createLabel(containerId, name, color),
+		);
+	},
+
 	// ── Plan 009/4 behavioral contract fields ─────────────────────────
 	lifecycle: { enabled: true, fixtureKey: 'linear' },
 

@@ -92,6 +92,28 @@ export const jiraManifest: PMProviderManifest = {
 
 	platformClientFactory: (projectId) => new JiraPlatformClient(projectId),
 
+	// ── Plan 010/1 mutation hooks ──────────────────────────────────────
+	// JIRA custom fields are global (not per-project). The hook accepts
+	// containerId for uniform shape but doesn't thread it to the client.
+	// Default type: 'com.atlassian.jira.plugin.system.customfieldtypes:float'
+	// matches CASCADE's cost-tracking use case.
+	createCustomField: async ({ credentials, name }) => {
+		const email = credentials.email ?? '';
+		const apiToken = credentials.api_token ?? '';
+		const baseUrl = credentials.base_url ?? '';
+		return withJiraCredentials({ email, apiToken, baseUrl }, async () => {
+			const result = await jiraClient.createCustomField(
+				name,
+				'com.atlassian.jira.plugin.system.customfieldtypes:float',
+			);
+			return {
+				id: result.id,
+				name: result.name,
+				type: 'com.atlassian.jira.plugin.system.customfieldtypes:float',
+			};
+		});
+	},
+
 	// ── Plan 009/3 behavioral contract fields ─────────────────────────
 	lifecycle: { enabled: true, fixtureKey: 'jira' },
 
