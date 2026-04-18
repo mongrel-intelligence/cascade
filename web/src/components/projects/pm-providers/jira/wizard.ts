@@ -16,16 +16,20 @@
  *   7. webhook-url-display         — shared
  */
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
+import { API_URL } from '@/lib/api.js';
+import { trpc, trpcClient } from '@/lib/trpc.js';
 import { useJiraCustomFieldCreation, useJiraDiscovery } from '../../pm-wizard-hooks.js';
+import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
-import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
+import { JiraWebhookAdapter } from './webhook-step.js';
 
 // CASCADE stage keys that map to JIRA statuses (name-based, not id-based
 // — JIRA statuses are configured per project, name is the stable identity).
@@ -91,6 +95,19 @@ interface JiraProviderHooks {
 	readonly issueTypes: ReadonlyArray<{ readonly name: string; readonly subtask: boolean }>;
 	readonly onCreateCustomField: (slotKey: string, name: string) => void;
 	readonly webhookUrl: string;
+	// Plan 012/2 — webhook-step plumbing: programmatic Create + active list + delete.
+	readonly callbackBaseUrl: string;
+	readonly activeJiraWebhooks: ReadonlyArray<{
+		readonly id: string;
+		readonly url: string;
+		readonly active: boolean;
+	}>;
+	readonly webhooksLoading: boolean;
+	readonly createJiraWebhook: () => void;
+	readonly createLoading: boolean;
+	readonly createError: string | undefined;
+	readonly deleteJiraWebhook: (callbackBaseUrl: string) => void;
+	readonly deleteLoading: boolean;
 }
 
 function asJiraHooks(providerHooks: Record<string, unknown> | undefined): JiraProviderHooks {
@@ -199,21 +216,12 @@ function JiraIssueTypeAdapter({
 	});
 }
 
-function JiraWebhookDisplayAdapter({ providerHooks }: ProviderWizardStepProps): ReactElement {
-	const h = asJiraHooks(providerHooks);
-	return WebhookUrlDisplayStep({
-		step: {
-			kind: 'webhook-url-display',
-			id: 'jira-webhook',
-			config: {
-				instructions:
-					'In JIRA Automation or a custom webhook configuration, post issue events to this URL.',
-			},
-		},
-		providerId: 'jira',
-		webhookUrl: h.webhookUrl,
-	});
-}
+// Plan 012/2: the jira-webhook step's Component is now `JiraWebhookAdapter`
+// (imported from `./webhook-step.js`), a Fragment composing the shared
+// WebhookUrlDisplayStep with JIRA-specific UX: active-webhooks list,
+// programmatic Create button, delete buttons, curl fallback. The
+// jiraEnsureLabels side-effect fires server-side inside
+// `webhooks.create({ jiraOnly: true })`.
 
 export const jiraProviderWizard: ProviderWizardDefinition = {
 	id: 'jira',
@@ -259,7 +267,7 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		{
 			id: 'jira-webhook',
 			title: 'Webhook',
-			Component: JiraWebhookDisplayAdapter,
+			Component: JiraWebhookAdapter,
 			isComplete: () => true,
 		},
 	],
@@ -282,12 +290,56 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useJiraDiscovery(state, dispatch, advanceToStep, projectId ?? '');
 		const customField = useJiraCustomFieldCreation(state, dispatch);
+		const queryClient = useQueryClient();
 
 		const onCreateCustomField = (_slotKey: string, name: string) => {
 			customField.createJiraCustomFieldMutation.mutate({ name });
 		};
 
 		const webhookUrl = projectId ? `${window.location.origin}/webhooks/${projectId}/jira` : '';
+
+		// Plan 012/2 — webhook plumbing. Mirrors the legacy `useWebhookManagement`
+		// formula (plan 012/4 deletes that hook). The server-side
+		// `jiraEnsureLabels` side-effect fires inside
+		// `webhooks.create({ jiraOnly: true })` unchanged.
+		const callbackBaseUrl =
+			API_URL ||
+			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
+		const activeJiraWebhooks = deriveActiveWebhooks('jira', webhooksQuery.data) as Array<{
+			id: string;
+			url: string;
+			active: boolean;
+		}>;
+
+		const createWebhookMutation = useMutation({
+			mutationFn: () =>
+				trpcClient.webhooks.create.mutate({
+					projectId: projectId ?? '',
+					callbackBaseUrl,
+					jiraOnly: true,
+				}),
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }).queryKey,
+				});
+			},
+		});
+
+		const deleteWebhookMutation = useMutation({
+			mutationFn: (deleteBaseUrl: string) =>
+				trpcClient.webhooks.delete.mutate({
+					projectId: projectId ?? '',
+					callbackBaseUrl: deleteBaseUrl,
+					jiraOnly: true,
+				}),
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }).queryKey,
+				});
+			},
+		});
 
 		const details = state.jiraProjectDetails;
 
@@ -306,6 +358,17 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			issueTypes: details?.issueTypes ?? [],
 			onCreateCustomField,
 			webhookUrl,
+			// Plan 012/2 — webhook plumbing consumed by `JiraWebhookAdapter`.
+			callbackBaseUrl,
+			activeJiraWebhooks,
+			webhooksLoading: webhooksQuery.isLoading,
+			createJiraWebhook: () => createWebhookMutation.mutate(),
+			createLoading: createWebhookMutation.isPending,
+			createError: createWebhookMutation.isError
+				? (createWebhookMutation.error as Error).message
+				: undefined,
+			deleteJiraWebhook: (baseUrl: string) => deleteWebhookMutation.mutate(baseUrl),
+			deleteLoading: deleteWebhookMutation.isPending,
 		} satisfies JiraProviderHooks & Record<string, unknown>;
 	},
 };

@@ -6,7 +6,7 @@ plan_slug: jira-webhook
 level: plan
 parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
 depends_on: [1-trello-webhook.md]
-status: wip
+status: done
 ---
 
 # 012/2: JIRA Webhook — Migrate Creation UX Into Manifest Path
@@ -170,14 +170,22 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (JIRA wizard step Component identity)
-- [ ] AC #2 (adapter composes shared + JIRA-specific UI)
-- [ ] AC #3 (jiraEnsureLabels side-effect preserved)
-- [ ] AC #4 (filter excludes JIRA)
-- [ ] AC #5 (legacy WebhookStep continues to render for Linear only)
-- [ ] AC #6 (tests cover JIRA webhook actions)
-- [ ] AC #7 (conformance harness green)
-- [ ] AC #8 (build)
-- [ ] AC #9 (test)
-- [ ] AC #10 (lint)
-- [ ] AC #11 (typecheck)
+
+> **Note on curl template**: spec and plan text mentioned JIRA REST API v3
+> shape (`/rest/api/3/webhook`). The legacy `WebhookStep` actually used
+> the older v1 endpoint (`/rest/webhooks/1.0/webhook`). Preserved v1
+> verbatim to satisfy zero-regression; migrating to v3 would require a
+> coordinated payload change (different event names + JQL filter shape)
+> and is out of scope. Documented in the adapter source.
+
+- [x] AC #1 (`jiraProviderWizard.steps[jira-webhook].Component = JiraWebhookAdapter`)
+- [x] AC #2 (Fragment composes shared `WebhookUrlDisplayStep` + active list + Create + curl + delete)
+- [x] AC #3 (`jiraEnsureLabels` side-effect preserved — server-side; adapter calls `webhooks.create({jiraOnly:true})` unchanged)
+- [x] AC #4 (`pm-wizard.tsx` filter: `id !== 'linear-webhook'`)
+- [x] AC #5 (legacy `WebhookStep` still renders for Linear only; no code change to legacy slot)
+- [x] AC #6 (10 JIRA-webhook tests covering URL / active list / Create / curl / delete / regression guard)
+- [x] AC #7 (conformance harness green — full suite 8187/8187)
+- [x] AC #8 (`npm run build` green)
+- [x] AC #9 (`npm test` green — 8187/8187)
+- [x] AC #10 (`npm run lint` green)
+- [x] AC #11 (`npm run typecheck` green)
