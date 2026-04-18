@@ -1,0 +1,131 @@
+---
+id: 010
+slug: pm-integration-hardening-followups
+level: spec
+title: PM Integration Hardening — Followups
+created: 2026-04-18
+status: draft
+---
+
+# 010: PM Integration Hardening — Followups
+
+## Problem & Motivation
+
+Spec 009 landed the hardened PM provider contract and migrated Trello, JIRA, and Linear onto it — but closed with three conscious deferrals, each called out in the `.done` plan files:
+
+- **Mutations were left on the legacy tRPC router.** Spec 009/5 deleted the three `verify*` procedures because they had a clean `pm.discover`-based replacement, but kept `createTrelloLabel`, `createTrelloLabels`, `createJiraCustomField`, `createLinearLabel`, and `createLinearLabels` in place with a TODO comment. Five wizard-hook call sites still route through those legacy procedures.
+- **Shared wizard step components are still placeholders.** Spec 009/1 introduced a `renderStandardStep` generator that returns typed placeholder divs. The real UI for each standard step kind (`credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`) still lives in per-provider `pm-wizard-<provider>-steps.tsx` files. Three working wizards, three duplicated sets of UI that do semantically identical work.
+- **Read-side legacy procedures were only partially cleaned up.** `integrationsDiscovery.ts` still carries roughly ten per-provider read procedures (Trello board discovery, JIRA project discovery, Linear team discovery, and their "by project" variants) that were out of plan 009/5's narrowed scope.
+- **Wizard verification UX regressed cosmetically.** Plan 009/5 migrated the three verify-credentials buttons to `pm.discover` with a generic "Credentials verified — found N boards/teams/projects" message. The old "Verified as @username (Full Name)" identity display is gone. Users lose identity context — minor, but worth restoring.
+
+This spec finishes the job. It does not introduce new capabilities; it completes the migrations spec 009 started, on the same hardened contracts. The win: after this lands, `integrationsDiscovery.ts` contains only SCM (GitHub) and alerting (Sentry) procedures; every PM mutation and every PM read flow through the generic `pm.*` endpoints; every standard wizard step renders through a single canonical component; and the wizard verification UX is back to the user-friendly identity display.
+
+---
+
+## Goals
+
+- Every PM mutation the wizard performs (create label, create custom field) goes through a single generic `pm.create*` endpoint dispatched by the provider manifest.
+- Every PM read the wizard or CLI performs (boards, projects, teams, project details, current user) goes through `pm.discover` — no per-provider duplicate remains in `integrationsDiscovery.ts`.
+- The standard wizard step kinds render from a single canonical component per kind; per-provider wizard folders contain only genuinely provider-specific custom UI.
+- The wizard's "verify credentials" step displays the authenticated user's handle (restoring the pre-009/5 UX) via the same generic dispatch mechanism.
+- A new PM provider added after this spec lands needs to touch **zero** files outside its provider + wizard folders + the single-line entrypoint registration — the same AC #10 invariant spec 009 established, now tight across read + write + wizard-UI surfaces.
+
+---
+
+## Non-goals
+
+- Removing `trello` / `jira` / `linear` as first-class keys on the central project config schema (the registry-driven `configMapper` rewrite). That is substantial enough to earn its own spec.
+- Shipping the in-memory fake PM provider as a user-facing demo mode.
+- Extending the manifest pattern to SCM (GitHub) or alerting (Sentry). Those stay on the legacy `IntegrationModule` pattern for now.
+- Widening TypeScript typecheck coverage to include the `tests/` tree. Real issue; orthogonal; separate spec.
+- Changing the agent-facing PM interface method names or trigger categories.
+
+---
+
+## Constraints
+
+- Must preserve behavioral parity with the current wizard, CLI, and agent runs. No user-visible regression beyond the verification-UX restoration (which is itself a regression fix, not a new behavior).
+- Must not break existing projects: every existing Trello / JIRA / Linear project must continue working through the wizard + CLI + agent pipeline without re-setup.
+- The manifest contract extension must stay backward-compatible with the fake PM provider fixture and with any future PM provider that chooses not to implement every mutation.
+- Shared wizard components must not introduce new runtime dependencies; they render through the existing React + tRPC + react-query stack already in the dashboard.
+- The legacy-removed tests from spec 009/5 continue to hold — all PM procedures previously removed stay removed.
+
+---
+
+## User stories / Requirements
+
+1. **As a CASCADE contributor adding a new PM provider**, I declare a manifest with optional `createLabel` / `createCustomField` hooks. The generic `pm.createLabel` / `pm.createCustomField` endpoints automatically route through them. No edits to shared tRPC files are needed.
+2. **As a CASCADE contributor adding a new PM provider**, I implement `discover('currentUser', {})` alongside the other capabilities. The wizard's verification step automatically displays the authenticated user's handle — no per-provider code required in `pm-wizard-hooks.ts`.
+3. **As a CASCADE contributor adding a new PM provider**, my wizard folder contains only `index.ts`, `wizard.ts`, `adapters.tsx`, and any genuinely provider-specific custom step components. The six standard step kinds render from canonical shared components.
+4. **As a dashboard operator setting up a project**, the wizard's "verify credentials" step shows me the authenticated identity (username / email / handle), not just "found N items".
+5. **As a dashboard operator setting up a project**, the wizard's label-creation and custom-field-creation buttons behave exactly as they do today, even though they now route through a different endpoint.
+6. **As a CASCADE maintainer reviewing a new-provider PR**, the conformance harness + `new-provider-surface` snapshot guard report specific failures if the contributor misses a shared-surface rule introduced by this spec.
+
+---
+
+## Research Notes
+
+No external research needed. This spec is strictly finishing work on patterns already established in specs 006 + 009:
+
+- **`pm.discover` as a generic dispatch pattern** — proven across read operations in spec 009. Adding a `currentUser` capability follows the same shape.
+- **Per-manifest factory hooks** — `createLabel?` is already on the `PMProviderManifest` interface (spec 006); `createCustomField?` follows the same pattern. `createDiscoveryProvider` (spec 009/1) is the reference shape for a full-adapter factory.
+- **Standard step components under the wizard shell** — the `ProviderWizardStepProps` contract already defined in spec 009/1 (`{state, dispatch, providerHooks}`) is what the shared components consume. Components are plain React; no new frameworks needed.
+- **Wizard verification UX via `discover('currentUser')`** — symmetric with `discover('teams')` / `discover('boards')` etc. Semantically "look up the current identity" is a discovery operation, not a mutation.
+
+---
+
+## Open Source Decisions
+
+No new OSS dependencies. This spec consumes what's already in the stack (tRPC, React, react-query, Zod, Biome) and extends the in-repo patterns from specs 006 + 009.
+
+---
+
+## Strategic decisions
+
+1. **Two named endpoints, not one generic `pm.create`** — chose `pm.createLabel` + `pm.createCustomField` as separate endpoints. Reason: only two mutations, the shapes differ meaningfully (`color?` for labels, `type` for custom fields), and naming gives type-safety per shape. If future mutations arrive, a unified dispatcher can be added then.
+2. **Extend existing top-level manifest hooks** — `createCustomField?` ships as a sibling of the already-present `createLabel?` on `PMProviderManifest`, not nested under a new `mutations` namespace. Keeps the additive shape spec 006 established.
+3. **`currentUser` as a new discovery capability**, not a new endpoint — restores the verification UX with zero new surface. Symmetric with `teams` / `boards` / `labels` / `states` / `projects`.
+4. **Shared wizard step components live in a dedicated shared folder**, one component per `StandardStepKind`. Reason: discoverable, mirrors the manifest's declarative shape.
+5. **Per-provider wizard files shrink, don't vanish.** The `pm-wizard-<provider>-steps.tsx` files keep only truly provider-specific custom steps; standard-kind step UI gets deleted. Providers without any custom steps end up with an empty file that can be deleted later.
+6. **Migration as three sequential plans** — Theme A (mutations + verification UX), Theme B (read-side legacy cleanup), Theme C (real shared wizard components). They touch overlapping infrastructure (the wizard-hooks file, tests/unit/api), so sequential ordering avoids merge churn.
+7. **`integrationsDiscovery.ts` filename preserved.** Post-spec-010 it contains only GitHub SCM + Sentry alerting procedures. A future spec can rename or fold into a unified SCM/alerting registry; premature renaming would be churn.
+8. **No behavioral change to the central config schema or to `configMapper`.** Those surfaces stay exactly as spec 009/5 left them. The registry-driven `configMapper` rewrite is an explicit non-goal of this spec.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. The wizard can create labels on Trello and Linear, and create custom fields on Trello and JIRA, via new generic endpoints. The user-visible behavior is identical to today's legacy-per-provider flow.
+2. After this spec lands, no file in the repository calls the legacy `createTrelloLabel` / `createTrelloLabels` / `createJiraCustomField` / `createLinearLabel` / `createLinearLabels` procedures, and those procedures are deleted from the integrations-discovery router.
+3. The wizard's read-side credential verification and discovery dropdowns (boards, projects, teams) fetch their data through a single generic discovery endpoint. Per-provider read procedures in the legacy router are deleted.
+4. After this spec lands, the integrations-discovery router contains only SCM (GitHub) and alerting (Sentry) procedures — no PM-specific procedures remain.
+5. The wizard's "verify credentials" step displays the authenticated user's identity (username / email / handle format identical to the pre-009/5 UX), restored via the generic discovery endpoint.
+6. Every standard wizard step kind renders from a single canonical shared component. The three existing providers (Trello, JIRA, Linear) use those components directly; provider-folder step files retain only genuinely provider-specific custom steps.
+7. The conformance harness exercises `createLabel` and `createCustomField` through the manifest for every provider that declares the hook, and exercises `discover('currentUser')` for every provider that declares the capability. Regression tests guard each.
+8. A new PM provider added after this spec lands needs to touch only its provider folder, its wizard folder, and the single entrypoint line — the `new-provider-surface` snapshot guard from spec 009/5 is tightened to include any files this spec adds.
+9. All three providers' existing adapter, integration, wizard, and agent-run tests continue to pass unchanged.
+10. Build, lint, typecheck, and the full unit test suite pass with no regressions.
+
+---
+
+## Documentation Impact (high-level)
+
+- `src/integrations/README.md` — extend the "Adding a new PM provider" section with `createCustomField?`, `discover('currentUser')`, and the shared wizard components. Update the provider migration status table to reflect post-spec-010 state (all PM surfaces now generic).
+- `tests/README.md` — document the `createLabel` / `createCustomField` conformance assertions and the `currentUser` capability check.
+- `CLAUDE.md` (project root) — brief update to reference spec 010 alongside 009 in the PM-integration summary.
+- `CHANGELOG.md` — entry per plan as it lands.
+- `docs/specs/009-pm-integration-hardening.md.done` — add a forward-reference to spec 010 mirroring how 006 points to 009 (so readers of 009 discover the follow-up).
+
+---
+
+## Out of Scope
+
+- The registry-driven `configMapper` rewrite (removing `trello` / `jira` / `linear` as first-class keys on the central project schema).
+- Extending the manifest pattern to SCM (GitHub) or alerting (Sentry).
+- Changing the agent-facing PM interface method names or trigger categories.
+- Credential storage / encryption / resolution changes.
+- Replacing Zod, tRPC, React, or Biome.
+- Widening TypeScript typecheck coverage to the `tests/` tree.
+- Shipping the fake PM provider as a user-facing demo mode.
+- Introducing a new generic mutation beyond `createLabel` / `createCustomField` (e.g., `deleteLabel`, `renameLabel`). If a future mutation is needed, this spec's pattern applies — but this spec does not anticipate them.
+- Rearranging the file layout of `integrationsDiscovery.ts` (e.g., renaming, folding into a new file, splitting by category). The filename stays even though the file becomes SCM+alerting-only.

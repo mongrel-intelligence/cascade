@@ -1,0 +1,242 @@
+---
+id: 010
+slug: pm-integration-hardening-followups
+plan: 1
+plan_slug: mutations
+level: plan
+parent_spec: docs/specs/010-pm-integration-hardening-followups.md
+depends_on: []
+status: pending
+---
+
+# 010/1: Mutations — Generic `pm.createLabel` + `pm.createCustomField` + Migrate Callers
+
+> Part 1 of 3 in the 010-pm-integration-hardening-followups plan. See [parent spec](../../specs/010-pm-integration-hardening-followups.md).
+
+## Summary
+
+Introduce two generic PM mutation endpoints and their corresponding per-manifest hooks. Migrate the five wizard caller sites that still route through the legacy per-provider procedures. Delete the legacy procedures after the migration. The shape mirrors `pm.discover` (spec 009/1): a generic tRPC surface that dispatches to per-provider hooks declared on the manifest.
+
+**Components delivered:**
+- `src/api/routers/pm-discovery.ts` — two new mutation procedures `createLabel` + `createCustomField` alongside the existing `discover` procedure (same router for semantic cohesion; the tRPC path becomes `pm.discovery.createLabel` / `pm.discovery.createCustomField`).
+- `src/integrations/pm/manifest.ts` — add optional `createCustomField?` top-level hook alongside the existing `createLabel?` hook.
+- `src/integrations/pm/trello/manifest.ts` — declare `createLabel` + `createCustomField` hooks (Trello already has `createLabel`; this plan adds `createCustomField`).
+- `src/integrations/pm/jira/manifest.ts` — declare `createCustomField` hook (no `createLabel` — JIRA labels are free-form strings).
+- `src/integrations/pm/linear/manifest.ts` — declare `createLabel` hook (Linear doesn't expose custom fields in the same way — leave `createCustomField` unimplemented).
+- `web/src/components/projects/pm-wizard-hooks.ts` — migrate the 5 call sites (`integrationsDiscovery.createTrelloLabel`, `createTrelloLabels`, `createJiraCustomField`, `createLinearLabel`, `createLinearLabels`) to `pm.discovery.createLabel` / `createCustomField`. For the `*Labels` (plural) callers, iterate client-side over the single-item endpoint.
+- `src/api/routers/integrationsDiscovery.ts` — delete `createTrelloLabel`, `createTrelloLabels`, `createTrelloCustomField`, `createJiraCustomField`, `createLinearLabel`, `createLinearLabels`.
+- `tests/unit/api/pm-discovery.test.ts` — extend with tests for `createLabel` and `createCustomField` (success, unknown provider, unimplemented hook).
+- `tests/unit/integrations/pm-conformance.test.ts` — new behavioral group: for every manifest declaring `createLabel` / `createCustomField`, exercise the hook through a mocked client fixture.
+- `tests/unit/api/pm-discovery-legacy-removed.test.ts` — update the "deferred" describe block to assert the 5 mutation procedures are now **removed** (moved from "still defined" to "removed" column).
+
+**Deferred to later plans in this spec:**
+- Migrating remaining per-provider **read** procedures (plan 2).
+- Adding `currentUser` discovery capability + restoring "verified as @username" UX (plan 2).
+- Shared wizard step components (plan 3).
+
+---
+
+## Spec ACs satisfied by this plan
+
+- **Spec AC #1** (wizard can create labels/custom-fields via generic endpoints) — **full**
+- **Spec AC #2** (legacy mutation procedures deleted) — **full**
+- **Spec AC #4** (`integrationsDiscovery.ts` is SCM+alerting only) — **partial** — mutation procedures removed; read procedures removed in plan 2
+- **Spec AC #7** (conformance harness exercises mutations + `currentUser`) — **partial** — mutation conformance lands here; `currentUser` conformance lands in plan 2
+- **Spec AC #9, #10** — hygiene (tests/build/lint/typecheck green, no regressions)
+
+---
+
+## Depends On
+
+- Nothing in this spec.
+- Baseline: spec 009 (hardened PM contracts + `pm.discover` endpoint + legacy-removed test pattern).
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Extend `PMProviderManifest` with `createCustomField?` hook
+
+**Tests first** (`tests/unit/integrations/manifest-fields.test.ts` — extend existing file):
+- A manifest that declares `createCustomField?(containerId, name)` compiles cleanly and exposes the function.
+- `createCustomField` is optional — manifests omitting it still type-check.
+
+**Implementation** (`src/integrations/pm/manifest.ts`):
+- Add optional field `createCustomField?: (containerId: string, name: string) => Promise<{ id: string; name: string; type: string }>` as a sibling of the existing `createLabel?`.
+- No change to the existing `createLabel?` signature.
+
+### 2. Add `createLabel` + `createCustomField` procedures to `pm.discovery` router
+
+**Tests first** (`tests/unit/api/pm-discovery.test.ts`):
+- `pm.discovery.createLabel.mutate({ providerId: 'fake', containerId: 'c1', name: 'bug', color: 'red' })` returns `{ id, name, color }` when the fake manifest declares `createLabel`.
+- Unknown `providerId` → throws `NOT_FOUND`.
+- Provider that doesn't declare `createLabel` → throws `NOT_IMPLEMENTED` with a message pointing to the manifest.
+- `pm.discovery.createCustomField.mutate({ providerId, containerId, name })` — same contract for `createCustomField?`.
+
+**Implementation** (`src/api/routers/pm-discovery.ts`):
+- Add `createLabel` procedure: input `{ providerId: z.string(), containerId: z.string(), name: z.string(), color: z.string().optional() }`, output `z.object({ id, name, color })`.
+- Resolve manifest via `getPMProvider(providerId)`; if `!manifest.createLabel` → `TRPCError` `NOT_IMPLEMENTED`.
+- Call `manifest.createLabel(containerId, name, color)` directly — no factory wrapping because these hooks are already scoped to post-setup credentials (they're called from the wizard after credentials are verified).
+- Add `createCustomField` procedure: input `{ providerId, containerId, name }`, output `z.object({ id, name, type })`. Same dispatch pattern.
+
+### 3. Extend the fake PM manifest with mutation hooks
+
+**Tests first** (`tests/unit/integrations/pm-fake-lifecycle.test.ts` — extend existing):
+- `fakeManifest.createLabel('c1', 'bug', 'red')` returns `{ id: string, name: 'bug', color: 'red' }`.
+- `fakeManifest.createCustomField('c1', 'Cost')` returns `{ id: string, name: 'Cost', type: 'text' }`.
+
+**Implementation** (`tests/helpers/fakePMProvider.ts`):
+- Add `createLabel` and `createCustomField` functions to `createFakePMManifest()` that mutate the in-memory store's labels/customFields maps and return the expected shape.
+
+### 4. Trello manifest: already has `createLabel` — add `createCustomField`
+
+**Tests first** (`tests/unit/integrations/pm/trello/manifest.test.ts` — extend existing):
+- `trelloManifest.createLabel` is already declared (spec 006 post-state) — test remains.
+- `trelloManifest.createCustomField('boardId', 'Cost')` delegates to `trelloClient.createCustomField(boardId, name)` via `withTrelloCredentials`.
+
+**Implementation** (`src/integrations/pm/trello/manifest.ts`):
+- Add `createCustomField: async (containerId, name) => { ... }` that calls `trelloClient.createCustomField(containerId, { name, type: 'text' })` inside `withTrelloCredentials`. Returns `{ id, name, type: 'text' }`.
+- Credential acquisition: Trello manifest doesn't hold credentials directly. The call site (wizard) must ensure `withTrelloCredentials` scope is established before calling — add a thin wrapper that takes explicit credentials and wraps: `async (containerId, name) => withTrelloCredentials(creds, () => trelloClient.createCustomField(...))`. Since the manifest's `createLabel` / `createCustomField` hooks don't take credentials in their signatures, a small refactor is needed: add a **credentials-bound** variant of these hooks on the manifest, OR make the tRPC endpoint accept credentials in the input and thread them through.
+
+**Sub-decision (implementation detail, not spec-level):** Extend the tRPC input shape for `createLabel` / `createCustomField` to accept optional `credentials?: Record<string, string>` (same shape as `pm.discovery.discover`), and have the dispatch call the manifest hook inside `withXxxCredentials(credentials, () => manifest.createLabel(...))`. This keeps the manifest hook signature narrow and moves credential scoping into the generic endpoint — same split the `discover` endpoint uses.
+
+### 5. JIRA manifest: add `createCustomField`
+
+**Tests first** (`tests/unit/integrations/pm/jira/manifest.test.ts` — extend existing):
+- `jiraManifest.createCustomField('CASC', 'Cost')` delegates to `jiraClient.createCustomField(projectKey, name)` via `withJiraCredentials`.
+
+**Implementation** (`src/integrations/pm/jira/manifest.ts`):
+- Add `createCustomField: async (containerId, name) => ...` calling `jiraClient.createCustomField(containerId, { name, type: 'number' })` (or whatever JIRA's custom-field type default is — check `src/jira/client.ts` for the existing signature).
+- JIRA doesn't declare `createLabel` — labels are free-form strings auto-created on first write; the wizard's label-step accepts free text for JIRA.
+
+### 6. Linear manifest: add `createLabel`
+
+**Tests first** (`tests/unit/integrations/pm/linear/manifest.test.ts` — extend existing):
+- `linearManifest.createLabel('teamId', 'bug', '#ff0000')` delegates to `linearClient.createLabel(teamId, name, color)` via `withLinearCredentials`.
+
+**Implementation** (`src/integrations/pm/linear/manifest.ts`):
+- Add `createLabel: async (containerId, name, color) => ...` calling `linearClient.createLabel(containerId, { name, color })`.
+- Linear custom fields are not exposed through CASCADE's current Linear client; do not declare `createCustomField` on Linear.
+
+### 7. Migrate wizard callers
+
+**Tests first** (`tests/unit/web/pm-wizard-hooks-mutations.test.ts` — new file):
+- `useTrelloLabelCreation.mutate({ name, color })` calls `trpcClient.pm.discovery.createLabel.mutate({ providerId: 'trello', ... })` with the expected input shape.
+- `useTrelloCustomFieldCreation.mutate(...)` calls `pm.discovery.createCustomField`.
+- Linear label creation (single + batch) routes through `pm.discovery.createLabel`.
+- JIRA custom field creation routes through `pm.discovery.createCustomField`.
+- Batch variants (`createTrelloLabels`, `createLinearLabels`) iterate the single-item endpoint client-side and return the collected results.
+
+**Implementation** (`web/src/components/projects/pm-wizard-hooks.ts`):
+- Replace `trpcClient.integrationsDiscovery.createTrelloLabel.mutate(...)` with `trpcClient.pm.discovery.createLabel.mutate({ providerId: 'trello', containerId: boardId, name, color, credentials: { api_key, token } })`.
+- Repeat for the other 4 callers with the appropriate providerId + containerId + credentials shape.
+- For `*Labels` batch variants: `const results = []; for (const label of labels) results.push(await trpcClient.pm.discovery.createLabel.mutate(...)); return results;`.
+
+### 8. Delete legacy mutation procedures
+
+**Tests first** (`tests/unit/api/pm-discovery-legacy-removed.test.ts`):
+- Update the "deferred" describe block — the 5 mutation procedures move from "still defined" to "removed".
+
+**Implementation** (`src/api/routers/integrationsDiscovery.ts`):
+- Delete `createTrelloLabel`, `createTrelloLabels`, `createJiraCustomField`, `createLinearLabel`, `createLinearLabels` procedures.
+- Remove their associated imports (Trello/JIRA/Linear label + custom field helpers) if no longer used.
+- Update the "removed by spec 009/5 — TODO" comment block to "removed by spec 010/1" since the deletion now completes.
+
+### 9. Conformance harness — exercise mutation hooks
+
+**Tests first** (extend `tests/unit/integrations/pm-conformance.test.ts`):
+- New `describe('behavioral: createLabel hook')` — for every manifest declaring `createLabel`, set up a mock client, call the hook via the tRPC endpoint with a fixture containerId + name + color, assert it returns `{ id, name, color }` with expected shape.
+- New `describe('behavioral: createCustomField hook')` — analogous for `createCustomField`.
+- Providers not declaring a hook skip via `it.skipIf(!manifest.createLabel)`.
+
+### 10. Docs update (minimal for plan 1)
+
+**Implementation**:
+- `src/integrations/README.md` — in the manifest-contract table, add `createCustomField?` sibling to the existing `createLabel?` row with its signature.
+- `tests/README.md` — note the new conformance assertion for mutation hooks.
+- `CHANGELOG.md` — entry: "feat(pm): generic pm.discovery.createLabel + createCustomField endpoints; 5 legacy mutation procedures deleted".
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/integrations/manifest-fields.test.ts` — +2 tests (createCustomField optional, types).
+- [ ] `tests/unit/api/pm-discovery.test.ts` — +6 tests (createLabel/createCustomField: success / unknown provider / unimplemented hook).
+- [ ] `tests/unit/integrations/pm-fake-lifecycle.test.ts` — +2 tests (fake createLabel + createCustomField behavior).
+- [ ] `tests/unit/integrations/pm/trello/manifest.test.ts` — +1 test (createCustomField declared).
+- [ ] `tests/unit/integrations/pm/jira/manifest.test.ts` — +1 test (createCustomField declared).
+- [ ] `tests/unit/integrations/pm/linear/manifest.test.ts` — +1 test (createLabel declared).
+- [ ] `tests/unit/web/pm-wizard-hooks-mutations.test.ts` — new file, ~8 tests covering all 5 migrated call sites.
+- [ ] `tests/unit/api/pm-discovery-legacy-removed.test.ts` — update existing; +5 assertions now fire "removed" instead of "deferred".
+- [ ] `tests/unit/integrations/pm-conformance.test.ts` — +2 behavioral groups (createLabel + createCustomField).
+
+### Integration tests
+- None — all mutations exercised via in-memory mocks.
+
+### Acceptance tests
+- [ ] `npm run lint`, `npm test`, `npm run typecheck`, `npm run build` all green.
+- [ ] Dashboard wizard's "Create label" + "Create custom field" buttons functionally unchanged (manual smoke or snapshot test).
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `src/api/routers/pm-discovery.ts` exports `createLabel` + `createCustomField` tRPC procedures with the input/output shapes above.
+2. `PMProviderManifest` accepts an optional `createCustomField?` hook (existing `createLabel?` unchanged); fake provider declares both; Trello declares both; JIRA declares `createCustomField`; Linear declares `createLabel`.
+3. `web/src/components/projects/pm-wizard-hooks.ts` no longer calls `integrationsDiscovery.createTrelloLabel` / `createTrelloLabels` / `createJiraCustomField` / `createLinearLabel` / `createLinearLabels`. All 5 callers route through `pm.discovery.createLabel` / `createCustomField`.
+4. `src/api/routers/integrationsDiscovery.ts` no longer defines any of the 5 legacy mutation procedures.
+5. `tests/unit/api/pm-discovery-legacy-removed.test.ts` asserts the 5 procedures are **removed** (not "deferred").
+6. Conformance harness exercises `createLabel` and `createCustomField` through the fake provider; every migrated real provider's hook is tested in its provider-specific test file.
+7. All new/modified code has tests.
+8. `npm run build` passes.
+9. `npm test` passes.
+10. `npm run lint` passes.
+11. `npm run typecheck` passes.
+12. No user-visible regression in the wizard's label/custom-field creation flows.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `src/integrations/README.md` | Manifest-contract table: add `createCustomField?` row next to `createLabel?`. |
+| `tests/README.md` | Document the new conformance group for mutation hooks. |
+| `CHANGELOG.md` | `feat(pm): generic pm.discovery.createLabel + createCustomField endpoints; legacy mutation procedures deleted`. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to later plans in this spec:
+- Migrating remaining per-provider **read** procedures (`trelloBoards`, `trelloBoardDetails`, `trelloBoardsByProject`, `trelloBoardDetailsByProject`, `jiraProjects`, `jiraProjectDetails`, `jiraProjectsByProject`, `jiraProjectDetailsByProject`, `linearTeams`, `linearTeamsByProject`) — plan 2.
+- Adding `currentUser` discovery capability + restoring "verified as @username" wizard UX — plan 2.
+- Shared wizard step components — plan 3.
+- Updating `src/integrations/README.md`'s provider migration status table (post-all-migrations state) — plan 3.
+- Root `CLAUDE.md` update + spec 009 forward-reference — plan 3.
+
+Originally out of scope for the spec (repeated for clarity):
+- Registry-driven `configMapper` rewrite.
+- Extending manifest pattern to SCM / alerting.
+- `tests/` tree typecheck widening.
+- Fake PM provider as user-facing demo.
+- Additional mutations beyond `createLabel` / `createCustomField`.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (pm.discovery.createLabel + createCustomField procedures)
+- [ ] AC #2 (manifest hooks on Trello/JIRA/Linear + fake)
+- [ ] AC #3 (wizard callers migrated)
+- [ ] AC #4 (legacy procedures deleted)
+- [ ] AC #5 (legacy-removed test updated)
+- [ ] AC #6 (conformance harness exercises mutations)
+- [ ] AC #7 (all new code has tests)
+- [ ] AC #8 (build)
+- [ ] AC #9 (tests)
+- [ ] AC #10 (lint)
+- [ ] AC #11 (typecheck)
+- [ ] AC #12 (no regression)
