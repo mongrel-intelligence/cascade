@@ -123,6 +123,12 @@ export const jiraManifest: PMProviderManifest = {
 			{ kind: 'container-pick', id: 'jira-project' },
 			{ kind: 'status-mapping', id: 'jira-statuses' },
 			{ kind: 'label-mapping', id: 'jira-labels' },
+			{ kind: 'custom-field-mapping', id: 'jira-custom-fields' },
+			// Plan 011/3: JIRA task/subtask issue-type mapping is JIRA-specific
+			// (Trello has no equivalent, Linear uses workflow states). Rendered
+			// as a `kind: 'custom'` step resolved to `IssueTypeMappingStep` by
+			// the JIRA ProviderWizardDefinition.
+			{ kind: 'custom', id: 'jira-issue-types', component: 'IssueTypeMappingStep' },
 			{ kind: 'webhook-url-display', id: 'jira-webhook' },
 		],
 	},

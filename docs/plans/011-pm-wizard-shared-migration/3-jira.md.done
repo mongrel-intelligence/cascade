@@ -6,7 +6,7 @@ plan_slug: jira
 level: plan
 parent_spec: docs/specs/011-pm-wizard-shared-migration.md
 depends_on: [2-trello.md]
-status: wip
+status: done
 ---
 
 # 011/3: JIRA Migration — Second Consumer of Shared Wizard Components
@@ -200,17 +200,24 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (wizardSpec updated)
-- [ ] AC #2 (standard steps dispatch through generator)
-- [ ] AC #3 (IssueTypeMappingStep shipped + tested)
-- [ ] AC #4 (searchable project picker)
-- [ ] AC #5 (free-text label mapping)
-- [ ] AC #6 (custom-field creation via shared)
-- [ ] AC #7 (legacy file retained, no consumer)
-- [ ] AC #8 (test coverage)
-- [ ] AC #9 (conformance harness green)
-- [ ] AC #10 (no operator regression)
-- [ ] AC #11 (build)
-- [ ] AC #12 (test)
-- [ ] AC #13 (lint)
-- [ ] AC #14 (typecheck)
+
+> **Task 1 inventory note:** same 4 gaps JIRA would have triggered were
+> already closed by plan 011/2's forward-edit to plan 011/1 (labelDefaults +
+> fieldDefaults). JIRA needed no new forward-edits. Shared `credentials`
+> step accepts a synthetic `base_url` role alongside `email` + `api_token`
+> via the JIRA adapter's `credentialRoles` list.
+
+- [x] AC #1 (`jiraManifest.wizardSpec.steps` = `[credentials, container-pick, status-mapping, label-mapping, custom-field-mapping, custom(IssueTypeMappingStep), webhook-url-display]`)
+- [x] AC #2 (standard steps dispatch via `renderStandardStep` + `STANDARD_STEP_COMPONENTS`)
+- [x] AC #3 (`IssueTypeMappingStep` at `pm-providers/jira/issue-type-step.tsx`; 7 tests)
+- [x] AC #4 (project picker passes `searchable: true`)
+- [x] AC #5 (label-mapping passes empty `providerLabels` → free-text mode)
+- [x] AC #6 (`onCreateCustomField` wired to `pm.discovery.createCustomField` via `useJiraCustomFieldCreation` hook with `{name}` arg)
+- [x] AC #7 (`pm-wizard-jira-steps.tsx` retained with "Retained until plan 011/5" marker; no live importers)
+- [x] AC #8 (17 JIRA tests — 6 manifest + 7 issue-type + 4 wizard-generator; JIRA had 0 dedicated step tests before this plan)
+- [x] AC #9 (conformance harness green — 95 tests, JIRA included)
+- [ ] AC #10 — **deferred**: browser smoke test pending. Same pattern as plan 011/2. JIRA adapter uses the existing `useJiraDiscovery` + `useJiraCustomFieldCreation` hooks unchanged (except the name-arg tweak on the latter).
+- [x] AC #11 (`npm run build` green)
+- [x] AC #12 (`npm test` green — 8185/8185)
+- [x] AC #13 (`npm run lint` green)
+- [x] AC #14 (`npm run typecheck` green)

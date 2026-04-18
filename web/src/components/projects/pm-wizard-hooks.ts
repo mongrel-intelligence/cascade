@@ -660,7 +660,9 @@ export function useJiraCustomFieldCreation(
 	dispatch: React.Dispatch<WizardAction>,
 ) {
 	const createJiraCustomFieldMutation = useMutation({
-		mutationFn: () => {
+		// Plan 011/3: the shared custom-field-mapping step lets operators type
+		// a name; callers without a preference pass `{ name: 'Cost' }`.
+		mutationFn: ({ name }: { name: string }) => {
 			if (!state.jiraEmail || !state.jiraApiToken || !state.jiraBaseUrl) {
 				throw new Error('Missing JIRA credentials or base URL');
 			}
@@ -670,7 +672,7 @@ export function useJiraCustomFieldCreation(
 			return trpcClient.pm.discovery.createCustomField.mutate({
 				providerId: 'jira',
 				containerId: state.jiraProjectKey || 'global',
-				name: 'Cost',
+				name,
 				credentials: {
 					email: state.jiraEmail,
 					api_token: state.jiraApiToken,

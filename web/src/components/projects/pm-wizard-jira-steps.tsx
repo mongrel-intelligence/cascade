@@ -1,5 +1,10 @@
 /**
  * JIRA-specific step renderer components for PMWizard.
+ *
+ * **Retained until plan 011/5 — see spec 011 AC #4.** Plan 011/3 migrated
+ * the JIRA wizard to the shared step components + a JIRA-specific custom
+ * issue-type step. This file has no production consumer and is scheduled
+ * for deletion.
  */
 
 import type { UseMutationResult } from '@tanstack/react-query';
