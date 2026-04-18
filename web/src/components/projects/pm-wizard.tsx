@@ -30,9 +30,6 @@ import {
 	createInitialState,
 	deriveActiveWebhooks,
 	isStep1Complete,
-	isStep2Complete,
-	isStep3Complete,
-	isStep4Complete,
 	wizardReducer,
 } from './pm-wizard-state.js';
 // Trello legacy step imports removed — all Trello wizard rendering flows
@@ -46,14 +43,9 @@ import { WizardStep } from './wizard-shared.js';
 // Constants
 // ============================================================================
 
-const STEP_TITLES = [
-	'Provider',
-	'Credentials & Verification',
-	'Board / Project Selection',
-	'Field Mapping',
-	'Webhooks',
-	'Save',
-] as const;
+// Plan 011/4: step titles now come from each provider's wizard definition
+// (manifestDef.steps[i].title). Only step 1 (provider picker) and the
+// legacy Webhook + Save slots have fixed titles; rendered inline.
 
 const PROVIDER_LABELS: Record<'trello' | 'jira' | 'linear', string> = {
 	trello: 'Trello',
@@ -124,7 +116,9 @@ export function PMWizard({
 		const configuredKeys = new Set(credentialsQuery.data.map((c) => c.envVarKey));
 		const editState = buildEditState(initialProvider, initialConfig, configuredKeys);
 		dispatch({ type: 'INIT_EDIT', state: editState });
-		setOpenSteps(new Set([1, 2, 3, 4, 5, 6]));
+		// Plan 011/4: open all steps up to a comfortable ceiling; actual
+		// step count is provider-dependent (Trello 7, JIRA 8, Linear 7).
+		setOpenSteps(new Set([1, 2, 3, 4, 5, 6, 7, 8, 9]));
 	}, [initialConfig, initialProvider, credentialsQuery.data]);
 
 	// ---- Custom hooks ----
@@ -166,6 +160,23 @@ export function PMWizard({
 	// ---- Active webhooks for this provider ----
 	const activeWebhooks = deriveActiveWebhooks(state.provider, webhooksQuery.data);
 
+	// ---- Manifest step layout (plan 011/4) ----
+	// Iterate over `manifestDef.steps`, but skip the provider's webhook
+	// display step — the legacy WebhookStep below still owns webhook
+	// registration (Trello/JIRA API calls) + signing-secret UX (Linear).
+	// Convention: every provider's webhook step id ends with `-webhook`
+	// (`trello-webhook`, `jira-webhook`, `linear-webhook`). The shared
+	// `webhook-url-display` component (widened in plan 011/1) is dormant
+	// until a future plan migrates webhook-creation UX into the manifest
+	// path.
+	const renderedManifestSteps = manifestDef
+		? manifestDef.steps
+				.map((step, index) => ({ step, index }))
+				.filter((entry) => !entry.step.id.endsWith('-webhook'))
+		: [];
+	const webhookStepNumber = renderedManifestSteps.length + 2; // +1 for provider, +1 for 1-indexed
+	const saveStepNumber = webhookStepNumber + 1;
+
 	// ---- Render ----
 
 	return (
@@ -173,7 +184,7 @@ export function PMWizard({
 			{/* Step 1: Provider */}
 			<WizardStep
 				stepNumber={1}
-				title={STEP_TITLES[0]}
+				title="Provider"
 				status={getStatus(1, isStep1Complete(state))}
 				isOpen={openSteps.has(1)}
 				onToggle={() => toggleStep(1)}
@@ -204,103 +215,86 @@ export function PMWizard({
 				</div>
 			</WizardStep>
 
-			{/* Step 2: Credentials & Verification */}
-			<WizardStep
-				stepNumber={2}
-				title={STEP_TITLES[1]}
-				status={getStatus(2, isStep2Complete(state))}
-				isOpen={openSteps.has(2)}
-				onToggle={() => toggleStep(2)}
-			>
-				{manifestDef && (
-					<ManifestProviderWizardSection
-						def={manifestDef}
-						state={state}
-						dispatch={dispatch}
-						projectId={projectId}
-						advanceToStep={advanceToStep}
-						stepIndex={0}
-					/>
-				)}
-
-				<div className="flex items-center gap-3 pt-2">
-					{(!state.isEditing || !state.hasStoredCredentials || credsReady) && (
-						<button
-							type="button"
-							onClick={() => verifyMutation.mutate()}
-							disabled={!credsReady || verifyMutation.isPending}
-							className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+			{/*
+			 * Plan 011/4: dynamic manifest-step rendering. Each provider's
+			 * `wizardSpec.steps` drives its own slot count. We skip steps of
+			 * kind `webhook-url-display` because the legacy WebhookStep below
+			 * still owns programmatic webhook creation (Trello/JIRA API calls)
+			 * and per-provider setup UX. The shared `webhook-url-display`
+			 * component (widened in plan 011/1) is dormant for the three
+			 * existing providers until a future plan ports webhook-creation
+			 * UX into the manifest path.
+			 */}
+			{manifestDef &&
+				renderedManifestSteps.map((entry, idx) => {
+					const stepNumber = idx + 2; // 1 is Provider picker
+					const isCredentials = entry.step.id === manifestDef.steps[0]?.id;
+					return (
+						<WizardStep
+							key={entry.step.id}
+							stepNumber={stepNumber}
+							title={entry.step.title}
+							status={getStatus(stepNumber, entry.step.isComplete(state))}
+							isOpen={openSteps.has(stepNumber)}
+							onToggle={() => toggleStep(stepNumber)}
 						>
-							{verifyMutation.isPending ? (
-								<Loader2 className="h-4 w-4 animate-spin" />
-							) : (
-								<Globe className="h-4 w-4" />
+							<ManifestProviderWizardSection
+								def={manifestDef}
+								state={state}
+								dispatch={dispatch}
+								projectId={projectId}
+								advanceToStep={advanceToStep}
+								stepIndex={entry.index}
+							/>
+
+							{/* Verify Connection button still belongs on the first
+							    manifest step (credentials). */}
+							{isCredentials && (
+								<div className="flex items-center gap-3 pt-2">
+									{(!state.isEditing || !state.hasStoredCredentials || credsReady) && (
+										<button
+											type="button"
+											onClick={() => verifyMutation.mutate()}
+											disabled={!credsReady || verifyMutation.isPending}
+											className="inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+										>
+											{verifyMutation.isPending ? (
+												<Loader2 className="h-4 w-4 animate-spin" />
+											) : (
+												<Globe className="h-4 w-4" />
+											)}
+											Verify Connection
+										</button>
+									)}
+									{state.verificationResult && (
+										<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+											<CheckCircle className="h-4 w-4" />
+											Connected as{' '}
+											<span className="font-medium">{state.verificationResult.display}</span>
+										</div>
+									)}
+									{state.verifyError && (
+										<div className="flex items-center gap-1.5 text-sm text-destructive">
+											<XCircle className="h-4 w-4" />
+											{state.verifyError}
+										</div>
+									)}
+								</div>
 							)}
-							Verify Connection
-						</button>
-					)}
-					{state.verificationResult && (
-						<div className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
-							<CheckCircle className="h-4 w-4" />
-							Connected as <span className="font-medium">{state.verificationResult.display}</span>
-						</div>
-					)}
-					{state.verifyError && (
-						<div className="flex items-center gap-1.5 text-sm text-destructive">
-							<XCircle className="h-4 w-4" />
-							{state.verifyError}
-						</div>
-					)}
-				</div>
-			</WizardStep>
+						</WizardStep>
+					);
+				})}
 
-			{/* Step 3: Board / Project Selection */}
+			{/* Legacy Webhook slot — still handles programmatic webhook
+			    registration for Trello/JIRA + the signing-secret UX for
+			    Linear. Scheduled for migration into the manifest path in a
+			    future plan. */}
 			<WizardStep
-				stepNumber={3}
-				title={STEP_TITLES[2]}
-				status={getStatus(3, isStep3Complete(state))}
-				isOpen={openSteps.has(3)}
-				onToggle={() => toggleStep(3)}
-			>
-				{manifestDef && (
-					<ManifestProviderWizardSection
-						def={manifestDef}
-						state={state}
-						dispatch={dispatch}
-						projectId={projectId}
-						advanceToStep={advanceToStep}
-						stepIndex={1}
-					/>
-				)}
-			</WizardStep>
-
-			{/* Step 4: Field Mapping */}
-			<WizardStep
-				stepNumber={4}
-				title={STEP_TITLES[3]}
-				status={getStatus(4, isStep4Complete(state))}
-				isOpen={openSteps.has(4)}
-				onToggle={() => toggleStep(4)}
-			>
-				{manifestDef && (
-					<ManifestProviderWizardSection
-						def={manifestDef}
-						state={state}
-						dispatch={dispatch}
-						projectId={projectId}
-						advanceToStep={advanceToStep}
-						stepIndex={2}
-					/>
-				)}
-			</WizardStep>
-
-			{/* Step 5: Webhooks */}
-			<WizardStep
-				stepNumber={5}
-				title={STEP_TITLES[4]}
-				status={getStatus(5, true)}
-				isOpen={openSteps.has(5)}
-				onToggle={() => toggleStep(5)}
+				stepNumber={webhookStepNumber}
+				title="Webhooks"
+				status={getStatus(webhookStepNumber, true)}
+				isOpen={openSteps.has(webhookStepNumber)}
+				onToggle={() => toggleStep(webhookStepNumber)}
 			>
 				<WebhookStep
 					state={state}
@@ -313,13 +307,13 @@ export function PMWizard({
 				/>
 			</WizardStep>
 
-			{/* Step 6: Save */}
+			{/* Save slot. */}
 			<WizardStep
-				stepNumber={6}
-				title={STEP_TITLES[5]}
-				status={getStatus(6, saveMutation.isSuccess)}
-				isOpen={openSteps.has(6)}
-				onToggle={() => toggleStep(6)}
+				stepNumber={saveStepNumber}
+				title="Save"
+				status={getStatus(saveStepNumber, saveMutation.isSuccess)}
+				isOpen={openSteps.has(saveStepNumber)}
+				onToggle={() => toggleStep(saveStepNumber)}
 			>
 				<SaveStep state={state} saveMutation={saveMutation} />
 			</WizardStep>

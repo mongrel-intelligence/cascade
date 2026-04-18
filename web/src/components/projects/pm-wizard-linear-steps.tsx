@@ -1,5 +1,11 @@
 /**
  * Linear-specific step renderer components for PMWizard.
+ *
+ * **Retained until plan 011/5 — see spec 011 AC #4.** Plan 011/4 migrated
+ * the Linear wizard to the shared step components + widened
+ * `webhook-url-display` composition. This file has no production consumer
+ * (the only surviving export `LINEAR_LABEL_DEFAULTS` was duplicated into
+ * `pm-providers/linear/wizard.ts`).
  */
 
 import type { UseMutationResult } from '@tanstack/react-query';
