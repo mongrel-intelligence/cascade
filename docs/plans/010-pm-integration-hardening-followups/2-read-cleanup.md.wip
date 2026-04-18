@@ -6,7 +6,7 @@ plan_slug: read-cleanup
 level: plan
 parent_spec: docs/specs/010-pm-integration-hardening-followups.md
 depends_on: [1-mutations.md]
-status: pending
+status: wip
 ---
 
 # 010/2: Read Cleanup — Migrate Remaining PM Reads + `currentUser` + Restore Verification UX
