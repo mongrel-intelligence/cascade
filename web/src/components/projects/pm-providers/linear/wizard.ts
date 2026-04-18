@@ -58,8 +58,8 @@ const LINEAR_LABEL_SLOTS = [
 
 // Default CASCADE label names + hex colors for the shared Create
 // affordance. Linear expects hex color strings on issueLabelCreate.
-// Migrated here from the retiring `pm-wizard-linear-steps.tsx` (plan
-// 011/5 deletes that file); a duplicate copy temporarily lives there.
+// Lives here after plan 011/5 deleted the legacy
+// `pm-wizard-linear-steps.tsx` file.
 const LINEAR_LABEL_DEFAULTS: Readonly<
 	Record<string, { readonly name: string; readonly color: string }>
 > = {

@@ -6,7 +6,7 @@ plan_slug: cleanup
 level: plan
 parent_spec: docs/specs/011-pm-wizard-shared-migration.md
 depends_on: [4-linear.md]
-status: wip
+status: done
 ---
 
 # 011/5: Cleanup — Delete Retired Files + Rewrite Docs + Close Spec
@@ -200,19 +200,31 @@ Originally out of scope for the spec (repeated for clarity):
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (Trello legacy file deleted)
-- [ ] AC #2 (JIRA legacy file deleted)
-- [ ] AC #3 (Linear legacy file deleted)
-- [ ] AC #4 (pm-wizard-common-steps audited)
-- [ ] AC #5 (README rewritten)
-- [ ] AC #6 (CLAUDE.md updated)
-- [ ] AC #7 (CHANGELOG entry)
-- [ ] AC #8 (spec 010 forward-ref)
-- [ ] AC #9 (dead-code grep clean)
-- [ ] AC #10 (conformance harness green)
-- [ ] AC #11 (new-provider-surface green)
-- [ ] AC #12 (build)
-- [ ] AC #13 (test)
-- [ ] AC #14 (lint)
-- [ ] AC #15 (typecheck)
-- [ ] AC #16 (spec marked .done)
+
+> **Scope note (user-approved option (a))**: plan 5 ships the deletions
+> + docs as originally scoped. Spec AC #3 (Linear inline signing-secret
+> via shared component) and plan 011/4 ACs #3/#6 (LinearWebhookInfoPanel
+> retired) are NOT fully closed by plan 5 — the legacy `WebhookStep` in
+> `pm-wizard-common-steps.tsx` still owns programmatic webhook
+> registration (Trello/JIRA API calls) and Linear's signing-secret UX.
+> Migrating that is follow-up scope (future spec/plan). The shared
+> `LinearWebhookDisplayAdapter` + widened `webhook-url-display` with
+> optional secret-field remain in place but dormant until then. Rationale:
+> webhook-creation UX is its own coherent migration, not a cleanup item.
+
+- [x] AC #1 (`pm-wizard-trello-steps.tsx` deleted)
+- [x] AC #2 (`pm-wizard-jira-steps.tsx` deleted)
+- [x] AC #3 (`pm-wizard-linear-steps.tsx` deleted)
+- [x] AC #4 (`pm-wizard-common-steps.tsx` audited — all 3 exports have live consumers via `pm-wizard.tsx`; file retained)
+- [x] AC #5 (`src/integrations/README.md` rewritten — four-specs preamble; "seven kinds" in step 3; Post-spec-011 additions table)
+- [x] AC #6 (root `CLAUDE.md` PM-integration summary references spec 011)
+- [x] AC #7 (`CHANGELOG.md` Internal entry summarizing spec 011)
+- [x] AC #8 (spec 010's `.md.done` has forward-reference blockquote to spec 011)
+- [x] AC #9 (dead-code grep: only doc-comment references to the deleted files remain; no live imports)
+- [x] AC #10 (conformance harness green — all three providers)
+- [x] AC #11 (`new-provider-surface.test.ts` passes with 7 step files pinned)
+- [x] AC #12 (`npm run build` green)
+- [x] AC #13 (`npm test` green — 8167/8167)
+- [x] AC #14 (`npm run lint` green)
+- [x] AC #15 (`npm run typecheck` green)
+- [x] AC #16 (spec 011 marked `.done` — handled by Phase 8 in the following trailing commit)

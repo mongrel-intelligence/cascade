@@ -9,6 +9,8 @@ status: done
 
 # 010: PM Integration Hardening — Followups
 
+> **Forward reference (2026-04-18):** spec [011 — PM Wizard Shared Migration](./011-pm-wizard-shared-migration.md.done) consumes the shared step components landed here (plan 010/3) and migrates all three production providers (Trello, JIRA, Linear) onto them. Spec 011 also adds a 7th `StandardStepKind: custom-field-mapping`, widens `container-pick` / `project-scope` / `webhook-url-display` with optional props, and deletes the three legacy `pm-wizard-{trello,jira,linear}-steps.tsx` files.
+
 ## Problem & Motivation
 
 Spec 009 landed the hardened PM provider contract and migrated Trello, JIRA, and Linear onto it — but closed with three conscious deferrals, each called out in the `.done` plan files:

@@ -46,9 +46,8 @@ const TRELLO_LIST_SLOTS = [
 
 // CASCADE labels that map to Trello labels. Defaults (name + color)
 // pre-populate the shared `label-mapping` Create affordance and thread
-// the color to `onCreateLabel(slot, name, color)`. Migrated here from
-// the retiring `pm-wizard-trello-steps.tsx` (plan 011/5 deletes that
-// file); a duplicate copy temporarily lives there until plan 5.
+// the color to `onCreateLabel(slot, name, color)`. Lives here after
+// plan 011/5 deleted the legacy `pm-wizard-trello-steps.tsx` file.
 const TRELLO_LABEL_DEFAULTS: Readonly<
 	Record<string, { readonly name: string; readonly color: string }>
 > = {

@@ -18,12 +18,9 @@ import {
 	useVerification,
 	useWebhookManagement,
 } from './pm-wizard-hooks.js';
-// JIRA legacy step imports removed — all JIRA wizard rendering flows
-// through the manifest path (see ./pm-providers/jira/). The
-// `pm-wizard-jira-steps` module is still imported transitively by the
-// adapters in `./pm-providers/jira/adapters.tsx`.
-// Linear legacy step imports removed — all Linear wizard rendering flows
-// through the manifest path (see ./pm-providers/linear/).
+// Plan 011/5: the three legacy `pm-wizard-{trello,jira,linear}-steps.tsx`
+// files were deleted; all three providers now render exclusively through
+// the manifest path (see `./pm-providers/<provider>/wizard.ts`).
 import {
 	areCredentialsReady,
 	buildEditState,
@@ -32,11 +29,6 @@ import {
 	isStep1Complete,
 	wizardReducer,
 } from './pm-wizard-state.js';
-// Trello legacy step imports removed — all Trello wizard rendering flows
-// through the manifest path (see ./pm-providers/trello/). The
-// `pm-wizard-trello-steps` module is still imported transitively by the
-// adapters in `./pm-providers/trello/adapters.tsx`, so its behavior is
-// unchanged — only the per-provider branching in this file is gone.
 import { WizardStep } from './wizard-shared.js';
 
 // ============================================================================

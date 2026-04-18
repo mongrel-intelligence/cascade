@@ -1,8 +1,8 @@
 /**
  * Trello-specific OAuth credentials step (plan 011/2).
  *
- * Replaces the legacy `TrelloCredentialsStep` from
- * `pm-wizard-trello-steps.tsx`. Registered as a `kind: 'custom'` step in
+ * Replaces the legacy `TrelloCredentialsStep` (retired + deleted by
+ * plan 011/5). Registered as a `kind: 'custom'` step in
  * `trelloManifest.wizardSpec` and resolved by the Trello
  * ProviderWizardDefinition (see `./wizard.ts`).
  *
