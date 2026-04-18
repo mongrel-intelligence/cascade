@@ -13,8 +13,8 @@ import type { StandardStep } from '../../../../../../src/integrations/pm/manifes
 export interface WebhookUrlDisplayStepProps {
 	readonly step: StandardStep;
 	readonly providerId: string;
-	readonly /** Fully-qualified webhook URL (e.g. "https://router.example/trello/webhook"). */
-	webhookUrl: string;
+	/** Fully-qualified webhook URL (e.g. "https://router.example/trello/webhook"). */
+	readonly webhookUrl: string;
 	readonly instructions?: string;
 	/**
 	 * Plan 011/1: optional inline signing-secret field. When both

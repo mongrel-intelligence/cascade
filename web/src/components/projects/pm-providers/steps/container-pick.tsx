@@ -14,7 +14,8 @@ import { Combobox, type ComboboxOption } from '../../../ui/combobox.js';
 export interface ContainerPickStepProps {
 	readonly step: StandardStep;
 	readonly providerId: string;
-	readonly /** Display label for this step's label/heading (e.g. "Select Board"). */ label?: string;
+	/** Display label for this step's label/heading (e.g. "Select Board"). */
+	readonly label?: string;
 	readonly options: ReadonlyArray<{
 		readonly id: string;
 		readonly name: string;

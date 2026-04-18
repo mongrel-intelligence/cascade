@@ -154,6 +154,22 @@ describe('pmDiscoveryRouter', () => {
 			).rejects.toThrow(/does-not-exist|NOT_FOUND|Unknown/);
 		});
 
+		// Regression for `fix/web-build-tsc-errors` (2026-04-18): the Zod
+		// enum at `DISCOVERY_CAPABILITIES` was missing 'currentUser', which
+		// meant every wizard Verify-button call to the discover endpoint
+		// failed input validation at runtime. This test pins that every
+		// capability declared on `DiscoveryCapability` in `src/pm/types.ts`
+		// is also accepted by the tRPC input schema.
+		it('accepts currentUser capability (closes Zod-enum / type-union drift)', async () => {
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			const result = await caller.discover({
+				providerId: 'fake',
+				capability: 'currentUser',
+				args: {},
+			});
+			expect(result).toMatchObject({ id: expect.any(String), name: expect.any(String) });
+		});
+
 		it('throws UNIMPLEMENTED when the provider does not declare the capability', async () => {
 			const { createFakePMManifest } = await import('../../helpers/fakePMProvider.js');
 			const base = createFakePMManifest();

@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { getIntegrationCredentialOrNull } from '../../config/provider.js';
 import { getIntegrationByProjectAndCategory } from '../../db/repositories/integrationsRepository.js';
 import { getPMProvider, listPMProviders } from '../../integrations/pm/registry.js';
+import { DISCOVERY_CAPABILITIES } from '../../pm/types.js';
 import { protectedProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
@@ -79,15 +80,11 @@ const providerIdInput = z.object({
 	providerId: z.string().min(1),
 });
 
-const DISCOVERY_CAPABILITIES = [
-	'teams',
-	'boards',
-	'labels',
-	'states',
-	'projects',
-	'customFields',
-	'containers',
-] as const;
+// DISCOVERY_CAPABILITIES lives in `src/pm/types.ts` — single source of
+// truth; the `DiscoveryCapability` type union derives from it. The Zod
+// enum here is exactly `z.enum(DISCOVERY_CAPABILITIES)` so there is no
+// opportunity for the two to drift (as happened in spec 010/2 when
+// `currentUser` landed in the type but not the enum).
 
 const discoverInput = z.object({
 	providerId: z.string().min(1),

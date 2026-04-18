@@ -15,16 +15,30 @@ export type PMType = 'trello' | 'jira' | 'linear';
 // declaring `discoveryCapabilities` on their manifest AND implementing
 // `discover(capability, args)` on their adapter.
 
-/** Every discovery capability a PM provider may declare support for. */
-export type DiscoveryCapability =
-	| 'teams'
-	| 'boards'
-	| 'labels'
-	| 'states'
-	| 'projects'
-	| 'customFields'
-	| 'containers'
-	| 'currentUser';
+/**
+ * Every discovery capability a PM provider may declare support for.
+ *
+ * The const-array is the source of truth — the type union derives from
+ * it via `typeof DISCOVERY_CAPABILITIES[number]`. Downstream consumers
+ * (e.g. the Zod enum at the tRPC input schema) can import this array
+ * directly and stay in sync without manual duplication. A bug earlier
+ * in spec 010/2 shipped a `currentUser` type-union member that was
+ * missing from the tRPC Zod enum — the frontend verify-button path
+ * failed input validation at runtime. Deriving both from one array
+ * closes that drift class structurally.
+ */
+export const DISCOVERY_CAPABILITIES = [
+	'teams',
+	'boards',
+	'labels',
+	'states',
+	'projects',
+	'customFields',
+	'containers',
+	'currentUser',
+] as const;
+
+export type DiscoveryCapability = (typeof DISCOVERY_CAPABILITIES)[number];
 
 /**
  * Per-capability argument shapes. Top-level lookups (teams/boards/projects/

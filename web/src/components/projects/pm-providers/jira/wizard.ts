@@ -354,7 +354,14 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			// JIRA statuses carry a `name` used as the id in mappings (JIRA's
 			// status-name is the stable identity the adapter writes back).
 			providerStates: (details?.statuses ?? []).map((s) => ({ id: s.name, name: s.name })),
-			providerCustomFields: details?.fields ?? [],
+			// JIRA's discovery returns `{id, name, custom}` for custom fields;
+			// map `custom: boolean` to a string `type` to satisfy the shared
+			// `providerCustomFields` prop contract.
+			providerCustomFields: (details?.fields ?? []).map((f) => ({
+				id: f.id,
+				name: f.name,
+				type: f.custom ? 'custom' : 'standard',
+			})),
 			issueTypes: details?.issueTypes ?? [],
 			onCreateCustomField,
 			webhookUrl,
