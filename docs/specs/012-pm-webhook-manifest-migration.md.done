@@ -4,7 +4,7 @@ slug: pm-webhook-manifest-migration
 level: spec
 title: PM Webhook Manifest Migration — Retire Legacy WebhookStep
 created: 2026-04-18
-status: draft
+status: done
 ---
 
 # 012: PM Webhook Manifest Migration — Retire Legacy WebhookStep
