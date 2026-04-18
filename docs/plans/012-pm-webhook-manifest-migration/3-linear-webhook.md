@@ -1,0 +1,179 @@
+---
+id: 012
+slug: pm-webhook-manifest-migration
+plan: 3
+plan_slug: linear-webhook
+level: plan
+parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
+depends_on: [2-jira-webhook.md]
+status: pending
+---
+
+# 012/3: Linear Webhook — Activate Manifest Path With Signing-Secret + Instructions
+
+> Part 3 of 4 in the 012-pm-webhook-manifest-migration plan. See [parent spec](../../specs/012-pm-webhook-manifest-migration.md).
+
+## Summary
+
+Third and final per-provider migration. Activates the `LinearWebhookDisplayAdapter` that plan 011/4 already shipped (Fragment composing shared `WebhookUrlDisplayStep` + `ProjectSecretField` for `LINEAR_WEBHOOK_SECRET`) and extends it with the 5-step manual setup-instructions list currently owned by the legacy `LinearWebhookInfoPanel`. Removes the last remaining id in the `-webhook` filter so Linear's webhook step passes through the manifest iteration.
+
+Smaller than plans 1 + 2 — Linear has no programmatic registration (no Create button, no active list, no delete, no curl fallback — Linear's API forbids it). The secret-field + instructions list are the only UI to migrate. The adapter skeleton already exists from plan 011/4; this plan completes it and wires it up.
+
+**Components delivered:**
+- `web/src/components/projects/pm-providers/linear/webhook-step.tsx` — new file (or extend the dormant `LinearWebhookDisplayAdapter` currently inlined in `linear/wizard.ts`). Named export: `LinearWebhookAdapter: React.FC<ProviderWizardStepProps>`. Fragment composing shared `WebhookUrlDisplayStep` + a new setup-instructions block (ordered list, 5 items matching the current `LinearWebhookInfoPanel` copy) + `ProjectSecretField` bound to `LINEAR_WEBHOOK_SECRET`.
+- `web/src/components/projects/pm-providers/linear/wizard.ts` — replace the inlined `LinearWebhookDisplayAdapter` with the new extracted component. Extend `LinearProviderHooks` only if new fields are needed beyond what plan 011/4 declared (`projectIdForSecret`, `webhookSecretCredential`). Existing plumbing likely covers it.
+- `web/src/components/projects/pm-wizard.tsx` — remove the conditional filter entirely, replacing `filter((entry) => entry.step.id !== 'linear-webhook')` with **no filter** (i.e. remove the `.filter(...)` call from `renderedManifestSteps` construction). The manifest iteration now includes every step. **Note**: plan 4 owns the deletion of the legacy `WebhookStep` slot and the `useWebhookManagement`/`useLinearWebhookInfo` hook imports. This plan leaves those in place but with no provider routed to them; the legacy slot becomes a no-op (renders but no provider's state matches the branch conditions inside `WebhookStep`). Plan 4 deletes it.
+- `tests/unit/web/linear-webhook-step.test.ts` — new file. Assertions on the rendered adapter: `ProjectSecretField` rendered with `envVarKey="LINEAR_WEBHOOK_SECRET"`, the 5-step instructions list present, webhook URL + copy button preserved.
+
+**Deferred to later plans in this spec:**
+- Legacy `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, `useLinearWebhookInfo` deletion — plan 4.
+- Legacy test file deletion — plan 4.
+- Docs / coverage-map updates — plan 4.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #4 (Linear signing-secret + instructions inline via manifest) — **full**.
+- Spec AC #1 (every wizard renders webhook via manifest) — **partial** (Linear closes the chain; plan 4 removes the filter stopgap).
+- Spec AC #7 (plan 011/4 ACs #3 + #6 close) — **partial** (manifest path now renders Linear's webhook inline; the deletion of `LinearWebhookInfoPanel` + `_coverage.md` update land in plan 4).
+- Spec AC #8 (no operator regression) — **full for Linear**.
+- Spec AC #10 (conformance harness green) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+- Plan 2 (`jira-webhook`) — establishes two-provider track record of the Fragment-composition pattern; any carry-forward widening from plans 1/2 is already in place.
+- Plan 1 (`trello-webhook`) — transitively; the Fragment pattern originated there.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Re-read the legacy `LinearWebhookInfoPanel` + `useLinearWebhookInfo` hook
+
+Catalog every piece of UI the legacy panel renders: the blue-info banner, the 5-step instructions list, the `ProjectSecretField`, the webhook URL display. Confirm the URL formula (`${callbackBaseUrl}/linear/webhook`) matches what `webhookUrl` carries in the Linear wizard's `useProviderHooks`. Output checklist under this task in the `.wip` file.
+
+### 2. Extract the Linear webhook adapter component
+
+**Tests first** (`tests/unit/web/linear-webhook-step.test.ts` — new file):
+- `renders the shared WebhookUrlDisplayStep with webhookUrl prop`.
+- `renders ProjectSecretField with envVarKey="LINEAR_WEBHOOK_SECRET"`.
+- `renders ProjectSecretField with the threaded credential metadata` (when `webhookSecretCredential` is populated).
+- `renders a 5-item ordered setup-instructions list`.
+- `includes the linear.app/settings/api link in the instructions`.
+- `does not render Trello/JIRA UI elements (Create button, active-webhooks list)` — regression guard.
+
+**Implementation** (`web/src/components/projects/pm-providers/linear/webhook-step.tsx`):
+- Named export: `LinearWebhookAdapter: React.FC<ProviderWizardStepProps>`.
+- Fragment composing: shared `WebhookUrlDisplayStep` + a `<div>` with the info banner + an ordered list of 5 setup steps (copy lifted verbatim from `LinearWebhookInfoPanel`) + `ProjectSecretField` bound to `LINEAR_WEBHOOK_SECRET` with the threaded credential.
+- The 5-step instructions are hardcoded in this component (Linear-specific).
+
+### 3. Wire the new adapter into `linearProviderWizard.steps`
+
+**Implementation** (`web/src/components/projects/pm-providers/linear/wizard.ts`):
+- Replace the inlined `LinearWebhookDisplayAdapter` (currently a Fragment of `WebhookUrlDisplayStep` + `ProjectSecretField`) with an import of the new `LinearWebhookAdapter` from `./webhook-step.js`.
+- Update the `linear-webhook` step's `Component` reference.
+- Confirm `providerHooks` already returns `projectIdForSecret` + `webhookSecretCredential` (plan 011/4 added these) — no new fields expected.
+
+### 4. Remove the `-webhook` filter from `pm-wizard.tsx`
+
+**Tests first**:
+- Filter-predicate test from plans 1 + 2: update to confirm no step is filtered out now.
+- Render-snapshot test (if present) for Linear — confirm the Linear webhook step renders as a peer step.
+
+**Implementation** (`web/src/components/projects/pm-wizard.tsx`):
+- Remove the `.filter(...)` call from `renderedManifestSteps` construction. `renderedManifestSteps` becomes `manifestDef ? manifestDef.steps.map((step, index) => ({ step, index })) : []`.
+- Update the surrounding comment to note the migration is complete and the legacy `WebhookStep` slot is now a no-op that plan 4 will delete.
+
+### 5. Legacy `WebhookStep` slot behavior post-plan-3
+
+No code change in this plan beyond removing the filter. The legacy `WebhookStep` still renders in its hardcoded slot; with no provider entering the Trello / JIRA / Linear conditional branches (all three now own their webhook UX in the manifest path), the slot renders a narrow artifact — likely the "No webhooks configured" fallback or similar. Document this in the commit message + PR description as transient visual noise; plan 4 deletes the slot.
+
+### 6. Conformance harness smoke + manual dashboard verification
+
+Per CLAUDE.md: browser smoke test.
+- Linear wizard renders the webhook step via the manifest path with signing-secret + instructions inline.
+- Trello + JIRA + Linear all use manifest-path webhooks; the legacy `WebhookStep` slot renders but is effectively empty (transient; plan 4 deletes).
+- Secret-field save / load / clear cycle via `ProjectSecretField` works unchanged.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/web/linear-webhook-step.test.ts` — new file, ~6 tests.
+- [ ] Filter-predicate test: update to assert no step is filtered out.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] Conformance harness passes for Linear.
+- [ ] `tests/unit/pm/linear/regression-2026-04.test.ts` passes (adapter untouched).
+- [ ] Browser smoke test — Linear webhook step renders inline; secret-field save / load works.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `linearProviderWizard.steps`'s `linear-webhook` entry has `Component = LinearWebhookAdapter` (identity-asserted).
+2. `LinearWebhookAdapter` renders the shared `WebhookUrlDisplayStep` + `ProjectSecretField(envVarKey=LINEAR_WEBHOOK_SECRET)` + 5-step instructions list.
+3. The `-webhook` filter in `pm-wizard.tsx` is removed; `manifestDef.steps` iterates in full.
+4. Legacy `WebhookStep` slot still renders but no provider is routed to its Trello / JIRA / Linear branches — deletion deferred to plan 4.
+5. Every Linear webhook behavior (URL display + copy, signing-secret save/load/clear, 5-step instructions) is exercised in tests against the new adapter.
+6. Conformance harness passes for Linear.
+7. `regression-2026-04.test.ts` passes (adapter unchanged).
+8. `npm run build` passes.
+9. `npm test` passes.
+10. `npm run lint` passes.
+11. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+None — deferred to plan 4.
+
+| File | Change |
+|---|---|
+| — | Deferred to plan 4. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to later plans in this spec:
+- Legacy `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, `useLinearWebhookInfo` deletion — plan 4.
+- Legacy test file deletion — plan 4.
+- Docs / coverage-map updates — plan 4.
+
+Originally out of scope for the spec (repeated for clarity):
+- Generalizing `webhooks.*` tRPC endpoints.
+- Backend webhook API changes.
+- Adding programmatic webhook registration for Linear.
+- Extending the manifest pattern to SCM / alerting.
+- New shared UI primitives.
+- Schema migrations.
+- Rewriting the form-state model or `ProviderWizardDefinition`.
+- Further widening of `WebhookUrlDisplayStep`.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (Linear wizard step Component identity)
+- [ ] AC #2 (adapter composes shared step + secret field + instructions)
+- [ ] AC #3 (filter removed; manifest iteration complete)
+- [ ] AC #4 (legacy slot still renders but unrouted; plan 4 deletes)
+- [ ] AC #5 (tests cover Linear webhook behaviors)
+- [ ] AC #6 (conformance harness green)
+- [ ] AC #7 (regression-2026-04 passes)
+- [ ] AC #8 (build)
+- [ ] AC #9 (test)
+- [ ] AC #10 (lint)
+- [ ] AC #11 (typecheck)

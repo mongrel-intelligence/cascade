@@ -1,0 +1,153 @@
+---
+id: 012
+slug: pm-webhook-manifest-migration
+level: spec
+title: PM Webhook Manifest Migration — Retire Legacy WebhookStep
+created: 2026-04-18
+status: draft
+---
+
+# 012: PM Webhook Manifest Migration — Retire Legacy WebhookStep
+
+## Problem & Motivation
+
+Spec 011 migrated five of six wizard step types (credentials, container-pick, status-mapping, label-mapping, project-scope, custom-field-mapping) from per-provider forks onto the shared `StandardStepKind` components, and deleted the three `pm-wizard-{trello,jira,linear}-steps.tsx` files. One step type did not migrate: `webhook-url-display`. The legacy `WebhookStep` + `LinearWebhookInfoPanel` (in `pm-wizard-common-steps.tsx`) still render Trello's programmatic "Create Webhook" button + active-webhooks list + delete + curl fallback, JIRA's equivalent, and Linear's signing-secret `ProjectSecretField` + setup-instructions panel.
+
+This wasn't oversight — it was honest scope management. Webhook-creation UX is **richer** than a URL-display-with-copy-button: Trello and JIRA have programmatic registration flows with active-webhooks lists and delete buttons; Linear has secret-field persistence (different lifecycle from wizard state) and long-form setup instructions. Migrating them into the manifest path requires per-provider composition around the shared `WebhookUrlDisplayStep`, a conscious decision about whether to widen the shared step or compose it, and an end-of-run cleanup of the `-webhook` id-skip filter that plan 011/4 shipped as a stopgap.
+
+The outcome we want: every PM wizard step — without exception — renders via `manifestDef.steps` dispatch. The parent wizard (`pm-wizard.tsx`) iterates manifest steps uniformly, no stopgap filter. Each provider owns its webhook step's composition in its provider folder. `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, and `useLinearWebhookInfo` go away. Plan 011/4 ACs #3 + #6 close. A fourth PM provider added tomorrow declares a `webhook-url-display` step, composes it with whatever programmatic-registration / secret-field / instructions UI it needs in its wizard definition, and never touches shared orchestration.
+
+---
+
+## Goals
+
+- Every PM wizard renders its webhook step via the manifest path (`manifestDef.steps` → `ManifestProviderWizardSection` → provider adapter).
+- Trello retains its programmatic "Create Webhook" button, active-webhooks list, delete, and curl fallback — now rendered from the Trello provider folder.
+- JIRA retains its equivalent flows (including the `jiraEnsureLabels` side-effect on Create).
+- Linear retains its signing-secret persistence via `ProjectSecretField` and its setup-instructions panel — now rendered from the Linear provider folder.
+- The legacy `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, and `useLinearWebhookInfo` are deleted. Their test file is migrated or deleted per relevance.
+- The `-webhook` id-skip filter introduced by plan 011/4 is removed. `pm-wizard.tsx` iterates every manifest step without exception.
+- Zero operator-visible regression. Every create / list / delete / curl / secret behavior available today continues to work, just through a different render path.
+- A new PM provider writes zero per-provider wizard code outside its provider folder + the manifest — closing the final gap in spec 011's promise.
+
+---
+
+## Non-goals
+
+- Generalizing the `webhooks.create/list/delete` tRPC endpoints into a `{providerId}`-driven API. Flag-based endpoints stay; that refactor is a separate spec if ever needed.
+- Backend webhook API changes. Router, signature verification, event parsing, and registration endpoints unchanged.
+- Adding programmatic webhook registration for Linear (Linear's API doesn't expose it; manual-only stays).
+- Extending the manifest/conformance pattern to SCM (GitHub) or alerting (Sentry).
+- New shared UI primitives. `ProjectSecretField` + `CopyButton` + the widened `WebhookUrlDisplayStep` are reused verbatim.
+- Schema migrations or config-shape changes.
+- Rewriting the form-state model or `ProviderWizardDefinition` contract.
+- Further widening of `WebhookUrlDisplayStep`. Composition via Fragment covers every provider need; the shared step stays focused on URL display + copy + optional instructions.
+- Changing operator-visible wizard UX behavior. Exactly one allowed micro-change: each provider's webhook section gets consistent visual positioning because it's now a peer step rather than a mode-switched sub-panel.
+
+---
+
+## Constraints
+
+- **Zero operator-visible regression.** The three wizards must continue to expose every existing webhook action — create, list, delete, curl fallback (Trello + JIRA); secret-field save / load / clear + setup instructions (Linear).
+- **Composition preferred over widening.** The shared `WebhookUrlDisplayStep` API stays stable; provider adapters render it alongside provider-specific UI via a Fragment. Only widen if composition demonstrably can't cover a need.
+- **One reviewable PR per provider plus a cleanup PR.** No single-PR big-bang.
+- **Test surface net-positive.** Legacy tests are case-by-case ported (where the behavior is still asserted) or deleted (where the assertion pinned an obsolete shape). Shared-component coverage must not shrink.
+- **Conformance harness stays green.** `tests/unit/integrations/pm-conformance.test.ts` passes for every provider at every migration step.
+- **`new-provider-surface` invariant holds.** No new shared-orchestration edits needed to add a provider after this lands.
+
+---
+
+## User stories / Requirements
+
+As an **operator setting up a new Trello project**:
+- I can click "Create Webhook" and CASCADE programmatically registers the webhook on my Trello board, the same way it does today.
+- I see the list of active Trello webhooks with their URLs + status indicators, and I can delete any of them.
+- If programmatic registration fails, I can copy a curl command and register the webhook manually.
+
+As an **operator configuring JIRA**:
+- I can click "Create Webhook" and CASCADE registers it on my JIRA instance; my first issue gets seeded with CASCADE labels, then un-seeded (existing `jiraEnsureLabels` side-effect).
+- Same active-list + delete + curl fallback as Trello.
+
+As an **operator configuring Linear**:
+- I see the webhook URL + copy button + 5-step setup instructions pointing me to Linear's UI.
+- I can paste the signing secret into an inline field; CASCADE stores it server-side and shows the masked last-4 chars on re-entry.
+- I can clear the secret.
+
+As a **CASCADE reviewer inspecting a wizard PR**:
+- The diff is focused: migrate one provider's webhook step, retain the legacy slot for the others (until plan 5 deletes it).
+
+As a **CASCADE contributor adding a fourth PM provider**:
+- I declare a `webhook-url-display` step in my manifest's `wizardSpec`.
+- I compose any provider-specific UI (programmatic create, active list, signing-secret field, …) around the shared step in my provider folder's wizard definition.
+- I touch zero files in shared orchestration (`pm-wizard.tsx`, `pm-wizard-common-steps.tsx`, `pm-wizard-hooks.ts`, the router).
+
+---
+
+## Research Notes
+
+- **Strangler-fig migration pattern** — same shape as spec 011's wizard migration. Migrate one provider at a time; each plan is independently reversible.
+- **No new OSS.** Every primitive (tRPC procedures, `ProjectSecretField`, `CopyButton`, shared `WebhookUrlDisplayStep`) is already in the repo.
+- **No industry pattern worth citing.** "Active webhooks list with delete + programmatic create + curl fallback" is a standard admin-panel idiom; nothing to research.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|---|---|---|---|
+| — | — | — | No new OSS. Every primitive already adopted in spec 011. |
+
+---
+
+## Strategic decisions
+
+1. **Composition over widening** — chose composing the shared `WebhookUrlDisplayStep` with provider-specific UI via Fragment over adding more optional props to the shared step. Reason: the shared step's job is URL display + copy + optional instructions; programmatic-create / active-list / secret-field are provider concerns and don't belong in the shared API.
+2. **Standard `webhook-url-display` kind + composition** — chose keeping each provider's wizardSpec webhook entry as `kind: 'webhook-url-display'` over converting to `kind: 'custom'`. Reason: the URL-display semantics ARE standard across providers; the provider-specific layers wrap around it. Mirrors the pattern plan 011/4 established for Linear.
+3. **Keep `webhooks.*` tRPC endpoints as-is** — chose retaining the `{trelloOnly, jiraOnly}` flag-based endpoints over generalizing to `{providerId}`. Reason: out of scope — this is a wizard-UX migration, not a backend refactor.
+4. **Per-provider active-webhooks rendering** — chose each provider adapter rendering its own active-list over extracting a shared sub-component. Reason: only two providers have lists (Trello + JIRA); shared extraction would be premature abstraction.
+5. **`jiraEnsureLabels` preserved as-is** — side-effect lives in the JIRA webhook-creation call path. Reason: works today; out of scope to refactor.
+6. **Delete `useWebhookManagement` + `useLinearWebhookInfo`** — chose deletion over retention after migration. Reason: each provider adapter calls `trpc.webhooks.*` and reads the credential query directly inside its own `useProviderHooks`; the shared hooks become one-caller helpers — dead code.
+7. **Remove the `-webhook` id-skip filter** — `pm-wizard.tsx` iterates every manifest step uniformly after this spec. Reason: the filter was a stopgap from plan 011/4; its removal is the point of the migration.
+8. **Migration sequence: Trello → JIRA → Linear → cleanup** — chose linear over parallel. Reason: each provider may reveal a shared-component gap (e.g. composition can't handle something); fixing once and carrying forward is cheaper than three parallel streams discovering the same thing.
+9. **Test migration: case-by-case port-or-delete** — chose over port-verbatim. Reason: legacy tests pin DOM shapes that are being deleted; porting would assert nothing useful.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. Each of the three PM wizards renders its webhook step via `manifestDef.steps` dispatch — no provider-selector branching anywhere in rendering.
+2. The Trello wizard exposes every programmatic-webhook behavior available today: Create button calling the backend registration endpoint, active-webhooks list, delete button per webhook, curl fallback with the current board ID interpolated.
+3. The JIRA wizard exposes its equivalent: Create button, active list, delete, curl fallback with the current base URL interpolated. The `jiraEnsureLabels` side-effect fires on successful creation, same as today.
+4. The Linear wizard exposes its signing-secret field (save / load / clear via `projects.credentials.*`), webhook URL display + copy, and the 5-step setup instructions — all inside the manifest-rendered webhook step.
+5. `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, `useLinearWebhookInfo`, and the legacy webhook test file are deleted from the repository.
+6. `pm-wizard.tsx` no longer filters steps by id suffix — `manifestDef.steps` iterates in full, and every provider's wizard UI is entirely manifest-driven.
+7. Plan 011/4's partial ACs #3 (Linear inline-secret via shared component) and #6 (`LinearWebhookInfoPanel` retired) fully close; spec 011's `_coverage.md` is updated to reflect this.
+8. An operator sees no functional regression — every input, selection, action, and feedback message that worked before still works after.
+9. Adding a fourth PM provider requires zero edits to shared orchestration (`pm-wizard.tsx`, `pm-wizard-common-steps.tsx`, `pm-wizard-hooks.ts`). The `new-provider-surface` guard continues to hold.
+10. Conformance harness passes for every provider at every migration step.
+11. Build / test / lint / typecheck all green after each plan.
+
+---
+
+## Documentation Impact (high-level)
+
+- `src/integrations/README.md` — add a Post-spec-012 additions section; update the "Adding a new PM provider" section's webhook-step guidance (composition pattern + examples).
+- `CLAUDE.md` (project root) — PM-integration summary mentions spec 012 alongside 009 / 010 / 011; removes any phrasing about the legacy `WebhookStep` still owning webhook registration.
+- `CHANGELOG.md` — single Internal-change entry summarizing the full spec (mirrors the spec-010 / spec-011 cadence).
+- `docs/specs/011-pm-wizard-shared-migration.md.done` — forward-reference blockquote at the top pointing at spec 012, mirroring the 009 → 010 and 010 → 011 pattern.
+- `docs/plans/011-pm-wizard-shared-migration/_coverage.md` — update to reflect that plan 011/4 ACs #3 + #6 are now fully closed by spec 012 downstream.
+
+---
+
+## Out of Scope
+
+- Generalizing `webhooks.create/list/delete` tRPC endpoints beyond their existing `{trelloOnly, jiraOnly}` flags.
+- Backend webhook API changes (router, signature verification, event parsing, registration).
+- Adding programmatic webhook registration for Linear.
+- Extending the manifest pattern to SCM (GitHub) or alerting (Sentry).
+- New shared UI primitives.
+- Schema migrations or config-shape changes.
+- Rewriting the form-state model or the `ProviderWizardDefinition` contract.
+- Further widening of `WebhookUrlDisplayStep` — composition covers every need.
+- Consolidating Trello + JIRA active-webhooks rendering into a shared sub-component.
+- Changing operator-visible wizard UX behavior beyond the one allowed micro-change (peer-step positioning rather than mode-switched sub-panel).

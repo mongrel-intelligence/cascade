@@ -1,0 +1,240 @@
+---
+id: 012
+slug: pm-webhook-manifest-migration
+plan: 4
+plan_slug: cleanup
+level: plan
+parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
+depends_on: [3-linear-webhook.md]
+status: pending
+---
+
+# 012/4: Cleanup — Delete Legacy Webhook UX + Rewrite Docs + Close Spec
+
+> Part 4 of 4 in the 012-pm-webhook-manifest-migration plan. See [parent spec](../../specs/012-pm-webhook-manifest-migration.md).
+
+## Summary
+
+Closes spec 012. Deletes the legacy webhook surface now that all three providers own their webhook steps via the manifest path:
+
+- `WebhookStep` + `LinearWebhookInfoPanel` from `pm-wizard-common-steps.tsx` (the remaining two exports; `SaveStep` stays as the only live export).
+- `useWebhookManagement` + `useLinearWebhookInfo` from `pm-wizard-hooks.ts`.
+- `tests/unit/web/pm-wizard-webhooks-step.test.ts` (181 lines, 8 tests — all assertions now live in the three per-provider adapter tests from plans 012/1-3).
+- The legacy-webhook slot rendering in `pm-wizard.tsx` (the entire `<WizardStep stepNumber={webhookStepNumber} ...>` block + `useWebhookManagement` / `useLinearWebhookInfo` imports + related state).
+
+Also rewrites the docs to reflect the fully-migrated state (same plan-5-style cleanup pattern from spec 011) and updates `docs/plans/011-pm-wizard-shared-migration/_coverage.md` to mark plan 011/4 ACs #3 + #6 as fully closed by this spec downstream.
+
+Cleanup-only plan. Zero new features, zero widenings, zero behavior changes. Deletions + prose.
+
+**Components delivered:**
+- `web/src/components/projects/pm-wizard-common-steps.tsx` — `WebhookStep` + `LinearWebhookInfoPanel` deleted. File retained as `SaveStep` is still a live export.
+- `web/src/components/projects/pm-wizard-hooks.ts` — `useWebhookManagement` + `useLinearWebhookInfo` deleted.
+- `web/src/components/projects/pm-wizard.tsx` — legacy webhook `WizardStep` slot deleted; associated imports + call-sites removed. `webhookStepNumber` / `saveStepNumber` simplified: the save step becomes `renderedManifestSteps.length + 2`.
+- `tests/unit/web/pm-wizard-webhooks-step.test.ts` — **deleted**.
+- `src/integrations/README.md` — rewrite:
+  - Four-specs → five-specs paragraph (add spec 012).
+  - Update the provider migration status table: Trello/JIRA/Linear all show `✅ manifest-driven webhook step`.
+  - Add a Post-spec-012 additions peer section.
+  - Update the "Adding a new PM provider" section's webhook guidance: compose the shared step with provider-specific UX via Fragment; no shared-orchestration edits needed.
+- `CLAUDE.md` (project root) — PM-integration summary references spec 012 alongside 009/010/011; removes any phrasing about the legacy `WebhookStep` still owning webhook UX.
+- `CHANGELOG.md` — single Internal-change entry summarizing spec 012.
+- `docs/specs/011-pm-wizard-shared-migration.md.done` — forward-reference blockquote to spec 012 at the top (mirrors 009→010→011 pointer).
+- `docs/plans/011-pm-wizard-shared-migration/_coverage.md` — update the entries for plan 011/4 ACs #3 + #6 to `✅ fully closed by spec 012`.
+
+**Deferred to follow-up specs**: nothing. Closes spec 012.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #5 (legacy `WebhookStep`, `LinearWebhookInfoPanel`, 2 hooks, legacy test file deleted) — **full**.
+- Spec AC #6 (`-webhook` id-skip filter removed; `pm-wizard.tsx` iterates every manifest step) — **full** (plan 012/3 removed the filter itself; this plan removes the now-empty legacy slot that sat alongside it).
+- Spec AC #7 (plan 011/4 ACs #3 + #6 close; `_coverage.md` updated) — **full** (closes the chain started by plan 012/3).
+- Spec AC #9 (new provider requires zero shared-orchestration edits) — **full** (verifiable only after legacy slot + hooks deleted).
+- Spec AC #10 (conformance harness green) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+- Plan 3 (`linear-webhook`) — last plan that routed a provider through the legacy `WebhookStep`. Once it merges, the legacy slot is a no-op safe to delete.
+- Transitively: plans 1 + 2.
+
+---
+
+## Detailed Task List
+
+### 1. Dead-code audit before deletion
+
+Grep for every reference to the legacy symbols:
+- `grep -r "WebhookStep\|LinearWebhookInfoPanel" web/src tests` — expected: only the file being deleted + the test file being deleted.
+- `grep -r "useWebhookManagement\|useLinearWebhookInfo" web/src tests` — expected: only the hook definitions.
+- `grep -r "webhookStepNumber" web/src tests` — expected: only the `pm-wizard.tsx` block being deleted.
+
+Any surviving live reference is a plan-3 gap (escalate).
+
+### 2. Delete legacy exports + imports
+
+**Implementation**:
+- `web/src/components/projects/pm-wizard-common-steps.tsx`:
+  - Delete the `LinearWebhookInfoPanel` function export.
+  - Delete the `WebhookStep` function export.
+  - Leave `SaveStep` in place.
+  - Clean up any now-unused imports at the top of the file.
+- `web/src/components/projects/pm-wizard-hooks.ts`:
+  - Delete `useWebhookManagement` export.
+  - Delete `useLinearWebhookInfo` export.
+  - Clean up any now-unused imports.
+- `web/src/components/projects/pm-wizard.tsx`:
+  - Delete the entire legacy-webhook `<WizardStep stepNumber={webhookStepNumber} ...>` block.
+  - Delete imports of `WebhookStep`, `useWebhookManagement`, `useLinearWebhookInfo`.
+  - Delete the `webhookManagement = useWebhookManagement(...)` call.
+  - Delete the `linearWebhookUrl` + `linearWebhookSecretCredential` derivations (providers now compute these inside their own `useProviderHooks`).
+  - Rename `webhookStepNumber` → `saveStepNumber`; saveStep becomes `renderedManifestSteps.length + 2`.
+
+### 3. Delete the legacy test file
+
+**Implementation**:
+- `git rm tests/unit/web/pm-wizard-webhooks-step.test.ts`.
+- Verify the three per-provider adapter tests cover the assertions that file made (they should after plans 1-3).
+
+### 4. Rewrite `src/integrations/README.md`
+
+**Implementation**:
+- Update the top-of-file spec list: "Four specs shape it" → "Five specs shape it"; add spec 012 bullet.
+- Update the "Adding a new PM provider" section's step 3 webhook guidance: "the webhook step composes the shared `WebhookUrlDisplayStep` with whatever provider-specific UI the provider needs (programmatic registration, secret fields, setup instructions) via Fragment in the provider's wizard definition."
+- Add a new "Post-spec-012 additions (2026-04-18+)" peer section:
+  - Every PM wizard step, without exception, renders via the manifest path.
+  - Legacy `WebhookStep` + `LinearWebhookInfoPanel` deleted. `pm-wizard-common-steps.tsx` now only exports `SaveStep`.
+  - `useWebhookManagement` + `useLinearWebhookInfo` deleted.
+  - Provider-specific webhook UX (Trello/JIRA programmatic create, Linear secret + instructions) all live in each provider's folder.
+  - Adding a new PM provider's webhook step: declare `webhook-url-display` in `wizardSpec`, compose the shared step with any provider-specific UX via Fragment in the provider's `ProviderWizardDefinition.steps` Component.
+
+### 5. Update root `CLAUDE.md`
+
+**Implementation**:
+- Append a spec-012 line to the PM-integration summary: "Spec 012 completed the webhook-UX manifest migration — Trello/JIRA/Linear all render their webhook steps via the manifest path. Legacy `WebhookStep` + `LinearWebhookInfoPanel` deleted."
+- Remove any phrasing about the legacy `WebhookStep` retaining webhook creation UX (from spec-011 era).
+
+### 6. CHANGELOG entry
+
+**Implementation**: add under `## Unreleased` → `### Internal`:
+
+> **PM webhook-UX manifest migration complete (spec 012).** Closes the final gap from spec 011 — every PM wizard step, without exception, now renders via the manifest path. Plans 012/1-3 migrated Trello, JIRA, and Linear webhook steps into per-provider adapters composed of the shared `WebhookUrlDisplayStep` + provider-specific UX (Trello/JIRA programmatic Create + active list + delete + curl fallback via existing `webhooks.*` tRPC endpoints; Linear signing-secret via `ProjectSecretField` + 5-step manual-setup instructions). Plan 012/4 deleted the legacy `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, `useLinearWebhookInfo`, the legacy test file, and the `-webhook` id-skip filter introduced by plan 011/4. Plan 011/4 ACs #3 + #6 fully close; spec 011 `_coverage.md` updated. No operator-visible regression. See spec [012](docs/specs/012-pm-webhook-manifest-migration.md.done).
+
+### 7. Forward-reference in spec 011
+
+**Implementation**: prepend a blockquote to `docs/specs/011-pm-wizard-shared-migration.md.done` right after the H1:
+
+> **Forward reference (2026-04-18+):** the remaining webhook-UX migration (deferred at close of 011/4) landed in spec [012 — PM Webhook Manifest Migration](./012-pm-webhook-manifest-migration.md.done). That spec migrated Trello/JIRA/Linear webhook steps into the manifest path, deleted the legacy `WebhookStep` + `LinearWebhookInfoPanel` + supporting hooks, and fully closed plan 011/4 ACs #3 + #6.
+
+### 8. Update spec 011 `_coverage.md`
+
+**Implementation**: in `docs/plans/011-pm-wizard-shared-migration/_coverage.md`, update the rows for plan 011/4 ACs #3 + #6 (currently marked "partial — deferred to follow-up spec" or similar):
+- `AC #3 (Linear inline secret via shared)` → `✅ fully closed by spec 012 downstream`.
+- `AC #6 (LinearWebhookInfoPanel retired)` → `✅ fully closed by spec 012 downstream`.
+
+### 9. Full verification before marking done
+
+- `npm run build` green.
+- `npm test` green.
+- `npm run lint` green.
+- `npm run typecheck` green.
+- `new-provider-surface.test.ts` passes — the guard doesn't care about the deletions, but verify for safety.
+- Conformance harness green for all three providers.
+
+### 10. Mark spec 012 `.done`
+
+Per `/implement` Phase 8: rename `docs/specs/012-pm-webhook-manifest-migration.md` → `.md.done` in a separate trailing commit after the plan-4 `.wip` → `.done` commit.
+
+---
+
+## Test Plan
+
+### Unit tests
+- No new test files.
+- `tests/unit/web/pm-wizard-webhooks-step.test.ts` — **deleted**.
+- Existing tests (the three per-provider adapter tests from plans 1-3) continue to pass.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] `grep -r "WebhookStep\|LinearWebhookInfoPanel\|useWebhookManagement\|useLinearWebhookInfo" web/src tests` returns zero results (outside git history).
+- [ ] Every documentation file listed above has been updated.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+- [ ] Conformance harness green for all three providers.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `WebhookStep` export removed from `pm-wizard-common-steps.tsx`.
+2. `LinearWebhookInfoPanel` export removed from `pm-wizard-common-steps.tsx`.
+3. `useWebhookManagement` + `useLinearWebhookInfo` removed from `pm-wizard-hooks.ts`.
+4. `pm-wizard.tsx` no longer imports the above; the legacy webhook `<WizardStep>` slot is gone.
+5. `tests/unit/web/pm-wizard-webhooks-step.test.ts` is deleted.
+6. Dead-code grep returns zero live references to the retired symbols.
+7. `src/integrations/README.md` reflects the post-spec-012 state (five specs, updated "Adding a new PM provider" webhook guidance, Post-spec-012 additions section).
+8. Root `CLAUDE.md` PM-integration summary references spec 012.
+9. `CHANGELOG.md` has a single Internal entry summarizing spec 012.
+10. `docs/specs/011-pm-wizard-shared-migration.md.done` has a forward-reference to spec 012.
+11. `docs/plans/011-pm-wizard-shared-migration/_coverage.md` rows for plan 011/4 ACs #3 + #6 updated to closed.
+12. Conformance harness passes for all three providers.
+13. `npm run build` passes.
+14. `npm test` passes.
+15. `npm run lint` passes.
+16. `npm run typecheck` passes.
+17. Spec 012 is marked `.done` via file rename.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `src/integrations/README.md` | Rewrite: five-specs preamble; updated "Adding a new PM provider" webhook guidance; Post-spec-012 additions section. |
+| `CLAUDE.md` (project root) | Append spec-012 line to PM-integration summary; remove any "legacy WebhookStep still owns..." phrasing. |
+| `CHANGELOG.md` | New Internal entry summarizing spec 012. |
+| `docs/specs/011-pm-wizard-shared-migration.md.done` | Forward-reference blockquote to spec 012 at the top. |
+| `docs/plans/011-pm-wizard-shared-migration/_coverage.md` | Plan 011/4 ACs #3 + #6 rows updated to reflect closure via spec 012. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to follow-up specs: nothing — this plan closes the spec.
+
+Originally out of scope for the spec (repeated for clarity):
+- Generalizing `webhooks.*` tRPC endpoints.
+- Backend webhook API changes.
+- Adding programmatic webhook registration for Linear.
+- Extending the manifest pattern to SCM / alerting.
+- New shared UI primitives.
+- Schema migrations.
+- Rewriting the form-state model or `ProviderWizardDefinition`.
+- Further widening of `WebhookUrlDisplayStep`.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (WebhookStep export deleted)
+- [ ] AC #2 (LinearWebhookInfoPanel export deleted)
+- [ ] AC #3 (useWebhookManagement + useLinearWebhookInfo deleted)
+- [ ] AC #4 (pm-wizard.tsx legacy slot + imports removed)
+- [ ] AC #5 (legacy test file deleted)
+- [ ] AC #6 (dead-code grep clean)
+- [ ] AC #7 (README rewritten)
+- [ ] AC #8 (CLAUDE.md updated)
+- [ ] AC #9 (CHANGELOG entry)
+- [ ] AC #10 (spec 011 forward-ref)
+- [ ] AC #11 (spec 011 _coverage.md updated)
+- [ ] AC #12 (conformance harness green)
+- [ ] AC #13 (build)
+- [ ] AC #14 (test)
+- [ ] AC #15 (lint)
+- [ ] AC #16 (typecheck)
+- [ ] AC #17 (spec marked .done)

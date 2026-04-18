@@ -1,0 +1,190 @@
+---
+id: 012
+slug: pm-webhook-manifest-migration
+plan: 1
+plan_slug: trello-webhook
+level: plan
+parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
+depends_on: []
+status: pending
+---
+
+# 012/1: Trello Webhook — Migrate Creation UX Into Manifest Path
+
+> Part 1 of 4 in the 012-pm-webhook-manifest-migration plan. See [parent spec](../../specs/012-pm-webhook-manifest-migration.md).
+
+## Summary
+
+First of three per-provider migrations. Moves Trello's webhook-creation UX from the legacy `WebhookStep` (in `pm-wizard-common-steps.tsx`) into a new Trello webhook adapter rendered from the manifest path. Operator-visible: Trello's webhook step now lives as a peer step in the wizard's dynamic slot list, rendered from the Trello provider folder. Trello's programmatic Create button, active-webhooks list, delete buttons, and curl fallback all continue to work — same tRPC endpoints, same backend behavior, different render path.
+
+Mechanism: extend `pm-wizard.tsx`'s `-webhook` id-skip filter (introduced by plan 011/4) to exclude Trello specifically — `filter(entry => !(entry.step.id === 'jira-webhook' || entry.step.id === 'linear-webhook'))`. The legacy `WebhookStep` keeps rendering for JIRA + Linear until plans 2 + 3 land; plan 4 then deletes the filter entirely.
+
+**Components delivered:**
+- `web/src/components/projects/pm-providers/trello/webhook-step.tsx` — new file. `TrelloWebhookAdapter` React component. Renders the shared `WebhookUrlDisplayStep` inside a Fragment, composed with Trello-specific UI: active-webhooks list, "Create Webhook" button, delete buttons per active webhook, curl-fallback `<details>` block. All tRPC calls (`webhooks.list`, `webhooks.create`, `webhooks.delete` with `trelloOnly: true`) happen inside the adapter's `useProviderHooks` slice or inline.
+- `web/src/components/projects/pm-providers/trello/wizard.ts` — replace `TrelloWebhookDisplayAdapter` Component (currently renders just the shared step) with the new `TrelloWebhookAdapter`. Extend `useProviderHooks` return shape with Trello-webhook-specific values + callbacks (`activeTrelloWebhooks`, `createTrelloWebhook`, `deleteTrelloWebhook`, `webhookCreateLoading`, etc.).
+- `web/src/components/projects/pm-wizard.tsx` — update the filter from `id.endsWith('-webhook')` to `id === 'jira-webhook' || id === 'linear-webhook'`. One-line change.
+- `tests/unit/web/trello-webhook-step.test.ts` — new file. Assertions on the rendered adapter: active-list shape, Create button presence + disabled-state, curl command interpolation with `trelloBoardId`, delete-button data-action presence.
+
+**Deferred to later plans in this spec:**
+- JIRA webhook migration — plan 2.
+- Linear webhook migration — plan 3.
+- Legacy `WebhookStep` + `LinearWebhookInfoPanel` deletion — plan 4.
+- `useWebhookManagement` + `useLinearWebhookInfo` hook deletion — plan 4.
+- `-webhook` filter entire-removal from `pm-wizard.tsx` — plan 4.
+- README / CLAUDE.md / CHANGELOG / spec-011 forward-reference / coverage-map updates — plan 4.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #2 (Trello programmatic create/list/delete/curl via manifest path) — **full**.
+- Spec AC #1 (every wizard renders webhook via manifest) — **partial** (Trello done; JIRA + Linear in plans 2, 3).
+- Spec AC #8 (no operator regression) — **full for Trello**.
+- Spec AC #10 (conformance harness green) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+No plan dependencies. Builds on the existing shared `WebhookUrlDisplayStep` (spec 011) and the existing `webhooks.*` tRPC endpoints.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Re-read the legacy `WebhookStep` Trello branch to enumerate behaviors to preserve
+
+Read `web/src/components/projects/pm-wizard-common-steps.tsx` (the `WebhookStep` function) and `web/src/components/projects/pm-wizard-hooks.ts` (the `useWebhookManagement` hook). Catalog every Trello-specific rendering + mutation — Create button state machine, curl template variables, delete button extraction logic, error display. Output the inventory as a checklist under this task in the `.wip` file. Any behavior that can't map to the Fragment-composition pattern forces a spec divergence note + user sign-off.
+
+### 2. Trello webhook adapter component
+
+**Tests first** (`tests/unit/web/trello-webhook-step.test.ts` — new file):
+- `renders the shared WebhookUrlDisplayStep (URL + copy button)` — assert `data-step-component="webhook-url-display"` in SSR.
+- `renders the active-webhooks list when provided` — assert each active webhook appears with its URL.
+- `renders "No Trello webhooks configured" when activeTrelloWebhooks is empty` — assert fallback text.
+- `renders the "Create Webhook" button with data-action="create-webhook"` — assert element + attribute.
+- `disables the Create button when callbackBaseUrl is empty` — assert `disabled="disabled"` via attribute-agnostic regex.
+- `renders the curl fallback with trelloBoardId interpolated into the curl template` — render with `trelloBoardId: 'board-xyz'`, assert body contains `"idModel": "board-xyz"`.
+- `falls back to <YOUR_BOARD_ID> placeholder when trelloBoardId is empty` — render with empty boardId, assert placeholder appears.
+- `renders delete buttons (data-action="delete-webhook") per active webhook` — count matches.
+- `does not render LinearWebhookInfoPanel or Linear signing-secret field` — regression guard.
+
+**Implementation** (`web/src/components/projects/pm-providers/trello/webhook-step.tsx`):
+- Named export: `TrelloWebhookAdapter: React.FC<ProviderWizardStepProps>`. Signature matches `ProviderWizardStepProps`.
+- Reads `providerHooks` via the existing `asTrelloHooks` adapter (extend the `TrelloProviderHooks` interface).
+- Renders Fragment of: `WebhookUrlDisplayStep` (with `webhookUrl` from providerHooks), then a `<div>` with active-webhooks list rendered from `providerHooks.activeTrelloWebhooks`, then the Create button wired to `providerHooks.createTrelloWebhook`, then delete buttons wired to `providerHooks.deleteTrelloWebhook(id)`, then a `<details>` with the curl command constructed inline from `state.trelloBoardId` + `providerHooks.callbackBaseUrl`.
+- All DOM elements carry provider-agnostic data attributes (`data-action`, `data-step-component`, …) so tests don't pin class names.
+
+### 3. Extend Trello wizard's `useProviderHooks`
+
+**Tests first**: covered by task 2's SSR tests — they exercise the adapter + providerHooks plumbing end-to-end.
+
+**Implementation** (`web/src/components/projects/pm-providers/trello/wizard.ts`):
+- Extend `TrelloProviderHooks` interface: add `activeTrelloWebhooks`, `webhooksLoading`, `createTrelloWebhook`, `createLoading`, `createError`, `deleteTrelloWebhook`, `deleteLoading`, `callbackBaseUrl`.
+- Inside `useProviderHooks`, call `useQuery(trpc.webhooks.list.queryOptions({ projectId }))` to fetch active webhooks. Normalize via `deriveActiveWebhooks(state.provider, ...)`.
+- Add `createTrelloWebhook = () => createMutation.mutate({ projectId, callbackBaseUrl, trelloOnly: true })` and `deleteTrelloWebhook = (baseUrl: string) => deleteMutation.mutate({ projectId, callbackBaseUrl: baseUrl, trelloOnly: true })` using `useMutation`.
+- Compute `callbackBaseUrl` from `API_URL || window.location.origin.replace(':5173', ':3000')` — same inline formula as `useWebhookManagement`. (Don't call `useWebhookManagement` directly; it gets deleted in plan 4.)
+- Replace the existing `TrelloWebhookDisplayAdapter` step Component in `trelloProviderWizard.steps` with the new `TrelloWebhookAdapter`.
+
+### 4. Flip the `-webhook` id-skip filter to exclude Trello
+
+**Tests first** (`tests/unit/web/pm-wizard-webhook-filter.test.ts` — new file; can reuse an existing test file if one fits):
+- `pm-wizard.tsx filter excludes trello-webhook from skip list` — import the filter predicate (extract as a named export if needed) and assert it returns `true` for `{id: 'trello-webhook'}`.
+- Alternative if extracting the predicate is too invasive: assert via snapshot of the render pipeline (mount `PMWizard` with a Trello project; assert the Trello webhook step renders).
+
+**Implementation** (`web/src/components/projects/pm-wizard.tsx`):
+- Update the filter from `.filter((entry) => !entry.step.id.endsWith('-webhook'))` to `.filter((entry) => entry.step.id !== 'jira-webhook' && entry.step.id !== 'linear-webhook')`.
+- Update the surrounding comment block to note the migration is in-flight (plan 012/1 migrated Trello; plans 012/2-3 migrate JIRA + Linear; plan 012/4 deletes the filter).
+
+### 5. Conformance harness smoke
+
+No code change; run `npx vitest run --project unit-core tests/unit/integrations/pm-conformance.test.ts` to confirm Trello's behavioral contract (unchanged in this plan — pure frontend wiring) still passes.
+
+### 6. Manual dashboard verification
+
+Per CLAUDE.md: start the dev server and exercise the Trello wizard in a browser. Verify:
+- Trello's webhook step now appears as a peer step (its own `WizardStep` slot), not inside the legacy WebhookStep slot.
+- Legacy WebhookStep still renders for JIRA + Linear (not for Trello).
+- Create Webhook button registers a webhook; active list updates; delete removes it.
+- Curl fallback shows with the current board ID interpolated.
+
+AC #8 (no regression) is browser-verifiable here; flag as deferred if unavailable.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/web/trello-webhook-step.test.ts` — new file, ~9 tests.
+- [ ] `tests/unit/web/pm-wizard-webhook-filter.test.ts` (or integrated into existing wizard test) — 1 test pinning the new filter predicate.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] Conformance harness passes for Trello.
+- [ ] Browser smoke test — Trello wizard renders with peer webhook step, JIRA + Linear retain legacy WebhookStep.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `trelloProviderWizard.steps`'s `trello-webhook` entry has `Component = TrelloWebhookAdapter` (identity-asserted).
+2. `TrelloWebhookAdapter` renders the shared `WebhookUrlDisplayStep` + Trello-specific UI (active list, Create button, curl fallback, delete buttons).
+3. The `pm-wizard.tsx` filter now excludes Trello — `trello-webhook` passes through the manifest iteration (asserted via predicate test or render snapshot).
+4. Legacy `WebhookStep` continues to render for JIRA + Linear (not for Trello) — no regression for the un-migrated providers.
+5. Every previously-available Trello webhook action (Create / active list / delete / curl) is exercised in tests against the new adapter.
+6. Conformance harness (`pm-conformance.test.ts`) passes for Trello.
+7. `npm run build` passes.
+8. `npm test` passes.
+9. `npm run lint` passes.
+10. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+None — all doc updates deferred to plan 4 (cleanup) to reflect the final state in one pass.
+
+| File | Change |
+|---|---|
+| — | Deferred to plan 4. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to later plans in this spec:
+- JIRA webhook migration — plan 2.
+- Linear webhook migration — plan 3.
+- Legacy `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, `useLinearWebhookInfo` deletion — plan 4.
+- `-webhook` filter full removal + legacy test file deletion — plan 4.
+- README / CLAUDE.md / CHANGELOG / spec-011 forward-reference / `_coverage.md` updates — plan 4.
+
+Originally out of scope for the spec (repeated for clarity):
+- Generalizing `webhooks.create/list/delete` tRPC endpoints beyond their `{trelloOnly, jiraOnly}` flags.
+- Backend webhook API changes.
+- Adding programmatic webhook registration for Linear.
+- Extending the manifest pattern to SCM or alerting.
+- New shared UI primitives.
+- Schema migrations.
+- Rewriting the form-state model or the `ProviderWizardDefinition` contract.
+- Further widening of `WebhookUrlDisplayStep`.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (Trello wizard step Component identity)
+- [ ] AC #2 (adapter composes shared step + Trello-specific UI)
+- [ ] AC #3 (filter excludes Trello)
+- [ ] AC #4 (legacy WebhookStep continues to render for JIRA + Linear)
+- [ ] AC #5 (tests cover every Trello webhook action)
+- [ ] AC #6 (conformance harness green)
+- [ ] AC #7 (build)
+- [ ] AC #8 (test)
+- [ ] AC #9 (lint)
+- [ ] AC #10 (typecheck)

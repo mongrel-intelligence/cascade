@@ -1,0 +1,183 @@
+---
+id: 012
+slug: pm-webhook-manifest-migration
+plan: 2
+plan_slug: jira-webhook
+level: plan
+parent_spec: docs/specs/012-pm-webhook-manifest-migration.md
+depends_on: [1-trello-webhook.md]
+status: pending
+---
+
+# 012/2: JIRA Webhook — Migrate Creation UX Into Manifest Path
+
+> Part 2 of 4 in the 012-pm-webhook-manifest-migration plan. See [parent spec](../../specs/012-pm-webhook-manifest-migration.md).
+
+## Summary
+
+Second of three per-provider migrations. Mirrors plan 012/1's Trello migration for JIRA. Moves JIRA's webhook-creation UX (programmatic Create button + active list + delete + curl fallback + `jiraEnsureLabels` side-effect) from the legacy `WebhookStep` into a new JIRA webhook adapter rendered from the manifest path.
+
+Mechanism mirrors plan 1: adjust `pm-wizard.tsx`'s filter to exclude JIRA from the skip list, leaving only Linear still routed through the legacy WebhookStep. Plan 3 completes the Linear migration; plan 4 deletes the filter.
+
+**Components delivered:**
+- `web/src/components/projects/pm-providers/jira/webhook-step.tsx` — new file. `JiraWebhookAdapter` React component. Same Fragment-composition shape as `TrelloWebhookAdapter`: shared `WebhookUrlDisplayStep` + active-webhooks list + "Create Webhook" button + curl fallback. Curl template uses JIRA's REST API v3 shape with `jiraBaseUrl` interpolated. Delete button per active webhook. `jiraEnsureLabels` side-effect preserved via the existing `webhooks.create` mutation call path (no change to backend).
+- `web/src/components/projects/pm-providers/jira/wizard.ts` — extend `JiraProviderHooks` interface with JIRA-webhook-specific fields; in `useProviderHooks`, add `useQuery(trpc.webhooks.list…)` + create/delete `useMutation` calls with `jiraOnly: true`; replace `JiraWebhookDisplayAdapter` step Component with the new `JiraWebhookAdapter`.
+- `web/src/components/projects/pm-wizard.tsx` — update filter to `entry.step.id !== 'linear-webhook'`.
+- `tests/unit/web/jira-webhook-step.test.ts` — new file. Assertions mirroring `trello-webhook-step.test.ts` but scoped to JIRA.
+
+**Deferred to later plans in this spec:**
+- Linear webhook migration — plan 3.
+- Legacy `WebhookStep` deletion + full filter removal — plan 4.
+- Docs + coverage-map updates — plan 4.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #3 (JIRA programmatic create/list/delete/curl + `jiraEnsureLabels`) — **full**.
+- Spec AC #1 (every wizard renders webhook via manifest) — **partial** (Trello + JIRA done; Linear in plan 3).
+- Spec AC #8 (no operator regression) — **full for JIRA**.
+- Spec AC #10 (conformance harness green) — hygiene.
+- Spec AC #11 (build / test / lint / typecheck) — hygiene.
+
+---
+
+## Depends On
+
+- Plan 1 (`trello-webhook`) — establishes the Fragment-composition pattern JIRA mirrors. Also flushes out any shared-component gap Trello would have revealed; JIRA inherits the fix.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Re-read the legacy `WebhookStep` JIRA branch
+
+Same pre-flight as plan 1, for JIRA. Catalog every JIRA-specific rendering + mutation path in the legacy `WebhookStep`. Identify the `jiraEnsureLabels` side-effect call path. Output the inventory as a checklist under this task in the `.wip` file.
+
+### 2. JIRA webhook adapter component
+
+**Tests first** (`tests/unit/web/jira-webhook-step.test.ts` — new file):
+- `renders the shared WebhookUrlDisplayStep` — asserts presence.
+- `renders active-webhooks list when provided`.
+- `renders "No JIRA webhooks configured" fallback when empty`.
+- `renders the "Create Webhook" button with data-action="create-webhook"`.
+- `disables Create button when callbackBaseUrl is empty`.
+- `renders the curl fallback with jiraBaseUrl interpolated` — asserts body contains `"url": "{jiraBaseUrl}/rest/api/3/webhook"` shape.
+- `falls back to <YOUR_JIRA_BASE_URL> placeholder when jiraBaseUrl is empty`.
+- `renders delete buttons per active webhook`.
+- `does not render LinearWebhookInfoPanel or Linear signing-secret field`.
+
+**Implementation** (`web/src/components/projects/pm-providers/jira/webhook-step.tsx`):
+- Named export: `JiraWebhookAdapter: React.FC<ProviderWizardStepProps>`.
+- Fragment composing shared `WebhookUrlDisplayStep` + active-webhooks list + Create button + curl fallback.
+- Curl template uses the JIRA REST API v3 POST shape, with events `['jira:issue_created', 'jira:issue_updated', 'comment_created', 'comment_updated']` and Basic-auth placeholder for email + API token.
+- The Create button wiring calls `providerHooks.createJiraWebhook` which runs `webhooks.create` with `jiraOnly: true` — this triggers the backend-side `jiraEnsureLabels` side-effect unchanged.
+
+### 3. Extend JIRA wizard's `useProviderHooks`
+
+**Tests first**: covered by task 2's SSR tests.
+
+**Implementation** (`web/src/components/projects/pm-providers/jira/wizard.ts`):
+- Extend `JiraProviderHooks` with `activeJiraWebhooks`, `webhooksLoading`, `createJiraWebhook`, `createLoading`, `createError`, `deleteJiraWebhook`, `deleteLoading`, `callbackBaseUrl`.
+- Inside `useProviderHooks`, add `useQuery(trpc.webhooks.list.queryOptions({ projectId }))` and normalize via `deriveActiveWebhooks`. Add create/delete `useMutation` calls with `jiraOnly: true`.
+- Replace the existing `JiraWebhookDisplayAdapter` Component in `jiraProviderWizard.steps` with the new `JiraWebhookAdapter`.
+- Compute `callbackBaseUrl` inline (same formula as plan 1's Trello adapter) — do not consume `useWebhookManagement` (which gets deleted in plan 4).
+
+### 4. Update the `-webhook` id-skip filter to exclude JIRA
+
+**Tests first**: extend the existing filter test from plan 1 with a row for JIRA.
+
+**Implementation** (`web/src/components/projects/pm-wizard.tsx`):
+- Update filter to `entry.step.id !== 'linear-webhook'`.
+- Update the comment block.
+
+### 5. Conformance harness smoke
+
+No code change; verify harness passes.
+
+### 6. Manual dashboard verification
+
+Per CLAUDE.md: browser smoke test. Verify:
+- JIRA wizard's webhook step now renders as a peer step (not inside legacy WebhookStep).
+- Legacy WebhookStep still renders for Linear only (not Trello, not JIRA).
+- Create / active list / delete / curl all work.
+- `jiraEnsureLabels` fires (check Atlassian side-effect — first issue gets + loses CASCADE labels on successful Create).
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/web/jira-webhook-step.test.ts` — new file, ~9 tests.
+- [ ] Filter-predicate test extended with JIRA row.
+
+### Integration tests
+- None.
+
+### Acceptance tests
+- [ ] Conformance harness passes for JIRA.
+- [ ] Browser smoke test — JIRA wizard renders with peer webhook step.
+- [ ] `npm run build`, `npm test`, `npm run lint`, `npm run typecheck` — all green.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `jiraProviderWizard.steps`'s `jira-webhook` entry has `Component = JiraWebhookAdapter`.
+2. `JiraWebhookAdapter` renders the shared `WebhookUrlDisplayStep` + JIRA-specific UI (active list, Create button, curl fallback, delete buttons).
+3. `jiraEnsureLabels` side-effect preserved — verified by confirming the Create button calls the existing `webhooks.create({ jiraOnly: true })` path (backend unchanged).
+4. `pm-wizard.tsx` filter now excludes JIRA; `jira-webhook` passes through the manifest iteration.
+5. Legacy `WebhookStep` continues to render for Linear only.
+6. Every previously-available JIRA webhook action is exercised in tests against the new adapter.
+7. Conformance harness green for JIRA.
+8. `npm run build` passes.
+9. `npm test` passes.
+10. `npm run lint` passes.
+11. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+None — deferred to plan 4.
+
+| File | Change |
+|---|---|
+| — | Deferred to plan 4. |
+
+---
+
+## Out of Scope (this plan)
+
+Deferred to later plans in this spec:
+- Linear webhook migration — plan 3.
+- Legacy `WebhookStep`, `LinearWebhookInfoPanel`, `useWebhookManagement`, `useLinearWebhookInfo` deletion — plan 4.
+- `-webhook` filter full removal + legacy test file deletion — plan 4.
+- Docs / coverage-map updates — plan 4.
+
+Originally out of scope for the spec (repeated for clarity):
+- Generalizing `webhooks.*` tRPC endpoints.
+- Backend webhook API changes.
+- Adding programmatic webhook registration for Linear.
+- Extending the manifest pattern to SCM / alerting.
+- New shared UI primitives.
+- Schema migrations.
+- Rewriting the form-state model or `ProviderWizardDefinition`.
+- Further widening of `WebhookUrlDisplayStep`.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (JIRA wizard step Component identity)
+- [ ] AC #2 (adapter composes shared + JIRA-specific UI)
+- [ ] AC #3 (jiraEnsureLabels side-effect preserved)
+- [ ] AC #4 (filter excludes JIRA)
+- [ ] AC #5 (legacy WebhookStep continues to render for Linear only)
+- [ ] AC #6 (tests cover JIRA webhook actions)
+- [ ] AC #7 (conformance harness green)
+- [ ] AC #8 (build)
+- [ ] AC #9 (test)
+- [ ] AC #10 (lint)
+- [ ] AC #11 (typecheck)
