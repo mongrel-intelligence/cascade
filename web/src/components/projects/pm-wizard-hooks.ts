@@ -5,7 +5,6 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
-import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
 import type {
