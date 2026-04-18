@@ -14,6 +14,7 @@ import {
 	isStep2Complete,
 	isStep3Complete,
 	isStep4Complete,
+	shouldUseStoredCredentials,
 	wizardReducer,
 } from '../../../web/src/components/projects/pm-wizard-state.js';
 
@@ -616,6 +617,104 @@ describe('areCredentialsReady', () => {
 			jiraBaseUrl: '',
 		};
 		expect(areCredentialsReady(state)).toBe(false);
+	});
+});
+
+describe('shouldUseStoredCredentials', () => {
+	// When editing an existing integration, the form does NOT pre-fill
+	// the API key for security — `hasStoredCredentials` is flipped true
+	// but e.g. `linearApiKey` is empty. Wizard mutations (verify,
+	// createLabel, createCustomField) detect this and pass `projectId`
+	// to the backend so it resolves the stored credentials.
+	//
+	// Fresh setup (not editing) → always use form-state credentials.
+	// Edit mode where the user re-typed a key → use the fresh key.
+	// Edit mode with stored creds + empty key → use projectId.
+
+	it('linear: false in fresh-setup mode (no editing)', () => {
+		const state = { ...createInitialState(), provider: 'linear' as const };
+		expect(shouldUseStoredCredentials(state)).toBe(false);
+	});
+
+	it('linear: true in edit mode with stored creds and empty apiKey', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'linear' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+			linearApiKey: '',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(true);
+	});
+
+	it('linear: false in edit mode when user re-typed the apiKey', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'linear' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+			linearApiKey: 'lin_fresh_typed_key',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(false);
+	});
+
+	it('trello: true in edit mode with stored creds and empty apiKey', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'trello' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+			trelloApiKey: '',
+			trelloToken: '',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(true);
+	});
+
+	it('trello: false in edit mode when user re-typed the apiKey', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'trello' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+			trelloApiKey: 'fresh_key',
+			trelloToken: '',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(false);
+	});
+
+	it('jira: true in edit mode with stored creds and empty apiToken', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'jira' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+			jiraEmail: '',
+			jiraApiToken: '',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(true);
+	});
+
+	it('jira: false in edit mode when user re-typed the apiToken', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'jira' as const,
+			isEditing: true,
+			hasStoredCredentials: true,
+			jiraEmail: '',
+			jiraApiToken: 'fresh_token',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(false);
+	});
+
+	it('false when edit mode but hasStoredCredentials is false (user deleted creds)', () => {
+		const state: WizardState = {
+			...createInitialState(),
+			provider: 'linear' as const,
+			isEditing: true,
+			hasStoredCredentials: false,
+			linearApiKey: '',
+		};
+		expect(shouldUseStoredCredentials(state)).toBe(false);
 	});
 });
 
