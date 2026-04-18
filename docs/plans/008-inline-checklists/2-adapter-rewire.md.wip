@@ -6,7 +6,7 @@ plan_slug: adapter-rewire
 level: plan
 parent_spec: docs/specs/008-inline-checklists.md
 depends_on: [1-markdown-engine.md]
-status: pending
+status: wip
 ---
 
 # 008/2: Adapter Rewiring — Linear + JIRA Inline Checklists
