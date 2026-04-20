@@ -9,8 +9,9 @@ import { logger } from '../../utils/logging.js';
 import {
 	addItemToChecklist,
 	appendChecklistSection,
+	buildChecklistId,
 	findChecklistNameByHash,
-	hashChecklistItemId,
+	parseChecklistId,
 	parseInlineChecklists,
 	removeChecklistItem,
 	toggleChecklistItem,
@@ -42,21 +43,6 @@ import { adfToPlainText, extractAdfMediaNodes, markdownToAdf } from './adf.js';
  * uses `config.containerId` as a JIRA project key — the project-scoped
  * entry point.
  */
-
-const INLINE_CHECKLIST_ID_PREFIX = 'inline-';
-
-function buildChecklistId(workItemId: string, checklistName: string): string {
-	const hash = hashChecklistItemId('', checklistName).slice(3); // strip 'cl-' prefix
-	return `${INLINE_CHECKLIST_ID_PREFIX}${workItemId}-${hash}`;
-}
-
-function parseChecklistId(checklistId: string): { workItemId: string; nameHash: string } | null {
-	if (!checklistId.startsWith(INLINE_CHECKLIST_ID_PREFIX)) return null;
-	const rest = checklistId.slice(INLINE_CHECKLIST_ID_PREFIX.length);
-	const m = rest.match(/^(.+)-([0-9a-f]{8})$/);
-	if (!m) return null;
-	return { workItemId: m[1], nameHash: m[2] };
-}
 
 interface JiraConfig {
 	projectKey: string;

@@ -100,6 +100,40 @@ function classifyLine(line: string, current: { name: string } | null): LineClass
 }
 
 // ---------------------------------------------------------------------------
+// Synthetic checklist ID helpers (shared by JIRA and Linear adapters)
+// ---------------------------------------------------------------------------
+
+/**
+ * Prefix used to construct synthetic checklist IDs for inline-markdown
+ * providers (JIRA and Linear).  Format: `inline-<workItemId>-<nameHash>`.
+ */
+export const INLINE_CHECKLIST_ID_PREFIX = 'inline-';
+
+/**
+ * Build a synthetic checklist ID that encodes the work-item ID and a
+ * stable 8-char hash of the checklist name.
+ */
+export function buildChecklistId(workItemId: string, checklistName: string): string {
+	const hash = hashChecklistItemId('', checklistName).slice(3); // strip 'cl-' prefix
+	return `${INLINE_CHECKLIST_ID_PREFIX}${workItemId}-${hash}`;
+}
+
+/**
+ * Parse a synthetic checklist ID back into its constituent parts.
+ * Returns `null` when the ID does not follow the `inline-` format.
+ */
+export function parseChecklistId(
+	checklistId: string,
+): { workItemId: string; nameHash: string } | null {
+	if (!checklistId.startsWith(INLINE_CHECKLIST_ID_PREFIX)) return null;
+	const rest = checklistId.slice(INLINE_CHECKLIST_ID_PREFIX.length);
+	// Last segment is 8-char hex hash; everything before is the workItemId
+	const m = rest.match(/^(.+)-([0-9a-f]{8})$/);
+	if (!m) return null;
+	return { workItemId: m[1], nameHash: m[2] };
+}
+
+// ---------------------------------------------------------------------------
 // Find a checklist section name by hash (includes empty sections)
 // ---------------------------------------------------------------------------
 
