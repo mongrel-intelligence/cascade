@@ -7,7 +7,9 @@ export default class WebhookLogsList extends DashboardCommand {
 
 	static override flags = {
 		...DashboardCommand.baseFlags,
-		source: Flags.string({ description: 'Filter by source (trello, github, jira)' }),
+		source: Flags.string({
+			description: 'Filter by source (trello, github, jira, linear, sentry)',
+		}),
 		'event-type': Flags.string({ description: 'Filter by event type' }),
 		limit: Flags.integer({ description: 'Number of results', default: 50 }),
 		offset: Flags.integer({ description: 'Offset for pagination', default: 0 }),
@@ -43,7 +45,7 @@ export default class WebhookLogsList extends DashboardCommand {
 				columns,
 				flags,
 				result,
-				'No webhook logs found. Webhook logs appear when CASCADE receives events from Trello, GitHub, or JIRA.',
+				'No webhook logs found. Webhook logs appear when CASCADE receives events from Trello, GitHub, JIRA, Linear, or Sentry.',
 			);
 		} catch (err) {
 			this.handleError(err);

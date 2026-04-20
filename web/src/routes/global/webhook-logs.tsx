@@ -62,6 +62,8 @@ function WebhookLogsPage() {
 					<option value="trello">Trello</option>
 					<option value="github">GitHub</option>
 					<option value="jira">JIRA</option>
+					<option value="linear">Linear</option>
+					<option value="sentry">Sentry</option>
 				</select>
 
 				<input

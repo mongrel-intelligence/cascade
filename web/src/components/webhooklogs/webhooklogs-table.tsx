@@ -27,6 +27,8 @@ function SourceBadge({ source }: { source: string }) {
 		trello: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
 		github: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
 		jira: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
+		linear: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+		sentry: 'bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200',
 	};
 	const className = colorMap[source] ?? 'bg-muted text-muted-foreground';
 	return (
