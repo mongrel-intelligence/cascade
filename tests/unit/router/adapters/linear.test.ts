@@ -33,9 +33,13 @@ vi.mock('../../../../src/utils/runLink.js', () => ({
 	getDashboardUrl: vi.fn().mockReturnValue(null),
 }));
 vi.mock('../../../../src/linear/client.js', () => ({
+	linearClient: {
+		getIssueProjectId: vi.fn().mockResolvedValue(null),
+	},
 	withLinearCredentials: vi.fn().mockImplementation((_creds: unknown, fn: () => unknown) => fn()),
 }));
 
+import { linearClient, withLinearCredentials } from '../../../../src/linear/client.js';
 import { postLinearAck, resolveLinearBotUserId } from '../../../../src/router/acknowledgments.js';
 import { LinearRouterAdapter } from '../../../../src/router/adapters/linear.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
@@ -46,6 +50,8 @@ import { logger } from '../../../../src/utils/logging.js';
 import { buildWorkItemRunsLink, getDashboardUrl } from '../../../../src/utils/runLink.js';
 
 const mockLoggerInfo = vi.mocked(logger.info);
+const mockGetIssueProjectId = vi.mocked(linearClient.getIssueProjectId);
+const mockWithLinearCredentials = vi.mocked(withLinearCredentials);
 
 const mockProject: RouterProjectConfig = {
 	id: 'p1',
@@ -61,6 +67,11 @@ const mockTriggerRegistry = {
 } as unknown as TriggerRegistry;
 
 beforeEach(() => {
+	vi.clearAllMocks();
+	mockGetIssueProjectId.mockResolvedValue(null);
+	mockWithLinearCredentials.mockImplementation(
+		(_creds: unknown, fn: () => unknown) => fn() as never,
+	);
 	vi.mocked(loadProjectConfig).mockResolvedValue({
 		projects: [mockProject],
 		fullProjects: [{ id: 'p1' } as never],
@@ -145,6 +156,34 @@ describe('LinearRouterAdapter', () => {
 			expect(result?.isCommentEvent).toBe(true);
 			expect(result?.eventType).toBe('create/Comment');
 			// For comments, workItemId is the issueId
+			expect(result?.workItemId).toBe('issue-abc');
+		});
+
+		it('returns parsed event for Comment when teamId is nested on data.issue', async () => {
+			const commentPayload = {
+				action: 'create',
+				type: 'Comment',
+				organizationId: 'org-123',
+				webhookTimestamp: Date.now(),
+				data: {
+					id: 'comment-xyz',
+					body: '@[Cascade](user-bot-id) please update this plan',
+					issueId: 'issue-abc',
+					issue: {
+						id: 'issue-abc',
+						identifier: 'TEAM-1',
+						teamId: 'team-abc-123',
+					},
+				},
+				url: 'https://linear.app/issue',
+			};
+
+			const result = await adapter.parseWebhook(commentPayload);
+
+			expect(result).not.toBeNull();
+			expect(result?.isCommentEvent).toBe(true);
+			expect(result?.eventType).toBe('create/Comment');
+			expect(result?.projectIdentifier).toBe('team-abc-123');
 			expect(result?.workItemId).toBe('issue-abc');
 		});
 
@@ -240,7 +279,6 @@ describe('LinearRouterAdapter', () => {
 					id: 'comment-xyz',
 					body: 'ok',
 					issueId: 'issue-abc',
-					teamId: 'team-abc-123',
 					issue: { id: 'issue-abc', teamId: 'team-abc-123', projectId: 'P1' },
 				},
 				url: 'https://linear.app/issue',
@@ -248,6 +286,37 @@ describe('LinearRouterAdapter', () => {
 			const result = await adapter.parseWebhook(payload);
 			expect(result).not.toBeNull();
 			expect(result?.isCommentEvent).toBe(true);
+		});
+
+		it('Comment event — fetches issue project when Linear payload omits data.issue.projectId', async () => {
+			mockGetIssueProjectId.mockResolvedValueOnce('P1');
+			const payload = {
+				action: 'create',
+				type: 'Comment',
+				organizationId: 'org-123',
+				webhookTimestamp: Date.now(),
+				data: {
+					id: 'comment-xyz',
+					body: '@cascade please update this',
+					issueId: 'issue-abc',
+					issue: {
+						id: 'issue-abc',
+						identifier: 'TEAM-1',
+						teamId: 'team-abc-123',
+					},
+				},
+				url: 'https://linear.app/issue',
+			};
+
+			const result = await adapter.parseWebhook(payload);
+
+			expect(result).not.toBeNull();
+			expect(result?.isCommentEvent).toBe(true);
+			expect(mockGetIssueProjectId).toHaveBeenCalledWith('issue-abc');
+			expect(mockWithLinearCredentials).toHaveBeenCalledWith(
+				{ apiKey: 'lin_api_test' },
+				expect.any(Function),
+			);
 		});
 
 		it('Comment event — dropped when data.issue.projectId differs from configured projectId', async () => {

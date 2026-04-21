@@ -80,31 +80,71 @@ export function _resetTrelloBotCache(): void {
 // Linear bot identity
 // ---------------------------------------------------------------------------
 
+export interface LinearBotIdentity {
+	id: string;
+	name: string;
+	email: string;
+	displayName: string;
+}
+
+const linearBotIdentityDetailsCache = new BotIdentityCache<LinearBotIdentity>('user');
 const linearBotIdentityCache = new BotIdentityCache<string>('userId');
 
 /**
- * Resolve the Linear user ID for the bot credentials linked to a project.
- * Uses the `viewer` query to fetch the authenticated user's ID.
+ * Resolve the Linear user identity for the bot credentials linked to a project.
+ * Uses the `viewer` query to fetch the authenticated user.
  * Cached per-project with 60s TTL. Returns null on any failure.
  */
-export async function resolveLinearBotUserId(projectId: string): Promise<string | null> {
-	return linearBotIdentityCache.resolve(projectId, async () => {
+export async function resolveLinearBotIdentity(
+	projectId: string,
+): Promise<LinearBotIdentity | null> {
+	return linearBotIdentityDetailsCache.resolve(projectId, async () => {
 		const creds = await resolveLinearCredentials(projectId);
 		if (!creds) return null;
 
 		const response = await fetch('https://api.linear.app/graphql', {
 			method: 'POST',
 			headers: linearAuthHeader(creds.apiKey),
-			body: JSON.stringify({ query: '{ viewer { id } }' }),
+			body: JSON.stringify({
+				query: '{ viewer { id name email displayName } }',
+			}),
 		});
 		if (!response.ok) return null;
 
-		const data = (await response.json()) as { data?: { viewer?: { id?: string } } };
-		return data.data?.viewer?.id ?? null;
+		const data = (await response.json()) as {
+			data?: {
+				viewer?: {
+					id?: string;
+					name?: string;
+					email?: string;
+					displayName?: string;
+				};
+			};
+		};
+		const viewer = data.data?.viewer;
+		if (!viewer?.id) return null;
+		return {
+			id: viewer.id,
+			name: viewer.name ?? '',
+			email: viewer.email ?? '',
+			displayName: viewer.displayName ?? viewer.name ?? '',
+		};
+	});
+}
+
+/**
+ * Resolve the Linear user ID for the bot credentials linked to a project.
+ * Cached per-project with 60s TTL. Returns null on any failure.
+ */
+export async function resolveLinearBotUserId(projectId: string): Promise<string | null> {
+	return linearBotIdentityCache.resolve(projectId, async () => {
+		const identity = await resolveLinearBotIdentity(projectId);
+		return identity?.id ?? null;
 	});
 }
 
 /** @internal Visible for testing only */
 export function _resetLinearBotCache(): void {
+	linearBotIdentityDetailsCache._reset();
 	linearBotIdentityCache._reset();
 }

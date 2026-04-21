@@ -303,6 +303,21 @@ export const linearClient = {
 		return mapIssue(data.issue as RawIssue);
 	},
 
+	async getIssueProjectId(issueId: string): Promise<string | null> {
+		logger.debug('Fetching Linear issue project', { issueId });
+		const data = await linearGraphQL<{ issue: { project?: { id?: string } | null } | null }>(
+			`query GetIssueProject($id: String!) {
+				issue(id: $id) {
+					project {
+						id
+					}
+				}
+			}`,
+			{ id: issueId },
+		);
+		return data.issue?.project?.id ?? null;
+	},
+
 	async listIssues(filter?: {
 		teamId?: string;
 		projectId?: string;

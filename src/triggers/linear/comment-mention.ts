@@ -12,7 +12,7 @@
  *   data.issue.identifier: the issue identifier (e.g. TEAM-123)
  */
 
-import { resolveLinearBotUserId } from '../../router/bot-identity-resolvers.js';
+import { resolveLinearBotIdentity } from '../../router/bot-identity-resolvers.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
@@ -21,10 +21,32 @@ import type { LinearWebhookCommentTriggerData, LinearWebhookTriggerPayload } fro
 /**
  * Check if a Linear comment body contains an @mention for the given user ID.
  * Linear uses @[Display Name](userId) markdown mention syntax, where userId is
- * a UUID. Checking for userId as a substring is sufficient and safe in practice.
+ * a UUID. Some Linear webhook payloads normalize mentions to plain @handles, so
+ * also compare against stable aliases derived from the authenticated bot user.
  */
-function hasMention(body: string, userId: string): boolean {
-	return body.includes(userId);
+function hasMention(
+	body: string,
+	identity: { id: string; name: string; displayName: string; email: string },
+): boolean {
+	if (body.includes(identity.id)) return true;
+
+	const mentionedHandles = new Set(
+		Array.from(body.matchAll(/@([A-Za-z0-9._-]+)/g), (match) => match[1]?.toLowerCase()).filter(
+			Boolean,
+		),
+	);
+	if (mentionedHandles.size === 0) return false;
+
+	const aliases = new Set(
+		[identity.name, identity.displayName, identity.email.split('@')[0]]
+			.map((value) => value.trim().toLowerCase())
+			.filter(Boolean),
+	);
+
+	for (const alias of aliases) {
+		if (mentionedHandles.has(alias)) return true;
+	}
+	return false;
 }
 
 export class LinearCommentMentionTrigger implements TriggerHandler {
@@ -75,10 +97,11 @@ export class LinearCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve the bot's Linear user ID via the shared cached resolver
-		const botUserId = await resolveLinearBotUserId(ctx.project.id);
+		// Resolve the bot's Linear identity via the shared cached resolver
+		const botIdentity = await resolveLinearBotIdentity(ctx.project.id);
+		const botUserId = botIdentity?.id;
 
-		if (!botUserId) {
+		if (!botIdentity) {
 			logger.warn('Linear comment trigger: could not resolve bot user ID, skipping', {
 				projectId: ctx.project.id,
 			});
@@ -97,7 +120,7 @@ export class LinearCommentMentionTrigger implements TriggerHandler {
 		}
 
 		// Check for bot @mention in comment body
-		const mentionFound = hasMention(commentBody, botUserId);
+		const mentionFound = hasMention(commentBody, botIdentity);
 		if (!mentionFound) {
 			logger.info('Linear comment trigger: no @mention of bot found in comment body', {
 				issueIdentifier,

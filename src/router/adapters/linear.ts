@@ -7,7 +7,7 @@
  * processRouterWebhook() function.
  */
 
-import { withLinearCredentials } from '../../linear/client.js';
+import { linearClient, withLinearCredentials } from '../../linear/client.js';
 import type { LinearWebhookPayload } from '../../linear/types.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
@@ -28,6 +28,12 @@ const PROCESSABLE_TYPES = ['Issue', 'Comment', 'IssueLabel'] as const;
 
 type ProcessableType = (typeof PROCESSABLE_TYPES)[number];
 
+function nestedId(value: unknown): string | undefined {
+	if (!value || typeof value !== 'object') return undefined;
+	const id = (value as Record<string, unknown>).id;
+	return typeof id === 'string' ? id : undefined;
+}
+
 // ============================================================================
 // Extended parsed event for Linear
 // ============================================================================
@@ -36,6 +42,16 @@ interface LinearParsedEvent extends ParsedWebhookEvent {
 	projectId: string;
 	action: string;
 	resourceType: string;
+}
+
+interface LinearProjectScopeInput {
+	project: RouterProjectConfig;
+	isCommentEvent: boolean;
+	workItemId: string | undefined;
+	data: Record<string, unknown>;
+	issue: Record<string, unknown> | undefined;
+	eventType: string;
+	teamId: string;
 }
 
 // ============================================================================
@@ -58,9 +74,12 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 			return null;
 		}
 
-		// Extract teamId from payload data for project lookup
+		// Extract teamId from payload data for project lookup. Linear Comment and
+		// IssueLabel webhooks can nest issue context under data.issue instead of
+		// repeating teamId at data.teamId.
 		const data = p.data as Record<string, unknown>;
-		const teamId = data.teamId as string | undefined;
+		const issue = data.issue as Record<string, unknown> | undefined;
+		const teamId = (data.teamId as string | undefined) ?? (issue?.teamId as string | undefined);
 
 		if (!teamId) {
 			logger.debug('LinearRouterAdapter: no teamId in payload data, skipping');
@@ -84,23 +103,17 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 		// to a specific Linear Project, drop webhook events whose issue is not in
 		// that project. Linear cannot scope webhooks to a project, so the filter
 		// runs here, after team-match.
-		const configuredProjectId = project.linear?.projectId;
-		if (configuredProjectId) {
-			const issueProjectId = isCommentEvent
-				? ((data.issue as Record<string, unknown> | undefined)?.projectId as string | undefined)
-				: (data.projectId as string | undefined);
-			if (issueProjectId !== configuredProjectId) {
-				logger.info('LinearRouterAdapter: dropping event outside project scope', {
-					reason: issueProjectId ? 'project scope mismatch' : 'issue has no project',
-					configuredProjectId,
-					issueProjectId,
-					issueId: workItemId,
-					teamId,
-					projectId: project.id,
-					eventType,
-				});
-				return null;
-			}
+		const matchesProjectScope = await this.matchesConfiguredProjectScope({
+			project,
+			isCommentEvent,
+			workItemId,
+			data,
+			issue,
+			eventType,
+			teamId,
+		});
+		if (!matchesProjectScope) {
+			return null;
 		}
 
 		return {
@@ -112,6 +125,62 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 			action: p.action,
 			resourceType: p.type,
 		};
+	}
+
+	private async matchesConfiguredProjectScope(input: LinearProjectScopeInput): Promise<boolean> {
+		const configuredProjectId = input.project.linear?.projectId;
+		if (!configuredProjectId) return true;
+
+		const payloadProjectId = input.isCommentEvent
+			? ((input.issue?.projectId as string | undefined) ?? nestedId(input.issue?.project))
+			: ((input.data.projectId as string | undefined) ?? nestedId(input.data.project));
+		const issueProjectId =
+			payloadProjectId ??
+			(input.isCommentEvent && input.workItemId
+				? await this.fetchIssueProjectId(input.project.id, input.workItemId)
+				: undefined);
+
+		if (issueProjectId === configuredProjectId) return true;
+
+		logger.info('LinearRouterAdapter: dropping event outside project scope', {
+			reason: issueProjectId ? 'project scope mismatch' : 'issue has no project',
+			configuredProjectId,
+			issueProjectId,
+			issueId: input.workItemId,
+			teamId: input.teamId,
+			projectId: input.project.id,
+			eventType: input.eventType,
+		});
+		return false;
+	}
+
+	private async fetchIssueProjectId(
+		projectId: string,
+		issueId: string,
+	): Promise<string | undefined> {
+		const linearCreds = await resolveLinearCredentials(projectId);
+		if (!linearCreds) {
+			logger.warn('LinearRouterAdapter: missing Linear credentials, cannot fetch issue project', {
+				projectId,
+				issueId,
+			});
+			return undefined;
+		}
+
+		try {
+			return (
+				(await withLinearCredentials({ apiKey: linearCreds.apiKey }, () =>
+					linearClient.getIssueProjectId(issueId),
+				)) ?? undefined
+			);
+		} catch (err) {
+			logger.warn('LinearRouterAdapter: failed to fetch issue project', {
+				error: String(err),
+				projectId,
+				issueId,
+			});
+			return undefined;
+		}
 	}
 
 	isProcessableEvent(event: ParsedWebhookEvent): boolean {

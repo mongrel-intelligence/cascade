@@ -114,6 +114,37 @@ describe('linearClient.createIssue — projectId passthrough', () => {
 	});
 });
 
+describe('linearClient.getIssueProjectId', () => {
+	const originalFetch = globalThis.fetch;
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+		vi.restoreAllMocks();
+	});
+
+	it('returns issue project id', async () => {
+		const { calls } = stubFetch({ issue: { project: { id: 'P1' } } });
+
+		const projectId = await withLinearCredentials({ apiKey: 'k' }, () =>
+			linearClient.getIssueProjectId('issue-1'),
+		);
+
+		expect(projectId).toBe('P1');
+		expect(calls[0].body.query).toContain('query GetIssueProject');
+		expect(calls[0].body.variables).toEqual({ id: 'issue-1' });
+	});
+
+	it('returns null when issue has no project', async () => {
+		stubFetch({ issue: { project: null } });
+
+		const projectId = await withLinearCredentials({ apiKey: 'k' }, () =>
+			linearClient.getIssueProjectId('issue-1'),
+		);
+
+		expect(projectId).toBeNull();
+	});
+});
+
 describe('linearClient.getTeamProjects', () => {
 	const originalFetch = globalThis.fetch;
 

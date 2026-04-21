@@ -32,8 +32,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
 	_resetJiraBotCache,
+	_resetLinearBotCache,
 	_resetTrelloBotCache,
 	resolveJiraBotAccountId,
+	resolveLinearBotIdentity,
+	resolveLinearBotUserId,
 	resolveTrelloBotMemberId,
 } from '../../../src/router/bot-identity-resolvers.js';
 
@@ -42,6 +45,7 @@ const mockFindProjectById = vi.mocked(findProjectById);
 
 const MOCK_CREDENTIALS: Record<string, string> = {
 	'pm/api_key': 'test-trello-key',
+	'pm/linear/api_key': 'test-linear-key',
 	'pm/token': 'test-trello-token',
 	'pm/email': 'bot@example.com',
 	'pm/api_token': 'test-jira-token',
@@ -55,7 +59,9 @@ beforeEach(() => {
 	mockFetch.mockReset();
 
 	mockGetIntegrationCredential.mockImplementation(async (_projectId, category, _provider, role) => {
-		const value = MOCK_CREDENTIALS[`${category}/${role}`];
+		const value =
+			MOCK_CREDENTIALS[`${category}/${_provider}/${role}`] ??
+			MOCK_CREDENTIALS[`${category}/${role}`];
 		if (value) return value;
 		throw new Error(`Credential '${category}/${role}' not found`);
 	});
@@ -77,6 +83,7 @@ beforeEach(() => {
 afterEach(() => {
 	vi.restoreAllMocks();
 	_resetJiraBotCache();
+	_resetLinearBotCache();
 	_resetTrelloBotCache();
 });
 
@@ -209,6 +216,110 @@ describe('resolveTrelloBotMemberId', () => {
 		});
 
 		const result = await resolveTrelloBotMemberId('test');
+
+		expect(result).toBeNull();
+	});
+});
+
+describe('resolveLinearBotIdentity', () => {
+	it('returns user identity from viewer query', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				data: {
+					viewer: {
+						id: 'linear-bot-789',
+						name: 'cascade',
+						email: 'cascade@example.test',
+						displayName: 'cascade',
+					},
+				},
+			}),
+		});
+
+		const result = await resolveLinearBotIdentity('test');
+
+		expect(result).toEqual({
+			id: 'linear-bot-789',
+			name: 'cascade',
+			email: 'cascade@example.test',
+			displayName: 'cascade',
+		});
+		expect(mockFetch).toHaveBeenCalledOnce();
+		const [url, options] = mockFetch.mock.calls[0];
+		expect(url).toBe('https://api.linear.app/graphql');
+		expect(options.headers.Authorization).toBe('test-linear-key');
+		expect(options.body).toContain('viewer { id name email displayName }');
+	});
+
+	it('caches the identity for subsequent calls', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				data: {
+					viewer: {
+						id: 'linear-bot-789',
+						name: 'cascade',
+						email: 'cascade@example.test',
+						displayName: 'cascade',
+					},
+				},
+			}),
+		});
+
+		const result1 = await resolveLinearBotIdentity('test');
+		const result2 = await resolveLinearBotIdentity('test');
+
+		expect(result1?.id).toBe('linear-bot-789');
+		expect(result2?.id).toBe('linear-bot-789');
+		expect(mockFetch).toHaveBeenCalledOnce();
+	});
+
+	it('resolves user ID through the shared identity resolver', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({
+				data: {
+					viewer: {
+						id: 'linear-bot-789',
+						name: 'cascade',
+						email: 'cascade@example.test',
+						displayName: 'cascade',
+					},
+				},
+			}),
+		});
+
+		const result = await resolveLinearBotUserId('test');
+
+		expect(result).toBe('linear-bot-789');
+		expect(mockFetch).toHaveBeenCalledOnce();
+	});
+
+	it('returns null when credentials are missing', async () => {
+		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+		const result = await resolveLinearBotIdentity('test');
+
+		expect(result).toBeNull();
+		expect(mockFetch).not.toHaveBeenCalled();
+	});
+
+	it('returns null on API error', async () => {
+		mockFetch.mockResolvedValueOnce({ ok: false, status: 401 });
+
+		const result = await resolveLinearBotIdentity('test');
+
+		expect(result).toBeNull();
+	});
+
+	it('returns null when response has no viewer id', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			json: async () => ({ data: { viewer: { name: 'cascade' } } }),
+		});
+
+		const result = await resolveLinearBotIdentity('test');
 
 		expect(result).toBeNull();
 	});

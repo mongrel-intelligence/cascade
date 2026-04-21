@@ -4,10 +4,10 @@ import { mockLogger, mockTriggerCheckModule } from '../../helpers/sharedMocks.js
 vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
-// Mock resolveLinearBotUserId to avoid real API calls
-const mockResolveLinearBotUserId = vi.fn();
+// Mock resolveLinearBotIdentity to avoid real API calls
+const mockResolveLinearBotIdentity = vi.fn();
 vi.mock('../../../src/router/bot-identity-resolvers.js', () => ({
-	resolveLinearBotUserId: (...args: unknown[]) => mockResolveLinearBotUserId(...args),
+	resolveLinearBotIdentity: (...args: unknown[]) => mockResolveLinearBotIdentity(...args),
 }));
 
 import { LinearCommentMentionTrigger } from '../../../src/triggers/linear/comment-mention.js';
@@ -19,6 +19,12 @@ import type { TriggerContext } from '../../../src/types/index.js';
 // ---------------------------------------------------------------------------
 
 const BOT_USER_ID = 'bot-user-uuid-001';
+const BOT_IDENTITY = {
+	id: BOT_USER_ID,
+	name: 'cascade',
+	email: 'cascade@example.test',
+	displayName: 'cascade',
+};
 const OTHER_USER_ID = 'user-other-uuid-456';
 const ISSUE_IDENTIFIER = 'TEAM-99';
 const ISSUE_ID = 'issue-uuid-99';
@@ -90,7 +96,7 @@ describe('LinearCommentMentionTrigger', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
-		mockResolveLinearBotUserId.mockResolvedValue(BOT_USER_ID);
+		mockResolveLinearBotIdentity.mockResolvedValue(BOT_IDENTITY);
 		trigger = new LinearCommentMentionTrigger();
 	});
 
@@ -141,6 +147,29 @@ describe('LinearCommentMentionTrigger', () => {
 			expect(result?.agentInput.triggerCommentText).toBe(body);
 		});
 
+		it('returns respond-to-planning-comment result when Linear sends a plain @handle mention', async () => {
+			const body = '@cascade please apply the correction before splitting';
+
+			const result = await trigger.handle(buildCtx({ commentBody: body }));
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-planning-comment');
+			expect(result?.agentInput.triggerCommentText).toBe(body);
+		});
+
+		it('matches plain @handle mentions using the bot email local-part', async () => {
+			mockResolveLinearBotIdentity.mockResolvedValueOnce({
+				id: BOT_USER_ID,
+				name: 'Cascade Bot',
+				email: 'cascade@example.test',
+				displayName: 'Cascade Bot',
+			});
+
+			const result = await trigger.handle(buildCtx({ commentBody: '@cascade please respond' }));
+
+			expect(result).not.toBeNull();
+		});
+
 		it('includes commentAuthorId in agentInput', async () => {
 			const result = await trigger.handle(buildCtx({ commentAuthorId: OTHER_USER_ID }));
 
@@ -175,7 +204,7 @@ describe('LinearCommentMentionTrigger', () => {
 		});
 
 		it('returns null when bot userId cannot be resolved', async () => {
-			mockResolveLinearBotUserId.mockResolvedValue(null);
+			mockResolveLinearBotIdentity.mockResolvedValue(null);
 
 			const result = await trigger.handle(buildCtx());
 
@@ -217,7 +246,7 @@ describe('LinearCommentMentionTrigger', () => {
 		it('resolves botUserId using the project ID', async () => {
 			await trigger.handle(buildCtx());
 
-			expect(mockResolveLinearBotUserId).toHaveBeenCalledWith('proj-linear');
+			expect(mockResolveLinearBotIdentity).toHaveBeenCalledWith('proj-linear');
 		});
 
 		it('workItemTitle is undefined (not available in comment webhook)', async () => {
