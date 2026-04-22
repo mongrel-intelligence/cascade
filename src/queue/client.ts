@@ -15,6 +15,8 @@ export interface ManualRunJob {
 	projectId: string;
 	agentType: string;
 	workItemId?: string;
+	workItemUrl?: string;
+	workItemTitle?: string;
 	prNumber?: number;
 	prBranch?: string;
 	repoFullName?: string;

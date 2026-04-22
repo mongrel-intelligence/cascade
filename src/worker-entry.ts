@@ -102,6 +102,8 @@ export interface ManualRunJobData {
 	projectId: string;
 	agentType: string;
 	workItemId?: string;
+	workItemUrl?: string;
+	workItemTitle?: string;
 	prNumber?: number;
 	prBranch?: string;
 	repoFullName?: string;
@@ -150,6 +152,8 @@ export async function processDashboardJob(jobId: string, jobData: DashboardJobDa
 				projectId: jobData.projectId,
 				agentType: jobData.agentType,
 				workItemId: jobData.workItemId,
+				workItemUrl: jobData.workItemUrl,
+				workItemTitle: jobData.workItemTitle,
 				prNumber: jobData.prNumber,
 				prBranch: jobData.prBranch,
 				repoFullName: jobData.repoFullName,

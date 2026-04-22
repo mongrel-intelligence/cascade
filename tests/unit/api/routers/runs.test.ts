@@ -858,6 +858,9 @@ describe('runsRouter', () => {
 			await caller.trigger({
 				projectId: 'p1',
 				agentType: 'review',
+				workItemId: 'TEAM-123',
+				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+				workItemTitle: 'Implement example',
 				prNumber: 42,
 				prBranch: 'feature/my-branch',
 				model: 'claude-opus-4-5',
@@ -865,6 +868,9 @@ describe('runsRouter', () => {
 
 			expect(mockTriggerManualRun).toHaveBeenCalledWith(
 				expect.objectContaining({
+					workItemId: 'TEAM-123',
+					workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+					workItemTitle: 'Implement example',
 					prNumber: 42,
 					prBranch: 'feature/my-branch',
 					modelOverride: 'claude-opus-4-5',

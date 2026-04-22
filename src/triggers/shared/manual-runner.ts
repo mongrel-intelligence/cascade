@@ -1,5 +1,6 @@
 import { runAgent } from '../../agents/registry.js';
 import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
+import { createWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
 import { getRunById } from '../../db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
@@ -48,6 +49,8 @@ export interface ManualTriggerInput {
 	projectId: string;
 	agentType: string;
 	workItemId?: string;
+	workItemUrl?: string;
+	workItemTitle?: string;
 	prNumber?: number;
 	prBranch?: string;
 	repoFullName?: string;
@@ -99,16 +102,18 @@ export async function triggerManualRun(
 		projectId: input.projectId,
 		agentType: input.agentType,
 		workItemId: input.workItemId,
+		workItemUrl: input.workItemUrl,
+		workItemTitle: input.workItemTitle,
 		prNumber: input.prNumber,
 		modelOverride: input.modelOverride,
 	});
 
 	markTriggerRunning(triggerKey);
 
-	startWatchdog(project.watchdogTimeoutMs);
-
 	const agentInput: AgentInput & { project: ProjectConfig; config: CascadeConfig } = {
 		workItemId: input.workItemId,
+		workItemUrl: input.workItemUrl,
+		workItemTitle: input.workItemTitle,
 		prNumber: input.prNumber,
 		prBranch: input.prBranch,
 		repoFullName: input.repoFullName,
@@ -120,6 +125,23 @@ export async function triggerManualRun(
 	};
 
 	try {
+		startWatchdog(project.watchdogTimeoutMs);
+
+		if (input.workItemId && (input.workItemUrl || input.workItemTitle)) {
+			try {
+				await createWorkItem(project.id, input.workItemId, {
+					workItemUrl: input.workItemUrl,
+					workItemTitle: input.workItemTitle,
+				});
+			} catch (err) {
+				logger.warn('Failed to persist work-item row for manual run', {
+					projectId: project.id,
+					workItemId: input.workItemId,
+					error: String(err),
+				});
+			}
+		}
+
 		const pmProvider = createPMProvider(project);
 		const result = await withPMCredentials(
 			project.id,

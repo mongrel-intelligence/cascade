@@ -8,6 +8,10 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getRunById: vi.fn(),
 }));
 
+vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
+	createWorkItem: vi.fn(),
+}));
+
 // Default: agent is enabled (has a config row)
 vi.mock('../../../src/db/repositories/agentConfigsRepository.js', () => ({
 	isAgentEnabledForProject: vi.fn().mockResolvedValue(true),
@@ -50,6 +54,7 @@ vi.mock('../../../src/utils/lifecycle.js', () => ({
 
 import { runAgent } from '../../../src/agents/registry.js';
 import { isAgentEnabledForProject } from '../../../src/db/repositories/agentConfigsRepository.js';
+import { createWorkItem } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
 import { createPMProvider, withPMProvider } from '../../../src/pm/index.js';
@@ -60,6 +65,7 @@ import {
 	triggerRetryRun,
 } from '../../../src/triggers/shared/manual-runner.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockProject: ProjectConfig = {
 	id: 'test-project',
@@ -78,6 +84,7 @@ const mockConfig = {} as CascadeConfig;
 
 describe('triggerManualRun', () => {
 	beforeEach(() => {
+		vi.clearAllMocks();
 		clearTriggerTracking();
 	});
 
@@ -143,6 +150,8 @@ describe('triggerManualRun', () => {
 				projectId: 'test-project',
 				agentType: 'implementation',
 				workItemId: 'card-1',
+				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+				workItemTitle: 'Implement example',
 				modelOverride: 'claude-3-5-sonnet-20241022',
 			},
 			mockProject,
@@ -153,10 +162,71 @@ describe('triggerManualRun', () => {
 			'implementation',
 			expect.objectContaining({
 				workItemId: 'card-1',
+				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+				workItemTitle: 'Implement example',
 				modelOverride: 'claude-3-5-sonnet-20241022',
 				triggerType: 'manual',
 				project: mockProject,
 				config: mockConfig,
+			}),
+		);
+
+		expect(createWorkItem).toHaveBeenCalledWith('test-project', 'card-1', {
+			workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+			workItemTitle: 'Implement example',
+		});
+	});
+
+	it('does not create a work item link when manual metadata is omitted', async () => {
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			runId: 'run-no-metadata',
+		});
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				workItemId: 'card-1',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		expect(createWorkItem).not.toHaveBeenCalled();
+	});
+
+	it('continues running the agent when work item metadata persistence fails', async () => {
+		vi.mocked(createWorkItem).mockRejectedValueOnce(new Error('db unavailable'));
+		vi.mocked(runAgent).mockResolvedValue({
+			success: true,
+			output: 'Done',
+			runId: 'run-metadata-failed',
+		});
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				workItemId: 'card-1',
+				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+				workItemTitle: 'Implement example',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		expect(logger.warn).toHaveBeenCalledWith('Failed to persist work-item row for manual run', {
+			projectId: 'test-project',
+			workItemId: 'card-1',
+			error: 'Error: db unavailable',
+		});
+		expect(runAgent).toHaveBeenCalledWith(
+			'implementation',
+			expect.objectContaining({
+				workItemId: 'card-1',
+				triggerType: 'manual',
 			}),
 		);
 	});

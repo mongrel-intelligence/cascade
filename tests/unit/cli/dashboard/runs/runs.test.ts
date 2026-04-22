@@ -550,7 +550,7 @@ describe('RunsTrigger (runs trigger)', () => {
 		);
 	});
 
-	it('passes optional work-item-id and model flags', async () => {
+	it('passes optional work item metadata and model flags', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
@@ -562,6 +562,10 @@ describe('RunsTrigger (runs trigger)', () => {
 				'implementation',
 				'--work-item-id',
 				'card-xyz',
+				'--work-item-url',
+				'https://linear.app/org/issue/TEAM-123/example',
+				'--work-item-title',
+				'Implement example',
 				'--model',
 				'claude-opus-4-5',
 			],
@@ -574,6 +578,8 @@ describe('RunsTrigger (runs trigger)', () => {
 				projectId: 'proj-abc',
 				agentType: 'implementation',
 				workItemId: 'card-xyz',
+				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+				workItemTitle: 'Implement example',
 				model: 'claude-opus-4-5',
 			}),
 		);
