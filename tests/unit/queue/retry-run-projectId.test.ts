@@ -18,7 +18,9 @@ vi.mock('../../../src/queue/client.js', () => ({
 
 // Mock repository functions
 const mockGetRunById = vi.fn();
+const mockHasActiveRunForWorkItem = vi.fn().mockResolvedValue(false);
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	DEFAULT_STALE_RUN_THRESHOLD_MS: 2 * 60 * 60 * 1000,
 	listRuns: vi.fn(),
 	getRunById: (...args: unknown[]) => mockGetRunById(...args),
 	getRunLogs: vi.fn(),
@@ -26,6 +28,7 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getLlmCallByNumber: vi.fn(),
 	getDebugAnalysisByRunId: vi.fn(),
 	deleteDebugAnalysisByRunId: vi.fn(),
+	hasActiveRunForWorkItem: (...args: unknown[]) => mockHasActiveRunForWorkItem(...args),
 }));
 
 // Mock DB for org access check
@@ -46,6 +49,12 @@ vi.mock('../../../src/db/schema/index.js', () => ({
 const mockLoadProjectConfigById = vi.fn();
 vi.mock('../../../src/config/provider.js', () => ({
 	loadProjectConfigById: (...args: unknown[]) => mockLoadProjectConfigById(...args),
+}));
+
+// Mock isAgentEnabledForProject - default: agent is enabled
+const mockIsAgentEnabledForProject = vi.fn().mockResolvedValue(true);
+vi.mock('../../../src/db/repositories/agentConfigsRepository.js', () => ({
+	isAgentEnabledForProject: (...args: unknown[]) => mockIsAgentEnabledForProject(...args),
 }));
 
 // Mock debug-status
@@ -79,6 +88,11 @@ const RUN_UUID = 'aaaaaaaa-1111-2222-3333-444444444444';
 
 describe('retry-run job submission with projectId', () => {
 	beforeEach(() => {
+		mockSubmitDashboardJob.mockClear();
+		mockGetRunById.mockReset();
+		mockLoadProjectConfigById.mockReset();
+		mockHasActiveRunForWorkItem.mockResolvedValue(false);
+		mockIsAgentEnabledForProject.mockResolvedValue(true);
 		mockDbSelect.mockReturnValue({ from: mockDbFrom });
 		mockDbFrom.mockReturnValue({ where: mockDbWhere });
 	});
@@ -127,6 +141,43 @@ describe('retry-run job submission with projectId', () => {
 			type: 'retry-run',
 			runId: RUN_UUID,
 			projectId,
+			modelOverride: 'claude-opus-4-5',
+		});
+	});
+
+	it('includes work item metadata when submitting manual-run job to queue', async () => {
+		const projectId = 'test-project-id';
+		mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+		mockLoadProjectConfigById.mockResolvedValue({
+			project: { id: projectId, name: 'Test Project' },
+			config: {},
+		});
+
+		const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+		await caller.trigger({
+			projectId,
+			agentType: 'implementation',
+			workItemId: 'TEAM-123',
+			workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+			workItemTitle: 'Implement example',
+			prNumber: 42,
+			prBranch: 'feature/example',
+			repoFullName: 'owner/repo',
+			headSha: 'abc123',
+			model: 'claude-opus-4-5',
+		});
+
+		expect(mockSubmitDashboardJob).toHaveBeenCalledWith({
+			type: 'manual-run',
+			projectId,
+			agentType: 'implementation',
+			workItemId: 'TEAM-123',
+			workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+			workItemTitle: 'Implement example',
+			prNumber: 42,
+			prBranch: 'feature/example',
+			repoFullName: 'owner/repo',
+			headSha: 'abc123',
 			modelOverride: 'claude-opus-4-5',
 		});
 	});
