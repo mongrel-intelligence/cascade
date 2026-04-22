@@ -173,6 +173,7 @@ export async function processRouterWebhook(
 			project.id,
 			result.agentType,
 			adapter.type,
+			result.workItemId,
 		);
 		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
 		if (concurrencyCheck.blocked) {
@@ -216,7 +217,7 @@ export async function processRouterWebhook(
 			markWorkItemEnqueued(project.id, result.workItemId, result.agentType);
 		}
 		if (result.agentType && agentTypeMaxConcurrency !== null) {
-			markRecentlyDispatched(project.id, result.agentType);
+			markRecentlyDispatched(project.id, result.agentType, result.workItemId);
 			markAgentTypeEnqueued(project.id, result.agentType);
 		}
 		logger.info(`${adapter.type} job queued`, {

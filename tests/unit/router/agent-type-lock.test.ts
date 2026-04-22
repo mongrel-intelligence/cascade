@@ -187,6 +187,13 @@ describe('agent-type-lock', () => {
 			expect(wasRecentlyDispatched('proj1', 'backlog-manager')).toBe(true);
 			expect(wasRecentlyDispatched('proj1', 'implementation')).toBe(false);
 		});
+
+		it('different dedup scopes are independent', () => {
+			markRecentlyDispatched('proj1', 'planning', 'TF-8');
+			expect(wasRecentlyDispatched('proj1', 'planning', 'TF-8')).toBe(true);
+			expect(wasRecentlyDispatched('proj1', 'planning', 'TF-10')).toBe(false);
+			expect(wasRecentlyDispatched('proj1', 'planning')).toBe(false);
+		});
 	});
 
 	// ========================================================================
@@ -206,6 +213,24 @@ describe('agent-type-lock', () => {
 			const result = await checkAgentTypeConcurrency('proj1', 'implementation');
 			expect(result.blocked).toBe(true);
 			expect(result.maxConcurrency).toBe(1);
+		});
+
+		it('does not block a different work item in the dedup window', async () => {
+			vi.mocked(getMaxConcurrency).mockResolvedValueOnce(5);
+			markRecentlyDispatched('proj1', 'planning', 'TF-8');
+
+			const result = await checkAgentTypeConcurrency('proj1', 'planning', 'linear', 'TF-10');
+
+			expect(result).toEqual({ maxConcurrency: 5, blocked: false });
+		});
+
+		it('blocks the same work item in the dedup window', async () => {
+			vi.mocked(getMaxConcurrency).mockResolvedValueOnce(5);
+			markRecentlyDispatched('proj1', 'planning', 'TF-8');
+
+			const result = await checkAgentTypeConcurrency('proj1', 'planning', 'linear', 'TF-8');
+
+			expect(result).toEqual({ maxConcurrency: 5, blocked: true });
 		});
 
 		it('returns blocked: true when agent type is locked', async () => {

@@ -113,11 +113,16 @@ async function handleMatchedTrigger(
 	// Agent-type concurrency limit
 	let agentTypeMaxConcurrency: number | null = null;
 	if (result.agentType) {
-		const concurrencyCheck = await checkAgentTypeConcurrency(project.id, result.agentType);
+		const concurrencyCheck = await checkAgentTypeConcurrency(
+			project.id,
+			result.agentType,
+			undefined,
+			result.workItemId,
+		);
 		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
 		if (concurrencyCheck.blocked) return;
 		if (agentTypeMaxConcurrency !== null) {
-			markRecentlyDispatched(project.id, result.agentType);
+			markRecentlyDispatched(project.id, result.agentType, result.workItemId);
 			markAgentTypeEnqueued(project.id, result.agentType);
 		}
 	}

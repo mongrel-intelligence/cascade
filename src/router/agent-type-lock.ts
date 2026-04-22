@@ -32,6 +32,11 @@ function makeKey(projectId: string, agentType: string): string {
 	return `${projectId}:${agentType}`;
 }
 
+function makeDedupKey(projectId: string, agentType: string, dedupScope?: string): string {
+	const baseKey = makeKey(projectId, agentType);
+	return dedupScope ? `${baseKey}:${dedupScope}` : baseKey;
+}
+
 /**
  * Check whether an agent type is at its concurrency limit for a project.
  * Fast path: in-memory map. Fallback: DB count of running agent_runs.
@@ -125,11 +130,15 @@ const DEDUP_TTL_MS = 60 * 1000; // 60 seconds
 const dedupMap = new Map<string, number>();
 
 /**
- * Check whether an agent type was recently dispatched for a project.
+ * Check whether an agent type was recently dispatched for a project/scope.
  * Returns true if a dispatch happened within the dedup TTL window.
  */
-export function wasRecentlyDispatched(projectId: string, agentType: string): boolean {
-	const key = makeKey(projectId, agentType);
+export function wasRecentlyDispatched(
+	projectId: string,
+	agentType: string,
+	dedupScope?: string,
+): boolean {
+	const key = makeDedupKey(projectId, agentType, dedupScope);
 	const timestamp = dedupMap.get(key);
 	if (timestamp === undefined) return false;
 
@@ -141,11 +150,15 @@ export function wasRecentlyDispatched(projectId: string, agentType: string): boo
 }
 
 /**
- * Mark an agent type as recently dispatched for a project.
+ * Mark an agent type as recently dispatched for a project/scope.
  * The mark expires after DEDUP_TTL_MS and is NOT cleared on completion.
  */
-export function markRecentlyDispatched(projectId: string, agentType: string): void {
-	const key = makeKey(projectId, agentType);
+export function markRecentlyDispatched(
+	projectId: string,
+	agentType: string,
+	dedupScope?: string,
+): void {
+	const key = makeDedupKey(projectId, agentType, dedupScope);
 	dedupMap.set(key, Date.now());
 
 	// Periodic cleanup: evict expired entries when map grows large
@@ -173,6 +186,7 @@ export async function checkAgentTypeConcurrency(
 	projectId: string,
 	agentType: string,
 	logLabel?: string,
+	dedupScope?: string,
 ): Promise<{ maxConcurrency: number | null; blocked: boolean }> {
 	let maxConcurrency: number | null;
 	try {
@@ -187,10 +201,11 @@ export async function checkAgentTypeConcurrency(
 	}
 	if (maxConcurrency === null) return { maxConcurrency: null, blocked: false };
 
-	if (wasRecentlyDispatched(projectId, agentType)) {
+	if (wasRecentlyDispatched(projectId, agentType, dedupScope)) {
 		logger.info(`${logLabel ?? 'Agent'} recently dispatched, skipping (dedup)`, {
 			projectId,
 			agentType,
+			dedupScope,
 		});
 		return { maxConcurrency, blocked: true };
 	}
