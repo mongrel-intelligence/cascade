@@ -47,6 +47,7 @@ export async function augmentProjectSecrets(
 	if (jiraConfig) {
 		projectSecrets.CASCADE_JIRA_PROJECT_KEY = jiraConfig.projectKey;
 		projectSecrets.CASCADE_JIRA_BASE_URL = jiraConfig.baseUrl;
+		projectSecrets.JIRA_BASE_URL = jiraConfig.baseUrl;
 		if (jiraConfig.statuses) {
 			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
 		}

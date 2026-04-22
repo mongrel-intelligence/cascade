@@ -26,7 +26,9 @@ export function writePMWriteSidecar(sidecarPath: string | undefined, workItemId:
 
 export function writePushedChangesSidecar(sidecarPath: string | undefined): boolean {
 	if (!sidecarPath || sidecarPath === 'undefined') {
-		logger.warn('CASCADE_SIDECAR_PATH not set — pushed-changes sidecar will not be written');
+		logger.warn(
+			'CASCADE_PUSHED_CHANGES_SIDECAR_PATH not set — pushed-changes sidecar will not be written',
+		);
 		return false;
 	}
 

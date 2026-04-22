@@ -56,8 +56,9 @@ import '../../../src/integrations/pm/index.js';
 import '../../../src/github/register.js';
 import '../../../src/sentry/register.js';
 
-import { CredentialScopedCommand } from '../../../src/cli/base.js';
+import { CredentialScopedCommand, resolveJiraBaseUrl } from '../../../src/cli/base.js';
 import { withGitHubToken } from '../../../src/github/client.js';
+import { withJiraCredentials } from '../../../src/jira/client.js';
 import { withLinearCredentials } from '../../../src/linear/client.js';
 import { withTrelloCredentials } from '../../../src/trello/client.js';
 
@@ -89,6 +90,8 @@ describe('CredentialScopedCommand', () => {
 		delete process.env.JIRA_EMAIL;
 		delete process.env.JIRA_API_TOKEN;
 		delete process.env.JIRA_BASE_URL;
+		delete process.env.CASCADE_JIRA_BASE_URL;
+		vi.mocked(withJiraCredentials).mockClear();
 		vi.mocked(withLinearCredentials).mockClear();
 	});
 
@@ -155,6 +158,39 @@ describe('CredentialScopedCommand', () => {
 			{ apiKey: 'trello-key', token: 'trello-token' },
 			expect.any(Function),
 		);
+	});
+
+	it('wraps execute() with withJiraCredentials when only CASCADE_JIRA_BASE_URL is set', async () => {
+		process.env.JIRA_EMAIL = 'bot@example.com';
+		process.env.JIRA_API_TOKEN = 'jira-token';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://cascade.atlassian.net';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.executeCalled).toBe(true);
+		expect(withJiraCredentials).toHaveBeenCalledWith(
+			{
+				email: 'bot@example.com',
+				apiToken: 'jira-token',
+				baseUrl: 'https://cascade.atlassian.net',
+			},
+			expect.any(Function),
+		);
+	});
+
+	it('prefers JIRA_BASE_URL over CASCADE_JIRA_BASE_URL when both are set', async () => {
+		process.env.JIRA_BASE_URL = 'https://legacy.atlassian.net';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://injected.atlassian.net';
+
+		expect(resolveJiraBaseUrl()).toBe('https://legacy.atlassian.net');
+	});
+
+	it('falls back to CASCADE_JIRA_BASE_URL when JIRA_BASE_URL is not set', async () => {
+		process.env.CASCADE_JIRA_BASE_URL = 'https://injected.atlassian.net';
+
+		expect(resolveJiraBaseUrl()).toBe('https://injected.atlassian.net');
 	});
 
 	// Linear scope — mirrors the GitHub/Trello/JIRA pattern. Without these the CLI

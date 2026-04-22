@@ -20,7 +20,7 @@ export function getJiraCredentials(): JiraCredentials {
 	const scoped = jiraCredentialStore.getStore();
 	if (!scoped) {
 		throw new Error(
-			'No JIRA credentials in scope. Wrap the call with withJiraCredentials() or ensure per-project JIRA_EMAIL/JIRA_API_TOKEN/JIRA_BASE_URL are set in the database.',
+			'No JIRA credentials in scope. Wrap the call with withJiraCredentials() or ensure JIRA_EMAIL and JIRA_API_TOKEN are configured, plus a JIRA base URL via JIRA_BASE_URL or CASCADE_JIRA_BASE_URL. The base URL normally comes from injected project config, not a separate database credential.',
 		);
 	}
 	return scoped;

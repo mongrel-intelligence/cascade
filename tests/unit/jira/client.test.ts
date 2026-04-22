@@ -793,7 +793,9 @@ describe('jiraClient', () => {
 
 	describe('getJiraCredentials', () => {
 		it('throws when called outside scope', () => {
-			expect(() => getJiraCredentials()).toThrow('No JIRA credentials in scope');
+			expect(() => getJiraCredentials()).toThrow(
+				'No JIRA credentials in scope. Wrap the call with withJiraCredentials() or ensure JIRA_EMAIL and JIRA_API_TOKEN are configured, plus a JIRA base URL via JIRA_BASE_URL or CASCADE_JIRA_BASE_URL. The base URL normally comes from injected project config, not a separate database credential.',
+			);
 		});
 
 		it('returns credentials when inside withJiraCredentials scope', async () => {

@@ -11,10 +11,23 @@ vi.mock('../../../../src/pm/index.js', () => ({
 	getPMProvider: vi.fn(() => mockProvider),
 }));
 
+const { mockWarn } = vi.hoisted(() => ({
+	mockWarn: vi.fn(),
+}));
+
+vi.mock('../../../../src/utils/logging.js', () => ({
+	logger: {
+		warn: mockWarn,
+	},
+}));
+
 // Import after mocks so the module picks up the mocked getPMProvider
 import { parseItem } from '../../../../src/cli/pm/add-checklist.js';
 import { addChecklist } from '../../../../src/gadgets/pm/core/addChecklist.js';
-import { writePMWriteSidecar } from '../../../../src/gadgets/session/core/sidecar.js';
+import {
+	writePMWriteSidecar,
+	writePushedChangesSidecar,
+} from '../../../../src/gadgets/session/core/sidecar.js';
 
 // ---------------------------------------------------------------------------
 // Unit tests for parseItem() — the JSON-parsing helper
@@ -256,6 +269,7 @@ describe('writePMWriteSidecar', () => {
 	afterEach(() => {
 		rmSync(tmpDir, { recursive: true, force: true });
 		Reflect.deleteProperty(process.env, 'CASCADE_PM_WRITE_SIDECAR_PATH');
+		mockWarn.mockReset();
 	});
 
 	it('writes sidecar file with correct JSON when path is set', () => {
@@ -291,5 +305,14 @@ describe('writePMWriteSidecar', () => {
 
 		expect(result).toBe(false);
 		expect(existsSync(badPath)).toBe(false);
+	});
+
+	it('logs the correct pushed-changes env var name when pushed-changes sidecar path is missing', () => {
+		const result = writePushedChangesSidecar(undefined);
+
+		expect(result).toBe(false);
+		expect(mockWarn).toHaveBeenCalledWith(
+			'CASCADE_PUSHED_CHANGES_SIDECAR_PATH not set — pushed-changes sidecar will not be written',
+		);
 	});
 });

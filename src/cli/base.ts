@@ -9,6 +9,10 @@ import type { PMType } from '../pm/types.js';
 import { withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
 
+export function resolveJiraBaseUrl(): string | undefined {
+	return process.env.JIRA_BASE_URL || process.env.CASCADE_JIRA_BASE_URL;
+}
+
 /**
  * Resolve repository owner/repo from flags, env vars, or git remote (in that order).
  */
@@ -47,7 +51,7 @@ function wrapWithCredentialScopes(fn: () => Promise<void>): () => Promise<void> 
 	}
 	const jiraEmail = process.env.JIRA_EMAIL;
 	const jiraApiToken = process.env.JIRA_API_TOKEN;
-	const jiraBaseUrl = process.env.JIRA_BASE_URL;
+	const jiraBaseUrl = resolveJiraBaseUrl();
 	if (jiraEmail && jiraApiToken && jiraBaseUrl) {
 		const prev = fn;
 		fn = () =>
@@ -69,7 +73,7 @@ function wrapWithCredentialScopes(fn: () => Promise<void>): () => Promise<void> 
 function resolvePmType(): PMType {
 	const explicit = process.env.CASCADE_PM_TYPE as PMType | undefined;
 	if (explicit) return explicit;
-	if (process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN && process.env.JIRA_BASE_URL) {
+	if (process.env.JIRA_EMAIL && process.env.JIRA_API_TOKEN && resolveJiraBaseUrl()) {
 		return 'jira';
 	}
 	if (process.env.LINEAR_API_KEY) return 'linear';
@@ -84,11 +88,12 @@ function resolvePmType(): PMType {
 function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
 	if (pmType === 'jira') {
 		const jiraStatuses = process.env.CASCADE_JIRA_STATUSES;
+		const jiraBaseUrl = resolveJiraBaseUrl();
 		return {
 			pm: { type: 'jira' },
 			jira: {
 				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
-				baseUrl: process.env.JIRA_BASE_URL as string,
+				baseUrl: jiraBaseUrl ?? '',
 				statuses: jiraStatuses ? JSON.parse(jiraStatuses) : {},
 			},
 		} as ProjectConfig;

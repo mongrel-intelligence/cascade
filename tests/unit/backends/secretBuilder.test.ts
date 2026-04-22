@@ -111,6 +111,7 @@ describe('augmentProjectSecrets', () => {
 		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
 		expect(secrets.CASCADE_JIRA_PROJECT_KEY).toBe('PROJ');
 		expect(secrets.CASCADE_JIRA_BASE_URL).toBe('https://acme.atlassian.net');
+		expect(secrets.JIRA_BASE_URL).toBe('https://acme.atlassian.net');
 	});
 
 	it('injects CASCADE_JIRA_STATUSES as JSON when jira.statuses is set', async () => {
