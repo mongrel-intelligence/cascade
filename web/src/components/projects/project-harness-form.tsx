@@ -17,6 +17,13 @@ import {
 } from '@/components/ui/card.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from '@/components/ui/select.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import {
 	Tooltip,
@@ -74,14 +81,22 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 	// The effective project-level engine: either explicitly set or the system default
 	const effectiveEngineId = agentEngine || systemDefaultEngineId;
 
-	// Default tab to show: project's selected engine, or system default
-	const defaultTab = effectiveEngineId;
+	// Controlled active tab — starts at the effective engine, can be navigated independently
+	const [activeTab, setActiveTab] = useState(effectiveEngineId);
 
 	// Resolved engine defaults for EngineSettingsFields
 	function getEngineDefaults(engineId: string): Record<string, unknown> | undefined {
 		return defaults
 			? (defaults.engineSettings as Record<string, Record<string, unknown>>)[engineId]
 			: undefined;
+	}
+
+	function handleEngineSelectChange(value: string) {
+		const newEngine = value === '_system' ? '' : value;
+		setAgentEngine(newEngine);
+		// Switch active tab to the newly selected default engine
+		const newEffective = newEngine || systemDefaultEngineId;
+		setActiveTab(newEffective);
 	}
 
 	function handleSubmit(e: React.FormEvent) {
@@ -107,224 +122,203 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 					</p>
 				</div>
 
-				{/* Model & Iterations Card — engine-agnostic, always visible */}
 				<Card>
 					<CardHeader>
-						<CardTitle>Model &amp; Runtime</CardTitle>
+						<CardTitle>Engine</CardTitle>
 						<CardDescription>
-							Global model and iteration settings applied to all agents unless overridden per-agent.
+							Choose the default engine, then configure its model, settings, and credentials.
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
-						<form onSubmit={handleSubmit} className="space-y-4" id="engine-runtime-form">
+						<form onSubmit={handleSubmit} id="engine-config-form" className="space-y-6">
+							{/* Default Engine Selector */}
 							<div className="space-y-2">
-								<div className="flex items-center gap-1.5">
-									<Label htmlFor="model">Model</Label>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-										</TooltipTrigger>
-										<TooltipContent>
-											Individual agents can override this in the Agents tab.
-										</TooltipContent>
-									</Tooltip>
-								</div>
-								<ModelField
-									id="model"
-									value={model}
-									onChange={setModel}
-									engine={effectiveEngineId}
-									defaultLabel={defaults ? defaults.model : undefined}
-									projectId={project.id}
-								/>
+								<Label htmlFor="default-engine">Default Engine</Label>
+								{engines.length === 0 ? (
+									<p className="text-sm text-muted-foreground">Loading engines…</p>
+								) : (
+									<Select value={agentEngine || '_system'} onValueChange={handleEngineSelectChange}>
+										<SelectTrigger id="default-engine" className="w-full">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="_system">
+												System Default ({capitalize(systemDefaultEngineId)})
+											</SelectItem>
+											{engines.map((engine) => (
+												<SelectItem key={engine.id} value={engine.id}>
+													{engine.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								)}
 								<p className="text-xs text-muted-foreground">
-									Project default model. Per-agent overrides in the Agents tab.
+									Used by all agents unless overridden per-agent.
 								</p>
 							</div>
-							<div className="space-y-2">
-								<div className="flex items-center gap-1.5">
-									<Label htmlFor="maxIterations">Max Iterations</Label>
-									<Tooltip>
-										<TooltipTrigger asChild>
-											<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-										</TooltipTrigger>
-										<TooltipContent>
-											Individual agents can override this in the Agents tab.
-										</TooltipContent>
-									</Tooltip>
-								</div>
-								<Input
-									id="maxIterations"
-									type="number"
-									min="1"
-									step="1"
-									className="w-32"
-									value={maxIterations}
-									onChange={(e) => setMaxIterations(e.target.value)}
-									placeholder={defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'}
-								/>
-								<p className="text-xs text-muted-foreground">
-									Safety limit on tool-call iterations per run.
-								</p>
-							</div>
-						</form>
-					</CardContent>
-				</Card>
 
-				{/* Per-engine tabs: credentials + settings + default toggle */}
-				<Card>
-					<CardHeader>
-						<CardTitle>Engine Settings &amp; Credentials</CardTitle>
-						<CardDescription>
-							Configure each engine's credentials and settings. The default engine tab is
-							highlighted. New engines are added automatically as the catalog expands.
-						</CardDescription>
-					</CardHeader>
-					<CardContent>
-						{engines.length === 0 ? (
-							<p className="text-sm text-muted-foreground">Loading engines…</p>
-						) : (
-							<Tabs defaultValue={defaultTab}>
-								<TabsList className="flex w-full h-auto flex-wrap">
+							{/* Per-engine configuration tabs */}
+							{engines.length > 0 && (
+								<Tabs value={activeTab} onValueChange={setActiveTab}>
+									<TabsList className="flex w-full h-auto flex-wrap">
+										{engines.map((engine) => {
+											const isDefault = engine.id === effectiveEngineId;
+											const isUsedByAgents = agentEnginesInUse.includes(engine.id);
+											return (
+												<TabsTrigger
+													key={engine.id}
+													value={engine.id}
+													className="flex items-center gap-1.5"
+												>
+													{engine.label}
+													{isDefault && (
+														<Badge variant="secondary" className="text-xs px-1 py-0">
+															Default
+														</Badge>
+													)}
+													{!isDefault && isUsedByAgents && (
+														<Badge variant="outline" className="text-xs px-1 py-0">
+															In use
+														</Badge>
+													)}
+												</TabsTrigger>
+											);
+										})}
+									</TabsList>
+
 									{engines.map((engine) => {
-										const isDefault = engine.id === effectiveEngineId;
-										const isUsedByAgents = agentEnginesInUse.includes(engine.id);
-										return (
-											<TabsTrigger
-												key={engine.id}
-												value={engine.id}
-												className="flex items-center gap-1.5"
-											>
-												{engine.label}
-												{isDefault && (
-													<Badge variant="secondary" className="text-xs px-1 py-0">
-														Default
-													</Badge>
-												)}
-												{!isDefault && isUsedByAgents && (
-													<Badge variant="outline" className="text-xs px-1 py-0">
-														In use
-													</Badge>
-												)}
-											</TabsTrigger>
+										const engineSecrets = ENGINE_SECRETS.filter((s) =>
+											s.engines?.includes(engine.id),
 										);
-									})}
-								</TabsList>
+										const sharedSecretEngines = (envVarKey: string): string[] => {
+											const secret = ENGINE_SECRETS.find((s) => s.envVarKey === envVarKey);
+											if (!secret?.engines) return [];
+											return secret.engines.filter((e) => e !== engine.id);
+										};
+										const engineDefaults = getEngineDefaults(engine.id);
 
-								{engines.map((engine) => {
-									const isDefault = engine.id === effectiveEngineId;
-									const isUsedByAgents = agentEnginesInUse.includes(engine.id);
-									const engineSecrets = ENGINE_SECRETS.filter((s) =>
-										s.engines?.includes(engine.id),
-									);
-									// Secrets shared with other engines: show a note
-									const sharedSecretEngines = (envVarKey: string): string[] => {
-										const secret = ENGINE_SECRETS.find((s) => s.envVarKey === envVarKey);
-										if (!secret?.engines) return [];
-										return secret.engines.filter((e) => e !== engine.id);
-									};
+										return (
+											<TabsContent key={engine.id} value={engine.id} className="mt-4 space-y-6">
+												{/* Engine description */}
+												{engine.description && (
+													<p className="text-sm text-muted-foreground">{engine.description}</p>
+												)}
 
-									const engineDefaults = getEngineDefaults(engine.id);
+												{/* Model */}
+												<div className="space-y-2">
+													<div className="flex items-center gap-1.5">
+														<Label htmlFor={`model-${engine.id}`}>Model</Label>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+															</TooltipTrigger>
+															<TooltipContent>
+																Individual agents can override this in the Agents tab.
+															</TooltipContent>
+														</Tooltip>
+													</div>
+													<ModelField
+														id={`model-${engine.id}`}
+														value={model}
+														onChange={setModel}
+														engine={engine.id}
+														defaultLabel={defaults ? defaults.model : undefined}
+														projectId={project.id}
+													/>
+													<p className="text-xs text-muted-foreground">
+														Project default. Per-agent overrides in the Agents tab.
+													</p>
+												</div>
 
-									return (
-										<TabsContent key={engine.id} value={engine.id} className="mt-4 space-y-6">
-											{/* Engine description */}
-											{engine.description && (
-												<p className="text-sm text-muted-foreground">{engine.description}</p>
-											)}
+												{/* Engine Settings */}
+												<EngineSettingsFields
+													engine={engine}
+													value={engineSettings}
+													onChange={(next) => setEngineSettings(next ?? {})}
+													engineDefaults={engineDefaults}
+												/>
 
-											{/* Default engine indicator / Set as Default button */}
-											<div className="flex items-center gap-3">
-												{isDefault ? (
-													<div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm">
-														<span className="text-muted-foreground">
-															✓ Default engine for this project
-															{agentEngine === '' &&
-																` (inheriting system default: ${capitalize(systemDefaultEngineId)})`}
-														</span>
-														{agentEngine !== '' && (
-															<button
-																type="button"
-																onClick={() => setAgentEngine('')}
-																className="ml-2 text-xs text-muted-foreground underline hover:text-foreground transition-colors"
-															>
-																Reset to system default
-															</button>
-														)}
+												{/* Max Iterations */}
+												<div className="space-y-2">
+													<div className="flex items-center gap-1.5">
+														<Label htmlFor={`maxIterations-${engine.id}`}>Max Iterations</Label>
+														<Tooltip>
+															<TooltipTrigger asChild>
+																<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+															</TooltipTrigger>
+															<TooltipContent>
+																Individual agents can override this in the Agents tab.
+															</TooltipContent>
+														</Tooltip>
+													</div>
+													<Input
+														id={`maxIterations-${engine.id}`}
+														type="number"
+														min="1"
+														step="1"
+														className="w-32"
+														value={maxIterations}
+														onChange={(e) => setMaxIterations(e.target.value)}
+														placeholder={
+															defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'
+														}
+													/>
+													<p className="text-xs text-muted-foreground">
+														Safety limit on tool-call iterations per run.
+													</p>
+												</div>
+
+												{/* Credentials */}
+												{engineSecrets.length > 0 ? (
+													<div className="space-y-4">
+														<div>
+															<p className="text-sm font-medium">Credentials</p>
+															<p className="text-xs text-muted-foreground mt-0.5">
+																API keys and tokens for {engine.label}. Values are stored encrypted
+																and never returned to the browser.
+															</p>
+														</div>
+														{engineSecrets.map((secret) => {
+															const sharedWith = sharedSecretEngines(secret.envVarKey);
+															const sharedNote =
+																sharedWith.length > 0
+																	? `Also used by: ${sharedWith.map((id) => engines.find((e) => e.id === id)?.label ?? id).join(', ')}`
+																	: undefined;
+															const description =
+																secret.description + (sharedNote ? ` · ${sharedNote}` : '');
+															return (
+																<ProjectSecretField
+																	key={secret.envVarKey}
+																	projectId={project.id}
+																	envVarKey={secret.envVarKey}
+																	label={secret.label}
+																	description={description}
+																	placeholder={secret.placeholder}
+																	credential={credentials.find(
+																		(c) => c.envVarKey === secret.envVarKey,
+																	)}
+																/>
+															);
+														})}
 													</div>
 												) : (
-													<button
-														type="button"
-														onClick={() => setAgentEngine(engine.id)}
-														className="inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition-colors"
-													>
-														Set as Default Engine
-													</button>
+													<p className="text-sm text-muted-foreground">
+														No credentials required for {engine.label}.
+													</p>
 												)}
-												{!isDefault && isUsedByAgents && (
-													<span className="text-xs text-muted-foreground">
-														Used by agent config overrides
-													</span>
-												)}
-											</div>
-
-											{/* Engine settings */}
-											<EngineSettingsFields
-												engine={engine}
-												value={engineSettings}
-												onChange={(next) => setEngineSettings(next ?? {})}
-												engineDefaults={engineDefaults}
-											/>
-
-											{/* Engine credentials */}
-											{engineSecrets.length > 0 ? (
-												<div className="space-y-4">
-													<div>
-														<h4 className="text-sm font-medium">Credentials</h4>
-														<p className="text-xs text-muted-foreground mt-0.5">
-															API keys and tokens for {engine.label}. Values are stored encrypted
-															and never returned to the browser.
-														</p>
-													</div>
-													{engineSecrets.map((secret) => {
-														const sharedWith = sharedSecretEngines(secret.envVarKey);
-														const sharedNote =
-															sharedWith.length > 0
-																? `Also used by: ${sharedWith.map((id) => engines.find((e) => e.id === id)?.label ?? id).join(', ')}`
-																: undefined;
-														const description =
-															secret.description + (sharedNote ? ` · ${sharedNote}` : '');
-														return (
-															<ProjectSecretField
-																key={secret.envVarKey}
-																projectId={project.id}
-																envVarKey={secret.envVarKey}
-																label={secret.label}
-																description={description}
-																placeholder={secret.placeholder}
-																credential={credentials.find(
-																	(c) => c.envVarKey === secret.envVarKey,
-																)}
-															/>
-														);
-													})}
-												</div>
-											) : (
-												<p className="text-sm text-muted-foreground">
-													No credentials required for {engine.label}.
-												</p>
-											)}
-										</TabsContent>
-									);
-								})}
-							</Tabs>
-						)}
+											</TabsContent>
+										);
+									})}
+								</Tabs>
+							)}
+						</form>
 					</CardContent>
 					<CardFooter>
 						<div className="flex items-center gap-2">
 							<button
 								type="submit"
-								form="engine-runtime-form"
+								form="engine-config-form"
 								disabled={updateMutation.isPending}
 								className="inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
 							>
