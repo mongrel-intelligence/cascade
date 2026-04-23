@@ -30,7 +30,7 @@ describe('GitHub webhook event-list consistency', () => {
 			`GITHUB_WEBHOOK_EVENTS is missing event(s) that are in PROCESSABLE_EVENTS: ${missing.join(', ')}. ` +
 				`GitHub will never deliver these events to CASCADE unless they are included in the ` +
 				`webhook creation payload. Add the missing events to GITHUB_WEBHOOK_EVENTS in ` +
-				`src/api/routers/webhooks/github.ts and tools/setup-webhooks.ts.`,
+				`src/api/routers/webhooks/github.ts.`,
 		).toEqual([]);
 	});
 

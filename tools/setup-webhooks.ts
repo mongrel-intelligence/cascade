@@ -15,17 +15,10 @@
  */
 
 import { Octokit } from '@octokit/rest';
+import { GITHUB_WEBHOOK_EVENTS } from '../src/api/routers/webhooks/github.js';
 import { closeDb } from '../src/db/client.js';
 import { findProjectByIdFromDb } from '../src/db/repositories/configRepository.js';
 import { resolveAllProjectCredentials } from '../src/db/repositories/credentialsRepository.js';
-
-const GITHUB_WEBHOOK_EVENTS = [
-	'pull_request',
-	'pull_request_review',
-	'pull_request_review_comment',
-	'check_suite',
-	'issue_comment',
-];
 
 interface TrelloWebhook {
 	id: string;
