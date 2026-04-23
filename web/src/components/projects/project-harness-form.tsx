@@ -81,8 +81,9 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 	// The effective project-level engine: either explicitly set or the system default
 	const effectiveEngineId = agentEngine || systemDefaultEngineId;
 
-	// Controlled active tab — starts at the effective engine, can be navigated independently
-	const [activeTab, setActiveTab] = useState(effectiveEngineId);
+	// Controlled active tab — null means "follow effectiveEngineId reactively" (handles async defaultsQuery)
+	const [activeTab, setActiveTab] = useState<string | null>(null);
+	const currentTab = activeTab ?? effectiveEngineId;
 
 	// Resolved engine defaults for EngineSettingsFields
 	function getEngineDefaults(engineId: string): Record<string, unknown> | undefined {
@@ -160,7 +161,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 
 							{/* Per-engine configuration tabs */}
 							{engines.length > 0 && (
-								<Tabs value={activeTab} onValueChange={setActiveTab}>
+								<Tabs value={currentTab} onValueChange={setActiveTab}>
 									<TabsList className="flex w-full h-auto flex-wrap">
 										{engines.map((engine) => {
 											const isDefault = engine.id === effectiveEngineId;
