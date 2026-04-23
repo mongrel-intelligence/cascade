@@ -3,9 +3,10 @@ import { logger } from '../../../utils/logging.js';
 import { parseRepoFullName } from '../../../utils/repo.js';
 import type { GitHubWebhook, ProjectContext } from './types.js';
 
-const GITHUB_WEBHOOK_EVENTS = [
+export const GITHUB_WEBHOOK_EVENTS = [
 	'pull_request',
 	'pull_request_review',
+	'pull_request_review_comment',
 	'check_suite',
 	'issue_comment',
 ];

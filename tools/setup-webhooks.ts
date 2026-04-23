@@ -22,6 +22,7 @@ import { resolveAllProjectCredentials } from '../src/db/repositories/credentials
 const GITHUB_WEBHOOK_EVENTS = [
 	'pull_request',
 	'pull_request_review',
+	'pull_request_review_comment',
 	'check_suite',
 	'issue_comment',
 ];

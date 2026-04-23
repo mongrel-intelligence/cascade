@@ -95,7 +95,7 @@ async function postGitHubPRAck(
 	return undefined;
 }
 
-const PROCESSABLE_EVENTS = [
+export const PROCESSABLE_EVENTS = [
 	'pull_request',
 	'pull_request_review',
 	'pull_request_review_comment',

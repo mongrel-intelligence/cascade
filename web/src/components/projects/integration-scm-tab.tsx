@@ -152,7 +152,7 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 		"  -d '{",
 		'    "name": "web",',
 		'    "active": true,',
-		'    "events": ["push", "pull_request", "check_suite", "pull_request_review"],',
+		'    "events": ["push", "pull_request", "pull_request_review", "pull_request_review_comment", "check_suite", "issue_comment"],',
 		'    "config": {',
 		`      "url": "${webhookCallbackUrl}",`,
 		'      "content_type": "json"',
