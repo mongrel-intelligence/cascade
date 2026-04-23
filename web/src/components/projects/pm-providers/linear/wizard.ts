@@ -83,6 +83,25 @@ function isCredentialsComplete(state: {
 	return Boolean(state.linearApiKey && state.verificationResult);
 }
 
+/**
+ * Returns true when all required Linear steps are done:
+ * credentials + team selected + at least one status mapping.
+ * Used to gate optional step `isComplete` predicates so they only show
+ * green after the integration is actually configured.
+ */
+function areLinearRequiredStepsDone(
+	state: Parameters<typeof isCredentialsComplete>[0] & {
+		linearTeamId: string;
+		linearStatusMappings: Record<string, string>;
+	},
+): boolean {
+	return (
+		isCredentialsComplete(state) &&
+		Boolean(state.linearTeamId) &&
+		Object.keys(state.linearStatusMappings).length > 0
+	);
+}
+
 interface LinearProviderHooks {
 	readonly teamOptions: ReadonlyArray<{
 		readonly id: string;
@@ -232,19 +251,19 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 			id: 'linear-labels',
 			title: 'Labels',
 			Component: LinearLabelMappingAdapter,
-			isComplete: () => true, // labels optional
+			isComplete: (state) => areLinearRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'linear-project-scope',
 			title: 'Project scope',
 			Component: LinearProjectScopeAdapter,
-			isComplete: () => true, // optional narrowing
+			isComplete: (state) => areLinearRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'linear-webhook',
 			title: 'Webhook',
 			Component: LinearWebhookAdapter,
-			isComplete: () => true,
+			isComplete: (state) => areLinearRequiredStepsDone(state),
 		},
 	],
 

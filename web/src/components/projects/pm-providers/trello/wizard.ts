@@ -85,6 +85,25 @@ function isCredentialsComplete(state: {
 }
 
 /**
+ * Returns true when all required Trello steps are done:
+ * credentials + board selected + at least one list mapping.
+ * Used to gate optional step `isComplete` predicates so they only show
+ * green after the integration is actually configured.
+ */
+function areTrelloRequiredStepsDone(
+	state: Parameters<typeof isCredentialsComplete>[0] & {
+		trelloBoardId: string;
+		trelloListMappings: Record<string, string>;
+	},
+): boolean {
+	return (
+		isCredentialsComplete(state) &&
+		Boolean(state.trelloBoardId) &&
+		Object.keys(state.trelloListMappings).length > 0
+	);
+}
+
+/**
  * The shape returned by `useProviderHooks`. Each step adapter pulls the
  * slice it needs from this record. Ports all the mutations + memoized
  * callbacks that the legacy adapters consumed.
@@ -249,19 +268,19 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 			id: 'trello-labels',
 			title: 'Label mapping',
 			Component: TrelloLabelMappingAdapter,
-			isComplete: () => true, // labels are optional
+			isComplete: (state) => areTrelloRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'trello-custom-fields',
 			title: 'Custom fields',
 			Component: TrelloCustomFieldMappingAdapter,
-			isComplete: () => true, // cost field is optional
+			isComplete: (state) => areTrelloRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'trello-webhook',
 			title: 'Webhook',
 			Component: TrelloWebhookAdapter,
-			isComplete: () => true,
+			isComplete: (state) => areTrelloRequiredStepsDone(state),
 		},
 	],
 

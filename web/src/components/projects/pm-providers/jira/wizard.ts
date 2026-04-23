@@ -80,6 +80,25 @@ function isCredentialsComplete(state: {
 	);
 }
 
+/**
+ * Returns true when all required JIRA steps are done:
+ * credentials + project selected + at least one status mapping.
+ * Used to gate optional step `isComplete` predicates so they only show
+ * green after the integration is actually configured.
+ */
+function areJiraRequiredStepsDone(
+	state: Parameters<typeof isCredentialsComplete>[0] & {
+		jiraProjectKey: string;
+		jiraStatusMappings: Record<string, string>;
+	},
+): boolean {
+	return (
+		isCredentialsComplete(state) &&
+		Boolean(state.jiraProjectKey) &&
+		Object.keys(state.jiraStatusMappings).length > 0
+	);
+}
+
 interface JiraProviderHooks {
 	readonly projectOptions: ReadonlyArray<{ readonly id: string; readonly name: string }>;
 	readonly projectsLoading: boolean;
@@ -250,25 +269,25 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			id: 'jira-labels',
 			title: 'Labels',
 			Component: JiraLabelMappingAdapter,
-			isComplete: () => true, // labels are optional
+			isComplete: (state) => areJiraRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'jira-custom-fields',
 			title: 'Custom fields',
 			Component: JiraCustomFieldMappingAdapter,
-			isComplete: () => true, // cost field optional
+			isComplete: (state) => areJiraRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'jira-issue-types',
 			title: 'Issue types',
 			Component: JiraIssueTypeAdapter,
-			isComplete: () => true, // issue-type mapping optional
+			isComplete: (state) => areJiraRequiredStepsDone(state), // optional, but only green after required steps
 		},
 		{
 			id: 'jira-webhook',
 			title: 'Webhook',
 			Component: JiraWebhookAdapter,
-			isComplete: () => true,
+			isComplete: (state) => areJiraRequiredStepsDone(state),
 		},
 	],
 
