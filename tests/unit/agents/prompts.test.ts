@@ -235,9 +235,26 @@ describe('system prompts content', () => {
 	it('backlog-manager prompt renders multi-item wording when limit>1', () => {
 		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 3 });
 		expect(prompt).toContain(
-			'Move up to 3 cards per run (only enough to fill remaining capacity).',
+			'You MUST fill ALL remaining capacity. Move up to 3 cards per run — always move as many eligible items as there are open slots.',
 		);
-		expect(prompt).toContain('Move only as many cards as needed to reach capacity (limit: 3)');
+		expect(prompt).toContain(
+			'ALWAYS maximize throughput — fill ALL capacity slots with eligible items (limit: 3). Never move fewer when eligible items exist.',
+		);
+	});
+
+	it('backlog-manager prompt includes maximize-throughput rule when limit>1', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 2 });
+		expect(prompt).toContain('MAXIMIZE THROUGHPUT');
+		expect(prompt).toContain('you MUST move 2 items, not fewer');
+		// Should NOT render the maximize-throughput rule for single-item mode
+		const promptSingle = getSystemPrompt('backlog-manager', { maxInFlightItems: 1 });
+		expect(promptSingle).not.toContain('MAXIMIZE THROUGHPUT');
+	});
+
+	it('backlog-manager prompt instructs exact count for multi-slot scenarios', () => {
+		const prompt = getSystemPrompt('backlog-manager', { maxInFlightItems: 2 });
+		expect(prompt).toContain('min(remaining_capacity, eligible_unblocked_items)');
+		expect(prompt).toContain('If 2 open slots and 2 eligible items exist, move BOTH');
 	});
 
 	it('backlog-manager prompt includes conflict awareness section when limit>1', () => {

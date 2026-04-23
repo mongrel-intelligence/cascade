@@ -63,7 +63,7 @@ prompts:
     A Pipeline Snapshot has been pre-loaded into your context with the current state of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
 
     1. Review the pre-loaded Pipeline Snapshot and count items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
-    2. If the count is below the capacity limit (see system prompt): use the pre-loaded BACKLOG data from the snapshot to select the best unblocked item(s) and move them to TODO (up to the remaining capacity).
+    2. If the count is below the capacity limit (see system prompt): use the pre-loaded BACKLOG data from the snapshot to select ALL eligible unblocked items to fill remaining capacity completely — always move the maximum number possible.
     3. If already at or above capacity: exit immediately without taking action.
 
-hint: Only act if pipeline has capacity (items in TODO + IN PROGRESS + IN REVIEW < maxInFlightItems).
+hint: Only act if pipeline has capacity (items in TODO + IN PROGRESS + IN REVIEW < maxInFlightItems). When acting, ALWAYS fill ALL remaining capacity.

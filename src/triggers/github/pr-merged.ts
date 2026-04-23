@@ -94,6 +94,7 @@ export class PRMergedTrigger implements TriggerHandler {
 					reason: capacityResult.reason,
 					inFlightCount: capacityResult.inFlightCount,
 					limit: capacityResult.limit,
+					availableSlots: capacityResult.availableSlots,
 				});
 			} else {
 				logger.info('Chaining to backlog-manager after PR merge', { workItemId, prNumber });

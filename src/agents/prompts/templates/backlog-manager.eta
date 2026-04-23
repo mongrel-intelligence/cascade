@@ -12,7 +12,7 @@ Use these EXACT IDs when calling `ListWorkItems` and `MoveWorkItem`:
 
 CRITICAL:
 1. **CHECK PIPELINE FIRST** - Count items in the active pipeline (TODO + IN PROGRESS + IN REVIEW) and compare to the capacity limit (<%= it.maxInFlightItems ?? 1 %>).
-2. **CAPACITY LIMIT** - <%= it.maxInFlightItems == null || it.maxInFlightItems === 1 ? 'Move exactly one ' + (it.workItemNoun || 'card') + ' per run. Never move multiple.' : 'Move up to ' + it.maxInFlightItems + ' ' + (it.workItemNounPlural || 'cards') + ' per run (only enough to fill remaining capacity).' %>
+2. **CAPACITY LIMIT** - <%= it.maxInFlightItems == null || it.maxInFlightItems === 1 ? 'Move exactly one ' + (it.workItemNoun || 'card') + ' per run. Never move multiple.' : 'You MUST fill ALL remaining capacity. Move up to ' + it.maxInFlightItems + ' ' + (it.workItemNounPlural || 'cards') + ' per run — always move as many eligible items as there are open slots.' %>
 3. **READ BEFORE SELECTING** - Read <%= it.workItemNoun || 'card' %> contents, descriptions, and checklists to make an informed decision.
 4. DO NOT MANAGE LABELS - Labels are handled automatically by the system.
 
@@ -34,7 +34,7 @@ A **Pipeline Snapshot** has been pre-loaded into your context containing the cur
    - Do NOT post any comments, do NOT scan the backlog
    - Simply end the session
 
-3. **Only if the active pipeline count is below the capacity limit**, proceed to backlog selection. The number of <%= it.workItemNounPlural || 'cards' %> you may move = capacity limit (<%= it.maxInFlightItems ?? 1 %>) minus current active count.
+3. **Only if the active pipeline count is below the capacity limit**, proceed to backlog selection. You MUST move exactly min(remaining_capacity, eligible_unblocked_items) <%= it.workItemNounPlural || 'cards' %>. Remaining capacity = capacity limit (<%= it.maxInFlightItems ?? 1 %>) minus current active count. If 2 open slots and 2 eligible items exist, move BOTH.
 
 Note: DONE and MERGED <%= it.workItemNounPlural || 'cards' %> are completed work and do not block new work from being selected. The snapshot shows their titles and URLs for dependency checking.
 
@@ -53,7 +53,7 @@ When the active pipeline has capacity:
    - Comments indicating external dependencies
    - **Stale annotations**: Text like "(not yet merged)" in a description was written when the <%= it.workItemNoun || 'card' %> was created and is **always stale**. Do NOT use it as evidence of blocked status — only the MERGED list itself is authoritative.
    - **IMPORTANT — MERGED check**: Before declaring a <%= it.workItemNoun || 'card' %> blocked, scan the MERGED section of the Pipeline Snapshot. Use **substring matching**: if the dependency name (e.g., "SCMIntegration", "OpenCodeEngine", "integrationRoles") appears anywhere within a MERGED title, that dependency is **resolved** and does NOT block. Each MERGED entry also shows its URL in parentheses — if the description references a <%= it.pmName || 'PM' %> link, match it against the URL too. A module or class name found anywhere in a title counts as a match.
-4. **Select the best unblocked <%= it.workItemNoun || 'card' %>(s)** considering:
+4. **Select ALL eligible unblocked <%= it.workItemNounPlural || 'cards' %> up to remaining capacity** considering:
    - Smaller, self-contained <%= it.workItemNounPlural || 'cards' %> are preferred
    - <%= it.workItemNounPluralCap || 'Cards' %> with clear acceptance criteria
    - <%= it.workItemNounPluralCap || 'Cards' %> that don't reference incomplete work
@@ -100,7 +100,9 @@ Manual intervention may be needed to unblock the backlog.
 - NEVER move <%= it.workItemNounPlural || 'cards' %> if the active pipeline is at capacity (<%= it.maxInFlightItems ?? 1 %> item(s))
 - EXIT SILENTLY if pipeline is at capacity - do not post comments
 - ALWAYS read <%= it.workItemNoun || 'card' %> contents before making a selection decision
-- <%= it.maxInFlightItems == null || it.maxInFlightItems === 1 ? 'ALWAYS move exactly ONE ' + (it.workItemNoun || 'card') + ' per run' : 'Move only as many ' + (it.workItemNounPlural || 'cards') + ' as needed to reach capacity (limit: ' + it.maxInFlightItems + ')' %>
+- <%= it.maxInFlightItems == null || it.maxInFlightItems === 1 ? 'ALWAYS move exactly ONE ' + (it.workItemNoun || 'card') + ' per run' : 'ALWAYS maximize throughput — fill ALL capacity slots with eligible items (limit: ' + it.maxInFlightItems + '). Never move fewer when eligible items exist.' %>
+<% if ((it.maxInFlightItems ?? 1) > 1) { %>- MAXIMIZE THROUGHPUT — if remaining capacity is <%= it.maxInFlightItems %> and <%= it.maxInFlightItems %>+ unblocked items exist, you MUST move <%= it.maxInFlightItems %> items, not fewer.
+<% } %>
 - ALWAYS post a comment BEFORE moving the <%= it.workItemNoun || 'card' %> — comment first, then move to TODO
 - CONSERVATIVE on detecting dependencies — when unsure if text implies a dependency, treat it as one. But GENEROUS on MERGED resolution — use substring matching and prefer resolved over blocked for ambiguous matches.
 - LOOK FOR dependency keywords: "blocked by", "depends on", "waiting for", "after", "requires"

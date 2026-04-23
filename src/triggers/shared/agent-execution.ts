@@ -734,6 +734,7 @@ async function propagateAutoLabelAfterSplitting(
 				reason: capacityResult.reason,
 				inFlightCount: capacityResult.inFlightCount,
 				limit: capacityResult.limit,
+				availableSlots: capacityResult.availableSlots,
 			},
 		);
 		return null;

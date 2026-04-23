@@ -39,6 +39,14 @@ export interface PipelineCapacityResult {
 	inFlightCount?: number;
 	/** The effective capacity limit used for the comparison. */
 	limit?: number;
+	/**
+	 * Number of open slots available (limit - inFlightCount).
+	 * - `'backlog-empty'`: equals limit (pipeline has capacity but nothing to fill it)
+	 * - `'at-capacity'`: 0 (no open slots)
+	 * - `'below-capacity'`: limit - inFlightCount (slots waiting to be filled)
+	 * - `'error'` / `'misconfigured'`: undefined (cannot be computed)
+	 */
+	availableSlots?: number;
 }
 
 /**
@@ -113,8 +121,17 @@ export async function isPipelineAtCapacity(
 		// key, mapped to the provider's native identifier internally.
 		const backlogItems = await provider.listWorkItems(undefined, { status: 'backlog' });
 		if (backlogItems.length === 0) {
-			logger.info('isPipelineAtCapacity: backlog is empty', { projectId: project.id });
-			return { atCapacity: true, reason: 'backlog-empty', inFlightCount: 0, limit };
+			logger.info('isPipelineAtCapacity: backlog is empty', {
+				projectId: project.id,
+				availableSlots: limit,
+			});
+			return {
+				atCapacity: true,
+				reason: 'backlog-empty',
+				inFlightCount: 0,
+				limit,
+				availableSlots: limit,
+			};
 		}
 
 		const inFlightLists = await Promise.all(
@@ -129,11 +146,13 @@ export async function isPipelineAtCapacity(
 				projectId: project.id,
 				inFlightCount,
 				limit,
+				availableSlots: 0,
 			});
-			return { atCapacity: true, reason: 'at-capacity', inFlightCount, limit };
+			return { atCapacity: true, reason: 'at-capacity', inFlightCount, limit, availableSlots: 0 };
 		}
 
-		return { atCapacity: false, reason: 'below-capacity', inFlightCount, limit };
+		const availableSlots = limit - inFlightCount;
+		return { atCapacity: false, reason: 'below-capacity', inFlightCount, limit, availableSlots };
 	} catch (err) {
 		logger.warn('isPipelineAtCapacity: failed to check capacity, assuming not at capacity', {
 			projectId: project.id,

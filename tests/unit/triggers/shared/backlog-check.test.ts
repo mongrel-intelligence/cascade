@@ -107,6 +107,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('backlog-empty');
 			expect(result.inFlightCount).toBe(0);
 			expect(result.limit).toBe(1);
+			expect(result.availableSlots).toBe(1);
 		});
 
 		it('returns at-capacity when in-flight count equals limit (default 1)', async () => {
@@ -129,6 +130,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('at-capacity');
 			expect(result.inFlightCount).toBe(1);
 			expect(result.limit).toBe(1);
+			expect(result.availableSlots).toBe(0);
 		});
 
 		it('returns at-capacity when in-flight count exceeds limit', async () => {
@@ -166,6 +168,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('at-capacity');
 			expect(result.inFlightCount).toBe(3);
 			expect(result.limit).toBe(2);
+			expect(result.availableSlots).toBe(0);
 		});
 
 		it('returns below-capacity when in-flight count is below limit=3', async () => {
@@ -203,6 +206,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('below-capacity');
 			expect(result.inFlightCount).toBe(2);
 			expect(result.limit).toBe(3);
+			expect(result.availableSlots).toBe(1);
 		});
 
 		it('uses default limit=1 when maxInFlightItems is not set', async () => {
@@ -257,6 +261,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('below-capacity');
 			expect(result.inFlightCount).toBe(0);
 			expect(result.limit).toBe(5);
+			expect(result.availableSlots).toBe(5);
 		});
 
 		it('returns not-at-capacity (error fallback) when Trello API throws', async () => {
@@ -269,6 +274,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('error');
+			expect(result.availableSlots).toBeUndefined();
 			expect(mockLogger.warn).toHaveBeenCalledWith(
 				'isPipelineAtCapacity: failed to check capacity, assuming not at capacity',
 				expect.objectContaining({ projectId: trelloProject.id, error: expect.any(String) }),
@@ -283,6 +289,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 		});
 
 		it('returns misconfigured when Trello config is missing entirely', async () => {
@@ -293,6 +300,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 		});
 
 		it('counts items across todo, inProgress, and inReview lists', async () => {
@@ -331,6 +339,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('below-capacity');
 			expect(result.inFlightCount).toBe(6); // 2 + 1 + 3
 			expect(result.limit).toBe(10);
+			expect(result.availableSlots).toBe(4); // 10 - 6
 		});
 	});
 
@@ -371,6 +380,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('backlog-empty');
 			expect(result.inFlightCount).toBe(0);
 			expect(result.limit).toBe(1);
+			expect(result.availableSlots).toBe(1);
 		});
 
 		it('returns at-capacity when in-flight count equals limit=1', async () => {
@@ -394,6 +404,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('at-capacity');
 			expect(result.inFlightCount).toBe(1);
 			expect(result.limit).toBe(1);
+			expect(result.availableSlots).toBe(0);
 		});
 
 		it('returns below-capacity when in-flight count is less than limit=3', async () => {
@@ -432,6 +443,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('below-capacity');
 			expect(result.inFlightCount).toBe(2);
 			expect(result.limit).toBe(3);
+			expect(result.availableSlots).toBe(1);
 		});
 
 		it('returns at-capacity when in-flight count exceeds limit=2', async () => {
@@ -471,6 +483,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('at-capacity');
 			expect(result.inFlightCount).toBe(3);
 			expect(result.limit).toBe(2);
+			expect(result.availableSlots).toBe(0);
 		});
 
 		it('uses default limit=1 when maxInFlightItems is not set', async () => {
@@ -527,6 +540,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('below-capacity');
 			expect(result.inFlightCount).toBe(0);
 			expect(result.limit).toBe(5);
+			expect(result.availableSlots).toBe(5);
 		});
 
 		it('returns not-at-capacity (error fallback) when JIRA API throws', async () => {
@@ -540,6 +554,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('error');
+			expect(result.availableSlots).toBeUndefined();
 			expect(mockLogger.warn).toHaveBeenCalledWith(
 				'isPipelineAtCapacity: failed to check capacity, assuming not at capacity',
 				expect.objectContaining({ projectId: jiraProject.id, error: expect.any(String) }),
@@ -557,6 +572,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 		});
 
 		it('returns misconfigured when JIRA config has no projectKey', async () => {
@@ -570,6 +586,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 		});
 
 		it('returns misconfigured when JIRA config is missing entirely', async () => {
@@ -580,6 +597,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 		});
 	});
 
@@ -613,6 +631,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(true);
 			expect(result.reason).toBe('backlog-empty');
+			expect(result.availableSlots).toBe(1);
 			expect(provider.listWorkItems).toHaveBeenCalledWith(undefined, { status: 'backlog' });
 		});
 
@@ -634,6 +653,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.reason).toBe('below-capacity');
 			expect(result.inFlightCount).toBe(0);
 			expect(result.limit).toBe(1);
+			expect(result.availableSlots).toBe(1);
 		});
 
 		it('returns at-capacity when Linear in-flight count meets the limit', async () => {
@@ -651,6 +671,7 @@ describe('isPipelineAtCapacity', () => {
 			expect(result.atCapacity).toBe(true);
 			expect(result.reason).toBe('at-capacity');
 			expect(result.inFlightCount).toBe(1);
+			expect(result.availableSlots).toBe(0);
 		});
 
 		it('returns misconfigured when Linear has no statuses.backlog configured', async () => {
@@ -664,6 +685,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 			expect(provider.listWorkItems).not.toHaveBeenCalled();
 		});
 
@@ -678,6 +700,7 @@ describe('isPipelineAtCapacity', () => {
 
 			expect(result.atCapacity).toBe(false);
 			expect(result.reason).toBe('misconfigured');
+			expect(result.availableSlots).toBeUndefined();
 		});
 	});
 
