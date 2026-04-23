@@ -188,6 +188,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 									</TabsList>
 
 									{engines.map((engine) => {
+										const isDefault = engine.id === effectiveEngineId;
 										const engineSecrets = ENGINE_SECRETS.filter((s) =>
 											s.engines?.includes(engine.id),
 										);
@@ -205,31 +206,33 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 													<p className="text-sm text-muted-foreground">{engine.description}</p>
 												)}
 
-												{/* Model */}
-												<div className="space-y-2">
-													<div className="flex items-center gap-1.5">
-														<Label htmlFor={`model-${engine.id}`}>Model</Label>
-														<Tooltip>
-															<TooltipTrigger asChild>
-																<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-															</TooltipTrigger>
-															<TooltipContent>
-																Individual agents can override this in the Agents tab.
-															</TooltipContent>
-														</Tooltip>
+												{/* Model — only shown for the default engine (project-level setting) */}
+												{isDefault && (
+													<div className="space-y-2">
+														<div className="flex items-center gap-1.5">
+															<Label htmlFor={`model-${engine.id}`}>Model</Label>
+															<Tooltip>
+																<TooltipTrigger asChild>
+																	<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+																</TooltipTrigger>
+																<TooltipContent>
+																	Individual agents can override this in the Agents tab.
+																</TooltipContent>
+															</Tooltip>
+														</div>
+														<ModelField
+															id={`model-${engine.id}`}
+															value={model}
+															onChange={setModel}
+															engine={engine.id}
+															defaultLabel={defaults ? defaults.model : undefined}
+															projectId={project.id}
+														/>
+														<p className="text-xs text-muted-foreground">
+															Project default. Per-agent overrides in the Agents tab.
+														</p>
 													</div>
-													<ModelField
-														id={`model-${engine.id}`}
-														value={model}
-														onChange={setModel}
-														engine={engine.id}
-														defaultLabel={defaults ? defaults.model : undefined}
-														projectId={project.id}
-													/>
-													<p className="text-xs text-muted-foreground">
-														Project default. Per-agent overrides in the Agents tab.
-													</p>
-												</div>
+												)}
 
 												{/* Engine Settings */}
 												<EngineSettingsFields
@@ -239,35 +242,37 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 													engineDefaults={engineDefaults}
 												/>
 
-												{/* Max Iterations */}
-												<div className="space-y-2">
-													<div className="flex items-center gap-1.5">
-														<Label htmlFor={`maxIterations-${engine.id}`}>Max Iterations</Label>
-														<Tooltip>
-															<TooltipTrigger asChild>
-																<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-															</TooltipTrigger>
-															<TooltipContent>
-																Individual agents can override this in the Agents tab.
-															</TooltipContent>
-														</Tooltip>
+												{/* Max Iterations — only shown for the default engine (project-level setting) */}
+												{isDefault && (
+													<div className="space-y-2">
+														<div className="flex items-center gap-1.5">
+															<Label htmlFor={`maxIterations-${engine.id}`}>Max Iterations</Label>
+															<Tooltip>
+																<TooltipTrigger asChild>
+																	<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+																</TooltipTrigger>
+																<TooltipContent>
+																	Individual agents can override this in the Agents tab.
+																</TooltipContent>
+															</Tooltip>
+														</div>
+														<Input
+															id={`maxIterations-${engine.id}`}
+															type="number"
+															min="1"
+															step="1"
+															className="w-32"
+															value={maxIterations}
+															onChange={(e) => setMaxIterations(e.target.value)}
+															placeholder={
+																defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'
+															}
+														/>
+														<p className="text-xs text-muted-foreground">
+															Safety limit on tool-call iterations per run.
+														</p>
 													</div>
-													<Input
-														id={`maxIterations-${engine.id}`}
-														type="number"
-														min="1"
-														step="1"
-														className="w-32"
-														value={maxIterations}
-														onChange={(e) => setMaxIterations(e.target.value)}
-														placeholder={
-															defaults ? `${defaults.maxIterations} (default)` : 'e.g. 50'
-														}
-													/>
-													<p className="text-xs text-muted-foreground">
-														Safety limit on tool-call iterations per run.
-													</p>
-												</div>
+												)}
 
 												{/* Credentials */}
 												{engineSecrets.length > 0 ? (
