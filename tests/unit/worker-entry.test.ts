@@ -516,6 +516,12 @@ describe('main() - environment variable validation', () => {
 	let exitSpy: ReturnType<typeof vi.spyOn>;
 
 	beforeEach(() => {
+		// Clear JOB_* env vars before each test — they may be inherited from the outer
+		// process (e.g. when running inside a CASCADE worker container). Tests that need
+		// specific values set them explicitly inside the test body; afterEach cleans up.
+		delete process.env.JOB_ID;
+		delete process.env.JOB_TYPE;
+		delete process.env.JOB_DATA;
 		exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?) => {
 			throw new Error(`process.exit(${code ?? 0})`);
 		});
