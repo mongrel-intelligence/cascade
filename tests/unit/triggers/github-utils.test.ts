@@ -5,7 +5,9 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 }));
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
+import type { PersonaIdentities } from '../../../src/github/personas.js';
 import {
+	evaluateAuthorMode,
 	extractJiraIssueKey,
 	extractTrelloCardId,
 	extractWorkItemId,
@@ -198,5 +200,112 @@ describe('parsePrNumberFromRef', () => {
 
 	it('returns null for partial match (no leading refs/pull/)', () => {
 		expect(parsePrNumberFromRef('pull/42/head')).toBeNull();
+	});
+});
+
+describe('evaluateAuthorMode', () => {
+	const personas: PersonaIdentities = {
+		implementer: 'cascade-impl',
+		reviewer: 'cascade-reviewer',
+	};
+
+	it('returns null when personaIdentities is undefined', () => {
+		const result = evaluateAuthorMode('some-user', undefined, {}, 'test-handler');
+		expect(result).toBeNull();
+	});
+
+	it('returns shouldTrigger:true + isCascadePR:true for implementer login when authorMode=own', () => {
+		const result = evaluateAuthorMode('cascade-impl', personas, { authorMode: 'own' }, 'handler');
+		expect(result).toEqual({ shouldTrigger: true, authorMode: 'own', isCascadePR: true });
+	});
+
+	it('returns shouldTrigger:true + isCascadePR:true for reviewer login when authorMode=own (core bug regression)', () => {
+		const result = evaluateAuthorMode(
+			'cascade-reviewer',
+			personas,
+			{ authorMode: 'own' },
+			'handler',
+		);
+		expect(result).toEqual({ shouldTrigger: true, authorMode: 'own', isCascadePR: true });
+	});
+
+	it('returns shouldTrigger:true + isCascadePR:true for implementer[bot] variant when authorMode=own', () => {
+		const result = evaluateAuthorMode(
+			'cascade-impl[bot]',
+			personas,
+			{ authorMode: 'own' },
+			'handler',
+		);
+		expect(result).toEqual({ shouldTrigger: true, authorMode: 'own', isCascadePR: true });
+	});
+
+	it('returns shouldTrigger:true + isCascadePR:true for reviewer[bot] variant when authorMode=own', () => {
+		const result = evaluateAuthorMode(
+			'cascade-reviewer[bot]',
+			personas,
+			{ authorMode: 'own' },
+			'handler',
+		);
+		expect(result).toEqual({ shouldTrigger: true, authorMode: 'own', isCascadePR: true });
+	});
+
+	it('returns shouldTrigger:false for external author when authorMode=own', () => {
+		const result = evaluateAuthorMode('external-dev', personas, { authorMode: 'own' }, 'handler');
+		expect(result).toEqual({ shouldTrigger: false, authorMode: 'own', isCascadePR: false });
+	});
+
+	it('returns shouldTrigger:true for external author when authorMode=external', () => {
+		const result = evaluateAuthorMode(
+			'external-dev',
+			personas,
+			{ authorMode: 'external' },
+			'handler',
+		);
+		expect(result).toEqual({ shouldTrigger: true, authorMode: 'external', isCascadePR: false });
+	});
+
+	it('returns shouldTrigger:false for implementer when authorMode=external', () => {
+		const result = evaluateAuthorMode(
+			'cascade-impl',
+			personas,
+			{ authorMode: 'external' },
+			'handler',
+		);
+		expect(result).toEqual({ shouldTrigger: false, authorMode: 'external', isCascadePR: true });
+	});
+
+	it('returns shouldTrigger:false for reviewer when authorMode=external (second regression test)', () => {
+		const result = evaluateAuthorMode(
+			'cascade-reviewer',
+			personas,
+			{ authorMode: 'external' },
+			'handler',
+		);
+		expect(result).toEqual({ shouldTrigger: false, authorMode: 'external', isCascadePR: true });
+	});
+
+	it('returns shouldTrigger:true for any author when authorMode=all', () => {
+		for (const login of ['cascade-impl', 'cascade-reviewer', 'external-dev']) {
+			const result = evaluateAuthorMode(login, personas, { authorMode: 'all' }, 'handler');
+			expect(result?.shouldTrigger).toBe(true);
+			expect(result?.authorMode).toBe('all');
+		}
+	});
+
+	it('falls back to "own" when authorMode is an invalid string', () => {
+		const result = evaluateAuthorMode(
+			'cascade-impl',
+			personas,
+			{ authorMode: 'invalid' },
+			'handler',
+		);
+		expect(result?.authorMode).toBe('own');
+		expect(result?.shouldTrigger).toBe(true);
+	});
+
+	it('falls back to "own" when authorMode is missing from parameters', () => {
+		const result = evaluateAuthorMode('cascade-impl', personas, {}, 'handler');
+		expect(result?.authorMode).toBe('own');
+		expect(result?.shouldTrigger).toBe(true);
 	});
 });

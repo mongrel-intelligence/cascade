@@ -67,7 +67,7 @@ export class PROpenedTrigger implements TriggerHandler {
 				handler: this.name,
 				prNumber,
 				prAuthor,
-				isImplementerPR: authorResult.isImplementerPR,
+				isCascadePR: authorResult.isCascadePR,
 				authorMode: authorResult.authorMode,
 			});
 			return null;

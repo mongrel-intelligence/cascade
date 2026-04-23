@@ -1,11 +1,12 @@
 import { lookupWorkItemForPR } from '../../db/repositories/prWorkItemsRepository.js';
+import type { PersonaIdentities } from '../../github/personas.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
 export interface AuthorModeResult {
 	shouldTrigger: boolean;
 	authorMode: string;
-	isImplementerPR: boolean;
+	isCascadePR: boolean;
 }
 
 /**
@@ -14,10 +15,13 @@ export interface AuthorModeResult {
  *
  * Returns `null` when personaIdentities is missing (caller should return null).
  * Validates authorMode against known values and falls back to 'own'.
+ *
+ * "own" means the PR was authored by any CASCADE persona (implementer OR reviewer).
+ * This aligns with `isCascadeBot()` which already checks both personas.
  */
 export function evaluateAuthorMode(
 	prAuthorLogin: string,
-	personaIdentities: { implementer: string } | undefined,
+	personaIdentities: PersonaIdentities | undefined,
 	parameters: Record<string, unknown>,
 	handlerName: string,
 ): AuthorModeResult | null {
@@ -26,7 +30,10 @@ export function evaluateAuthorMode(
 		return null;
 	}
 	const implLogin = personaIdentities.implementer;
+	const reviewerLogin = personaIdentities.reviewer;
 	const isImplementerPR = prAuthorLogin === implLogin || prAuthorLogin === `${implLogin}[bot]`;
+	const isReviewerPR = prAuthorLogin === reviewerLogin || prAuthorLogin === `${reviewerLogin}[bot]`;
+	const isCascadePR = isImplementerPR || isReviewerPR;
 
 	const rawMode = parameters.authorMode;
 	const authorMode =
@@ -41,10 +48,10 @@ export function evaluateAuthorMode(
 
 	const shouldTrigger =
 		authorMode === 'all' ||
-		(authorMode === 'own' && isImplementerPR) ||
-		(authorMode === 'external' && !isImplementerPR);
+		(authorMode === 'own' && isCascadePR) ||
+		(authorMode === 'external' && !isCascadePR);
 
-	return { shouldTrigger, authorMode, isImplementerPR };
+	return { shouldTrigger, authorMode, isCascadePR };
 }
 
 /**

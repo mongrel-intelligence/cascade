@@ -138,7 +138,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				handler: this.name,
 				prNumber,
 				prAuthor: prDetails.user.login,
-				isImplementerPR: authorResult.isImplementerPR,
+				isCascadePR: authorResult.isCascadePR,
 				authorMode: authorResult.authorMode,
 			});
 			return null;

@@ -417,10 +417,43 @@ describe('PROpenedTrigger', () => {
 			expect(result?.agentType).toBe('review');
 		});
 
-		it('fires for reviewer persona PR when authorMode=external (reviewer is not implementer)', async () => {
+		it('skips reviewer persona PR when authorMode=external (reviewer is own)', async () => {
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: true,
 				parameters: { authorMode: 'external' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'feat: add login',
+						body: 'Implements feature',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/login', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'cascade-review' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'cascade-review' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('fires for reviewer persona PR when authorMode=own', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'own' },
 			});
 
 			const ctx: TriggerContext = {

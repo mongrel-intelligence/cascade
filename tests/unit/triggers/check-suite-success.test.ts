@@ -880,6 +880,68 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).toBeNull();
 		});
 
+		it('triggers when PR authored by reviewer persona and authorMode=own', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'own' },
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Reviewer persona PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/reviewer-authored',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-reviewer' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('skips reviewer persona PR when authorMode=external', async () => {
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'external' },
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Reviewer persona PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				headRef: 'feature/reviewer-authored',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-reviewer' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
 		it('triggers for both authors when authorMode=all', async () => {
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({
 				enabled: true,
