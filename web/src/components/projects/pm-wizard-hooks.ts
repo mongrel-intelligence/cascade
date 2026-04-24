@@ -17,6 +17,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
+import type { DiscoveryCapability } from '../../../../src/pm/types.js';
 import type {
 	LinearProjectOption,
 	LinearTeamDetails,
@@ -83,7 +84,7 @@ export function buildProviderAuthArg(
 interface DiscoveryConfig<TItem, TDetail> {
 	providerId: Provider;
 	/** Primary list capability, e.g. 'boards' | 'projects' | 'teams' */
-	capability: string;
+	capability: DiscoveryCapability;
 	/** Returns the current list from state (used for "already loaded?" guard) */
 	getList: (state: WizardState) => TItem[];
 	/** Returns the selected ID from state (used for edit-mode detail fetch) */
@@ -166,7 +167,7 @@ function useProviderDiscovery<TItem, TDetail>(
 			const authArg = buildProviderAuthArg(state, projectId);
 			return (await trpcClient.pm.discovery.discover.mutate({
 				providerId: config.providerId,
-				capability: `${config.capability.replace(/s$/, '')}Details`,
+				capability: `${config.capability.replace(/s$/, '')}Details` as DiscoveryCapability,
 				args: { containerId: selectedId },
 				...authArg,
 			})) as TDetail;
