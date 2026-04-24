@@ -268,3 +268,25 @@ describe('GitHub SCM gadget definitions', () => {
 		});
 	});
 });
+
+// ---------------------------------------------------------------------------
+// Spec 014 plan 2: createPRReviewDef declarative opt-in
+// ---------------------------------------------------------------------------
+
+describe('createPRReviewDef — spec 014 opt-in', () => {
+	it('comments parameter declares cliAliases: ["comment"]', () => {
+		const comments = createPRReviewDef.parameters.comments as {
+			cliAliases?: readonly string[];
+		};
+		expect(comments.cliAliases).toEqual(['comment']);
+	});
+
+	it('cli.fileInputAlternatives includes a comments-file entry with parseAs:"json"', () => {
+		const alts = createPRReviewDef.cli?.fileInputAlternatives ?? [];
+		const commentsFile = alts.find((a) => a.paramName === 'comments');
+		expect(commentsFile).toBeDefined();
+		expect(commentsFile?.fileFlag).toBe('comments-file');
+		expect(commentsFile?.parseAs).toBe('json');
+		expect(commentsFile?.description).toBeTruthy();
+	});
+});

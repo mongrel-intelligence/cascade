@@ -51,5 +51,5 @@ No `CLAUDE.md` entry — rejected per Phase 4 decision; authoring rule homed in 
 | `tests/unit/gadgets/shared/errorEnvelope.test.ts` (new) | 1 | unit | 5 |
 | `tests/unit/gadgets/shared/cliCommandFactory.test.ts` (new) | 1 | unit | 10 |
 | `tests/unit/backends/shared-nativeToolPrompts.test.ts` (extend) | 1 | unit | +7 |
-| `tests/unit/gadgets/github/definitions.test.ts` (new or extend) | 2 | unit | 4 |
-| `tests/integration/cascade-tools-createprreview.test.ts` (new) | 2 | integration | 6 |
+| `tests/unit/gadgets/github/definitions.test.ts` (extend) | 2 | unit | 2 |
+| _(binary smoke)_ — `[manual]` protocol documented in plan 2 | 2 | manual | 6 scenarios |

@@ -198,7 +198,8 @@ export const createPRReviewDef: ToolDefinition = {
 			type: 'array',
 			items: 'object',
 			describe:
-				'Optional inline comments on specific files/lines ([{"path":"file","line":1,"body":"comment"}])',
+				'Inline review comments on specific files/lines. Pass a JSON array of {path, line, body} objects.',
+			cliAliases: ['comment'],
 			optional: true,
 		},
 	},
@@ -235,6 +236,15 @@ export const createPRReviewDef: ToolDefinition = {
 	],
 	cli: {
 		autoResolved: ownerRepoAutoResolved,
+		fileInputAlternatives: [
+			{
+				paramName: 'comments',
+				fileFlag: 'comments-file',
+				parseAs: 'json',
+				description:
+					'Read --comments JSON from file (use - for stdin). Prefer this for long payloads.',
+			},
+		],
 	},
 };
 
