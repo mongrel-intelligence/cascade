@@ -159,6 +159,8 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **`.cascade/` directory** — Each target repository can include a `.cascade/` directory with hooks that control how the agent sets up the project, lints after edits, and runs tests. See **[`.cascade/` Directory Guide](./docs/cascade-directory.md)**.
 
+**Observable subprocesses** — `cascade-tools` streams child stdout/stderr live to the parent's stderr so LLM-driven agents can see progress as it happens, emits 30-second heartbeats during silent stretches, and enforces both idle-silence and wall-clock timeouts with SIGTERM→SIGKILL escalation across the full process tree. See [spec 013](./docs/specs/013-subprocess-output-streaming.md).
+
 For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 
 ---

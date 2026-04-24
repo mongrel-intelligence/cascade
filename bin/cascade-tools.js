@@ -21,7 +21,7 @@ pjson.oclif = {
 	commands: {
 		strategy: 'pattern',
 		target: './dist/cli',
-		globPatterns: ['**/*.js', '!**/dashboard/**', '!**/_shared/**', '!base.js'],
+		globPatterns: ['**/*.js', '!**/dashboard/**', '!**/_shared/**', '!base.js', '!bootstrap.js'],
 	},
 	topicSeparator: ' ',
 };

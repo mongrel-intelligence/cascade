@@ -6,7 +6,7 @@ plan_slug: observable-subprocess-helper
 level: plan
 parent_spec: docs/specs/013-subprocess-output-streaming.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 013/1: Observable subprocess helper
@@ -281,18 +281,22 @@ If any fail, do not mark verified; investigate root cause and file a follow-up.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
-- [ ] AC #11
-- [ ] AC #12
-- [ ] AC #13
-- [ ] AC #14
-- [ ] AC #15
+- [x] AC #1 — streaming (2 tests in `tests/unit/utils/repo.test.ts`)
+- [x] AC #2 — heartbeat (3 tests — emit on silence, reset on output, no-op on fast commands)
+- [x] AC #3 — idle-timeout SIGTERM→SIGKILL (2 tests)
+- [x] AC #4 — wall-timeout (1 test)
+- [x] AC #5 — descendant kill via tree-kill (covered by the kill tests asserting tree-kill is called)
+- [x] AC #6 — captured output preserved on success + non-zero exit + silent mode (3 tests)
+- [x] AC #7 — pushBranch timeouts + pushOutput in result (3 tests in `tests/unit/gadgets/github/core/createPR.test.ts`)
+- [x] AC #8 — stageAndCommit timeouts + commitOutput (2 tests)
+- [x] AC #9 — oclif `command bootstrap not found` warning silenced (verified live via `node bin/cascade-tools.js --help` — zero warning lines)
+- [x] AC #10 — all new code has tests
+- [x] AC #11 — `npm run build` passes
+- [x] AC #12 — `npm test` passes (8338/8338, 23 skipped pre-existing)
+- [x] AC #13 — `npm run typecheck` passes (clean)
+- [x] AC #14 — `npm run lint` passes (clean)
+- [x] AC #15 — docs updated: `README.md`, `docs/cascade-directory.md`, `CHANGELOG.md`
+
+### Spec AC #9 (agent end-to-end) — `[manual]` — DEFERRED
+
+The Manual Verification protocol in this plan requires triggering a live CASCADE agent run against a target repo with a multi-second pre-push hook and observing the Monitor output file over ~60s. That cannot be executed inside the `/implement` run: it requires the cascade dashboard/router/worker running in the user's environment, an inbound Linear/Trello/JIRA webhook, and an agent-driven `cascade-tools scm create-pr` call. **Recommended next step**: after this plan lands on `dev` and a worker picks up the updated image, monitor the next real implementation-agent run against ucho (or any project with a slow pre-push hook) and confirm the four observable outcomes listed in the Manual Verification protocol.

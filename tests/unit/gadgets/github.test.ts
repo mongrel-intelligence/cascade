@@ -175,11 +175,13 @@ describe('GitHub Gadgets', () => {
 			);
 			// Should check for changes
 			expect(runCommand).toHaveBeenCalledWith('git', ['status', '--porcelain'], expect.any(String));
-			// Should push
+			// Should push (spec 013: push now passes timeout options as 4th/5th args)
 			expect(runCommand).toHaveBeenCalledWith(
 				'git',
 				['push', '-u', 'origin', 'feature/test'],
 				expect.any(String),
+				undefined,
+				expect.objectContaining({ label: 'git-push' }),
 			);
 			expect(result).toContain('PR #44 created successfully');
 		});
@@ -249,11 +251,13 @@ describe('GitHub Gadgets', () => {
 				head: 'feature/test',
 			});
 
-			// Should commit with PR title as message
+			// Should commit with PR title as message (spec 013: commit now passes timeout options)
 			expect(runCommand).toHaveBeenCalledWith(
 				'git',
 				['commit', '-m', 'Test PR'],
 				expect.any(String),
+				undefined,
+				expect.objectContaining({ label: 'git-commit' }),
 			);
 		});
 
@@ -288,6 +292,8 @@ describe('GitHub Gadgets', () => {
 				'git',
 				['commit', '-m', 'feat(test): custom commit message'],
 				expect.any(String),
+				undefined,
+				expect.objectContaining({ label: 'git-commit' }),
 			);
 		});
 
@@ -319,11 +325,13 @@ describe('GitHub Gadgets', () => {
 				['status', '--porcelain'],
 				expect.any(String),
 			);
-			// Should still push
+			// Should still push (spec 013: passes timeout options)
 			expect(runCommand).toHaveBeenCalledWith(
 				'git',
 				['push', '-u', 'origin', 'feature/test'],
 				expect.any(String),
+				undefined,
+				expect.objectContaining({ label: 'git-push' }),
 			);
 		});
 

@@ -527,3 +527,166 @@ describe('createPR', () => {
 		expect(commitCall).toContain('Custom commit message');
 	});
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// Spec 013: per-caller timeouts + captured hook output preservation
+// ────────────────────────────────────────────────────────────────────────────
+
+describe('pushBranch and stageAndCommit timeout options (spec 013)', () => {
+	it('pushBranch passes an explicit wallTimeoutMs below the gadget 240s ceiling', async () => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
+			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: false,
+			push: true,
+		});
+
+		const pushCall = mockRunCommand.mock.calls.find(
+			(c) => Array.isArray(c[1]) && c[1][0] === 'push',
+		);
+		expect(pushCall).toBeDefined();
+		// 5th arg is RunCommandOptions
+		const options = pushCall?.[4] as { wallTimeoutMs?: number } | undefined;
+		expect(options).toBeDefined();
+		expect(typeof options?.wallTimeoutMs).toBe('number');
+		expect(options?.wallTimeoutMs).toBeLessThanOrEqual(230_000);
+	});
+
+	it('pushBranch passes an explicit finite idleTimeoutMs', async () => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
+			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: false,
+			push: true,
+		});
+
+		const pushCall = mockRunCommand.mock.calls.find(
+			(c) => Array.isArray(c[1]) && c[1][0] === 'push',
+		);
+		const options = pushCall?.[4] as { idleTimeoutMs?: number } | undefined;
+		expect(typeof options?.idleTimeoutMs).toBe('number');
+		expect(options?.idleTimeoutMs).toBeGreaterThan(0);
+	});
+
+	it('stageAndCommit passes explicit wallTimeoutMs and idleTimeoutMs', async () => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
+			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+			if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: true,
+			push: false,
+		});
+
+		const commitCall = mockRunCommand.mock.calls.find(
+			(c) => Array.isArray(c[1]) && c[1][0] === 'commit',
+		);
+		expect(commitCall).toBeDefined();
+		const options = commitCall?.[4] as
+			| { wallTimeoutMs?: number; idleTimeoutMs?: number }
+			| undefined;
+		expect(typeof options?.wallTimeoutMs).toBe('number');
+		expect(typeof options?.idleTimeoutMs).toBe('number');
+	});
+
+	it('createPR result carries captured push output on success', async () => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
+			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+			if (args?.[0] === 'push')
+				return {
+					stdout: 'Pre-push hook ran: typecheck OK\n',
+					stderr: 'To github.com...\n',
+					exitCode: 0,
+				};
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		const result = await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: false,
+			push: true,
+		});
+
+		expect(result.pushOutput).toBeDefined();
+		expect(result.pushOutput).toContain('Pre-push hook ran: typecheck OK');
+	});
+
+	it('createPR result carries captured commit output on success', async () => {
+		mockRunCommand.mockImplementation(async (_cmd, args) => {
+			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+			if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
+			if (args?.[0] === 'commit')
+				return {
+					stdout: 'Pre-commit hook ran: biome OK\n[feat abc123] msg\n',
+					stderr: '',
+					exitCode: 0,
+				};
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		const result = await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: true,
+			push: false,
+		});
+
+		expect(result.commitOutput).toBeDefined();
+		expect(result.commitOutput).toContain('Pre-commit hook ran: biome OK');
+	});
+});

@@ -5,7 +5,6 @@ vi.mock('node:child_process', async () => {
 	return {
 		...actual,
 		execSync: vi.fn(),
-		spawn: vi.fn(),
 	};
 });
 
@@ -13,6 +12,16 @@ vi.mock('node:fs', () => ({
 	existsSync: vi.fn(),
 	mkdirSync: vi.fn(),
 	rmSync: vi.fn(),
+}));
+
+vi.mock('execa', () => ({
+	execa: vi.fn(),
+}));
+
+vi.mock('tree-kill', () => ({
+	default: vi.fn((_pid: number, _signal: string, cb?: (err?: Error) => void) => {
+		if (cb) cb();
+	}),
 }));
 
 vi.mock('../../../src/config/projects.js', () => ({
@@ -26,10 +35,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { execSync, spawn } from 'node:child_process';
-import { EventEmitter } from 'node:events';
+import { execSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { Readable } from 'node:stream';
+import { execa } from 'execa';
+import treeKill from 'tree-kill';
 import {
 	cleanupTempDir,
 	cloneRepo,
@@ -176,74 +186,352 @@ describe('repo utils', () => {
 	});
 
 	describe('runCommand', () => {
-		function createMockChild() {
+		/**
+		 * Build a fake execa Subprocess: awaitable + has readable stdout/stderr + pid.
+		 * `resolveExec` / `rejectExec` are test hooks to settle the subprocess when done.
+		 */
+		function createMockSubprocess() {
 			const stdout = new Readable({ read() {} });
 			const stderr = new Readable({ read() {} });
-			const child = new EventEmitter() as EventEmitter & {
+			let resolveExec: (r: { stdout: string; stderr: string; exitCode: number }) => void;
+			let rejectExec: (e: Error) => void;
+			const promise = new Promise<{ stdout: string; stderr: string; exitCode: number }>(
+				(res, rej) => {
+					resolveExec = res;
+					rejectExec = rej;
+				},
+			);
+			const subprocess = promise as Promise<{
+				stdout: string;
+				stderr: string;
+				exitCode: number;
+			}> & {
 				stdout: Readable;
 				stderr: Readable;
-				stdin: { write: vi.Mock; end: vi.Mock };
+				pid: number;
+				resolveExec: typeof resolveExec;
+				rejectExec: typeof rejectExec;
 			};
-			child.stdout = stdout;
-			child.stderr = stderr;
-			child.stdin = { write: vi.fn(), end: vi.fn() };
-			return child;
+			subprocess.stdout = stdout;
+			subprocess.stderr = stderr;
+			subprocess.pid = 12345;
+			subprocess.resolveExec = (r) => resolveExec(r);
+			subprocess.rejectExec = (e) => rejectExec(e);
+			return subprocess;
 		}
 
-		it('runs command and returns stdout/stderr/exitCode', async () => {
-			const mockChild = createMockChild();
-			vi.mocked(spawn).mockReturnValue(mockChild as unknown as ReturnType<typeof spawn>);
+		let stderrSpy: ReturnType<typeof vi.spyOn>;
 
-			const promise = runCommand('echo', ['hello'], '/tmp');
+		beforeEach(() => {
+			stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+			vi.mocked(execa).mockReset();
+			vi.mocked(treeKill).mockClear();
+		});
 
-			// Need to yield to allow event handlers to be attached
+		afterEach(() => {
+			stderrSpy.mockRestore();
+			vi.useRealTimers();
+		});
+
+		it('streams child stdout to parent stderr line-by-line as it arrives', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('echo', ['a'], '/tmp');
 			await new Promise((r) => setTimeout(r, 0));
 
-			mockChild.stdout.push('hello\n');
-			mockChild.stdout.push(null);
-			mockChild.stderr.push(null);
-			mockChild.emit('close', 0);
+			child.stdout.push('line1\n');
+			child.stdout.push('line2\n');
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(stderrSpy).toHaveBeenCalledWith('line1\n');
+			expect(stderrSpy).toHaveBeenCalledWith('line2\n');
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: 'line1\nline2\n', stderr: '', exitCode: 0 });
+			await promise;
+		});
+
+		it('streams child stderr to parent stderr line-by-line', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp');
+			await new Promise((r) => setTimeout(r, 0));
+
+			child.stderr.push('err1\n');
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(stderrSpy).toHaveBeenCalledWith('err1\n');
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: 'err1\n', exitCode: 0 });
+			await promise;
+		});
+
+		it('emits a heartbeat to parent stderr after heartbeatMs of child silence, citing elapsed time and command label', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('git', ['push'], '/tmp', undefined, {
+				heartbeatMs: 1000,
+				label: 'git-push',
+			});
+			await Promise.resolve();
+
+			vi.advanceTimersByTime(1000);
+
+			const heartbeatCall = stderrSpy.mock.calls.find((c) =>
+				/\[git-push\] still running \(1s\)/.test(String(c[0])),
+			);
+			expect(heartbeatCall).toBeTruthy();
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: '', exitCode: 0 });
+			vi.useRealTimers();
+			await promise;
+		});
+
+		it('resets the heartbeat timer when child emits output', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp', undefined, {
+				heartbeatMs: 1000,
+				label: 'cmd',
+			});
+			await Promise.resolve();
+
+			// 900ms of silence — no heartbeat yet
+			vi.advanceTimersByTime(900);
+			let heartbeats = stderrSpy.mock.calls.filter((c) =>
+				/still running/.test(String(c[0])),
+			).length;
+			expect(heartbeats).toBe(0);
+
+			// Child output at 900ms → resets idle + heartbeat timers.
+			// Use emit('data', ...) rather than push() because push queues the
+			// 'data' event on process.nextTick, which vi.advanceTimersByTime
+			// does not flush — the heartbeat timer would fire before onChunk runs.
+			child.stdout.emit('data', 'tick\n');
+
+			// Advance 900ms more (total silence since last child output: 900ms) — still no heartbeat
+			vi.advanceTimersByTime(900);
+			heartbeats = stderrSpy.mock.calls.filter((c) => /still running/.test(String(c[0]))).length;
+			expect(heartbeats).toBe(0);
+
+			// Advance to 1000ms since last child output — one heartbeat fires
+			vi.advanceTimersByTime(100);
+			heartbeats = stderrSpy.mock.calls.filter((c) => /still running/.test(String(c[0]))).length;
+			expect(heartbeats).toBe(1);
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: 'tick\n', stderr: '', exitCode: 0 });
+			vi.useRealTimers();
+			await promise;
+		});
+
+		it('does not emit heartbeat when child exits before heartbeatMs elapses', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp', undefined, {
+				heartbeatMs: 10_000,
+				label: 'cmd',
+			});
+			await new Promise((r) => setTimeout(r, 0));
+
+			child.stdout.push('done\n');
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: 'done\n', stderr: '', exitCode: 0 });
+			await promise;
+
+			const heartbeats = stderrSpy.mock.calls.filter((c) =>
+				/still running/.test(String(c[0])),
+			).length;
+			expect(heartbeats).toBe(0);
+		});
+
+		it('kills the child via tree-kill with SIGTERM when idleTimeoutMs elapses with no output', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp', undefined, {
+				idleTimeoutMs: 5000,
+				heartbeatMs: 0,
+				forceKillAfterMs: 5000,
+			});
+			await Promise.resolve();
+
+			vi.advanceTimersByTime(5000);
+			await Promise.resolve();
+
+			// After idle fires, helper kills with SIGTERM
+			expect(vi.mocked(treeKill)).toHaveBeenCalledWith(12345, 'SIGTERM', expect.any(Function));
+
+			// Settle the subprocess so the awaiting runCommand resolves
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: '', exitCode: 143 });
+			vi.useRealTimers();
+			const result = await promise;
+			expect(result.reason).toBe('idle-timeout');
+			expect(result.exitCode).not.toBe(0);
+		});
+
+		it('escalates to SIGKILL after forceKillAfterMs if the child did not exit on SIGTERM', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp', undefined, {
+				idleTimeoutMs: 1000,
+				heartbeatMs: 0,
+				forceKillAfterMs: 2000,
+			});
+			await Promise.resolve();
+
+			vi.advanceTimersByTime(1000);
+			await Promise.resolve();
+			expect(vi.mocked(treeKill)).toHaveBeenCalledWith(12345, 'SIGTERM', expect.any(Function));
+			expect(vi.mocked(treeKill)).toHaveBeenCalledTimes(1);
+
+			// Child does NOT exit; advance the force-kill window
+			vi.advanceTimersByTime(2000);
+			await Promise.resolve();
+			expect(vi.mocked(treeKill)).toHaveBeenCalledWith(12345, 'SIGKILL', expect.any(Function));
+			expect(vi.mocked(treeKill)).toHaveBeenCalledTimes(2);
+
+			// Settle
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: '', exitCode: 137 });
+			vi.useRealTimers();
+			await promise;
+		});
+
+		it('kills the child via tree-kill with SIGTERM when wallTimeoutMs elapses even with ongoing output', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp', undefined, {
+				wallTimeoutMs: 5000,
+				idleTimeoutMs: 100_000,
+				heartbeatMs: 0,
+				forceKillAfterMs: 5000,
+			});
+			await Promise.resolve();
+
+			// Tick every 500ms with output — idle timer keeps resetting but wall ticks down
+			for (let t = 0; t < 5000; t += 500) {
+				child.stdout.push(`tick ${t}\n`);
+				await Promise.resolve();
+				vi.advanceTimersByTime(500);
+				await Promise.resolve();
+			}
+
+			expect(vi.mocked(treeKill)).toHaveBeenCalledWith(12345, 'SIGTERM', expect.any(Function));
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: '', exitCode: 143 });
+			vi.useRealTimers();
+			const result = await promise;
+			expect(result.reason).toBe('wall-timeout');
+		});
+
+		it('returns captured stdout and stderr in the result on success', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp');
+			await new Promise((r) => setTimeout(r, 0));
+
+			child.stdout.push('ok\n');
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: 'ok\n', stderr: '', exitCode: 0 });
 
 			const result = await promise;
-
-			expect(result.stdout).toBe('hello\n');
+			expect(result.stdout).toBe('ok\n');
 			expect(result.stderr).toBe('');
 			expect(result.exitCode).toBe(0);
 		});
 
-		it('handles command error', async () => {
-			const mockChild = createMockChild();
-			vi.mocked(spawn).mockReturnValue(mockChild as unknown as ReturnType<typeof spawn>);
-
-			const promise = runCommand('bad-command', [], '/tmp');
-
-			await new Promise((r) => setTimeout(r, 0));
-
-			mockChild.stdout.push(null);
-			mockChild.stderr.push(null);
-			mockChild.emit('error', new Error('spawn ENOENT'));
-
-			const result = await promise;
-
-			expect(result.exitCode).toBe(1);
-			expect(result.stderr).toContain('spawn ENOENT');
-		});
-
-		it('handles null exit code', async () => {
-			const mockChild = createMockChild();
-			vi.mocked(spawn).mockReturnValue(mockChild as unknown as ReturnType<typeof spawn>);
+		it('returns captured stdout and stderr in the result on non-zero exit', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
 
 			const promise = runCommand('cmd', [], '/tmp');
-
 			await new Promise((r) => setTimeout(r, 0));
 
-			mockChild.stdout.push(null);
-			mockChild.stderr.push(null);
-			mockChild.emit('close', null);
+			child.stderr.push('failed\n');
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: 'failed\n', exitCode: 1 });
 
 			const result = await promise;
-
+			expect(result.stderr).toBe('failed\n');
 			expect(result.exitCode).toBe(1);
+		});
+
+		it('does not stream when options.silent is true', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp', undefined, { silent: true });
+			await new Promise((r) => setTimeout(r, 0));
+
+			child.stdout.push('silent-stdout\n');
+			child.stderr.push('silent-stderr\n');
+			await new Promise((r) => setTimeout(r, 0));
+
+			const forwardedChild = stderrSpy.mock.calls.filter(
+				(c) => String(c[0]) === 'silent-stdout\n' || String(c[0]) === 'silent-stderr\n',
+			).length;
+			expect(forwardedChild).toBe(0);
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({
+				stdout: 'silent-stdout\n',
+				stderr: 'silent-stderr\n',
+				exitCode: 0,
+			});
+			const result = await promise;
+
+			// Capture still works despite silent mode
+			expect(result.stdout).toBe('silent-stdout\n');
+			expect(result.stderr).toBe('silent-stderr\n');
+		});
+
+		it('backward-compatible signature: runCommand(cmd, args, cwd) returns { stdout, stderr, exitCode }', async () => {
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('cmd', [], '/tmp');
+			await new Promise((r) => setTimeout(r, 0));
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: '', exitCode: 0 });
+
+			const result = await promise;
+			expect(result).toMatchObject({ stdout: '', stderr: '', exitCode: 0 });
+			expect(typeof result.stdout).toBe('string');
+			expect(typeof result.stderr).toBe('string');
+			expect(typeof result.exitCode).toBe('number');
+			// reason is optional; undefined on natural exit
+			expect(result.reason).toBeUndefined();
 		});
 	});
 });

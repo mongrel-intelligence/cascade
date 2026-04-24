@@ -214,3 +214,9 @@ The `env` file is committed to your repository. Keep secrets in CASCADE's creden
 ### Add `.cascade/context/` to `.gitignore`
 
 The `context/` subdirectory is managed entirely by CASCADE. There is nothing useful to commit there, and its contents can be large. Add it to `.gitignore` to keep your repository clean.
+
+### Observable subprocesses (spec 013)
+
+When CASCADE agents shell out via `cascade-tools` (most visibly `scm create-pr`, which invokes `git push` and runs your repo's pre-push hooks), output now streams to the agent's log as it arrives — not only at process exit. If your hook has a silent stretch (e.g. `tsc` running 30+ seconds without output), cascade-tools emits a heartbeat line every ~30 seconds so the agent can distinguish progress from hang.
+
+Two independent timeouts protect against genuine hangs: a per-call wall-clock (default 600s, tighter for `git push` and `git commit` to sit under the gadget's 240s budget) and an idle-silence timeout (default 120s — child emitting nothing at all). On timeout, cascade-tools sends SIGTERM to the full process tree (not just the direct child) and escalates to SIGKILL after a short grace window. This means `.cascade/setup.sh` scripts that legitimately take a while are safe as long as they emit occasional output; silent multi-minute stretches will be terminated.
