@@ -2,14 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('node:fs', () => ({
 	existsSync: vi.fn(),
+	lstatSync: vi.fn(),
 	readFileSync: vi.fn(),
+	readlinkSync: vi.fn(),
 }));
 
 vi.mock('../../../../src/utils/repo.js', () => ({
 	runCommand: vi.fn(),
 }));
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import {
 	getLogLevel,
 	installDependencies,
@@ -20,7 +22,9 @@ import {
 import { runCommand } from '../../../../src/utils/repo.js';
 
 const mockExistsSync = vi.mocked(existsSync);
+const mockLstatSync = vi.mocked(lstatSync);
 const mockReadFileSync = vi.mocked(readFileSync);
+const mockReadlinkSync = vi.mocked(readlinkSync);
 const mockRunCommand = vi.mocked(runCommand);
 
 beforeEach(() => {
@@ -133,6 +137,95 @@ describe('readContextFiles', () => {
 		const result = await readContextFiles('/repo');
 
 		expect(result[0].content).toBe('# Claude docs');
+	});
+
+	// --- Deduplication tests ---
+
+	it('deduplicates when both files have identical content, keeping CLAUDE.md', async () => {
+		const sharedContent = '# Shared context';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: sharedContent, stderr: '' })
+			.mockResolvedValueOnce({ stdout: sharedContent, stderr: '' });
+		// lstatSync: neither file is a symlink
+		mockLstatSync.mockReturnValue({ isSymbolicLink: () => false } as ReturnType<typeof lstatSync>);
+
+		const result = await readContextFiles('/repo');
+
+		expect(result).toHaveLength(1);
+		expect(result[0].path).toBe('CLAUDE.md');
+		expect(result[0].content).toBe(sharedContent);
+	});
+
+	it('keeps both files when content differs', async () => {
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '# Claude content', stderr: '' })
+			.mockResolvedValueOnce({ stdout: '# Agents content', stderr: '' });
+		mockLstatSync.mockReturnValue({ isSymbolicLink: () => false } as ReturnType<typeof lstatSync>);
+
+		const result = await readContextFiles('/repo');
+
+		expect(result).toHaveLength(2);
+		expect(result[0].path).toBe('CLAUDE.md');
+		expect(result[1].path).toBe('AGENTS.md');
+	});
+
+	it('deduplicates when AGENTS.md is a symlink to CLAUDE.md', async () => {
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '# Claude docs', stderr: '' })
+			.mockResolvedValueOnce({ stdout: '# Claude docs', stderr: '' });
+		mockLstatSync
+			.mockReturnValueOnce({ isSymbolicLink: () => false } as ReturnType<typeof lstatSync>) // CLAUDE.md
+			.mockReturnValueOnce({ isSymbolicLink: () => true } as ReturnType<typeof lstatSync>); // AGENTS.md
+		mockReadlinkSync.mockReturnValue('CLAUDE.md' as never);
+
+		const result = await readContextFiles('/repo');
+
+		expect(result).toHaveLength(1);
+		expect(result[0].path).toBe('CLAUDE.md');
+	});
+
+	it('deduplicates when CLAUDE.md is a symlink to AGENTS.md', async () => {
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '# Agents docs', stderr: '' })
+			.mockResolvedValueOnce({ stdout: '# Agents docs', stderr: '' });
+		mockLstatSync
+			.mockReturnValueOnce({ isSymbolicLink: () => true } as ReturnType<typeof lstatSync>) // CLAUDE.md
+			.mockReturnValueOnce({ isSymbolicLink: () => false } as ReturnType<typeof lstatSync>); // AGENTS.md
+		mockReadlinkSync.mockReturnValue('AGENTS.md' as never);
+
+		const result = await readContextFiles('/repo');
+
+		expect(result).toHaveLength(1);
+		// CLAUDE.md (index 0) is kept as the canonical entry even though it is the symlink
+		expect(result[0].path).toBe('CLAUDE.md');
+	});
+
+	it('falls back to content comparison when lstat throws', async () => {
+		const sharedContent = '# Same content';
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: sharedContent, stderr: '' })
+			.mockResolvedValueOnce({ stdout: sharedContent, stderr: '' });
+		mockLstatSync.mockImplementation(() => {
+			throw new Error('EPERM: permission denied');
+		});
+
+		const result = await readContextFiles('/repo');
+
+		expect(result).toHaveLength(1);
+		expect(result[0].path).toBe('CLAUDE.md');
+	});
+
+	it('does not deduplicate when only one file exists', async () => {
+		mockRunCommand
+			.mockResolvedValueOnce({ stdout: '# Claude docs', stderr: '' })
+			.mockRejectedValueOnce(new Error('ENOENT'));
+
+		const result = await readContextFiles('/repo');
+
+		// lstatSync should NOT be called when only 1 result
+		expect(mockLstatSync).not.toHaveBeenCalled();
+		expect(result).toHaveLength(1);
+		expect(result[0].path).toBe('CLAUDE.md');
 	});
 });
 

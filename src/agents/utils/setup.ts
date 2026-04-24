@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, lstatSync, readFileSync, readlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { runCommand as execCommand } from '../../utils/repo.js';
@@ -32,6 +32,38 @@ export interface ContextFile {
 	content: string;
 }
 
+/**
+ * Checks whether two context files are duplicates — either because one is a
+ * symlink pointing at the other, or because their trimmed content is identical.
+ *
+ * The symlink check is a fast path: `lstat` does NOT follow symlinks, so it
+ * reliably detects the symlink target. The content comparison is the fallback
+ * for copy-paste duplicates or cases where `lstat`/`readlink` fail.
+ */
+function areDuplicateContextFiles(cwd: string, a: ContextFile, b: ContextFile): boolean {
+	// Fast path: check if one file is a symlink pointing to the other
+	try {
+		const aPath = join(cwd, a.path);
+		const bPath = join(cwd, b.path);
+		const aStat = lstatSync(aPath);
+		const bStat = lstatSync(bPath);
+
+		if (aStat.isSymbolicLink()) {
+			const target = readlinkSync(aPath);
+			if (target === b.path || join(cwd, target) === bPath) return true;
+		}
+		if (bStat.isSymbolicLink()) {
+			const target = readlinkSync(bPath);
+			if (target === a.path || join(cwd, target) === aPath) return true;
+		}
+	} catch {
+		// Fall through to content comparison on permission errors or race conditions
+	}
+
+	// Fallback: compare trimmed content strings
+	return a.content === b.content;
+}
+
 export async function readContextFiles(cwd: string): Promise<ContextFile[]> {
 	const files = ['CLAUDE.md', 'AGENTS.md'];
 	const results: ContextFile[] = [];
@@ -45,6 +77,12 @@ export async function readContextFiles(cwd: string): Promise<ContextFile[]> {
 		} catch {
 			// File doesn't exist, skip
 		}
+	}
+
+	// Deduplicate: when both files exist and have identical content (or one is a
+	// symlink of the other), keep only the CLAUDE.md entry (canonical reference).
+	if (results.length === 2 && areDuplicateContextFiles(cwd, results[0], results[1])) {
+		return [results[0]];
 	}
 
 	return results;
