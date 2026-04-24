@@ -422,11 +422,9 @@ describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () 
 		expect(provider.addLabel).toHaveBeenCalledWith('backlog-item-1', 'real-uuid-abc123');
 		expect(provider.addLabel).not.toHaveBeenCalledWith('backlog-item-1', 'cascade-auto');
 
-		// Should warn that the configured value is not UUID format
-		expect(mockLogger.warn).toHaveBeenCalledWith(
-			'propagateAutoLabelAfterSplitting: labels.auto is not a UUID; resolving ID from parent labels',
-			expect.objectContaining({ autoLabelId: 'cascade-auto' }),
-		);
+		// Note: the non-UUID warning is scoped to Linear only (project.pm.type === 'linear').
+		// This test uses a Trello project, so no warning is emitted — Trello uses MongoDB Object
+		// IDs which are valid non-UUID identifiers and should not produce log noise in happy paths.
 	});
 
 	it('skips propagation (returns null) when labels.auto is undefined even if hasAutoLabel mock returns true', async () => {

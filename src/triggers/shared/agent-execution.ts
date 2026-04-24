@@ -674,8 +674,11 @@ async function propagateAutoLabelAfterSplitting(
 	// resolveLabelId() to return null and the operation silently no-ops.
 	// By resolving the id from the parent's matched label we always pass the correct
 	// identifier regardless of config format.
+	// NOTE: The UUID check is scoped to Linear only. Trello uses 24-character MongoDB
+	// Object IDs and JIRA uses name strings — both are valid non-UUID formats for those
+	// providers and should not produce log noise in happy paths.
 	const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-	if (!UUID_REGEX.test(autoLabelId)) {
+	if (project.pm.type === 'linear' && !UUID_REGEX.test(autoLabelId)) {
 		logger.warn(
 			'propagateAutoLabelAfterSplitting: labels.auto is not a UUID; resolving ID from parent labels',
 			{ autoLabelId },
