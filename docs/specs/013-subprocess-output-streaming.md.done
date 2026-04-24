@@ -4,7 +4,7 @@ slug: subprocess-output-streaming
 level: spec
 title: Live subprocess output + heartbeats + idle-timeout in cascade-tools
 created: 2026-04-24
-status: draft
+status: done
 ---
 
 # 013: Live subprocess output + heartbeats + idle-timeout in cascade-tools
