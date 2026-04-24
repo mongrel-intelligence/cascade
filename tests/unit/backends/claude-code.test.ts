@@ -149,7 +149,7 @@ describe('buildToolGuidance', () => {
 		expect(guidance).not.toContain('<array>');
 	});
 
-	it('renders optional array params with brackets and repeatable hint', () => {
+	it('renders optional array params with brackets and repeatable hint (spec 014: no s-strip)', () => {
 		const tools: ToolManifest[] = [
 			{
 				name: 'TestTool',
@@ -161,7 +161,10 @@ describe('buildToolGuidance', () => {
 			},
 		];
 		const guidance = buildToolGuidance(tools);
-		expect(guidance).toContain('[--tag <string> (repeatable)]');
+		// Spec 014: the renderer no longer strips trailing 's' — the actual
+		// plural key comes through verbatim. Root cause of prod run 5d993b04.
+		expect(guidance).toContain('[--tags <string> (repeatable)]');
+		expect(guidance).not.toContain('[--tag <string>'); // old bug
 	});
 
 	it('renders parameter description as inline comment', () => {

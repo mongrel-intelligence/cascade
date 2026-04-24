@@ -202,9 +202,17 @@ describe('PostComment --text-file', () => {
 		expect(postComment).toHaveBeenCalledWith('card-1', 'inline text');
 	});
 
-	it('errors when neither --text nor --text-file is provided', async () => {
+	it('errors when neither --text nor --text-file is provided (spec 014 envelope)', async () => {
 		const cmd = new PostComment(['--workItemId', 'card-1'], mockConfig as never);
-		await expect(cmd.run()).rejects.toThrow('Either --text or --text-file is required');
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('text');
 	});
 });
 
@@ -274,9 +282,17 @@ describe('CreatePR --body-file', () => {
 		);
 	});
 
-	it('errors when neither --body nor --body-file is provided', async () => {
+	it('errors when neither --body nor --body-file is provided (spec 014 envelope)', async () => {
 		const cmd = new CreatePR(['--title', 'feat: x', '--head', 'feat/branch'], mockConfig as never);
-		await expect(cmd.run()).rejects.toThrow('Either --body or --body-file is required');
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('body');
 	});
 });
 
@@ -327,8 +343,16 @@ describe('PostPRComment --body-file', () => {
 		expect(postPRComment).toHaveBeenCalledWith('owner', 'repo', 42, 'inline body');
 	});
 
-	it('errors when neither --body nor --body-file is provided', async () => {
+	it('errors when neither --body nor --body-file is provided (spec 014 envelope)', async () => {
 		const cmd = new PostPRComment(['--prNumber', '42'], mockConfig as never);
-		await expect(cmd.run()).rejects.toThrow('Either --body or --body-file is required');
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('body');
 	});
 });

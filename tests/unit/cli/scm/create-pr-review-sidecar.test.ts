@@ -126,9 +126,16 @@ describe('CreatePRReviewCommand sidecar write', () => {
 		} as never);
 
 		await cmd.execute();
-		expect(vi.mocked(cmd.log)).toHaveBeenCalledWith(
-			JSON.stringify({ success: false, error: 'GitHub API error' }),
-		);
+		// Spec 014: runtime failures emit the structured envelope.
+		const logged = vi.mocked(cmd.log).mock.calls.map((c) => c[0] as string);
+		const jsonLine = logged.find((l) => l.startsWith('{')) ?? '';
+		const output = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: { type: string; message: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('runtime');
+		expect(output.error.message).toBe('GitHub API error');
 		expect(vi.mocked(cmd.exit)).toHaveBeenCalledWith(1);
 		expect(existsSync(sidecarPath)).toBe(false);
 	});

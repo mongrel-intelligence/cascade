@@ -17,6 +17,41 @@
 export type LogWriter = (level: string, message: string, context?: Record<string, unknown>) => void;
 
 /**
+ * Shape of a single parameter entry inside {@link ToolManifest.parameters}.
+ *
+ * Widened in spec 014 to carry `items`, `aliases`, and a single concrete
+ * `example` pulled from the tool definition. These drive both the agent's
+ * system-prompt rendering of the flag and (downstream) the CLI factory's
+ * help / error output.
+ */
+export interface ToolManifestParameter {
+	/** Base JSON-Schema-ish type: 'string' | 'number' | 'boolean' | 'array' | 'object' */
+	type: string;
+	/** Whether the flag is required */
+	required?: boolean;
+	/** Default value (when declared on the tool definition) */
+	default?: unknown;
+	/** Human-readable description, used as inline help */
+	description?: string;
+	/** Allowed values for enum-shaped parameters */
+	options?: string[];
+	/**
+	 * Element type for array-shaped parameters.
+	 * - `'string'` → CLI flag is repeatable (`--x a --x b`)
+	 * - `'object'` → CLI flag takes a single JSON array string
+	 */
+	items?: string;
+	/** Alternative flag names accepted at the CLI (e.g. `['comment']` for `--comments`) */
+	aliases?: readonly string[];
+	/**
+	 * A single concrete example value for this parameter, pulled from the first
+	 * {@link ToolDefinition.examples} entry that populates it. Used by the
+	 * prompt renderer and CLI help to show agents a runnable shape.
+	 */
+	example?: unknown;
+}
+
+/**
  * Describes a CASCADE-specific CLI tool available to the agent.
  */
 export interface ToolManifest {
@@ -26,7 +61,12 @@ export interface ToolManifest {
 	description: string;
 	/** CLI command to invoke, e.g., 'cascade-tools trello read-card' */
 	cliCommand: string;
-	/** JSON Schema for the CLI flags/args */
+	/**
+	 * JSON Schema-ish descriptor for the CLI flags/args. Keys are flag names;
+	 * values conform to {@link ToolManifestParameter}. Kept as
+	 * `Record<string, unknown>` for backwards-compat with older consumers that
+	 * index with ad-hoc shapes — new code should cast to `ToolManifestParameter`.
+	 */
 	parameters: Record<string, unknown>;
 }
 

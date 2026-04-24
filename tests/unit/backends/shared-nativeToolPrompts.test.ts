@@ -127,30 +127,105 @@ describe('buildToolGuidance', () => {
 		});
 	});
 
-	describe('formatParam — array param (repeatable)', () => {
-		it('formats required array param as repeatable', () => {
+	describe('formatParam — primitive array (items:"string") — repeatable', () => {
+		// Spec 014: the renderer used to strip trailing 's' from every array name.
+		// That was the root cause of prod run 5d993b04 — an agent sent `--comment`
+		// because the prompt told it to. Arrays now always render with the actual
+		// declared key. Repeatable semantics stay the same for items:"string".
+		it('formats required primitive-array param with the actual plural name', () => {
 			const result = buildToolGuidance([
 				makeManifest({
 					parameters: {
-						items: { type: 'array', required: true },
+						items: { type: 'array', items: 'string', required: true },
 					},
 				}),
 			]);
-			// Singular of 'items' is 'item'
-			expect(result).toContain('--item <string> (repeatable)');
-			expect(result).not.toContain('[--item');
+			expect(result).toContain('--items <string> (repeatable)');
+			expect(result).not.toContain('--item <string>'); // old bug: s-stripped singular
+			expect(result).not.toContain('[--items'); // required → no brackets
 		});
 
-		it('formats optional array param as repeatable with brackets', () => {
+		it('formats optional primitive-array param with the actual plural name and brackets', () => {
 			const result = buildToolGuidance([
 				makeManifest({
 					parameters: {
-						labels: { type: 'array', required: false },
+						labels: { type: 'array', items: 'string', required: false },
 					},
 				}),
 			]);
-			// Singular of 'labels' is 'label'
-			expect(result).toContain('[--label <string> (repeatable)]');
+			expect(result).toContain('[--labels <string> (repeatable)]');
+			expect(result).not.toContain('--label <string>'); // old bug
+		});
+	});
+
+	describe('formatParam — array of object (items:"object") — JSON blob (spec 014)', () => {
+		it('renders required array-of-object as a single JSON flag, not repeatable', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						comments: {
+							type: 'array',
+							items: 'object',
+							required: false,
+							description: 'Inline review comments',
+						},
+					},
+				}),
+			]);
+			expect(result).toContain("[--comments '<json>']");
+			// The "repeatable string" lie from the old renderer is gone
+			expect(result).not.toContain('repeatable');
+			expect(result).not.toContain('--comment <string>');
+		});
+
+		it('renders aliases next to the canonical flag name', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						comments: {
+							type: 'array',
+							items: 'object',
+							required: false,
+							aliases: ['comment'],
+						},
+					},
+				}),
+			]);
+			expect(result).toContain('--comments|--comment');
+		});
+
+		it('renders a one-line example line beneath the flag when the manifest provides one', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						comments: {
+							type: 'array',
+							items: 'object',
+							required: false,
+							example: [{ path: 'src/x.ts', line: 1, body: 'nit' }],
+						},
+					},
+				}),
+			]);
+			// Example is surfaced on its own indented comment line
+			expect(result).toContain('example:');
+			expect(result).toContain(
+				`--comments '${JSON.stringify([{ path: 'src/x.ts', line: 1, body: 'nit' }])}'`,
+			);
+		});
+	});
+
+	describe('formatParam — object param — JSON blob (spec 014)', () => {
+		it('renders object param as a single JSON flag', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						config: { type: 'object', required: true, description: 'Config JSON' },
+					},
+				}),
+			]);
+			expect(result).toContain("--config '<json>'");
+			expect(result).not.toContain('<object>'); // shouldn't leak the bare type
 		});
 	});
 

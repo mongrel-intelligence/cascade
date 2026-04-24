@@ -6,7 +6,7 @@ plan_slug: shared-infra
 level: plan
 parent_spec: docs/specs/014-cascade-tools-agent-ergonomics.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 014/1: cascade-tools shared infra — truthful prompts, structured errors, fuzzy flags, help examples
@@ -246,20 +246,35 @@ Zero production gadget definitions change here. Every new code path is exercised
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 — type widening
-- [ ] AC #2 — manifest threading
-- [ ] AC #3 — error envelope
-- [ ] AC #4 — flag aliases in factory
-- [ ] AC #5 — JSON parse for array-of-object
-- [ ] AC #6 — examples in oclif help
-- [ ] AC #7 — fuzzy suggestion
-- [ ] AC #8 — prompt renderer fidelity
-- [ ] AC #9 — [manual] stderr prose readable
-- [ ] AC #10 — src/gadgets/README.md
-- [ ] AC #11 — src/integrations/README.md cross-ref
-- [ ] AC #12 — CHANGELOG
-- [ ] AC #13 — test coverage
-- [ ] AC #14 — build passes
-- [ ] AC #15 — tests pass
-- [ ] AC #16 — lint passes
-- [ ] AC #17 — typecheck passes
+- [x] AC #1 — type widening
+- [x] AC #2 — manifest threading
+- [x] AC #3 — error envelope
+- [x] AC #4 — flag aliases in factory
+- [x] AC #5 — JSON parse for array-of-object
+- [x] AC #6 — examples in oclif help
+- [x] AC #7 — fuzzy suggestion
+- [x] AC #8 — prompt renderer fidelity
+- [x] AC #9 — [manual] stderr prose readable
+- [x] AC #10 — src/gadgets/README.md
+- [x] AC #11 — src/integrations/README.md cross-ref
+- [x] AC #12 — CHANGELOG
+- [x] AC #13 — test coverage
+- [x] AC #14 — build passes
+- [x] AC #15 — tests pass (8438/8438)
+- [x] AC #16 — lint passes
+- [x] AC #17 — typecheck passes
+
+### Manual verification for AC #9 (stderr prose readability)
+
+Ran against built binary:
+
+```
+$ ./bin/cascade-tools.js scm create-pr-review --owner x --repo y --prNumber 1 --event COMMENT --body b
+exit=1
+stderr (123 chars, single line, no ANSI):
+  runtime — No GitHub client in scope. Wrap the call with withGitHubToken() or ensure per-project GITHUB_TOKEN is set i...
+stdout:
+  {"success":false,"error":{"type":"runtime","message":"No GitHub client in scope…"}}
+```
+
+Passes the protocol: ≤120-ish chars (prose + truncation ellipsis), no ANSI, scannable English, structured JSON on stdout parseable by agents. Initially the Node default handler dumped the `ExitError` stack trace beneath the prose line — fixed by wrapping `bin/cascade-tools.js` to swallow `ExitError` cleanly after the envelope has been emitted.

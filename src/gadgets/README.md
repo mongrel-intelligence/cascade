@@ -1,0 +1,140 @@
+# cascade-tools gadget authoring
+
+`cascade-tools` is the CLI surface LLM agents use to drive CASCADE — it sits between every review / implementation / backlog agent and the outside world (PM APIs, GitHub, session lifecycle). Its ergonomics for an LLM reader are load-bearing: a confusing flag name, a malformed `--help`, or a cryptic error can cost minutes of run budget (see [spec 014](../../docs/specs/014-cascade-tools-agent-ergonomics.md.done) — prompted by prod run `5d993b04-6e05-4ae1-b7de-8c274cf3496b` where an agent burned ~2½ min of a 7m42s run fighting `scm create-pr-review` and ultimately dropped an inline review comment).
+
+This document is the canonical guide for **adding a new gadget** (a `cascade-tools <cat> <name>` command) and keeping its agent-facing surface truthful, runnable, and self-correctable.
+
+---
+
+## Architecture in one picture
+
+A gadget is a single `ToolDefinition` consumed by three generators:
+
+```
+ToolDefinition ───▶ gadgetFactory    ▶ the Zod-validated in-process gadget
+                ├─▶ cliCommandFactory ▶ the oclif `cascade-tools` subcommand
+                └─▶ manifestGenerator ▶ the ToolManifest the agent sees in its system prompt
+```
+
+All three read from the same definition. **If you want a behavior to land, declare it on the ToolDefinition — do not edit the generators per-gadget.**
+
+---
+
+## Declarative metadata you can attach
+
+### `cliAliases?: readonly string[]`
+
+Alternative flag names accepted on the CLI. Wired into oclif as `Flags.*({ aliases: [...] })`; surfaced in the agent's system prompt so the rendered flag line looks like `--comments|--comment '<json>'`. Use this when agent muscle memory reaches for an understandable-but-wrong spelling (singular/plural collisions, British/American spellings, historical renames).
+
+```ts
+comments: {
+  type: 'array',
+  items: 'object',
+  describe: 'Inline review comments on specific files/lines.',
+  cliAliases: ['comment'], // agent typing `--comment '[...]'` now resolves correctly
+  optional: true,
+},
+```
+
+The canonical parameter name always wins. Aliases are additive; suggestions returned by the fuzzy-matcher always point at the canonical form.
+
+### `cli.fileInputAlternatives`
+
+Opt-in `--<param>-file <path>` escape hatches for long or JSON-shaped payloads that don't survive shell quoting. Pair with `parseAs: 'json'` for array-of-object / object params so the file contents are `JSON.parse`-d before reaching the gadget.
+
+```ts
+cli: {
+  fileInputAlternatives: [
+    {
+      paramName: 'comments',
+      fileFlag: 'comments-file',
+      parseAs: 'json',
+      description: 'Read --comments JSON from file (use - for stdin). Prefer this for long payloads.',
+    },
+  ],
+},
+```
+
+`-` as the file path reads from stdin. The generated flag is always optional (the direct flag remains accepted).
+
+### `examples`
+
+A list of `{ params, comment, output? }` invocations. The first example that populates a given parameter becomes that parameter's **concrete example**, surfaced in three places:
+
+- The agent's system prompt renders a one-line `# example: --<flag> '<json>'` under the flag (when the param is array-of-object / object).
+- The `cascade-tools … --help` output lists every example as a runnable shell invocation under an `EXAMPLES` section.
+- JSON-parse failures include the example as the `expected` shape fragment in the structured error envelope.
+
+Write examples that a model could literally copy/paste. Use double-quoted JSON keys; do not rely on the agent to translate pseudo-JSON.
+
+```ts
+examples: [
+  {
+    params: {
+      comment: 'Requesting changes for identified issues',
+      owner: 'acme',
+      repo: 'myapp',
+      prNumber: 42,
+      event: 'REQUEST_CHANGES',
+      body: 'Good progress, but…',
+      comments: [
+        { path: 'src/utils.ts', line: 15, body: 'This could cause a null pointer…' },
+      ],
+    },
+    comment: 'Request changes with inline comments',
+  },
+],
+```
+
+---
+
+## The error envelope
+
+Every cascade-tools failure — flag parse, JSON parse, missing-required, enum-mismatch, unknown-flag, auth, runtime — emits through the shared `emitCliError` helper:
+
+- **Structured JSON on stdout** (`{ "success": false, "error": {...} }`) so agents parse a single stable surface.
+- **One-line prose summary on stderr** so humans running the CLI directly get a readable error without piping through `jq`.
+- **Exit code 1.**
+
+The envelope shape is part of the cascade-tools contract. Renaming fields is a breaking change — agents rely on `error.type` / `error.flag` / `error.hint` to self-correct on the next attempt.
+
+Envelope fields:
+
+| field | when populated |
+|---|---|
+| `type` | always; one of `flag-parse` / `json-parse` / `missing-required` / `enum-mismatch` / `unknown-flag` / `auth` / `runtime` |
+| `flag` | for flag-scoped failures |
+| `message` | always; human-readable |
+| `got` | the offending input, truncated to ~80 chars |
+| `expected` | shape fragment (from `example` when available, else `describe`) |
+| `hint` | an action the agent can take (e.g. `did you mean --comments?`, `use --comments-file <path>`) |
+| `example` | runnable invocation, when known |
+
+You do not call `emitCliError` directly. The shared factory routes every failure through it automatically — your job is to make the declarative metadata (describe text, examples, aliases, file alternatives) rich enough that the auto-generated envelope is actually useful.
+
+---
+
+## The single-entrypoint invariant
+
+Adding a gadget requires **zero edits** to:
+
+- `src/gadgets/shared/cliCommandFactory.ts`
+- `src/gadgets/shared/manifestGenerator.ts`
+- `src/gadgets/shared/errorEnvelope.ts`
+- `src/backends/shared/nativeToolPrompts.ts`
+
+If you find yourself opening one of those files, stop — the right fix is almost always to attach more metadata to your ToolDefinition, or to propose a spec for a new shared capability. A per-gadget branch in shared infrastructure is a red flag.
+
+---
+
+## Mistyped flags → "did you mean"
+
+The factory intercepts oclif's `NonExistentFlagsError`, runs a Levenshtein match against every declared canonical flag name + alias, and surfaces the closest canonical name as `error.hint`. No gadget work required — just declare your flags truthfully.
+
+Two tuning constants live in the factory: `MAX_FLAG_SUGGESTION_DISTANCE` (default 2) and `MAX_FLAG_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one.
+
+---
+
+## Reference: `createPRReviewDef`
+
+`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, a `fileInputAlternatives` entry for `--comments-file`, and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.

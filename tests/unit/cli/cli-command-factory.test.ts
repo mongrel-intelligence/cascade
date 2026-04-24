@@ -319,7 +319,18 @@ describe('cliCommandFactory — file-input resolution', () => {
 		const Cmd = createCLICommand(def, coreFn);
 		const cmd = new Cmd([], makeMockConfig() as never);
 
-		await expect(cmd.run()).rejects.toThrow('Either --text or --text-file is required');
+		// Spec 014: missing-required routes through the structured envelope
+		// (type:'missing-required'), exits via `this.exit(1)` which throws
+		// 'EEXIT: 1'. The envelope includes the prose and a hint on stderr.
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('text');
 	});
 
 	it('handles files with special characters (quotes, backticks, $)', async () => {
@@ -406,7 +417,7 @@ describe('cliCommandFactory — JSON output format', () => {
 		expect(output).toEqual({ success: true, data: { id: 'result-1' } });
 	});
 
-	it('outputs { success: false, error: message } on error', async () => {
+	it('outputs { success: false, error: { type: "runtime", message } } on error (spec 014 envelope)', async () => {
 		const coreFn = vi.fn().mockRejectedValue(new Error('Something went wrong'));
 		const def = makeToolDef({
 			parameters: {
@@ -417,7 +428,6 @@ describe('cliCommandFactory — JSON output format', () => {
 		const cmd = new Cmd(['--name', 'test'], makeMockConfig() as never);
 		const logSpy = vi.spyOn(cmd, 'log');
 
-		// Should not throw (error is caught internally) but may call this.exit(1)
 		try {
 			await cmd.run();
 		} catch {
@@ -425,11 +435,16 @@ describe('cliCommandFactory — JSON output format', () => {
 		}
 
 		expect(logSpy).toHaveBeenCalledTimes(1);
-		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
-		expect(output).toEqual({ success: false, error: 'Something went wrong' });
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; message: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('runtime');
+		expect(output.error.message).toBe('Something went wrong');
 	});
 
-	it('handles non-Error throws and outputs error string', async () => {
+	it('handles non-Error throws and carries the coerced string message (spec 014 envelope)', async () => {
 		const coreFn = vi.fn().mockRejectedValue('string error');
 		const def = makeToolDef({
 			parameters: {
@@ -446,9 +461,13 @@ describe('cliCommandFactory — JSON output format', () => {
 			// this.exit(1) may throw
 		}
 
-		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; message: string };
+		};
 		expect(output.success).toBe(false);
-		expect(output.error).toBe('string error');
+		expect(output.error.type).toBe('runtime');
+		expect(output.error.message).toBe('string error');
 	});
 
 	it('includes the description from the ToolDefinition', () => {

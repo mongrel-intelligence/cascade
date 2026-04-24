@@ -16,25 +16,66 @@ You are operating in a native-tool environment, not a gadget/function-call envir
 
 /**
  * Format a single CLI parameter for tool guidance documentation.
+ *
+ * Spec 014: the array branch previously stripped a trailing `s` and hard-coded
+ * `<string> (repeatable)` for every array type regardless of item shape. That
+ * was the root cause of prod run 5d993b04 — an agent sent `--comment` because
+ * the prompt told it to. Now:
+ *
+ * - `items: 'object'` → renders `--<key> '<json>'` (single JSON blob, not
+ *   repeatable), with aliases appended via `|` and one example line indented
+ *   beneath the flag when the manifest provides `example`.
+ * - `items: 'string'` or items missing → keeps the repeatable semantics but
+ *   uses the actual key (no `s`-strip).
+ * - `type: 'object'` → renders as a single `'<json>'` blob.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: parameter-type taxonomy
 function formatParam(
 	key: string,
-	schema: { type: string; required?: boolean; default?: unknown; description?: string },
+	schema: {
+		type: string;
+		required?: boolean;
+		default?: unknown;
+		description?: string;
+		items?: string;
+		aliases?: readonly string[];
+		example?: unknown;
+	},
 ): string {
+	const aliasSuffix = (schema.aliases ?? []).map((a) => `|--${a}`).join('');
+	const flagHead = `--${key}${aliasSuffix}`;
+
 	let result: string;
-	if (schema.type === 'array') {
-		const singular = key.replace(/s$/, '');
+	if (schema.type === 'array' && schema.items === 'object') {
+		result = schema.required ? ` ${flagHead} '<json>'` : ` [${flagHead} '<json>']`;
+	} else if (schema.type === 'array') {
+		// Primitive arrays (items: 'string' or unspecified) — repeatable.
 		result = schema.required
-			? ` --${singular} <string> (repeatable)`
-			: ` [--${singular} <string> (repeatable)]`;
+			? ` ${flagHead} <string> (repeatable)`
+			: ` [${flagHead} <string> (repeatable)]`;
+	} else if (schema.type === 'object') {
+		result = schema.required ? ` ${flagHead} '<json>'` : ` [${flagHead} '<json>']`;
 	} else if (schema.type === 'boolean') {
-		result = schema.default === true ? ` [--no-${key}]` : ` [--${key}]`;
+		result = schema.default === true ? ` [--no-${key}]` : ` [${flagHead}]`;
 	} else {
-		result = schema.required ? ` --${key} <${schema.type}>` : ` [--${key} <${schema.type}>]`;
+		result = schema.required ? ` ${flagHead} <${schema.type}>` : ` [${flagHead} <${schema.type}>]`;
 	}
+
 	if (schema.description) {
 		result += ` # ${schema.description}`;
 	}
+
+	// Spec 014: surface a concrete shape beneath the flag so agents see a
+	// copy/paste-ready JSON payload without having to run --help.
+	if (schema.example !== undefined) {
+		try {
+			result += `\n  # example: --${key} '${JSON.stringify(schema.example)}'`;
+		} catch {
+			// JSON.stringify throws on cyclic refs — never in our tool definitions,
+			// but be defensive so a malformed example never crashes prompt building.
+		}
+	}
+
 	return result;
 }
 

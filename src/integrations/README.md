@@ -1,5 +1,7 @@
 # PM Integration Architecture
 
+> ℹ️ Adding a `cascade-tools` gadget (CLI command consumed by agents)? See [`src/gadgets/README.md`](../gadgets/README.md) for the authoring contract — declarative metadata (`cliAliases`, `fileInputAlternatives`, `examples`), the structured error envelope, and the single-entrypoint invariant. PM provider registration (this file) is a separate surface.
+
 CASCADE's PM providers (Trello, JIRA, Linear, and any future Asana/GitLab/ClickUp) are built on a **provider manifest** pattern. One file describes the provider end-to-end; one registry iterates manifests; a behavioral conformance harness guarantees each manifest satisfies its declared contracts.
 
 This document is the canonical guide for adding a new PM provider. Five specs shape it:

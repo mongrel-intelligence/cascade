@@ -27,4 +27,18 @@ pjson.oclif = {
 };
 
 const config = await Config.load({ root, pjson });
-await run(process.argv.slice(2), config);
+try {
+	await run(process.argv.slice(2), config);
+} catch (err) {
+	// oclif's `this.exit(code)` throws an ExitError. We've already emitted the
+	// cascade-tools error envelope (stdout JSON + stderr prose) at that point;
+	// propagating the ExitError to Node's default handler would spew a stack
+	// trace that obscures our readable prose. Swallow ExitError quietly and
+	// let the exit code stand. Anything else still propagates.
+	const code =
+		typeof err?.oclif?.exit === 'number' ? err.oclif.exit : err?.code === 'EEXIT' ? 1 : undefined;
+	if (code !== undefined) {
+		process.exit(code);
+	}
+	throw err;
+}

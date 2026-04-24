@@ -50,6 +50,13 @@ export interface FileInputAlternative {
 	fileFlag: string;
 	/** Optional description for the file flag in CLI help output */
 	description?: string;
+	/**
+	 * How to interpret the file contents before handing to the gadget.
+	 * - `'string'` (default): pass the raw file contents through as a string.
+	 * - `'json'`: `JSON.parse()` the file contents; emit a structured error envelope on parse failure.
+	 *   Use this for parameters declared as `type: 'array'` with `items: 'object'` or `type: 'object'`.
+	 */
+	parseAs?: 'string' | 'json';
 }
 
 /**
@@ -108,6 +115,16 @@ interface BaseParameterDefinition {
 	 * @example 'CASCADE_BASE_BRANCH' for the `base` param in CreatePR
 	 */
 	cliEnvVar?: string;
+	/**
+	 * Alternative CLI flag names accepted for this parameter.
+	 * Wired into oclif as `Flags.*({aliases: [...]})`; the canonical name is always
+	 * the parameter key. Surfaced in the agent-facing tool manifest so the system
+	 * prompt lists both the canonical flag and its aliases.
+	 *
+	 * @example `--comments` with `cliAliases: ['comment']` accepts `--comment '[...]'`
+	 * as well, so agent muscle-memory on the singular spelling still works.
+	 */
+	cliAliases?: readonly string[];
 }
 
 /**

@@ -12,20 +12,8 @@
  * - The `cliCommand` is derived from the definition name (kebab-cased)
  */
 
-import type { ToolManifest } from '../../agents/contracts/index.js';
+import type { ToolManifest, ToolManifestParameter } from '../../agents/contracts/index.js';
 import type { ParameterDefinition, ToolDefinition } from './toolDefinition.js';
-
-// ---------------------------------------------------------------------------
-// Parameter schema entry type (ToolManifest.parameters value)
-// ---------------------------------------------------------------------------
-
-interface ManifestParameterEntry {
-	type: string;
-	required?: boolean;
-	default?: unknown;
-	description?: string;
-	options?: string[];
-}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,11 +26,11 @@ interface ManifestParameterEntry {
 function buildManifestParam(
 	def: ParameterDefinition,
 	isRequired: boolean,
-): ManifestParameterEntry | undefined {
+): ToolManifestParameter | undefined {
 	// gadgetOnly params are excluded from manifests
 	if (def.gadgetOnly) return undefined;
 
-	const entry: ManifestParameterEntry = {
+	const entry: ToolManifestParameter = {
 		type: def.type === 'array' ? 'array' : def.type === 'object' ? 'object' : def.type,
 		...(isRequired ? { required: true } : {}),
 		...('default' in def && def.default !== undefined ? { default: def.default } : {}),
@@ -61,7 +49,34 @@ function buildManifestParam(
 		entry.type = 'string';
 	}
 
+	// Spec 014: thread array items, aliases, and example values through to the manifest
+	if (def.type === 'array') {
+		entry.items = def.items;
+	}
+
+	if (def.cliAliases && def.cliAliases.length > 0) {
+		entry.aliases = [...def.cliAliases];
+	}
+
 	return entry;
+}
+
+/**
+ * Find the first example whose `params` object has a defined value for `paramName`,
+ * and return that value. Used by the manifest generator to surface one concrete
+ * shape per parameter to agents + help text.
+ */
+function findExampleForParam(
+	examples: readonly { params: Record<string, unknown> }[] | undefined,
+	paramName: string,
+): unknown {
+	if (!examples) return undefined;
+	for (const ex of examples) {
+		if (Object.hasOwn(ex.params, paramName) && ex.params[paramName] !== undefined) {
+			return ex.params[paramName];
+		}
+	}
+	return undefined;
 }
 
 /**
@@ -180,6 +195,10 @@ export function generateToolManifest(
 		const isRequired = paramDef.required === true;
 		const entry = buildManifestParam(paramDef, isRequired);
 		if (entry) {
+			const example = findExampleForParam(def.examples, name);
+			if (example !== undefined) {
+				entry.example = example;
+			}
 			parameters[name] = entry;
 		}
 	}

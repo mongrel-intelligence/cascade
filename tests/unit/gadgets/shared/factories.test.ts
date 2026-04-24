@@ -561,25 +561,8 @@ describe('createCLICommand', () => {
 		expect(capturedParams.text).toBe('Content from stdin');
 	});
 
-	it('errors when file-input required param is missing', async () => {
-		const coreFn: CLICoreFn = async () => 'result';
-		const CommandClass = createCLICommand(fileInputToolDef, coreFn);
-		const instance = new CommandClass([], {});
-
-		vi.spyOn(instance, 'parse').mockResolvedValue({
-			flags: { workItemId: 'card123', text: undefined, 'text-file': undefined },
-			args: {},
-			argv: [],
-			raw: [],
-		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
-
-		const errorSpy = vi.spyOn(instance, 'error').mockImplementation((msg: string | Error) => {
-			throw new Error(typeof msg === 'string' ? msg : msg.message);
-		});
-
-		await expect(instance.execute()).rejects.toThrow('Either --text or --text-file is required');
-		expect(errorSpy).toHaveBeenCalled();
-	});
+	// Legacy test removed — replaced by spec-014 envelope assertion in
+	// 'missing file-input required param routes through envelope (type:"missing-required")' below.
 
 	it('outputs JSON result on success', async () => {
 		const coreFn: CLICoreFn = async () => ({ id: '456', url: 'https://example.com' });
@@ -626,24 +609,8 @@ describe('createCLICommand', () => {
 		expect(capturedParams.config).toEqual({ key: 'value', count: 5 });
 	});
 
-	it('errors on invalid JSON for object type params', async () => {
-		const coreFn: CLICoreFn = async () => 'result';
-		const CommandClass = createCLICommand(objectToolDef, coreFn);
-		const instance = new CommandClass([], {});
-
-		vi.spyOn(instance, 'parse').mockResolvedValue({
-			flags: { config: '{not-valid-json}' },
-			args: {},
-			argv: [],
-			raw: [],
-		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
-
-		vi.spyOn(instance, 'error').mockImplementation((msg: string | Error) => {
-			throw new Error(typeof msg === 'string' ? msg : msg.message);
-		});
-
-		await expect(instance.execute()).rejects.toThrow('--config must be valid JSON');
-	});
+	// Legacy test removed — replaced by spec-014 envelope assertion in
+	// 'object param with malformed JSON routes through envelope (type:"json-parse")' below.
 
 	it('skips gadgetOnly params in flag processing', async () => {
 		let capturedParams: Record<string, unknown> = {};
@@ -671,29 +638,8 @@ describe('createCLICommand', () => {
 		expect(capturedParams.name).toBe('Alice');
 	});
 
-	it('logs { success: false, error } and exits 1 when coreFn throws', async () => {
-		const failingFn: CLICoreFn = async () => {
-			throw new Error('getaddrinfo EAI_AGAIN api.trello.com');
-		};
-		const CommandClass = createCLICommand(simpleToolDef, failingFn);
-		const instance = new CommandClass([], {});
-		vi.spyOn(instance, 'parse').mockResolvedValue({
-			flags: { name: 'Alice' },
-			args: {},
-			argv: [],
-			raw: [],
-		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
-		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
-		const exitSpy = vi.spyOn(instance, 'exit').mockImplementation(() => {
-			throw new Error('exit');
-		});
-
-		await expect(instance.execute()).rejects.toThrow('exit');
-		expect(logSpy).toHaveBeenCalledWith(
-			JSON.stringify({ success: false, error: 'getaddrinfo EAI_AGAIN api.trello.com' }),
-		);
-		expect(exitSpy).toHaveBeenCalledWith(1);
-	});
+	// Legacy test removed — replaced by spec-014 envelope assertion in
+	// 'coreFn runtime failure routes through the new envelope (type:"runtime")' below.
 
 	it('passes array flags through correctly', async () => {
 		let capturedParams: Record<string, unknown> = {};
@@ -717,6 +663,405 @@ describe('createCLICommand', () => {
 		await instance.execute();
 
 		expect(capturedParams.items).toEqual(['item1', 'item2', 'item3']);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Spec 014: cliCommandFactory widened behavior (aliases, JSON-parse for
+// array-of-object, help examples, structured error envelope).
+// ---------------------------------------------------------------------------
+
+describe('createCLICommand — spec 014 additions', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	// Test def: single array-of-object param with an alias and a file alternative.
+	const reviewPRDef: ToolDefinition = {
+		name: 'TestReviewPR',
+		description: 'Submit a PR review (test fixture).',
+		parameters: {
+			body: { type: 'string', describe: 'Review body', required: true },
+			comments: {
+				type: 'array',
+				items: 'object',
+				describe: 'Inline comments',
+				cliAliases: ['comment'],
+				optional: true,
+			},
+		},
+		examples: [
+			{
+				params: {
+					body: 'LGTM',
+					comments: [{ path: 'src/x.ts', line: 1, body: 'nit' }],
+				},
+				comment: 'Request changes with inline',
+			},
+		],
+		cli: {
+			fileInputAlternatives: [
+				{
+					paramName: 'comments',
+					fileFlag: 'comments-file',
+					parseAs: 'json',
+					description: 'Read --comments JSON from file (use - for stdin).',
+				},
+			],
+		},
+	};
+
+	it('applies cliAliases onto the generated oclif flag', () => {
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+
+		const commentsFlag = CommandClass.flags.comments as { aliases?: string[] };
+		expect(commentsFlag.aliases).toEqual(['comment']);
+	});
+
+	it('wires def.examples onto FactoryCommand.examples for oclif --help', () => {
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+
+		const examples = CommandClass.examples as string[] | undefined;
+		expect(examples).toBeDefined();
+		expect(examples?.length ?? 0).toBeGreaterThan(0);
+		// The JSON shape from the example should appear — serialized double-quoted.
+		expect(examples?.[0]).toContain('"path":"src/x.ts"');
+	});
+
+	it('array + items:"object" flag value parses as JSON (single string, not repeatable)', async () => {
+		let capturedParams: Record<string, unknown> = {};
+		const coreFn: CLICoreFn = async (params) => {
+			capturedParams = params as Record<string, unknown>;
+			return 'ok';
+		};
+
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: 'LGTM',
+				comments: '[{"path":"a","line":1,"body":"b"}]',
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		vi.spyOn(instance, 'log').mockImplementation(() => {});
+
+		await instance.execute();
+
+		expect(capturedParams.comments).toEqual([{ path: 'a', line: 1, body: 'b' }]);
+	});
+
+	it('array + items:"object" with malformed JSON emits json-parse envelope on stdout', async () => {
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: 'LGTM',
+				comments: "[{'path':'a','line':1,'body':'b'}]", // single-quoted keys — bug from prod run 5d993b04
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+
+		// The new envelope must surface on this.log (stdout)
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: {
+				type: string;
+				flag?: string;
+				got?: string;
+				expected?: string;
+				hint?: string;
+			};
+		};
+		expect(parsed.success).toBe(false);
+		expect(parsed.error.type).toBe('json-parse');
+		expect(parsed.error.flag).toBe('comments');
+		expect(parsed.error.got).toContain("[{'path'");
+		expect(parsed.error.expected).toContain('"path"');
+		expect(parsed.error.hint).toContain('--comments-file');
+	});
+
+	it('file-input with parseAs:"json" JSON-parses the file contents', async () => {
+		mockReadFileSync.mockReturnValue('[{"path":"a","line":1,"body":"b"}]');
+
+		let capturedParams: Record<string, unknown> = {};
+		const coreFn: CLICoreFn = async (params) => {
+			capturedParams = params as Record<string, unknown>;
+			return 'ok';
+		};
+
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: 'LGTM',
+				'comments-file': '/tmp/comments.json',
+				comments: undefined,
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		vi.spyOn(instance, 'log').mockImplementation(() => {});
+
+		await instance.execute();
+
+		expect(capturedParams.comments).toEqual([{ path: 'a', line: 1, body: 'b' }]);
+	});
+
+	it('file-input with parseAs:"json" malformed contents emits json-parse envelope', async () => {
+		mockReadFileSync.mockReturnValue("[{'path':'a'}]");
+
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: 'LGTM',
+				'comments-file': '/tmp/comments.json',
+				comments: undefined,
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(parsed.error.type).toBe('json-parse');
+		expect(parsed.error.flag).toBe('comments');
+	});
+
+	it('coreFn runtime failure routes through the new envelope (type:"runtime")', async () => {
+		const failingFn: CLICoreFn = async () => {
+			throw new Error('getaddrinfo EAI_AGAIN api.trello.com');
+		};
+		const CommandClass = createCLICommand(simpleToolDef, failingFn);
+		const instance = new CommandClass([], {});
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: { name: 'Alice' },
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: { type: string; message: string };
+		};
+		expect(parsed.success).toBe(false);
+		expect(parsed.error.type).toBe('runtime');
+		expect(parsed.error.message).toBe('getaddrinfo EAI_AGAIN api.trello.com');
+	});
+
+	it('missing file-input required param routes through envelope (type:"missing-required")', async () => {
+		const coreFn: CLICoreFn = async () => 'result';
+		const CommandClass = createCLICommand(fileInputToolDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: { workItemId: 'card123', text: undefined, 'text-file': undefined },
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(parsed.error.type).toBe('missing-required');
+		expect(parsed.error.flag).toBe('text');
+	});
+
+	it('primitive-array (items:"string") still uses multiple:true (regression guard)', () => {
+		// arrayToolDef has items:'string' → repeatable flag
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(arrayToolDef, coreFn);
+		const itemsFlag = CommandClass.flags.items as { multiple?: boolean };
+		expect(itemsFlag.multiple).toBe(true);
+	});
+
+	it('unknown flag close to a declared one suggests correction via Levenshtein', async () => {
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		// Simulate oclif's NonExistentFlagsError shape (constructor name + flags array)
+		class NonExistentFlagsError extends Error {
+			public flags: string[];
+			constructor(flags: string[]) {
+				super(`Nonexistent flag: ${flags.join(', ')}`);
+				this.name = 'CLIParseError';
+				this.flags = flags;
+			}
+		}
+
+		vi.spyOn(instance, 'parse').mockImplementation(async () => {
+			throw new NonExistentFlagsError(['comnent']);
+		});
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			error: { type: string; flag?: string; hint?: string };
+		};
+		expect(parsed.error.type).toBe('unknown-flag');
+		expect(parsed.error.flag).toBe('comnent');
+		expect(parsed.error.hint).toContain('did you mean');
+		expect(parsed.error.hint).toContain('--comments');
+	});
+
+	it('unknown flag far from any declared one emits envelope without suggestion', async () => {
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		class NonExistentFlagsError extends Error {
+			public flags: string[];
+			constructor(flags: string[]) {
+				super(`Nonexistent flag: ${flags.join(', ')}`);
+				this.name = 'CLIParseError';
+				this.flags = flags;
+			}
+		}
+
+		vi.spyOn(instance, 'parse').mockImplementation(async () => {
+			throw new NonExistentFlagsError(['zzzzzzzz']);
+		});
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			error: { type: string; hint?: string };
+		};
+		expect(parsed.error.type).toBe('unknown-flag');
+		// No "did you mean" when Levenshtein distance exceeds threshold
+		expect(parsed.error.hint ?? '').not.toContain('did you mean');
+	});
+
+	it('fuzzy suggestion considers declared aliases but always returns the canonical name', async () => {
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(reviewPRDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		class NonExistentFlagsError extends Error {
+			public flags: string[];
+			constructor(flags: string[]) {
+				super(`Nonexistent flag: ${flags.join(', ')}`);
+				this.name = 'CLIParseError';
+				this.flags = flags;
+			}
+		}
+
+		// 'coment' is closer to the alias 'comment' than to the canonical 'comments'.
+		// The suggestion must still surface the canonical spelling.
+		vi.spyOn(instance, 'parse').mockImplementation(async () => {
+			throw new NonExistentFlagsError(['coment']);
+		});
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as { error: { hint?: string } };
+		expect(parsed.error.hint).toContain('--comments');
+		expect(parsed.error.hint).not.toContain('--comment?');
+	});
+
+	it('object param with malformed JSON routes through envelope (type:"json-parse")', async () => {
+		// This replaces the old 'errors on invalid JSON for object type params' assertion
+		// which checked the legacy `--config must be valid JSON` prose error.
+		const coreFn: CLICoreFn = async () => 'result';
+		const CommandClass = createCLICommand(objectToolDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: { config: '{not-valid-json}' },
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(parsed.error.type).toBe('json-parse');
+		expect(parsed.error.flag).toBe('config');
 	});
 });
 
@@ -931,5 +1276,134 @@ describe('round-trip consistency', () => {
 		expect(GadgetClass).toBeDefined();
 		expect(CommandClass).toBeDefined();
 		expect(manifest.name).toBe('TestTool');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Spec 014: manifest threads items / cliAliases / one example through
+// ---------------------------------------------------------------------------
+
+describe('generateToolManifest — widened fields (spec 014)', () => {
+	it('threads items from array-of-object parameter into manifest entry', () => {
+		const def: ToolDefinition = {
+			name: 'ReviewPR',
+			description: 'Review a PR.',
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+				},
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const commentsParam = manifest.parameters.comments as { type: string; items?: string };
+		expect(commentsParam.items).toBe('object');
+	});
+
+	it('threads items from primitive-array parameter into manifest entry (regression guard)', () => {
+		const def: ToolDefinition = {
+			name: 'AddLabels',
+			description: 'Add labels.',
+			parameters: {
+				labels: {
+					type: 'array',
+					items: 'string',
+					describe: 'Labels to add',
+					required: true,
+				},
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const labelsParam = manifest.parameters.labels as { type: string; items?: string };
+		expect(labelsParam.items).toBe('string');
+	});
+
+	it('threads cliAliases into manifest as aliases', () => {
+		const def: ToolDefinition = {
+			name: 'ReviewPR',
+			description: 'Review a PR.',
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					cliAliases: ['comment'],
+					optional: true,
+				},
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const commentsParam = manifest.parameters.comments as { aliases?: readonly string[] };
+		expect(commentsParam.aliases).toEqual(['comment']);
+	});
+
+	it('attaches first matching example params value to the manifest entry as example', () => {
+		const def: ToolDefinition = {
+			name: 'ReviewPR',
+			description: 'Review a PR.',
+			parameters: {
+				body: { type: 'string', describe: 'Body', required: true },
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+				},
+			},
+			examples: [
+				{
+					// First example has no comments → should be skipped when picking for the comments entry
+					params: { body: 'lgtm' },
+					comment: 'Approve with summary only',
+				},
+				{
+					params: {
+						body: 'needs work',
+						comments: [{ path: 'src/x.ts', line: 10, body: 'nit' }],
+					},
+					comment: 'Request changes with inline',
+				},
+			],
+		};
+
+		const manifest = generateToolManifest(def);
+		const commentsParam = manifest.parameters.comments as { example?: unknown };
+		expect(commentsParam.example).toEqual([{ path: 'src/x.ts', line: 10, body: 'nit' }]);
+
+		const bodyParam = manifest.parameters.body as { example?: unknown };
+		// First example has body='lgtm' → that's the first match
+		expect(bodyParam.example).toBe('lgtm');
+	});
+
+	it('omits example field when no examples populate the param', () => {
+		const def: ToolDefinition = {
+			name: 'ReviewPR',
+			description: 'Review a PR.',
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+				},
+			},
+			examples: [
+				{
+					params: {
+						/* no comments here */
+					},
+					comment: 'no comments example',
+				},
+			],
+		};
+
+		const manifest = generateToolManifest(def);
+		const commentsParam = manifest.parameters.comments as { example?: unknown };
+		expect(commentsParam).not.toHaveProperty('example');
 	});
 });
