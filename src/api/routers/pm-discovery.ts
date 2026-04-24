@@ -15,10 +15,63 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { getIntegrationCredentialOrNull } from '../../config/provider.js';
 import { getIntegrationByProjectAndCategory } from '../../db/repositories/integrationsRepository.js';
+import type { PMProviderManifest } from '../../integrations/pm/manifest.js';
 import { getPMProvider, listPMProviders } from '../../integrations/pm/registry.js';
 import { DISCOVERY_CAPABILITIES } from '../../pm/types.js';
 import { protectedProcedure, router } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
+
+/**
+ * Invoke a manifest's optional `configToCredentials` hook and return the
+ * promoted bag. Guards against malformed hook returns and swallows hook
+ * errors with a warn so one broken provider cannot take down discovery
+ * for everyone.
+ */
+function promoteConfigCredentials(
+	manifest: PMProviderManifest,
+	integrationConfig: unknown,
+): Record<string, string> {
+	if (!manifest.configToCredentials) return {};
+	try {
+		const promoted = manifest.configToCredentials(integrationConfig);
+		return promoted && typeof promoted === 'object' ? promoted : {};
+	} catch (err) {
+		console.warn(`[pm-discovery] configToCredentials threw for provider '${manifest.id}':`, err);
+		return {};
+	}
+}
+
+/**
+ * Load + validate the PM integration for a given project. Throws the
+ * appropriate tRPC error when missing, misconfigured, or when the manifest
+ * has been deregistered.
+ */
+async function loadIntegrationAndManifest(
+	projectId: string,
+	providerId: string,
+): Promise<{ integration: { config: unknown }; manifest: PMProviderManifest }> {
+	const integration = await getIntegrationByProjectAndCategory(projectId, 'pm');
+	if (!integration) {
+		throw new TRPCError({
+			code: 'NOT_FOUND',
+			message: 'No PM integration configured for this project yet',
+		});
+	}
+	if (integration.provider !== providerId) {
+		throw new TRPCError({
+			code: 'NOT_FOUND',
+			message: `Project is configured with a different PM provider (${integration.provider})`,
+		});
+	}
+	const manifest = getPMProvider(providerId);
+	if (!manifest) {
+		throw new TRPCError({
+			code: 'NOT_FOUND',
+			message: `Unknown PM provider '${providerId}'`,
+		});
+	}
+	return { integration, manifest };
+}
 
 /**
  * Shared credential resolver for pm.discovery.* endpoints. Accepts either
@@ -26,9 +79,15 @@ import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
  * caller must have org access to the project, and we resolve each declared
  * credential role from the project_credentials table.
  *
+ * On the projectId path, the manifest's optional `configToCredentials` hook
+ * seeds the bag with non-secret connection fields promoted from
+ * `project_integrations.config` (e.g. JIRA's cloud tenant `baseUrl`).
+ * Values written from `project_credentials` override any key collisions —
+ * the DB-scoped secret always wins over config-derived defaults.
+ *
  * Returns a `Record<string, string>` shaped by the manifest's
- * `credentialRoles` — the shape downstream hooks / `createDiscoveryProvider`
- * factories consume.
+ * `credentialRoles` (plus any promoted-config fields) — the shape
+ * downstream hooks / `createDiscoveryProvider` factories consume.
  */
 async function resolvePMCredentials(opts: {
 	providerId: string;
@@ -36,44 +95,31 @@ async function resolvePMCredentials(opts: {
 	credentials?: Record<string, string>;
 	projectId?: string;
 }): Promise<Record<string, string>> {
-	if (opts.projectId) {
-		if (!opts.effectiveOrgId) {
-			throw new TRPCError({ code: 'UNAUTHORIZED' });
-		}
-		await verifyProjectOrgAccess(opts.projectId, opts.effectiveOrgId);
-		const integration = await getIntegrationByProjectAndCategory(opts.projectId, 'pm');
-		if (!integration) {
-			throw new TRPCError({
-				code: 'NOT_FOUND',
-				message: 'No PM integration configured for this project yet',
-			});
-		}
-		if (integration.provider !== opts.providerId) {
-			throw new TRPCError({
-				code: 'NOT_FOUND',
-				message: `Project is configured with a different PM provider (${integration.provider})`,
-			});
-		}
-		const manifest = getPMProvider(opts.providerId);
-		if (!manifest) {
-			throw new TRPCError({
-				code: 'NOT_FOUND',
-				message: `Unknown PM provider '${opts.providerId}'`,
-			});
-		}
-		const resolved: Record<string, string> = {};
-		for (const role of manifest.credentialRoles) {
-			const value = await getIntegrationCredentialOrNull(
-				opts.projectId,
-				'pm',
-				opts.providerId,
-				role.role,
-			);
-			if (value) resolved[role.role] = value;
-		}
-		return resolved;
+	if (!opts.projectId) return opts.credentials ?? {};
+
+	if (!opts.effectiveOrgId) {
+		throw new TRPCError({ code: 'UNAUTHORIZED' });
 	}
-	return opts.credentials ?? {};
+	await verifyProjectOrgAccess(opts.projectId, opts.effectiveOrgId);
+
+	const { integration, manifest } = await loadIntegrationAndManifest(
+		opts.projectId,
+		opts.providerId,
+	);
+
+	const resolved: Record<string, string> = {
+		...promoteConfigCredentials(manifest, integration.config),
+	};
+	for (const role of manifest.credentialRoles) {
+		const value = await getIntegrationCredentialOrNull(
+			opts.projectId,
+			'pm',
+			opts.providerId,
+			role.role,
+		);
+		if (value) resolved[role.role] = value;
+	}
+	return resolved;
 }
 
 const providerIdInput = z.object({

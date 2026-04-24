@@ -58,6 +58,7 @@ See [`src/integrations/pm/manifest.ts`](./pm/manifest.ts) for the authoritative 
 | `isSelfAuthoredHook?` | Optional — returns `true` when the event was authored by CASCADE itself (for loop prevention). |
 | `createLabel?` | Optional — enables the wizard's "Create label" button. Called via the generic `pm.discovery.createLabel` tRPC endpoint; signature is `({credentials, containerId, name, color?}) => {id, name, color}`. |
 | `createCustomField?` | Optional — enables wizard-driven custom-field creation. Called via `pm.discovery.createCustomField`; signature is `({credentials, containerId, name}) => {id, name, type}`. JIRA fields are global (the hook ignores containerId). |
+| `configToCredentials?` | Optional — promotes non-secret connection fields from `project_integrations.config` into the credentials bag `createDiscoveryProvider` consumes. Signature: `(config: unknown) => Record<string, string>`. Invoked only on the `projectId` path of `pm.discovery.*`; `project_credentials` values win on key collisions. Declare this when your provider stores tenant/host info in config instead of credentials (JIRA's `baseUrl` → `base_url`). Without it, edit-mode wizard re-verification constructs a client with empty host info — see prod incident 2026-04-24. |
 
 ### Plan 009 hardened-contract fields (all optional; providers opt in)
 

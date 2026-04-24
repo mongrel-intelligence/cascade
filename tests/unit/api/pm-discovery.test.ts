@@ -25,6 +25,18 @@ vi.mock('../../../src/api/trpc.js', async () => {
 	};
 });
 
+// Mock the DB-bound helpers used by the projectId-credential-resolution path
+// so tests can exercise that branch without a live database.
+vi.mock('../../../src/db/repositories/integrationsRepository.js', () => ({
+	getIntegrationByProjectAndCategory: vi.fn(),
+}));
+vi.mock('../../../src/config/provider.js', () => ({
+	getIntegrationCredentialOrNull: vi.fn(),
+}));
+vi.mock('../../../src/api/routers/_shared/projectAccess.js', () => ({
+	verifyProjectOrgAccess: vi.fn(async () => {}),
+}));
+
 import { pmDiscoveryRouter } from '../../../src/api/routers/pm-discovery.js';
 import type { PMProviderManifest } from '../../../src/integrations/pm/manifest.js';
 import {
@@ -311,6 +323,186 @@ describe('pmDiscoveryRouter', () => {
 					args: {},
 				}),
 			).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+		});
+	});
+
+	describe('configToCredentials — projectId-path config promotion', () => {
+		// Regression for the 2026-04-24 production bug: a saved JIRA integration's
+		// base URL lives on `project_integrations.config.baseUrl`, not on
+		// `project_credentials`. `pm.discovery.discover({ projectId })` therefore
+		// constructed a JIRA client with `host: ''` → "Couldn't parse the host URL".
+		// The fix is a `configToCredentials` manifest hook that promotes specific
+		// integration-config fields into the credentials bag used by
+		// `createDiscoveryProvider`.
+
+		beforeEach(() => {
+			_resetPMProviderRegistryForTesting();
+			vi.clearAllMocks();
+		});
+
+		it('merges config-derived credentials from configToCredentials into the resolved bag', async () => {
+			const { createFakePMManifest, createFakePMProvider } = await import(
+				'../../helpers/fakePMProvider.js'
+			);
+			const base = createFakePMManifest();
+
+			let receivedCredentials: Record<string, string> | undefined;
+			registerPMProvider({
+				...base,
+				id: 'fake-with-config-creds',
+				credentialRoles: [{ role: 'api_key', label: 'API Key', envVarKey: 'FAKE_API_KEY' }],
+				configToCredentials: (config: unknown) => {
+					const c = config as { tenantUrl?: string };
+					return c.tenantUrl ? { base_url: c.tenantUrl } : {};
+				},
+				createDiscoveryProvider: (opts) => {
+					receivedCredentials = opts?.credentials ?? {};
+					const { provider } = createFakePMProvider();
+					return provider;
+				},
+			});
+
+			const { getIntegrationByProjectAndCategory } = await import(
+				'../../../src/db/repositories/integrationsRepository.js'
+			);
+			const { getIntegrationCredentialOrNull } = await import('../../../src/config/provider.js');
+			vi.mocked(getIntegrationByProjectAndCategory).mockResolvedValue({
+				projectId: 'ua-store',
+				category: 'pm',
+				provider: 'fake-with-config-creds',
+				config: { tenantUrl: 'https://example.atlassian.net' },
+				triggers: {},
+			} as unknown as Awaited<ReturnType<typeof getIntegrationByProjectAndCategory>>);
+			vi.mocked(getIntegrationCredentialOrNull).mockResolvedValue('secret-key');
+
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await caller.discover({
+				providerId: 'fake-with-config-creds',
+				capability: 'currentUser',
+				args: {},
+				projectId: 'ua-store',
+			});
+
+			expect(receivedCredentials).toEqual({
+				api_key: 'secret-key',
+				base_url: 'https://example.atlassian.net',
+			});
+		});
+
+		it('project_credentials values win over config-derived values on collision', async () => {
+			const { createFakePMManifest, createFakePMProvider } = await import(
+				'../../helpers/fakePMProvider.js'
+			);
+			const base = createFakePMManifest();
+
+			let receivedCredentials: Record<string, string> | undefined;
+			registerPMProvider({
+				...base,
+				id: 'fake-collision',
+				credentialRoles: [{ role: 'api_key', label: 'API Key', envVarKey: 'FAKE_API_KEY' }],
+				// Intentionally overlaps with credentialRoles to assert precedence.
+				configToCredentials: () => ({ api_key: 'from-config' }),
+				createDiscoveryProvider: (opts) => {
+					receivedCredentials = opts?.credentials ?? {};
+					const { provider } = createFakePMProvider();
+					return provider;
+				},
+			});
+
+			const { getIntegrationByProjectAndCategory } = await import(
+				'../../../src/db/repositories/integrationsRepository.js'
+			);
+			const { getIntegrationCredentialOrNull } = await import('../../../src/config/provider.js');
+			vi.mocked(getIntegrationByProjectAndCategory).mockResolvedValue({
+				projectId: 'p',
+				category: 'pm',
+				provider: 'fake-collision',
+				config: {},
+				triggers: {},
+			} as unknown as Awaited<ReturnType<typeof getIntegrationByProjectAndCategory>>);
+			vi.mocked(getIntegrationCredentialOrNull).mockResolvedValue('from-db');
+
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await caller.discover({
+				providerId: 'fake-collision',
+				capability: 'currentUser',
+				args: {},
+				projectId: 'p',
+			});
+
+			expect(receivedCredentials).toEqual({ api_key: 'from-db' });
+		});
+
+		it('manifests without configToCredentials still work (legacy behavior preserved)', async () => {
+			const { createFakePMManifest, createFakePMProvider } = await import(
+				'../../helpers/fakePMProvider.js'
+			);
+			const base = createFakePMManifest();
+
+			let receivedCredentials: Record<string, string> | undefined;
+			registerPMProvider({
+				...base,
+				id: 'fake-no-hook',
+				credentialRoles: [{ role: 'api_key', label: 'API Key', envVarKey: 'FAKE_API_KEY' }],
+				configToCredentials: undefined,
+				createDiscoveryProvider: (opts) => {
+					receivedCredentials = opts?.credentials ?? {};
+					const { provider } = createFakePMProvider();
+					return provider;
+				},
+			});
+
+			const { getIntegrationByProjectAndCategory } = await import(
+				'../../../src/db/repositories/integrationsRepository.js'
+			);
+			const { getIntegrationCredentialOrNull } = await import('../../../src/config/provider.js');
+			vi.mocked(getIntegrationByProjectAndCategory).mockResolvedValue({
+				projectId: 'p',
+				category: 'pm',
+				provider: 'fake-no-hook',
+				config: { tenantUrl: 'https://example.atlassian.net' },
+				triggers: {},
+			} as unknown as Awaited<ReturnType<typeof getIntegrationByProjectAndCategory>>);
+			vi.mocked(getIntegrationCredentialOrNull).mockResolvedValue('secret-key');
+
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await caller.discover({
+				providerId: 'fake-no-hook',
+				capability: 'currentUser',
+				args: {},
+				projectId: 'p',
+			});
+
+			expect(receivedCredentials).toEqual({ api_key: 'secret-key' });
+		});
+
+		it('does not invoke configToCredentials on the explicit-credentials path', async () => {
+			const { createFakePMManifest, createFakePMProvider } = await import(
+				'../../helpers/fakePMProvider.js'
+			);
+			const base = createFakePMManifest();
+
+			const hookSpy = vi.fn(() => ({ base_url: 'should-not-appear' }));
+			registerPMProvider({
+				...base,
+				id: 'fake-no-projectid',
+				credentialRoles: [{ role: 'api_key', label: 'API Key', envVarKey: 'FAKE_API_KEY' }],
+				configToCredentials: hookSpy,
+				createDiscoveryProvider: () => {
+					const { provider } = createFakePMProvider();
+					return provider;
+				},
+			});
+
+			const caller = pmDiscoveryRouter.createCaller({ effectiveOrgId: 'org-1' });
+			await caller.discover({
+				providerId: 'fake-no-projectid',
+				capability: 'currentUser',
+				args: {},
+				credentials: { api_key: 'k' },
+			});
+
+			expect(hookSpy).not.toHaveBeenCalled();
 		});
 	});
 

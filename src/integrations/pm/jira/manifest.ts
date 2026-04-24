@@ -133,6 +133,22 @@ export const jiraManifest: PMProviderManifest = {
 		],
 	},
 
+	/**
+	 * JIRA's cloud tenant URL is a non-secret connection field stored on
+	 * `project_integrations.config.baseUrl`, not `project_credentials`. The
+	 * pm-discovery resolver invokes this hook on the projectId path to
+	 * promote the URL into the credentials bag the `createDiscoveryProvider`
+	 * factory below consumes. Without it, edit-mode re-verification in the
+	 * wizard constructs `new Version3Client({ host: '' })` and throws
+	 * "Couldn't parse the host URL" (prod incident 2026-04-24).
+	 */
+	configToCredentials: (config: unknown): Record<string, string> => {
+		if (!config || typeof config !== 'object') return {};
+		const baseUrl = (config as { baseUrl?: unknown }).baseUrl;
+		if (typeof baseUrl !== 'string' || baseUrl.length === 0) return {};
+		return { base_url: baseUrl };
+	},
+
 	configSchema: jiraConfigSchema,
 	configFixture: {
 		projectKey: 'CASCADE',

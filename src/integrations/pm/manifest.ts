@@ -282,6 +282,28 @@ export interface PMProviderManifest {
 	readonly createDiscoveryProvider?: (opts?: {
 		credentials?: Record<string, string>;
 	}) => import('../../pm/types.js').PMProvider;
+
+	/**
+	 * Promote fields from the persisted integration config into the credentials
+	 * bag that `createDiscoveryProvider` consumes.
+	 *
+	 * Motivation: some providers (JIRA) require non-secret connection fields —
+	 * like the cloud tenant URL — that belong on `project_integrations.config`,
+	 * not in `project_credentials`. Without this hook, `pm.discovery.discover`
+	 * resolving credentials by projectId produces a bag missing those fields,
+	 * and the discovery adapter constructs a client with an empty host (see
+	 * prod incident 2026-04-24: "Couldn't parse the host URL" in the JIRA
+	 * wizard's Select Project step).
+	 *
+	 * Contract:
+	 *   - Invoked only on the projectId path of `resolvePMCredentials`. The
+	 *     explicit-credentials path (wizard first-time setup, with the user's
+	 *     raw form values) does not invoke it.
+	 *   - Values loaded from `project_credentials` take precedence on key
+	 *     collisions — hook-returned values fill gaps, they don't override.
+	 *   - Return `{}` (or undefined) when the config has nothing to promote.
+	 */
+	readonly configToCredentials?: (config: unknown) => Record<string, string>;
 }
 
 /**
