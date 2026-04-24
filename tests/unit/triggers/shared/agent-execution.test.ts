@@ -381,6 +381,111 @@ describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () 
 			'splitting-auto-propagate',
 		);
 	});
+
+	it('uses the resolved UUID from parent labels when labels.auto is a name string', async () => {
+		// Regression: Linear requires UUIDs for addLabel. When pmConfig.labels.auto is a
+		// name string like 'cascade-auto', the UUID must be resolved from the parent work
+		// item's label list to avoid a silent no-op in Linear's resolveLabelId().
+		const provider = setupSplittingDefaults({
+			getWorkItem: vi.fn().mockResolvedValue({
+				id: 'parent-card',
+				labels: [{ id: 'real-uuid-abc123', name: 'cascade-auto' }],
+			}),
+			listWorkItems: vi
+				.fn()
+				.mockImplementation(
+					async (_containerId: string | undefined, opts?: { status?: string }) => {
+						if (opts?.status === 'backlog') {
+							return [{ id: 'backlog-item-1', labels: [] }];
+						}
+						return [];
+					},
+				),
+		});
+		// Simulate Linear config: labels.auto is a name string, not UUID
+		mockResolveProjectPMConfig.mockReturnValue({
+			...PM_CONFIG,
+			labels: { ...PM_CONFIG.labels, auto: 'cascade-auto' },
+		});
+		// hasAutoLabel matches by name
+		mockHasAutoLabel.mockImplementation((labels: Array<{ id: string; name: string }>) =>
+			labels.some((l) => l.id === 'cascade-auto' || l.name === 'cascade-auto'),
+		);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'splitting', agentInput: {}, workItemId: 'parent-card' },
+			PROJECT,
+			CONFIG,
+		);
+
+		// addLabel must be called with the resolved UUID, NOT the name string
+		expect(provider.addLabel).toHaveBeenCalledWith('backlog-item-1', 'real-uuid-abc123');
+		expect(provider.addLabel).not.toHaveBeenCalledWith('backlog-item-1', 'cascade-auto');
+
+		// Should warn that the configured value is not UUID format
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'propagateAutoLabelAfterSplitting: labels.auto is not a UUID; resolving ID from parent labels',
+			expect.objectContaining({ autoLabelId: 'cascade-auto' }),
+		);
+	});
+
+	it('skips propagation (returns null) when labels.auto is undefined even if hasAutoLabel mock returns true', async () => {
+		// When labels.auto is undefined, the second guard in propagateAutoLabelAfterSplitting
+		// short-circuits and returns null — no labeling, no chaining.
+		const provider = setupSplittingDefaults();
+		mockResolveProjectPMConfig.mockReturnValue({
+			...PM_CONFIG,
+			labels: { ...PM_CONFIG.labels, auto: undefined },
+		});
+		// Even if hasAutoLabel incorrectly returns true, the code checks autoLabelId next
+		mockHasAutoLabel.mockReturnValue(true);
+		mockRunAgent.mockReset();
+		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-1' });
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'splitting', agentInput: {}, workItemId: 'parent-card' },
+			PROJECT,
+			CONFIG,
+		);
+
+		// Only splitting ran — propagation skipped because autoLabelId is undefined
+		expect(mockRunAgent).toHaveBeenCalledTimes(1);
+		expect(provider.addLabel).not.toHaveBeenCalled();
+	});
+
+	it('passes UUID directly when labels.auto is already a valid UUID (happy path)', async () => {
+		// When labels.auto IS a UUID, no resolution is needed and no warning is logged.
+		// Use a proper UUID for this test (UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+		const UUID_LABEL = '00000000-0000-0000-0000-000000000001';
+		// Pass getWorkItem override via setupSplittingDefaults so the mock is properly wired
+		const provider = setupSplittingDefaults({
+			getWorkItem: vi.fn().mockResolvedValue({
+				id: 'parent-card',
+				labels: [{ id: UUID_LABEL, name: 'auto' }],
+			}),
+		});
+		mockResolveProjectPMConfig.mockReturnValue({
+			...PM_CONFIG,
+			labels: { ...PM_CONFIG.labels, auto: UUID_LABEL },
+		});
+		mockHasAutoLabel.mockImplementation((labels: Array<{ id: string }>) =>
+			labels.some((l) => l.id === UUID_LABEL),
+		);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'splitting', agentInput: {}, workItemId: 'parent-card' },
+			PROJECT,
+			CONFIG,
+		);
+
+		// addLabel called with UUID directly — no resolution warning should be logged
+		expect(provider.addLabel).toHaveBeenCalledWith('backlog-1', UUID_LABEL);
+		// No warning about non-UUID format since labels.auto is already a UUID
+		expect(mockLogger.warn).not.toHaveBeenCalledWith(
+			expect.stringContaining('labels.auto is not a UUID'),
+			expect.anything(),
+		);
+	});
 });
 
 // ---------------------------------------------------------------------------

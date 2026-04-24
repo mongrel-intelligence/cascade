@@ -76,13 +76,18 @@ export class LinearIntegration implements PMIntegration {
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig {
 		const linearConfig = getLinearConfig(project);
 		const labels = linearConfig?.labels;
+		// NOTE: Unlike JIRA (which auto-creates labels by name), Linear requires UUIDs for
+		// label operations via resolveLabelId(). Defaulting to name strings like 'cascade-auto'
+		// would cause addLabel to silently no-op when no UUID is configured. Labels that are
+		// not explicitly set in the project config are left as undefined so callers can skip
+		// the operation rather than silently fail.
 		return {
 			labels: {
-				processing: labels?.processing ?? 'cascade-processing',
-				processed: labels?.processed ?? 'cascade-processed',
-				error: labels?.error ?? 'cascade-error',
-				readyToProcess: labels?.readyToProcess ?? 'cascade-ready',
-				auto: labels?.auto ?? 'cascade-auto',
+				processing: labels?.processing,
+				processed: labels?.processed,
+				error: labels?.error,
+				readyToProcess: labels?.readyToProcess,
+				auto: labels?.auto,
 			},
 			statuses: {
 				backlog: linearConfig?.statuses?.backlog,

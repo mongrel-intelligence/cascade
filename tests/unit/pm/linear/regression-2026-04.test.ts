@@ -15,7 +15,9 @@ import { linearManifest } from '../../../../src/integrations/pm/linear/manifest.
 import type { ContainerId, LabelId, StateId } from '../../../../src/pm/ids.js';
 import { InvalidIdError, parseStateId } from '../../../../src/pm/ids.js';
 import type { LinearPMProvider } from '../../../../src/pm/linear/adapter.js';
+import { LinearIntegration } from '../../../../src/pm/linear/integration.js';
 import type { WorkItem } from '../../../../src/pm/types.js';
+import type { ProjectConfig } from '../../../../src/types/index.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = resolve(HERE, '..', '..', '..', '..');
@@ -159,5 +161,82 @@ describe('2026-04 regression: #1097 / #1118 / #1131 / #1134 (registration miss)'
 		const entry = resolve(PROJECT_ROOT, 'src/cli/bootstrap.ts');
 		const content = readFileSync(entry, 'utf8');
 		expect(content).toMatch(/integrations\/entrypoint\.js/);
+	});
+});
+
+describe('2026-04 regression: Linear auto-label propagation with name strings', () => {
+	/**
+	 * Root cause: propagateAutoLabelAfterSplitting passed pmConfig.labels.auto
+	 * directly to provider.addLabel(). For Linear, resolveLifecycleConfig previously
+	 * defaulted unconfigured labels to name strings (e.g. 'cascade-auto'). Linear's
+	 * adapter requires UUIDs — passing a name string causes resolveLabelId() to return
+	 * null and the label operation silently no-ops.
+	 *
+	 * Fix (two-pronged):
+	 * 1. LinearIntegration.resolveLifecycleConfig now returns undefined for unconfigured
+	 *    labels (not name strings). Propagation is skipped when no label is configured.
+	 * 2. propagateAutoLabelAfterSplitting resolves the actual UUID from the parent work
+	 *    item's label list, even when pmConfig.labels.auto is a name string.
+	 */
+	it('LinearIntegration.resolveLifecycleConfig returns undefined for unconfigured labels', () => {
+		// Unconfigured Linear project (no labels section) → all labels undefined.
+		// This prevents silent failures when addLabel receives a name string instead of UUID.
+		const project = {
+			pm: { type: 'linear' },
+			linear: { teamId: 'team-1', statuses: {} },
+		} as unknown as ProjectConfig;
+		const integration = new LinearIntegration();
+		const config = integration.resolveLifecycleConfig(project);
+
+		expect(config.labels.auto).toBeUndefined();
+		expect(config.labels.processing).toBeUndefined();
+		expect(config.labels.processed).toBeUndefined();
+		expect(config.labels.error).toBeUndefined();
+		expect(config.labels.readyToProcess).toBeUndefined();
+	});
+
+	it('LinearIntegration.resolveLifecycleConfig preserves explicitly configured label values', () => {
+		// When a user has configured UUIDs, they must be preserved exactly.
+		const project = {
+			pm: { type: 'linear' },
+			linear: {
+				teamId: 'team-1',
+				statuses: {},
+				labels: {
+					auto: 'uuid-auto-111',
+					processing: 'uuid-processing-222',
+					processed: 'uuid-processed-333',
+					error: 'uuid-error-444',
+					readyToProcess: 'uuid-rtp-555',
+				},
+			},
+		} as unknown as ProjectConfig;
+		const integration = new LinearIntegration();
+		const config = integration.resolveLifecycleConfig(project);
+
+		expect(config.labels.auto).toBe('uuid-auto-111');
+		expect(config.labels.processing).toBe('uuid-processing-222');
+		expect(config.labels.processed).toBe('uuid-processed-333');
+		expect(config.labels.error).toBe('uuid-error-444');
+		expect(config.labels.readyToProcess).toBe('uuid-rtp-555');
+	});
+
+	it('LinearIntegration.resolveLifecycleConfig does not default to name strings (unlike JIRA)', () => {
+		// Explicit regression guard: the old code had `labels?.auto ?? 'cascade-auto'`.
+		// JIRA intentionally keeps these defaults (JIRA auto-creates labels by name);
+		// Linear must NOT have them (Linear requires UUIDs).
+		const project = {
+			pm: { type: 'linear' },
+			linear: { teamId: 'team-1', statuses: {}, labels: {} },
+		} as unknown as ProjectConfig;
+		const integration = new LinearIntegration();
+		const config = integration.resolveLifecycleConfig(project);
+
+		// None of these should be a non-empty string default
+		expect(config.labels.auto).not.toBe('cascade-auto');
+		expect(config.labels.processing).not.toBe('cascade-processing');
+		expect(config.labels.processed).not.toBe('cascade-processed');
+		expect(config.labels.error).not.toBe('cascade-error');
+		expect(config.labels.readyToProcess).not.toBe('cascade-ready');
 	});
 });

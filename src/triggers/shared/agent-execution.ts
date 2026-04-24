@@ -667,6 +667,25 @@ async function propagateAutoLabelAfterSplitting(
 	const autoLabelId = pmConfig.labels.auto;
 	if (!autoLabelId) return null;
 
+	// Resolve the actual label ID from the matched parent work item label.
+	// pmConfig.labels.auto may be a human-readable name string (e.g. 'cascade-auto')
+	// rather than a UUID when the project was not explicitly configured with UUIDs.
+	// Providers like Linear require UUIDs for addLabel — passing a name string causes
+	// resolveLabelId() to return null and the operation silently no-ops.
+	// By resolving the id from the parent's matched label we always pass the correct
+	// identifier regardless of config format.
+	const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+	if (!UUID_REGEX.test(autoLabelId)) {
+		logger.warn(
+			'propagateAutoLabelAfterSplitting: labels.auto is not a UUID; resolving ID from parent labels',
+			{ autoLabelId },
+		);
+	}
+	const matchedLabel = parentWorkItem.labels.find(
+		(l) => l.id === autoLabelId || l.name === autoLabelId,
+	);
+	const resolvedAutoLabelId = matchedLabel ? matchedLabel.id : autoLabelId;
+
 	// List backlog items via the unified call shape — provider self-resolves
 	// scope (Trello list / JIRA project / Linear team) and maps the CASCADE
 	// status key to its native identifier from its own config.
@@ -691,7 +710,7 @@ async function propagateAutoLabelAfterSplitting(
 		backlogItems
 			.filter((item) => !hasAutoLabel(item.labels, pmConfig))
 			.map((item) =>
-				provider.addLabel(item.id, autoLabelId).catch((err) =>
+				provider.addLabel(item.id, resolvedAutoLabelId).catch((err) =>
 					logger.warn('Failed to add auto label to backlog item', {
 						itemId: item.id,
 						error: String(err),

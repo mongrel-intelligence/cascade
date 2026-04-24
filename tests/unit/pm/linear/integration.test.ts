@@ -232,14 +232,19 @@ describe('LinearIntegration', () => {
 			expect(config.statuses.done).toBe('state-done');
 		});
 
-		it('uses defaults when labels config is missing', () => {
+		it('returns undefined labels when labels config is missing (not name-string defaults)', () => {
+			// Linear requires UUIDs for addLabel — name-string defaults like 'cascade-processing'
+			// would cause resolveLabelId() to silently return null. When no label is configured,
+			// undefined is the correct signal to skip the operation entirely.
 			mockGetLinearConfig.mockReturnValue({ teamId: 'team-abc', statuses: {} });
 			const project = makeProject();
 			const config = integration.resolveLifecycleConfig(project);
 
-			expect(config.labels.processing).toBe('cascade-processing');
-			expect(config.labels.processed).toBe('cascade-processed');
-			expect(config.labels.readyToProcess).toBe('cascade-ready');
+			expect(config.labels.processing).toBeUndefined();
+			expect(config.labels.processed).toBeUndefined();
+			expect(config.labels.readyToProcess).toBeUndefined();
+			expect(config.labels.error).toBeUndefined();
+			expect(config.labels.auto).toBeUndefined();
 		});
 
 		it('has undefined statuses when linear config has no statuses', () => {
