@@ -82,9 +82,24 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// For update events that don't ultimately trigger an agent, return a
+		// coalesce-only result (agentType: null) instead of null. This ensures
+		// the router still executes Step 7b and calls clearPendingCreate() —
+		// preventing a stale create from firing when an unmapped update (e.g. a
+		// transition to "Done") arrives within the coalesce window.
+		const isCreate = isCreateEvent(payload);
+		const coalesceUpdateResult: TriggerResult | null = isCreate
+			? null
+			: {
+					agentType: null,
+					agentInput: { workItemId: issueKey },
+					coalesceKey: `${ctx.project.id}:${issueKey}`,
+					coalesceRole: 'update',
+				};
+
 		const newStatus = resolveNewStatus(payload);
 		if (!newStatus) {
-			return null;
+			return coalesceUpdateResult;
 		}
 
 		const jiraConfig = getJiraConfig(ctx.project);
@@ -92,7 +107,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			logger.debug('No JIRA status configuration, skipping status-changed trigger', {
 				projectId: ctx.project.id,
 			});
-			return null;
+			return coalesceUpdateResult;
 		}
 
 		const agentType = resolveAgentType(newStatus, jiraConfig.statuses);
@@ -102,7 +117,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 				newStatus,
 				configuredStatuses: jiraConfig.statuses,
 			});
-			return null;
+			return coalesceUpdateResult;
 		}
 
 		const { enabled, parameters } = await checkTriggerEnabledWithParams(
@@ -111,9 +126,8 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			'pm:status-changed',
 			this.name,
 		);
-		if (!enabled) return null;
+		if (!enabled) return coalesceUpdateResult;
 
-		const isCreate = isCreateEvent(payload);
 		if (!shouldFireOnEvent(isCreate, parameters)) {
 			logger.debug('JIRA status-changed event gated by trigger params', {
 				issueKey,
@@ -121,7 +135,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 				eventKind: isCreate ? 'create' : 'move',
 				parameters,
 			});
-			return null;
+			return coalesceUpdateResult;
 		}
 
 		const statusChange = findStatusChange(payload);

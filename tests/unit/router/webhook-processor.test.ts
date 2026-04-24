@@ -536,5 +536,51 @@ describe('processRouterWebhook', () => {
 			expect(addJob).toHaveBeenCalledTimes(1);
 			expect(adapter.postAck).toHaveBeenCalled();
 		});
+
+		it('supersedes a create when an unmapped update (agentType: null) arrives within the window', async () => {
+			// Regression test: a create in "To Do" (maps to implementation) followed by
+			// an update to "Done" (unmapped, agentType: null) must still clear the pending
+			// create — preventing the implementation agent from firing erroneously.
+			vi.mocked(addJob).mockResolvedValue('job-x2');
+			const createAdapter = makeMockAdapter({
+				type: 'jira',
+				dispatchWithCredentials: vi.fn().mockResolvedValue({
+					agentType: 'implementation',
+					agentInput: { workItemId: 'PROJ-3' },
+					workItemId: 'PROJ-3',
+					coalesceKey: 'p1:PROJ-3',
+					coalesceRole: 'create',
+				}),
+			});
+			const unmappedUpdateAdapter = makeMockAdapter({
+				type: 'jira',
+				// Mirrors JiraStatusChangedTrigger returning agentType: null for an
+				// unmapped update (e.g. "Done"), which still carries coalesceRole: 'update'.
+				dispatchWithCredentials: vi.fn().mockResolvedValue({
+					agentType: null,
+					agentInput: { workItemId: 'PROJ-3' },
+					workItemId: 'PROJ-3',
+					coalesceKey: 'p1:PROJ-3',
+					coalesceRole: 'update',
+				}),
+			});
+
+			const createPromise = processRouterWebhook(createAdapter, {}, mockTriggerRegistry);
+			await Promise.resolve();
+			const updateResult = await processRouterWebhook(
+				unmappedUpdateAdapter,
+				{},
+				mockTriggerRegistry,
+			);
+			const createResult = await createPromise;
+
+			// The create must be superseded — no job queued for implementation.
+			expect(createResult.decisionReason).toBe(
+				'Create trigger superseded by follow-up update (coalesce window)',
+			);
+			// The unmapped update resolves without queueing a job either.
+			expect(updateResult.decisionReason).toContain('without agent');
+			expect(addJob).not.toHaveBeenCalled();
+		});
 	});
 });

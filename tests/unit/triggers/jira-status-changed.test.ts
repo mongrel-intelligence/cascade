@@ -176,11 +176,15 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(result?.workItemId).toBe('PROJ-42');
 		});
 
-		it('returns null for unmapped status transitions', async () => {
+		it('returns coalesce-only result for unmapped status transitions', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'To Do', toString: 'Done' }],
 			});
-			expect(await trigger.handle(ctx)).toBeNull();
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('test-project:PROJ-42');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
 		it('returns null when issue key is missing', async () => {
@@ -189,16 +193,24 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
-		it('returns null when JIRA config is missing', async () => {
+		it('returns coalesce-only result when JIRA config is missing', async () => {
 			const ctx = buildCtx({ noJiraConfig: true });
-			expect(await trigger.handle(ctx)).toBeNull();
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('test-project:PROJ-42');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
-		it('returns null when status change has an empty toString value', async () => {
+		it('returns coalesce-only result when status change has an empty toString value', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: '' }],
 			});
-			expect(await trigger.handle(ctx)).toBeNull();
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('test-project:PROJ-42');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
 		it('logs fromStatus on the update path', async () => {
@@ -280,12 +292,16 @@ describe('JiraStatusChangedTrigger', () => {
 	});
 
 	describe('handle — onMove gating', () => {
-		it('returns null when onMove is false and event is a move', async () => {
+		it('returns coalesce-only result when onMove is false and event is a move', async () => {
 			mockTriggerConfig(true, { onCreate: false, onMove: false });
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 			});
-			expect(await trigger.handle(ctx)).toBeNull();
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('test-project:PROJ-42');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
 		it('fires only for create when onMove is false and onCreate is true', async () => {
@@ -301,19 +317,26 @@ describe('JiraStatusChangedTrigger', () => {
 			const moveCtx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Planning', toString: 'To Do' }],
 			});
-			expect(await trigger.handle(moveCtx)).toBeNull();
+			const moveResult = await trigger.handle(moveCtx);
+			expect(moveResult).not.toBeNull();
+			expect(moveResult?.agentType).toBeNull();
+			expect(moveResult?.coalesceRole).toBe('update');
 		});
 	});
 
 	describe('per-agent statusChanged toggle', () => {
-		it('returns null when trigger is disabled for the resolved agent', async () => {
+		it('returns coalesce-only result when trigger is disabled for the resolved agent', async () => {
 			mockTriggerConfig(false);
 
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
 			});
 
-			expect(await trigger.handle(ctx)).toBeNull();
+			const result = await trigger.handle(ctx);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('test-project:PROJ-42');
+			expect(result?.coalesceRole).toBe('update');
 			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test-project',
 				'splitting',

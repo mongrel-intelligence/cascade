@@ -76,12 +76,27 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// For update events that don't ultimately trigger an agent, return a
+		// coalesce-only result (agentType: null) instead of null. This maintains
+		// symmetry with the JIRA coalesce fix — the router can still call
+		// clearPendingCreate() before exiting, ensuring a stale create can't fire
+		// after an unmapped update arrives within the coalesce window.
+		const isCreate = payload.action === 'create';
+		const coalesceUpdateResult: TriggerResult | null = isCreate
+			? null
+			: {
+					agentType: null,
+					agentInput: { workItemId: issueIdentifier },
+					coalesceKey: `${ctx.project.id}:${issueIdentifier}`,
+					coalesceRole: 'update',
+				};
+
 		const linearConfig = getLinearConfig(ctx.project);
 		if (!linearConfig?.statuses) {
 			logger.debug('No Linear status configuration, skipping status-changed trigger', {
 				projectId: ctx.project.id,
 			});
-			return null;
+			return coalesceUpdateResult;
 		}
 
 		const resolved = resolveAgentType(newStateId, linearConfig.statuses);
@@ -91,7 +106,7 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 				newStateId,
 				configuredStatuses: linearConfig.statuses,
 			});
-			return null;
+			return coalesceUpdateResult;
 		}
 		const { agentType, cascadeStatus: matchedCascadeStatus } = resolved;
 
@@ -101,9 +116,8 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			'pm:status-changed',
 			this.name,
 		);
-		if (!enabled) return null;
+		if (!enabled) return coalesceUpdateResult;
 
-		const isCreate = payload.action === 'create';
 		if (!shouldFireOnEvent(isCreate, parameters)) {
 			logger.debug('Linear status-changed event gated by trigger params', {
 				issueIdentifier,
@@ -111,7 +125,7 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 				eventKind: isCreate ? 'create' : 'move',
 				parameters,
 			});
-			return null;
+			return coalesceUpdateResult;
 		}
 
 		logger.info('Linear issue entered agent-triggering state', {

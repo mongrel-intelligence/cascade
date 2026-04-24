@@ -187,9 +187,12 @@ describe('LinearStatusChangedTrigger', () => {
 			expect(result?.agentType).toBe('backlog-manager');
 		});
 
-		it('returns null when moved to an unmapped state', async () => {
+		it('returns coalesce-only result when moved to an unmapped state', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-done' }));
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('proj-linear:TEAM-123');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
 		it('returns null when data.stateId is missing', async () => {
@@ -208,24 +211,33 @@ describe('LinearStatusChangedTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('returns null when linear config is missing statuses', async () => {
+		it('returns coalesce-only result when linear config is missing statuses', async () => {
 			mockGetLinearConfig.mockReturnValue({ teamId: 'team-abc' });
 			const result = await trigger.handle(buildCtx());
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('proj-linear:TEAM-123');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
-		it('returns null when linear config is missing entirely', async () => {
+		it('returns coalesce-only result when linear config is missing entirely', async () => {
 			mockGetLinearConfig.mockReturnValue(undefined);
 			const result = await trigger.handle(buildCtx());
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('proj-linear:TEAM-123');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
-		it('returns null when trigger is disabled for the resolved agent', async () => {
+		it('returns coalesce-only result when trigger is disabled for the resolved agent', async () => {
 			mockTriggerConfig(false);
 
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
 
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('proj-linear:TEAM-123');
+			expect(result?.coalesceRole).toBe('update');
 			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'proj-linear',
 				'implementation',
@@ -313,11 +325,14 @@ describe('LinearStatusChangedTrigger', () => {
 	// handle — onMove gating
 	// =========================================================================
 	describe('handle — onMove gating', () => {
-		it('returns null when onMove is false and event is a move', async () => {
+		it('returns coalesce-only result when onMove is false and event is a move', async () => {
 			mockTriggerConfig(true, { onCreate: false, onMove: false });
 
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
-			expect(result).toBeNull();
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.coalesceKey).toBe('proj-linear:TEAM-123');
+			expect(result?.coalesceRole).toBe('update');
 		});
 
 		it('fires for move when onMove is true and onCreate is false (default)', async () => {
@@ -347,7 +362,9 @@ describe('LinearStatusChangedTrigger', () => {
 			mockTriggerConfig(true, { onCreate: true, onMove: false });
 
 			const moveResult = await trigger.handle(buildCtx({ newStateId: 'state-todo' }));
-			expect(moveResult).toBeNull();
+			expect(moveResult).not.toBeNull();
+			expect(moveResult?.agentType).toBeNull();
+			expect(moveResult?.coalesceRole).toBe('update');
 		});
 	});
 
