@@ -4,7 +4,6 @@
  *
  * Generic hooks introduced in spec 013 refactor:
  *   - buildProviderAuthArg    — single auth-arg builder for all three providers
- *   - useProviderDiscovery    — parameterized discovery hook (replaces 3 copies)
  *   - useProviderLabelCreation— parameterized label-creation hook (replaces 2 copies)
  *   - useProviderCustomFieldCreation — parameterized CF hook (replaces 2 copies)
  *   - useSaveMutation         — data-driven, no provider branching
@@ -17,7 +16,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
-import type { DiscoveryCapability } from '../../../../src/pm/types.js';
 import type {
 	LinearProjectOption,
 	LinearTeamDetails,
@@ -78,32 +76,8 @@ export function buildProviderAuthArg(
 }
 
 // ============================================================================
-// Generic discovery hook
+// Label creation utilities
 // ============================================================================
-
-interface DiscoveryConfig<TItem, TDetail> {
-	providerId: Provider;
-	/** Primary list capability, e.g. 'boards' | 'projects' | 'teams' */
-	capability: DiscoveryCapability;
-	/** Returns the current list from state (used for "already loaded?" guard) */
-	getList: (state: WizardState) => TItem[];
-	/** Returns the selected ID from state (used for edit-mode detail fetch) */
-	getSelectedId: (state: WizardState) => string;
-	/** Returns the cached details from state (used for "already loaded?" guard) */
-	getDetails: (state: WizardState) => TDetail | null;
-	/** Dispatch action to set the list */
-	setList: (items: TItem[]) => WizardAction;
-	/** Dispatch action to set the selection */
-	setSelected: (id: string) => WizardAction;
-	/** Dispatch action to set the detail object */
-	setDetails: (details: TDetail | null) => WizardAction;
-	/** Extra args passed to the discovery endpoint (e.g. { containerId }) */
-	listArgs?: Record<string, unknown>;
-	/** Error message when primary list credentials missing */
-	listCredentialError: string;
-	/** Error message when detail-fetch credentials missing */
-	detailCredentialError: string;
-}
 
 /**
  * Iterate `labelsToCreate` through `pm.discovery.createLabel`, collecting
@@ -137,77 +111,6 @@ export async function runPerLabelCreations(opts: {
 		}
 	}
 	return { successes, errors };
-}
-
-// ============================================================================
-// Generic discovery hook
-// ============================================================================
-
-function useProviderDiscovery<TItem, TDetail>(
-	config: DiscoveryConfig<TItem, TDetail>,
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	projectId: string,
-) {
-	const listMutation = useMutation({
-		mutationFn: async () => {
-			const authArg = buildProviderAuthArg(state, projectId);
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: config.providerId,
-				capability: config.capability,
-				args: config.listArgs ?? {},
-				...authArg,
-			})) as TItem[];
-		},
-		onSuccess: (items) => dispatch(config.setList(items)),
-	});
-
-	const detailsMutation = useMutation({
-		mutationFn: async (selectedId: string): Promise<TDetail> => {
-			const authArg = buildProviderAuthArg(state, projectId);
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: config.providerId,
-				capability: `${config.capability.replace(/s$/, '')}Details` as DiscoveryCapability,
-				args: { containerId: selectedId },
-				...authArg,
-			})) as TDetail;
-		},
-		onSuccess: (details) => dispatch(config.setDetails(details)),
-	});
-
-	// Auto-fetch list when verification result changes
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on verification result change
-	useEffect(() => {
-		if (!state.verificationResult || state.provider !== config.providerId) return;
-		if (config.getList(state).length === 0 && !listMutation.isPending) {
-			listMutation.mutate();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.verificationResult]);
-
-	// In edit mode, auto-fetch list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
-	useEffect(() => {
-		if (!state.isEditing || state.provider !== config.providerId) return;
-		const canFetch = shouldUseStoredCredentials(state) || hasCredentials(state);
-		if (canFetch && config.getList(state).length === 0 && !listMutation.isPending) {
-			listMutation.mutate();
-		}
-		const selectedId = config.getSelectedId(state);
-		if (selectedId && !config.getDetails(state) && canFetch && !detailsMutation.isPending) {
-			detailsMutation.mutate(selectedId);
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, config.getSelectedId(state), state.hasStoredCredentials]);
-
-	return { listMutation, detailsMutation };
-}
-
-/** Returns true when the current provider's raw credentials are filled in */
-function hasCredentials(state: WizardState): boolean {
-	if (state.provider === 'trello') return !!(state.trelloApiKey && state.trelloToken);
-	if (state.provider === 'jira') return !!(state.jiraEmail && state.jiraApiToken);
-	return !!state.linearApiKey;
 }
 
 // ============================================================================
@@ -299,6 +202,8 @@ interface CustomFieldCreationConfig {
 	providerId: 'trello' | 'jira';
 	/** Returns the container ID from state (boardId / projectKey) */
 	getContainerId: (state: WizardState) => string;
+	/** Error thrown when container not yet selected (required for Trello; omit for global providers like JIRA) */
+	containerError?: string;
 	/** Dispatch to add a new custom field to the local list */
 	addCustomField: (field: { id: string; name: string; type: string }) => WizardAction;
 	/** Dispatch to set the cost field ID */
@@ -315,11 +220,12 @@ function useProviderCustomFieldCreation(
 ) {
 	const createCustomFieldMutation = useMutation({
 		mutationFn: ({ name }: { name: string }) => {
-			const containerId = config.getContainerId(state) || 'global';
+			const containerId = config.getContainerId(state);
+			if (!containerId && config.containerError) throw new Error(config.containerError);
 			const authArg = buildProviderAuthArg(state, projectId);
 			return trpcClient.pm.discovery.createCustomField.mutate({
 				providerId: config.providerId,
-				containerId,
+				containerId: containerId || 'global',
 				name,
 				...authArg,
 			});
@@ -699,21 +605,6 @@ export function useLinearDiscovery(
 // Verification
 // ============================================================================
 
-/**
- * Build the `{ projectId }` or `{ credentials: ... }` portion of a tRPC
- * request, picking the stored-creds path when the user is editing an
- * existing integration and hasn't re-typed the key. Extracted so the
- * `verifyMutation` body stays below the cognitive-complexity threshold.
- *
- * @deprecated Use `buildProviderAuthArg` directly.
- */
-function buildVerifyAuthArg(
-	state: WizardState,
-	projectId: string,
-): { projectId: string } | { credentials: Record<string, string> } {
-	return buildProviderAuthArg(state, projectId);
-}
-
 export function useVerification(
 	state: WizardState,
 	dispatch: React.Dispatch<WizardAction>,
@@ -726,12 +617,12 @@ export function useVerification(
 			// Calls the `currentUser` discovery capability; every provider
 			// maps its native `getMe()` response to `{ id, name, displayName? }`.
 			//
-			// Edit-mode fallback: `buildVerifyAuthArg` returns `{ projectId }`
+			// Edit-mode fallback: `buildProviderAuthArg` returns `{ projectId }`
 			// when the user is editing with stored credentials but an empty
 			// API-key field, so the backend resolves the stored secret via
 			// `resolvePMCredentials` instead of requiring re-entry.
 			const provider = state.provider;
-			const authArg = buildVerifyAuthArg(state, projectId);
+			const authArg = buildProviderAuthArg(state, projectId);
 			const me = (await trpcClient.pm.discovery.discover.mutate({
 				providerId: provider,
 				capability: 'currentUser',
@@ -814,6 +705,7 @@ export function useTrelloCustomFieldCreation(
 		{
 			providerId: 'trello',
 			getContainerId: (s) => s.trelloBoardId,
+			containerError: 'Board must be selected before creating a custom field',
 			addCustomField: (f) => ({ type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD', customField: f }),
 			setCostField: (id) => ({ type: 'SET_TRELLO_COST_FIELD', id }),
 			onError: (error) => {
@@ -999,6 +891,6 @@ export function useLinearLabelCreation(
 	);
 }
 
-export type { CustomFieldCreationConfig, DiscoveryConfig, LabelCreationConfig };
+export type { CustomFieldCreationConfig, LabelCreationConfig };
 // Re-export the generic utilities for direct use in tests / advanced consumers
-export { useProviderCustomFieldCreation, useProviderDiscovery, useProviderLabelCreation };
+export { useProviderCustomFieldCreation, useProviderLabelCreation };
