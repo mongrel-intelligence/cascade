@@ -1,0 +1,182 @@
+---
+id: 014
+slug: cascade-tools-agent-ergonomics
+plan: 2
+plan_slug: createprreview-adopt
+level: plan
+parent_spec: docs/specs/014-cascade-tools-agent-ergonomics.md
+depends_on: [1-shared-infra.md]
+status: pending
+---
+
+# 014/2: cascade-tools create-pr-review adoption — `--comment` alias, `--comments-file` escape hatch
+
+> Part 2 of 2 in the 014-cascade-tools-agent-ergonomics plan. See [parent spec](../../specs/014-cascade-tools-agent-ergonomics.md).
+
+## Summary
+
+Closes the loop on the canonical failure from prod run `5d993b04-6e05-4ae1-b7de-8c274cf3496b`. Applies the new declarative metadata from plan 1 to the single gadget that prompted the spec. Two edits to `createPRReviewDef`: declare `cliAliases: ['comment']` on the `comments` parameter so the muscle-memory singular flag resolves, and declare a `fileInputAlternatives` entry for `--comments-file` with `parseAs: 'json'` so long inline-comment payloads sidestep shell quoting.
+
+Zero edits to any shared file — the factory, renderer, manifest generator, and prompt builder are untouched. Plan 1's architectural promise ("new gadget = declarative metadata only") is demonstrated here by the size of the diff: two fields on one object, plus tests.
+
+An integration smoke test spawns the built `./bin/cascade-tools.js` binary and walks four scenarios: (1) canonical `--comments` works, (2) `--comment` singular alias works, (3) malformed JSON produces the new structured envelope with a `--comments-file` hint, (4) `--comments-file -` reads JSON from stdin. Scenarios (1)–(4) assert on the command's JSON envelope output; no real GitHub API call is made (missing credentials cause a runtime error after parse succeeds — that's the signal parsing worked).
+
+**Components delivered:**
+- `src/gadgets/github/definitions.ts` — two declarative fields added to `createPRReviewDef.parameters.comments` and `createPRReviewDef.cli`.
+- `tests/integration/cascade-tools-createprreview.test.ts` (new) — binary-level smoke.
+- `CHANGELOG.md` — entry.
+
+**Deferred to later plans in this spec:**
+- None — this is the final plan for spec 014.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (`--comment` alias resolves to `--comments`) — **full**.
+- Spec AC #8 (new gadget = declarative metadata only) — **partial chain** — plan 1 proved it via a fake test gadget; this plan proves it via a production gadget by adding two declarative fields and nothing else to any shared file.
+- Spec AC #9 (`--comments-file` exists on `create-pr-review` with JSON parsing) — **full**.
+
+Spec ACs not satisfied here (already full in plan 1): #2 (help examples), #3 (error envelope), #4 (envelope schema), #5 (did-you-mean), #6 (prompt renderer), #7 (no regressions), #10 (manual stderr).
+
+---
+
+## Depends On
+
+- Plan 1 (`shared-infra`) — provides: `cliAliases` field on `ParameterDefinition`, `parseAs` on `FileInputAlternative`, JSON-parse path in `resolveFileInputParam`, alias-to-canonical flag wiring in the factory, structured error envelope that renders the new hints this plan relies on.
+- Existing: `createPRReviewDef.examples[1]` already contains a well-formed `comments` array — no new example content needed.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Declarative opt-in for `createPRReviewDef`
+
+**Tests first** (`tests/unit/gadgets/github/definitions.test.ts`, new or extend):
+
+- `comments parameter declares cliAliases: ['comment']` — unit — imports `createPRReviewDef`, asserts `parameters.comments.cliAliases` deep-equals `['comment']`. Expected red: `expected ['comment'], received undefined`.
+- `cli.fileInputAlternatives includes comments-file with parseAs: 'json'` — unit — asserts `cli.fileInputAlternatives` array contains `{paramName:'comments', fileFlag:'comments-file', parseAs:'json', ...}`. Expected red: `expected cli.fileInputAlternatives[0]?.fileFlag === 'comments-file', received undefined`.
+- `manifest generated from createPRReviewDef exposes aliases and comments-file` — unit — `generateToolManifest(createPRReviewDef).parameters.comments.aliases` is `['comment']`; `parameters['comments-file']` exists with a description. Expected red: `expected aliases to equal ['comment'], received undefined`.
+- `manifest example is the one from examples[1]` — unit — `parameters.comments.example` is the array from the second example's `params.comments`. Expected red: `expected example defined, received undefined`.
+
+**Implementation** (`src/gadgets/github/definitions.ts`):
+- Extend the `comments` parameter at `createPRReviewDef.parameters.comments`:
+  ```typescript
+  comments: {
+    type: 'array',
+    items: 'object',
+    describe:
+      'Inline review comments on specific files/lines. Pass a JSON array of {path, line, body} objects.',
+    cliAliases: ['comment'],
+    optional: true,
+  },
+  ```
+  (The `describe` text is updated to name the shape explicitly; the old parenthetical-inline JSON snippet is removed because the prompt renderer now surfaces it from `example`.)
+- Extend the `cli` block:
+  ```typescript
+  cli: {
+    autoResolved: ownerRepoAutoResolved,
+    fileInputAlternatives: [
+      {
+        paramName: 'comments',
+        fileFlag: 'comments-file',
+        parseAs: 'json',
+        description:
+          'Read --comments JSON from file (use - for stdin). Prefer this for long payloads.',
+      },
+    ],
+  },
+  ```
+
+### 2. Binary-level smoke test
+
+**Tests first** (`tests/integration/cascade-tools-createprreview.test.ts`, new file):
+
+Setup: `beforeAll` asserts that `dist/cli/scm/create-pr-review.js` exists (fail-fast if caller forgot to build). Each scenario spawns `node ./bin/cascade-tools.js scm create-pr-review ...` with a controlled env (no GitHub credentials — we expect either parse success followed by an auth/runtime envelope, or parse failure with an explicit envelope). Captures stdout (JSON) and stderr (prose) separately.
+
+- `canonical --comments flag parses and reaches runtime stage` — integration — invocation with `--comments '[{"path":"a","line":1,"body":"b"}]'` produces stdout containing one line of JSON with `success:false` and `error.type` in `{'auth','runtime'}` (NOT `'json-parse'`, NOT `'unknown-flag'`). Expected red: without plan 2's changes, `success:false` with `type:'flag-parse'` because `--comments` produces `[{"path":…}]` as raw string array not JSON-parsed — wait, plan 1 already fixes this. So expected red under plan-2-not-applied is: alias doesn't work (that's a plan-2 AC, not this test).  Actually expected red for THIS test before plan 2: same test already passes once plan 1 merges. That's acceptable — it's a regression lock, not a red test for plan 2. **Restate as**: this test must pass on `main` once plan 2 merges; before plan 2 it may also pass because the canonical spelling works under plan 1 already. The reason we include it: it's the control for the other three scenarios.
+- `--comment singular alias resolves to comments` — integration — invocation with `--comment '[{"path":"a","line":1,"body":"b"}]'` (the exact singular the agent used in run 5d993b04) produces the same `type in {'auth','runtime'}` envelope. Expected red (before plan 2): stdout envelope has `type:'unknown-flag'` with a did-you-mean hint pointing at `--comments` (courtesy of plan 1's fuzzy suggestion). After plan 2: passes.
+- `malformed JSON emits json-parse envelope with comments-file hint` — integration — invocation with `--comment "[{'path':'a','line':1,'body':'b'}]"` (single-quoted keys — the exact bug from run 5d993b04); stdout envelope has `error.type === 'json-parse'`, `error.flag === 'comments'`, `error.got` is the truncated offending input, `error.expected` is a shape fragment including `"path"`, `"line"`, `"body"` as double-quoted keys, `error.hint` mentions `--comments-file`. Expected red (before plan 2): no `--comments-file` hint because the file alternative isn't declared.
+- `--comments-file - reads JSON from stdin` — integration — echo a valid JSON array into the child's stdin, invoke with `--comments-file -`; stdout envelope has `type in {'auth','runtime'}` (parse succeeded). Expected red (before plan 2): `--comments-file` is an unknown flag.
+- `--comments-file <path> reads JSON from disk` — integration — write a tempfile with valid JSON, invoke with `--comments-file /tmp/...`; stdout envelope has `type in {'auth','runtime'}`. Expected red (before plan 2): unknown flag.
+- `--help output contains EXAMPLES section with double-quoted JSON example` — integration — invocation with `--help`; stdout contains substring `EXAMPLES` and `"path":"src/utils.ts"` (the known string from `examples[1]`). Expected red (before plan 1 merges): no EXAMPLES section; oclif help doesn't render `.examples`. After plan 1+2 both merge: passes. (This test also passes with just plan 1 since `createPRReviewDef.examples` already contains the shape.)
+
+### 3. Docs
+
+**Implementation** (`CHANGELOG.md`):
+- Entry: "cascade-tools scm create-pr-review: accepts `--comment` as an alias for `--comments`; gains `--comments-file <path>` (and `-` for stdin) for JSON payloads that don't survive shell quoting."
+
+No README updates in this plan — the authoring guide at `src/gadgets/README.md` (plan 1) already documents the pattern; this plan is an application of the pattern.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/gadgets/github/definitions.test.ts` (new or extend): 4 tests — cliAliases declaration, fileInputAlternatives declaration, manifest aliases threading, manifest example presence.
+
+### Integration tests
+- [ ] `tests/integration/cascade-tools-createprreview.test.ts` (new): 6 scenarios covering canonical flag, singular alias, malformed JSON, `--comments-file -`, `--comments-file <path>`, and `--help` output.
+
+### Acceptance tests
+- All per-plan ACs below are auto-verified by the above.
+
+---
+
+## Manual Verification
+
+*n/a — all ACs auto-tested. The manual AC from the parent spec (stderr prose readability) landed with plan 1 and does not re-propagate here.*
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `createPRReviewDef.parameters.comments.cliAliases` equals `['comment']`.
+2. `createPRReviewDef.cli.fileInputAlternatives` includes `{paramName:'comments', fileFlag:'comments-file', parseAs:'json', description: <non-empty>}`.
+3. `generateToolManifest(createPRReviewDef)` surfaces `parameters.comments.aliases === ['comment']` and `parameters['comments-file']` with a description.
+4. The integration smoke test passes all six scenarios against the built binary: canonical flag, singular alias, malformed JSON, `--comments-file -`, `--comments-file <path>`, `--help` EXAMPLES section.
+5. This plan introduces zero edits to `src/gadgets/shared/*`, `src/backends/shared/nativeToolPrompts.ts`, `src/cli/_shared/*`, or any file under `src/agents/contracts/` (the "declarative metadata only" invariant — verifiable by `git diff --name-only` against plan 1's merge commit).
+6. `CHANGELOG.md` has an entry for this plan.
+7. All new/modified code has corresponding tests.
+8. `npm run build` passes.
+9. `npm test` passes (unit).
+10. `npm run test:integration` passes (the new integration test is included).
+11. `npm run lint` passes.
+12. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | Entry describing `--comment` alias and `--comments-file` on `create-pr-review`. |
+
+---
+
+## Out of Scope (this plan)
+
+- Applying declarative metadata to other gadgets (e.g. `addChecklist`, `createPR` body). Future work.
+- Shared infrastructure changes — all shipped in plan 1.
+- `CLAUDE.md` update (rejected per Phase 4 decision).
+- Dashboard `cascade` CLI (spec non-goal).
+- Progress-comment 404 tail bug from run 5d993b04 (spec non-goal).
+- Live-network integration tests that actually hit GitHub (the smoke test deliberately stops at parse/auth boundary).
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 — cliAliases declared
+- [ ] AC #2 — fileInputAlternatives declared
+- [ ] AC #3 — manifest surfaces aliases + comments-file
+- [ ] AC #4 — integration smoke test passes
+- [ ] AC #5 — no shared-file edits (invariant)
+- [ ] AC #6 — CHANGELOG entry
+- [ ] AC #7 — test coverage
+- [ ] AC #8 — build passes
+- [ ] AC #9 — unit tests pass
+- [ ] AC #10 — integration tests pass
+- [ ] AC #11 — lint passes
+- [ ] AC #12 — typecheck passes
