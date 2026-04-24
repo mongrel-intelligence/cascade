@@ -6,7 +6,7 @@ plan_slug: createprreview-adopt
 level: plan
 parent_spec: docs/specs/014-cascade-tools-agent-ergonomics.md
 depends_on: [1-shared-infra.md]
-status: pending
+status: wip
 ---
 
 # 014/2: cascade-tools create-pr-review adoption — `--comment` alias, `--comments-file` escape hatch
