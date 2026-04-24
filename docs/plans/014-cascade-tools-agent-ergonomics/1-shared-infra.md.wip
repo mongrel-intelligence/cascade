@@ -6,7 +6,7 @@ plan_slug: shared-infra
 level: plan
 parent_spec: docs/specs/014-cascade-tools-agent-ergonomics.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 014/1: cascade-tools shared infra — truthful prompts, structured errors, fuzzy flags, help examples
