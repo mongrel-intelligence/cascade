@@ -16,6 +16,7 @@
 import { getLinearConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { type LinearWebhookTriggerPayload, STATUS_TO_AGENT } from './types.js';
 
@@ -111,6 +112,17 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 				eventKind: isCreate ? 'create' : 'move',
 				parameters,
 			});
+			return null;
+		}
+
+		if (
+			await shouldBlockForPipelineCapacity({
+				project: ctx.project,
+				agentType,
+				workItemId: issueIdentifier,
+				source: 'linear',
+			})
+		) {
 			return null;
 		}
 

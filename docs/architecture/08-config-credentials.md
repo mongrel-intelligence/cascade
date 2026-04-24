@@ -50,10 +50,15 @@ interface ProjectConfig {
   engineSettings?: EngineSettings;
   agentEngineSettings?: Record<string, EngineSettings>;
   runLinksEnabled: boolean;
-  maxInFlightItems?: number;
+  maxInFlightItems?: number;        // hard cap on TODO+IN_PROGRESS+IN_REVIEW; default 1
   // ... PM config (trello/jira), agent models, snapshot settings
 }
 ```
+
+`maxInFlightItems` is enforced at two points: (a) the `backlog-manager` chain
+gates (won't auto-pull from BACKLOG when at capacity) and (b) the PM
+`status-changed` triggers (won't fire `implementation` when a card is moved
+into TODO past the cap). See `src/triggers/shared/pipeline-capacity-gate.ts`.
 
 ## Credential Resolution
 

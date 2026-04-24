@@ -100,6 +100,68 @@ function isProviderMisconfigured(project: ProjectConfig, provider: PMProvider): 
 	}
 }
 
+/**
+ * Lighter sibling of `isPipelineAtCapacity` for the PM `status-changed` gate.
+ *
+ * Two semantic differences:
+ * 1. Does NOT short-circuit on an empty backlog. Backlog state is irrelevant
+ *    when deciding "is the active pipeline already too full?".
+ * 2. Accepts `excludeWorkItemId` so the card whose status change just fired
+ *    the trigger isn't double-counted (it has typically *already* moved into
+ *    TODO by the time the webhook lands).
+ *
+ * "Active pipeline" = TODO + IN_PROGRESS + IN_REVIEW.
+ */
+export interface ActivePipelineCapacityResult {
+	overCapacity: boolean;
+	reason: 'over-capacity' | 'below-capacity' | 'error' | 'misconfigured';
+	inFlightCount?: number;
+	limit?: number;
+}
+
+export async function isActivePipelineOverCapacity(
+	project: ProjectConfig,
+	provider: PMProvider,
+	opts: { excludeWorkItemId?: string } = {},
+): Promise<ActivePipelineCapacityResult> {
+	const limit = project.maxInFlightItems ?? 1;
+
+	if (isProviderMisconfigured(project, provider)) {
+		logger.warn('isActivePipelineOverCapacity: provider config incomplete', {
+			providerType: provider.type,
+			projectId: project.id,
+		});
+		return { overCapacity: false, reason: 'misconfigured' };
+	}
+
+	try {
+		const lists = await Promise.all(
+			(['todo', 'inProgress', 'inReview'] as const).map((status) =>
+				provider.listWorkItems(undefined, { status }),
+			),
+		);
+		const all = lists.flat() as Array<{ id?: unknown }>;
+		const counted = opts.excludeWorkItemId
+			? all.filter((item) => String(item?.id ?? '') !== opts.excludeWorkItemId)
+			: all;
+		const inFlightCount = counted.length;
+
+		if (inFlightCount >= limit) {
+			return { overCapacity: true, reason: 'over-capacity', inFlightCount, limit };
+		}
+		return { overCapacity: false, reason: 'below-capacity', inFlightCount, limit };
+	} catch (err) {
+		logger.warn(
+			'isActivePipelineOverCapacity: failed to check capacity, assuming not over capacity',
+			{
+				projectId: project.id,
+				error: String(err),
+			},
+		);
+		return { overCapacity: false, reason: 'error' };
+	}
+}
+
 export async function isPipelineAtCapacity(
 	project: ProjectConfig,
 	provider: PMProvider,

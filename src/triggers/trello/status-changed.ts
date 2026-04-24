@@ -1,6 +1,7 @@
 import { getTrelloConfig } from '../../pm/config.js';
 import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import { logger } from '../../utils/logging.js';
+import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload, type TrelloWebhookPayload } from './types.js';
@@ -54,6 +55,7 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 			return isMove || isCreate;
 		},
 
+		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: sequential guard checks (enabled → fire mode → cardId → capacity)
 		async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 			const { enabled, parameters } = await checkTriggerEnabledWithParams(
 				ctx.project.id,
@@ -80,6 +82,17 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 
 			if (!cardId) {
 				logger.warn('No card ID in Trello status-changed payload', { trigger: config.name });
+				return null;
+			}
+
+			if (
+				await shouldBlockForPipelineCapacity({
+					project: ctx.project,
+					agentType: config.agentType,
+					workItemId: cardId,
+					source: 'trello',
+				})
+			) {
 				return null;
 			}
 

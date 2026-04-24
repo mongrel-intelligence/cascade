@@ -28,7 +28,10 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 	logger: mockLogger,
 }));
 
-import { isPipelineAtCapacity } from '../../../../src/triggers/shared/backlog-check.js';
+import {
+	isActivePipelineOverCapacity,
+	isPipelineAtCapacity,
+} from '../../../../src/triggers/shared/backlog-check.js';
 import {
 	createMockJiraProject,
 	createMockLinearProject,
@@ -724,5 +727,151 @@ describe('isPipelineAtCapacity', () => {
 			await expect(isPipelineAtCapacity(project, provider)).rejects.toThrow(/Unhandled PMType/);
 			expect(provider.listWorkItems).not.toHaveBeenCalled();
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// isActivePipelineOverCapacity tests
+// ---------------------------------------------------------------------------
+
+describe('isActivePipelineOverCapacity', () => {
+	const project = createMockJiraProject({
+		jira: {
+			projectKey: 'UA',
+			statuses: {
+				backlog: 'BACKLOG',
+				todo: 'To Do',
+				inProgress: 'In Progress',
+				inReview: 'In Review',
+			},
+		},
+		maxInFlightItems: 1,
+	});
+
+	function arm() {
+		mockGetJiraConfig.mockReturnValue({
+			projectKey: 'UA',
+			statuses: {
+				backlog: 'BACKLOG',
+				todo: 'To Do',
+				inProgress: 'In Progress',
+				inReview: 'In Review',
+			},
+		});
+	}
+
+	it('returns over-capacity when TODO+IN_PROGRESS+IN_REVIEW >= limit', async () => {
+		arm();
+		const provider = makeProvider('jira', {
+			todo: [{ id: 'UA-1' }],
+			inProgress: [{ id: 'UA-2' }],
+		});
+		const result = await isActivePipelineOverCapacity(project, provider);
+		expect(result.overCapacity).toBe(true);
+		expect(result.inFlightCount).toBe(2);
+		expect(result.limit).toBe(1);
+	});
+
+	it('returns below-capacity when in-flight < limit', async () => {
+		arm();
+		const provider = makeProvider('jira', { todo: [] });
+		const result = await isActivePipelineOverCapacity(project, provider);
+		expect(result.overCapacity).toBe(false);
+		expect(result.inFlightCount).toBe(0);
+		expect(result.limit).toBe(1);
+	});
+
+	it('does NOT short-circuit on empty backlog (unlike isPipelineAtCapacity)', async () => {
+		// Active pipeline is what matters; an empty backlog should not hide an
+		// already-over-capacity active pipeline.
+		arm();
+		const provider = makeProvider('jira', {
+			backlog: [],
+			todo: [{ id: 'UA-1' }],
+			inProgress: [{ id: 'UA-2' }],
+		});
+		const result = await isActivePipelineOverCapacity(project, provider);
+		expect(result.overCapacity).toBe(true);
+		expect(result.inFlightCount).toBe(2);
+	});
+
+	it('excludes the given workItemId from the in-flight count', async () => {
+		// The canonical status-changed case: the card that just moved to TODO is
+		// already counted by listWorkItems; excluding it lets the first card
+		// through when limit=1.
+		arm();
+		const provider = makeProvider('jira', {
+			todo: [{ id: 'UA-42' }],
+		});
+		const result = await isActivePipelineOverCapacity(project, provider, {
+			excludeWorkItemId: 'UA-42',
+		});
+		expect(result.overCapacity).toBe(false);
+		expect(result.inFlightCount).toBe(0);
+		expect(result.limit).toBe(1);
+	});
+
+	it('excludes by id even when the card appears in a different active column', async () => {
+		const projectLimit2 = createMockJiraProject({
+			jira: {
+				projectKey: 'UA',
+				statuses: {
+					backlog: 'BACKLOG',
+					todo: 'To Do',
+					inProgress: 'In Progress',
+					inReview: 'In Review',
+				},
+			},
+			maxInFlightItems: 2,
+		});
+		arm();
+		const provider = makeProvider('jira', {
+			inProgress: [{ id: 'UA-7' }],
+			inReview: [{ id: 'UA-9' }],
+		});
+		const result = await isActivePipelineOverCapacity(projectLimit2, provider, {
+			excludeWorkItemId: 'UA-9',
+		});
+		expect(result.overCapacity).toBe(false);
+		expect(result.inFlightCount).toBe(1);
+		expect(result.limit).toBe(2);
+	});
+
+	it('returns not-over-capacity on provider error (conservative fallback)', async () => {
+		arm();
+		const provider = makeErrorProvider('jira');
+		const result = await isActivePipelineOverCapacity(project, provider);
+		expect(result.overCapacity).toBe(false);
+		expect(result.reason).toBe('error');
+	});
+
+	it('returns not-over-capacity when provider is misconfigured', async () => {
+		mockGetJiraConfig.mockReturnValue({ projectKey: 'UA' }); // no statuses
+		const provider = makeProvider('jira', {
+			todo: [{ id: 'UA-1' }, { id: 'UA-2' }],
+		});
+		const result = await isActivePipelineOverCapacity(project, provider);
+		expect(result.overCapacity).toBe(false);
+		expect(result.reason).toBe('misconfigured');
+	});
+
+	it('uses default limit=1 when maxInFlightItems is not set', async () => {
+		const projectNoLimit = createMockJiraProject({
+			jira: {
+				projectKey: 'UA',
+				statuses: {
+					backlog: 'BACKLOG',
+					todo: 'To Do',
+					inProgress: 'In Progress',
+					inReview: 'In Review',
+				},
+			},
+		});
+		arm();
+		const provider = makeProvider('jira', { todo: [{ id: 'UA-1' }, { id: 'UA-2' }] });
+		const result = await isActivePipelineOverCapacity(projectNoLimit, provider);
+		expect(result.overCapacity).toBe(true);
+		expect(result.limit).toBe(1);
+		expect(result.inFlightCount).toBe(2);
 	});
 });
