@@ -60,6 +60,12 @@ gates (won't auto-pull from BACKLOG when at capacity) and (b) the PM
 `status-changed` triggers (won't fire `implementation` when a card is moved
 into TODO past the cap). See `src/triggers/shared/pipeline-capacity-gate.ts`.
 
+When a `status-changed` card is rejected by the capacity gate, it is
+**moved back to the BACKLOG column** and a comment is posted explaining the
+rejection. This move-back is essential for deadlock prevention: leaving the
+card in TODO without an active agent would permanently inflate `inFlightCount`,
+blocking `backlog-manager` from ever picking it up once a slot frees.
+
 ## Credential Resolution
 
 CASCADE uses a two-tier credential resolution system, selecting the appropriate resolver based on execution context.
