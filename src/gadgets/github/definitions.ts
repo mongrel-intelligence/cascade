@@ -48,8 +48,14 @@ The PR body supports full GitHub-flavored markdown including:
 - Tables
 
 NOTE: Pre-commit and pre-push hooks may run tests which can take time.
-If hooks fail or timeout, the full output will be shown.`,
-	timeoutMs: 240000, // 4 minutes - hooks may run test suites
+If hooks fail, the full output will be shown.`,
+	// Disabled: pre-commit / pre-push hooks can legitimately run a full test
+	// suite for 5+ minutes. The agent harness handles long-running tool calls
+	// on its own; `timeoutMs: 0` tells llmist not to arm an outer timer (see
+	// `if (timeoutMs && timeoutMs > 0)` in the dispatch path). runCommand's
+	// subprocess timeouts for `git commit` / `git push` are likewise disabled
+	// in core/createPR.ts.
+	timeoutMs: 0,
 	parameters: {
 		comment: {
 			type: 'string',

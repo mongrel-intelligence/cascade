@@ -24,13 +24,14 @@ export interface CreatePRResult {
 	commitOutput?: string;
 }
 
-// Spec 013: per-caller timeouts for the two commands that trigger user-defined
-// hooks. Values are sized to sit just under the gadget's 240s ceiling and to
-// give test suites enough headroom for their slowest inter-event gaps.
-const PUSH_WALL_TIMEOUT_MS = 230_000;
-const PUSH_IDLE_TIMEOUT_MS = 90_000;
-const COMMIT_WALL_TIMEOUT_MS = 120_000;
-const COMMIT_IDLE_TIMEOUT_MS = 60_000;
+// Timeouts are deliberately disabled on `git commit` and `git push`. Both
+// commands invoke user-defined hooks (lefthook, husky, etc.) that can legitimately
+// run full test suites for five-plus minutes. The agent harness that wraps this
+// gadget handles long-running tool calls on its own, so a second shorter cap
+// here would just re-introduce the "PUSH FAILED at 2 min" incident of spec 013.
+// Heartbeat stays default (30s stderr pulse via runCommand), so operators still
+// see `[git-push] still running (Ns)` ticks during slow hooks. Setting
+// wallTimeoutMs + idleTimeoutMs to 0 disables them — see runCommand in utils/repo.ts.
 
 async function detectOwnerRepo(): Promise<{ owner: string; repo: string }> {
 	const result = await runCommand('git', ['remote', 'get-url', 'origin'], process.cwd());
@@ -80,11 +81,7 @@ async function stageAndCommit(commitMessage: string): Promise<string> {
 		['commit', '-m', commitMessage],
 		process.cwd(),
 		undefined,
-		{
-			label: 'git-commit',
-			wallTimeoutMs: COMMIT_WALL_TIMEOUT_MS,
-			idleTimeoutMs: COMMIT_IDLE_TIMEOUT_MS,
-		},
+		{ label: 'git-commit', wallTimeoutMs: 0, idleTimeoutMs: 0 },
 	);
 	if (commitResult.exitCode !== 0) {
 		const output = [commitResult.stdout, commitResult.stderr].filter(Boolean).join('\n').trim();
@@ -105,11 +102,7 @@ async function pushBranch(branch: string): Promise<string> {
 		['push', '-u', 'origin', branch],
 		process.cwd(),
 		undefined,
-		{
-			label: 'git-push',
-			wallTimeoutMs: PUSH_WALL_TIMEOUT_MS,
-			idleTimeoutMs: PUSH_IDLE_TIMEOUT_MS,
-		},
+		{ label: 'git-push', wallTimeoutMs: 0, idleTimeoutMs: 0 },
 	);
 	if (pushResult.exitCode !== 0) {
 		const output = [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();

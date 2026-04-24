@@ -418,6 +418,73 @@ describe('repo utils', () => {
 			await promise;
 		});
 
+		// ─── Regression: wallTimeoutMs / idleTimeoutMs set to 0 must disable ──
+		// Spec contract at `runCommand` docstring: "Setting a timing field to 0
+		// disables it."  Callers like CreatePR rely on this to keep pre-push
+		// hooks alive for minutes.  A regression that re-enables the timer when
+		// 0 is passed would silently bring back the "PUSH FAILED at 2 min"
+		// incident that motivated removing the caps in the first place.
+
+		it('does NOT kill the child when idleTimeoutMs is 0 — even after 10 min of silence', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('long-cmd', [], '/tmp', undefined, {
+				idleTimeoutMs: 0,
+				heartbeatMs: 0,
+				wallTimeoutMs: 0,
+			});
+			await Promise.resolve();
+
+			// 10 minutes of silence — would trip any armed idle timer (default 2m).
+			vi.advanceTimersByTime(10 * 60 * 1000);
+			await Promise.resolve();
+
+			expect(vi.mocked(treeKill)).not.toHaveBeenCalled();
+
+			// Settle successfully.
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: 'done\n', stderr: '', exitCode: 0 });
+			vi.useRealTimers();
+			const result = await promise;
+			expect(result.reason).toBeUndefined();
+			expect(result.exitCode).toBe(0);
+		});
+
+		it('does NOT kill the child when wallTimeoutMs is 0 — even after 10 min of continuous output', async () => {
+			vi.useFakeTimers();
+			const child = createMockSubprocess();
+			vi.mocked(execa).mockReturnValue(child as unknown as ReturnType<typeof execa>);
+
+			const promise = runCommand('long-cmd', [], '/tmp', undefined, {
+				wallTimeoutMs: 0,
+				idleTimeoutMs: 0,
+				heartbeatMs: 0,
+			});
+			await Promise.resolve();
+
+			// 10 minutes of constant chatter — would blow past the default 10m wall
+			// and the spec-013 230s cap, and would trip any armed wall timer.
+			for (let t = 0; t < 10 * 60 * 1000; t += 1000) {
+				child.stdout.push(`tick ${t}\n`);
+				await Promise.resolve();
+				vi.advanceTimersByTime(1000);
+				await Promise.resolve();
+			}
+
+			expect(vi.mocked(treeKill)).not.toHaveBeenCalled();
+
+			child.stdout.push(null);
+			child.stderr.push(null);
+			child.resolveExec({ stdout: '', stderr: '', exitCode: 0 });
+			vi.useRealTimers();
+			const result = await promise;
+			expect(result.reason).toBeUndefined();
+			expect(result.exitCode).toBe(0);
+		});
+
 		it('kills the child via tree-kill with SIGTERM when wallTimeoutMs elapses even with ongoing output', async () => {
 			vi.useFakeTimers();
 			const child = createMockSubprocess();

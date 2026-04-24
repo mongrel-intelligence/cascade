@@ -529,104 +529,14 @@ describe('createPR', () => {
 });
 
 // ────────────────────────────────────────────────────────────────────────────
-// Spec 013: per-caller timeouts + captured hook output preservation
+// Spec 013: captured hook output preservation
+// (The per-caller timeout assertions that used to live here were removed
+// together with the timeouts they pinned — pre-commit / pre-push hooks can
+// legitimately run for minutes and the harness handles long calls.  The new
+// "regression: stay disabled" block below pins the current contract.)
 // ────────────────────────────────────────────────────────────────────────────
 
-describe('pushBranch and stageAndCommit timeout options (spec 013)', () => {
-	it('pushBranch passes an explicit wallTimeoutMs below the gadget 240s ceiling', async () => {
-		mockRunCommand.mockImplementation(async (_cmd, args) => {
-			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
-			if (args?.[0] === 'ls-remote')
-				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
-			return { stdout: '', stderr: '', exitCode: 0 };
-		});
-		mockGithub.createPR.mockResolvedValue({
-			number: 1,
-			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
-		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
-
-		await createPR({
-			title: 'Test',
-			body: 'Body',
-			head: 'feat',
-			base: 'main',
-			commit: false,
-			push: true,
-		});
-
-		const pushCall = mockRunCommand.mock.calls.find(
-			(c) => Array.isArray(c[1]) && c[1][0] === 'push',
-		);
-		expect(pushCall).toBeDefined();
-		// 5th arg is RunCommandOptions
-		const options = pushCall?.[4] as { wallTimeoutMs?: number } | undefined;
-		expect(options).toBeDefined();
-		expect(typeof options?.wallTimeoutMs).toBe('number');
-		expect(options?.wallTimeoutMs).toBeLessThanOrEqual(230_000);
-	});
-
-	it('pushBranch passes an explicit finite idleTimeoutMs', async () => {
-		mockRunCommand.mockImplementation(async (_cmd, args) => {
-			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
-			if (args?.[0] === 'ls-remote')
-				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
-			return { stdout: '', stderr: '', exitCode: 0 };
-		});
-		mockGithub.createPR.mockResolvedValue({
-			number: 1,
-			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
-		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
-
-		await createPR({
-			title: 'Test',
-			body: 'Body',
-			head: 'feat',
-			base: 'main',
-			commit: false,
-			push: true,
-		});
-
-		const pushCall = mockRunCommand.mock.calls.find(
-			(c) => Array.isArray(c[1]) && c[1][0] === 'push',
-		);
-		const options = pushCall?.[4] as { idleTimeoutMs?: number } | undefined;
-		expect(typeof options?.idleTimeoutMs).toBe('number');
-		expect(options?.idleTimeoutMs).toBeGreaterThan(0);
-	});
-
-	it('stageAndCommit passes explicit wallTimeoutMs and idleTimeoutMs', async () => {
-		mockRunCommand.mockImplementation(async (_cmd, args) => {
-			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
-			if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
-			if (args?.[0] === 'ls-remote')
-				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
-			return { stdout: '', stderr: '', exitCode: 0 };
-		});
-		mockGithub.createPR.mockResolvedValue({
-			number: 1,
-			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
-		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
-
-		await createPR({
-			title: 'Test',
-			body: 'Body',
-			head: 'feat',
-			base: 'main',
-			commit: true,
-			push: false,
-		});
-
-		const commitCall = mockRunCommand.mock.calls.find(
-			(c) => Array.isArray(c[1]) && c[1][0] === 'commit',
-		);
-		expect(commitCall).toBeDefined();
-		const options = commitCall?.[4] as
-			| { wallTimeoutMs?: number; idleTimeoutMs?: number }
-			| undefined;
-		expect(typeof options?.wallTimeoutMs).toBe('number');
-		expect(typeof options?.idleTimeoutMs).toBe('number');
-	});
-
+describe('captured hook output preservation (spec 013)', () => {
 	it('createPR result carries captured push output on success', async () => {
 		mockRunCommand.mockImplementation(async (_cmd, args) => {
 			if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
@@ -688,5 +598,122 @@ describe('pushBranch and stageAndCommit timeout options (spec 013)', () => {
 
 		expect(result.commitOutput).toBeDefined();
 		expect(result.commitOutput).toContain('Pre-commit hook ran: biome OK');
+	});
+});
+
+// ───────────────────────────────────────────────────────────────────────────
+// Regression: subprocess timeouts on `git commit` and `git push` must stay
+// disabled.  Pre-commit / pre-push hooks legitimately run for minutes (full
+// test suites), and the agent harness that wraps this gadget already budgets
+// long calls.  Re-introducing a shorter cap here is the exact failure mode
+// that burned an earlier session — do not "just add a safety cap".
+// ───────────────────────────────────────────────────────────────────────────
+describe('subprocess timeouts — regression: stay disabled on hook-invoking calls', () => {
+	function runCommandCallFor(args: string[]) {
+		// Find the call whose args[0] matches (e.g. 'commit', 'push').
+		return mockRunCommand.mock.calls.find((call) => {
+			const callArgs = call[1];
+			return Array.isArray(callArgs) && callArgs[0] === args[0];
+		});
+	}
+
+	it('git commit is invoked with wallTimeoutMs=0 and idleTimeoutMs=0', async () => {
+		mockRunCommand.mockReset();
+		mockGitCommands((_cmd, args) => {
+			if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: true,
+			push: false,
+		});
+
+		const commitCall = runCommandCallFor(['commit']);
+		expect(commitCall).toBeDefined();
+		// Positional arg 4 (0-indexed) is the RunCommandOptions bag.
+		const opts = commitCall?.[4];
+		expect(opts).toMatchObject({
+			label: 'git-commit',
+			wallTimeoutMs: 0,
+			idleTimeoutMs: 0,
+		});
+	});
+
+	it('git push is invoked with wallTimeoutMs=0 and idleTimeoutMs=0', async () => {
+		mockRunCommand.mockReset();
+		mockGitCommands((_cmd, args) => {
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: false,
+			push: true,
+		});
+
+		const pushCall = runCommandCallFor(['push']);
+		expect(pushCall).toBeDefined();
+		const opts = pushCall?.[4];
+		expect(opts).toMatchObject({
+			label: 'git-push',
+			wallTimeoutMs: 0,
+			idleTimeoutMs: 0,
+		});
+	});
+
+	it('does not reference any legacy per-caller timeout constant name in runCommand options', async () => {
+		// Sentinel against silent regression: if someone re-adds
+		// PUSH_WALL_TIMEOUT_MS / COMMIT_IDLE_TIMEOUT_MS etc., they will likely
+		// pass a non-zero number here.  Zero is the only accepted value.
+		mockRunCommand.mockReset();
+		mockGitCommands((_cmd, args) => {
+			if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
+			if (args?.[0] === 'ls-remote')
+				return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+			return { stdout: '', stderr: '', exitCode: 0 };
+		});
+		mockGithub.createPR.mockResolvedValue({
+			number: 1,
+			htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+		} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+		await createPR({
+			title: 'Test',
+			body: 'Body',
+			head: 'feat',
+			base: 'main',
+			commit: true,
+			push: true,
+		});
+
+		for (const needle of ['commit', 'push']) {
+			const call = runCommandCallFor([needle]);
+			const opts = (call?.[4] ?? {}) as {
+				wallTimeoutMs?: number;
+				idleTimeoutMs?: number;
+			};
+			expect(opts.wallTimeoutMs, `${needle} wallTimeoutMs must be 0`).toBe(0);
+			expect(opts.idleTimeoutMs, `${needle} idleTimeoutMs must be 0`).toBe(0);
+		}
 	});
 });

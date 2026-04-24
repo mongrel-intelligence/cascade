@@ -52,10 +52,14 @@ describe('GitHub SCM gadget definitions', () => {
 			}
 		});
 
-		it('every definition has a timeoutMs greater than 0', () => {
+		it('every definition has a non-negative timeoutMs (0 is the "disabled" sentinel)', () => {
+			// `timeoutMs: 0` is a deliberate opt-out for long-running tools whose
+			// runtime is already managed externally (e.g. CreatePR — pre-commit /
+			// pre-push hooks can take minutes, and the agent harness surrounds the
+			// call with its own budget).  Anything negative is definitively a bug.
 			for (const def of ALL_SCM_DEFINITIONS) {
 				if (def.timeoutMs !== undefined) {
-					expect(def.timeoutMs).toBeGreaterThan(0);
+					expect(def.timeoutMs).toBeGreaterThanOrEqual(0);
 				}
 			}
 		});
@@ -168,8 +172,12 @@ describe('GitHub SCM gadget definitions', () => {
 			expect((createPRDef.parameters.push as { default?: boolean })?.default).toBe(true);
 		});
 
-		it('has a 4-minute timeout (hooks may run test suites)', () => {
-			expect(createPRDef.timeoutMs).toBe(240000);
+		it('has timeoutMs disabled (0) — pre-commit/pre-push hooks may run for minutes and the harness handles long calls', () => {
+			// Regression guard: do not reintroduce an outer time cap here without
+			// first considering that legitimate pre-push hooks (full test suites)
+			// can run five-plus minutes.  A shorter cap here turned into a
+			// production incident once (see chore: remove-createpr-timeouts).
+			expect(createPRDef.timeoutMs).toBe(0);
 		});
 
 		it('has body file input alternative in CLI', () => {
