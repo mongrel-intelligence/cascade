@@ -511,6 +511,34 @@ export function shouldUseStoredCredentials(state: WizardState): boolean {
 }
 
 /**
+ * Build the Trello integration config payload from wizard state.
+ * Pure function so it can be unit-tested without the React runtime.
+ */
+export function buildTrelloIntegrationConfig(state: WizardState): Record<string, unknown> {
+	return {
+		boardId: state.trelloBoardId,
+		lists: state.trelloListMappings,
+		labels: state.trelloLabelMappings,
+		...(state.trelloCostFieldId ? { customFields: { cost: state.trelloCostFieldId } } : {}),
+	};
+}
+
+/**
+ * Build the JIRA integration config payload from wizard state.
+ * Pure function so it can be unit-tested without the React runtime.
+ */
+export function buildJiraIntegrationConfig(state: WizardState): Record<string, unknown> {
+	return {
+		projectKey: state.jiraProjectKey,
+		baseUrl: state.jiraBaseUrl,
+		statuses: state.jiraStatusMappings,
+		...(Object.keys(state.jiraIssueTypes).length > 0 ? { issueTypes: state.jiraIssueTypes } : {}),
+		...(Object.keys(state.jiraLabels).length > 0 ? { labels: state.jiraLabels } : {}),
+		...(state.jiraCostFieldId ? { customFields: { cost: state.jiraCostFieldId } } : {}),
+	};
+}
+
+/**
  * Build the Linear integration config payload from wizard state.
  * Pure function so it can be unit-tested without the React runtime.
  */
