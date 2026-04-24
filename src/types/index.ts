@@ -116,6 +116,13 @@ export interface TriggerResult {
 	 * sharing the same key within the window supersedes the create.
 	 *
 	 * Typical key: `${projectId}:${workItemId}`.
+	 *
+	 * **Coalesce-only results**: A trigger `handle()` may return a result with
+	 * `agentType: null` and `coalesceRole: 'update'` when a status update does
+	 * not map to an enabled agent. This ensures the router still executes
+	 * Step 7b (`clearPendingCreate`) before exiting at the `!agentType` check —
+	 * preventing a stale pending create from firing after a non-triggering
+	 * column transition arrives within the coalesce window.
 	 */
 	coalesceKey?: string;
 	coalesceRole?: 'create' | 'update';
