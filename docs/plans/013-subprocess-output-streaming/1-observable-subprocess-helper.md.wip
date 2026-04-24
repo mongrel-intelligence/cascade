@@ -6,7 +6,7 @@ plan_slug: observable-subprocess-helper
 level: plan
 parent_spec: docs/specs/013-subprocess-output-streaming.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 013/1: Observable subprocess helper
