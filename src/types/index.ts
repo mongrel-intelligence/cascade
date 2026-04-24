@@ -107,6 +107,18 @@ export interface TriggerResult {
 	/** Called when the router cannot enqueue the job (work-item lock, concurrency limit).
 	 *  Allows the trigger handler to undo side-effects like dedup marking. */
 	onBlocked?: () => void;
+	/**
+	 * Coalesce key for handling PM provider create→update webhook sequences.
+	 *
+	 * Set on `pm:status-changed` triggers where the event kind matters. When
+	 * `coalesceRole === 'create'`, the router defers dispatch by the
+	 * `PM_CREATE_COALESCE_WINDOW_MS` window; an incoming `'update'` event
+	 * sharing the same key within the window supersedes the create.
+	 *
+	 * Typical key: `${projectId}:${workItemId}`.
+	 */
+	coalesceKey?: string;
+	coalesceRole?: 'create' | 'update';
 }
 
 export interface TriggerHandler {

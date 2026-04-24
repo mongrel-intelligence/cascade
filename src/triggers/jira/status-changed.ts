@@ -147,6 +147,8 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			workItemId: issueKey,
 			workItemUrl,
 			workItemTitle,
+			coalesceKey: `${ctx.project.id}:${issueKey}`,
+			coalesceRole: isCreate ? 'create' : 'update',
 		};
 	}
 }

@@ -139,6 +139,8 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			workItemId,
 			workItemUrl,
 			workItemTitle,
+			coalesceKey: `${ctx.project.id}:${workItemId}`,
+			coalesceRole: isCreate ? 'create' : 'update',
 		};
 	}
 }

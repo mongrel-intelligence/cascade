@@ -158,6 +158,7 @@ Optional:
 - `CREDENTIAL_MASTER_KEY` — 64-char hex (AES-256 key) to encrypt project credentials at rest. Without it, credentials are stored as plaintext; both modes coexist.
 - `GITHUB_WEBHOOK_SECRET` — opt-in HMAC verification; store as the `webhook_secret` role on the GitHub SCM integration.
 - `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` — observability.
+- `PM_CREATE_COALESCE_WINDOW_MS` — window (ms) the router waits after a PM `pm:status-changed` create trigger before enqueuing, so a follow-up `update` (same `${projectId}:${workItemId}`) can supersede it. Defaults to `2000`; `0` disables. Fixes JIRA's double-fire when an issue is created in a non-default workflow column (JIRA emits `issue_created` at the initial status, then `issue_updated` transitioning to the target).
 
 **Project credentials (GitHub tokens, Trello/JIRA/Linear keys, LLM API keys) live in the `project_credentials` table.** The DB is the **sole source of truth** — there is no env var fallback for project-scoped secrets.
 

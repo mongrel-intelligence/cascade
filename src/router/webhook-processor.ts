@@ -10,6 +10,11 @@
  * from `pm/webhook-handler.ts` but for the router (enqueue-only) path.
  */
 
+import {
+	clearPendingCreate,
+	getCoalesceWindowMs,
+	registerPendingCreate,
+} from '../pm/create-coalesce-window.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
 import { isDuplicateAction, markActionProcessed } from './action-dedup.js';
@@ -134,6 +139,33 @@ export async function processRouterWebhook(
 		workItemId: event.workItemId,
 		projectId: project.id,
 	});
+
+	// Step 7b: Coalesce PM create→update sequences. JIRA emits two webhooks when
+	// a user creates an issue in a non-default workflow column (initial status,
+	// then transition); without this, both fire different agents on the same
+	// work item. A 'create' trigger waits the coalesce window; an 'update'
+	// trigger arriving for the same key within the window supersedes it.
+	if (result.coalesceKey) {
+		if (result.coalesceRole === 'update') {
+			clearPendingCreate(result.coalesceKey);
+		} else if (result.coalesceRole === 'create') {
+			const windowMs = getCoalesceWindowMs();
+			const outcome = await registerPendingCreate(result.coalesceKey, windowMs);
+			if (outcome === 'superseded') {
+				logger.info(`${adapter.type} create trigger superseded by follow-up update`, {
+					agentType: result.agentType,
+					workItemId: result.workItemId,
+					projectId: project.id,
+				});
+				result.onBlocked?.();
+				return {
+					shouldProcess: true,
+					projectId: project.id,
+					decisionReason: 'Create trigger superseded by follow-up update (coalesce window)',
+				};
+			}
+		}
+	}
 
 	// GitHub special case: no-agent triggers (pr-merged, pr-ready-to-merge)
 	// dispatch already performed PM operations — no job queuing needed

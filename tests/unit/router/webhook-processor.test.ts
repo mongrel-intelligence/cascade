@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
@@ -462,5 +462,79 @@ describe('processRouterWebhook', () => {
 		expect(isWorkItemLocked).not.toHaveBeenCalled();
 		expect(addJob).toHaveBeenCalled();
 		expect(markWorkItemEnqueued).not.toHaveBeenCalled();
+	});
+
+	describe('create→update coalesce', () => {
+		// Use real timers + short window so the create resolves quickly when not superseded.
+		const origWindow = process.env.PM_CREATE_COALESCE_WINDOW_MS;
+
+		beforeEach(() => {
+			process.env.PM_CREATE_COALESCE_WINDOW_MS = '50';
+		});
+		afterEach(() => {
+			if (origWindow === undefined) delete process.env.PM_CREATE_COALESCE_WINDOW_MS;
+			else process.env.PM_CREATE_COALESCE_WINDOW_MS = origWindow;
+		});
+
+		it('supersedes a create when an update with the same coalesceKey arrives within the window', async () => {
+			vi.mocked(addJob).mockResolvedValue('job-x');
+			const createAdapter = makeMockAdapter({
+				type: 'jira',
+				dispatchWithCredentials: vi.fn().mockResolvedValue({
+					agentType: 'implementation',
+					agentInput: { workItemId: 'PROJ-1' },
+					workItemId: 'PROJ-1',
+					coalesceKey: 'p1:PROJ-1',
+					coalesceRole: 'create',
+				}),
+			});
+			const updateAdapter = makeMockAdapter({
+				type: 'jira',
+				dispatchWithCredentials: vi.fn().mockResolvedValue({
+					agentType: 'planning',
+					agentInput: { workItemId: 'PROJ-1' },
+					workItemId: 'PROJ-1',
+					coalesceKey: 'p1:PROJ-1',
+					coalesceRole: 'update',
+				}),
+			});
+
+			// Fire create (will wait 50ms) and update (resolves immediately, supersedes create)
+			const createPromise = processRouterWebhook(createAdapter, {}, mockTriggerRegistry);
+			// Let microtasks settle so the create registers before we dispatch the update.
+			await Promise.resolve();
+			const updateResult = await processRouterWebhook(updateAdapter, {}, mockTriggerRegistry);
+			const createResult = await createPromise;
+
+			expect(createResult.decisionReason).toBe(
+				'Create trigger superseded by follow-up update (coalesce window)',
+			);
+			expect(updateResult.shouldProcess).toBe(true);
+
+			// Only one job should have been queued (for the update), not two.
+			expect(addJob).toHaveBeenCalledTimes(1);
+			expect(createAdapter.postAck).not.toHaveBeenCalled();
+			expect(updateAdapter.postAck).toHaveBeenCalled();
+		});
+
+		it('proceeds with a create when no update arrives within the window', async () => {
+			vi.mocked(addJob).mockResolvedValue('job-solo');
+			const adapter = makeMockAdapter({
+				type: 'jira',
+				dispatchWithCredentials: vi.fn().mockResolvedValue({
+					agentType: 'planning',
+					agentInput: { workItemId: 'PROJ-2' },
+					workItemId: 'PROJ-2',
+					coalesceKey: 'p1:PROJ-2',
+					coalesceRole: 'create',
+				}),
+			});
+
+			const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+
+			expect(result.shouldProcess).toBe(true);
+			expect(addJob).toHaveBeenCalledTimes(1);
+			expect(adapter.postAck).toHaveBeenCalled();
+		});
 	});
 });
