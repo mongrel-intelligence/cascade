@@ -293,8 +293,15 @@ describe('buildSystemPrompt', () => {
 });
 
 describe('CLAUDE_CODE_MODELS constants', () => {
-	it('contains four models', () => {
-		expect(CLAUDE_CODE_MODELS).toHaveLength(4);
+	it('contains the expected models', () => {
+		expect(CLAUDE_CODE_MODELS).toHaveLength(8);
+	});
+
+	it('includes Opus 4.7 and the 1M context variants', () => {
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-opus-4-7');
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-opus-4-7[1m]');
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-sonnet-4-6[1m]');
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-opus-4-6[1m]');
 	});
 
 	it('has value/label pairs', () => {
@@ -315,6 +322,10 @@ describe('CLAUDE_CODE_MODELS constants', () => {
 
 describe('resolveClaudeModel', () => {
 	it('passes through known Claude Code model IDs', () => {
+		expect(resolveClaudeModel('claude-opus-4-7')).toBe('claude-opus-4-7');
+		expect(resolveClaudeModel('claude-opus-4-7[1m]')).toBe('claude-opus-4-7[1m]');
+		expect(resolveClaudeModel('claude-sonnet-4-6[1m]')).toBe('claude-sonnet-4-6[1m]');
+		expect(resolveClaudeModel('claude-opus-4-6[1m]')).toBe('claude-opus-4-6[1m]');
 		expect(resolveClaudeModel('claude-opus-4-6')).toBe('claude-opus-4-6');
 		expect(resolveClaudeModel('claude-sonnet-4-6')).toBe('claude-sonnet-4-6');
 		expect(resolveClaudeModel('claude-sonnet-4-5-20250929')).toBe('claude-sonnet-4-5-20250929');

@@ -10,7 +10,11 @@ import type { TokenUsage } from 'llmist';
  */
 const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput?: number }> = {
 	// Anthropic Claude 4 family
+	'anthropic:claude-opus-4-7': { input: 5.0, output: 25.0, cachedInput: 0.5 },
+	'anthropic:claude-opus-4-7[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
+	'anthropic:claude-opus-4-6[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-sonnet-4-6': { input: 3.0, output: 15.0, cachedInput: 0.3 },
+	'anthropic:claude-sonnet-4-6[1m]': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-sonnet-4-5': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-opus-4-5': { input: 15.0, output: 75.0, cachedInput: 1.5 },
 	'anthropic:claude-haiku-3-5': { input: 0.8, output: 4.0, cachedInput: 0.08 },
@@ -20,6 +24,7 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput
 	'gemini:gemini-2.5-pro': { input: 1.25, output: 5.0 },
 
 	// OpenAI
+	'openai:gpt-5.5': { input: 5.0, output: 30.0 },
 	'openai:gpt-4o': { input: 2.5, output: 10.0, cachedInput: 1.25 },
 	'openai:gpt-4o-mini': { input: 0.15, output: 0.6, cachedInput: 0.075 },
 
