@@ -4,7 +4,7 @@ slug: router-job-dispatch-failure-recovery
 level: spec
 title: Router job dispatch failure recovery
 created: 2026-04-26
-status: draft
+status: done
 ---
 
 # 015: Router job dispatch failure recovery
