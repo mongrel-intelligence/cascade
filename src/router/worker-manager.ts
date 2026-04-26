@@ -7,7 +7,7 @@
  * Public API is unchanged — all consumers continue importing from this module.
  */
 
-import type { Job, Worker } from 'bullmq';
+import { type Job, UnrecoverableError, type Worker } from 'bullmq';
 import { logger } from '../utils/logging.js';
 import { createQueueWorker, parseRedisUrl } from './bullmq-workers.js';
 import { routerConfig } from './config.js';
@@ -19,7 +19,9 @@ import {
 	startOrphanCleanup,
 	stopOrphanCleanup,
 } from './container-manager.js';
+import { classifyDispatchError } from './dispatch-error-classifier.js';
 import type { CascadeJob } from './queue.js';
+import { acquireSlot, clearAllWaiters } from './slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from './snapshot-cleanup.js';
 import { syncSnapshotsFromDocker } from './snapshot-startup-sync.js';
 
@@ -35,18 +37,34 @@ let dashboardWorker: Worker | null = null;
 // Using a fixed 8-hour value prevents lock expiry for long-running containers.
 const BULLMQ_LOCK_DURATION_MS = 8 * 60 * 60 * 1000;
 
-/** Guard that enforces the per-router concurrency cap before spawning. */
+/**
+ * Guard that backpressures the dispatcher to the per-router concurrency cap
+ * and classifies spawn errors for BullMQ retry policy (spec 015/2).
+ *
+ * Capacity miss: `acquireSlot` waits up to `slotWaitTimeoutMs` for a slot
+ * to free; on timeout it rejects with `code: 'SLOT_WAIT_TIMEOUT'`, which
+ * the classifier treats as transient so BullMQ retries via attempts/backoff.
+ *
+ * Spawn error: a transient error (Docker daemon unreachable, name collision
+ * race, registry rate-limit) propagates unchanged — BullMQ retries. A
+ * terminal error (validation, image-not-found-after-fallback) is wrapped in
+ * `UnrecoverableError` so BullMQ skips the retry budget and the failed-event
+ * compensator from spec 015/1 runs once at exhaustion.
+ *
+ * The slot is conceptually held by the running container, NOT by the
+ * dispatcher — `slotReleased()` is called from `cleanupWorker` at container
+ * exit, never from here.
+ */
 async function guardedSpawn(job: Job<CascadeJob>): Promise<void> {
-	// Check if we have capacity.
-	// This shouldn't happen with proper concurrency settings,
-	// but just in case, throw to retry later.
-	if (getActiveWorkerCount() >= routerConfig.maxWorkers) {
-		throw new Error('No worker slots available');
+	await acquireSlot({ timeoutMs: routerConfig.slotWaitTimeoutMs });
+	try {
+		await spawnWorker(job);
+	} catch (err) {
+		if (classifyDispatchError(err) === 'terminal') {
+			throw new UnrecoverableError(err instanceof Error ? err.message : String(err));
+		}
+		throw err;
 	}
-	await spawnWorker(job);
-	// Note: We don't wait for the container to complete here.
-	// The job is considered "processed" once the container starts.
-	// Container exit is handled asynchronously.
 }
 
 export function startWorkerProcessor(): void {
@@ -114,6 +132,10 @@ export async function stopWorkerProcessor(): Promise<void> {
 	// finish their jobs and auto-remove. Workers have their own internal
 	// watchdog (src/utils/lifecycle.ts) for timeout enforcement.
 	detachAll();
+
+	// Reject any pending slot waiters so they don't leak timers across the
+	// shutdown. Spec 015/2.
+	clearAllWaiters();
 
 	logger.info('[WorkerManager] Stopped');
 }

@@ -338,8 +338,11 @@ export async function resolveSpawnSettings(
  * Returns true when a Docker error indicates the requested image does not exist.
  * Uses the HTTP statusCode from dockerode's error objects as the primary signal,
  * with a substring check on the message as a secondary guard.
+ *
+ * Exported for the dispatch-error classifier (spec 015/2) so it can
+ * recognise this terminal class and skip BullMQ retries for it.
  */
-function isImageNotFoundError(err: unknown): boolean {
+export function isImageNotFoundError(err: unknown): boolean {
 	return (
 		err != null &&
 		typeof err === 'object' &&

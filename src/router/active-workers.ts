@@ -9,6 +9,7 @@ import { failOrphanedRun, failOrphanedRunFallback } from '../db/repositories/run
 import { logger } from '../utils/logging.js';
 import { clearAgentTypeEnqueued } from './agent-type-lock.js';
 import type { CascadeJob } from './queue.js';
+import { slotReleased } from './slot-waiter.js';
 import { clearWorkItemEnqueued } from './work-item-lock.js';
 
 export interface ActiveWorker {
@@ -101,6 +102,10 @@ export function cleanupWorker(jobId: string, exitCode?: number, details?: ExitDe
 		if (worker.projectId && worker.workItemId && worker.agentType) {
 			clearWorkItemEnqueued(worker.projectId, worker.workItemId, worker.agentType);
 		}
+		// Spec 015/2: free a worker slot so any dispatcher waiting in
+		// `acquireSlot()` can proceed. Idempotent — the surrounding
+		// `if (worker)` guard ensures we call this exactly once per cleanup.
+		slotReleased();
 		if (exitCode !== undefined && exitCode !== 0 && worker.projectId) {
 			const durationMs = Date.now() - worker.startedAt.getTime();
 			const reason = formatCrashReason(exitCode, details);

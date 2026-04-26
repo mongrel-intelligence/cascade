@@ -31,6 +31,12 @@ export interface RouterConfig {
 	workerImage: string;
 	workerMemoryMb: number;
 	workerTimeoutMs: number;
+	/**
+	 * How long a dispatcher will wait for a worker slot to free up before
+	 * giving up and surfacing a transient SLOT_WAIT_TIMEOUT error (which
+	 * BullMQ then retries). Spec 015/2.
+	 */
+	slotWaitTimeoutMs: number;
 
 	// Network settings
 	dockerNetwork: string;
@@ -134,6 +140,7 @@ export const routerConfig: RouterConfig = {
 	workerImage: process.env.WORKER_IMAGE || 'ghcr.io/mongrel-intelligence/cascade-worker:latest',
 	workerMemoryMb: Number(process.env.WORKER_MEMORY_MB) || 4096,
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
+	slotWaitTimeoutMs: Number(process.env.SLOT_WAIT_TIMEOUT_MS) || 5 * 60 * 1000, // 5 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
 	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
 	webhookCallbackBaseUrl: process.env.WEBHOOK_CALLBACK_BASE_URL,

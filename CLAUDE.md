@@ -123,6 +123,19 @@ Some triggers take params (e.g. `review` + `scm:check-suite-success` accepts `{"
 
 **Worker exit diagnostics** — when a worker container exits non-zero, the router calls `container.inspect()` *before* AutoRemove reaps it and stamps the run record's `error` field with a structured, grep-stable string: `Worker crashed with exit code N · OOMKilled=<true|false> · reason="<State.Error>"`. The `OOMKilled=true` marker is the definitive cgroup-OOM signal (per Docker's own `State.OOMKilled`); a 137 exit *without* `OOMKilled=true` means the kill came from inside the container or from a non-cgroup signal — *not* memory. The `[WorkerManager] Resolved spawn settings` log emitted at every spawn includes both `projectWatchdogTimeoutMs` and `globalWorkerTimeoutMs` so post-mortems can confirm whether the per-project override actually won. See `src/router/active-workers.ts:formatCrashReason` for the format and `tests/unit/router/container-manager-diagnostics.test.ts` for regression pins.
 
+**Dispatch failure semantics** — spec 015 (verified live in prod via the ucho/MNG-350 incident on 2026-04-26):
+
+- **Capacity miss waits, never throws.** When the dispatcher pulls a job and the worker pool is at `maxWorkers`, it `await`s a slot via the in-process slot-waiter (default `slotWaitTimeoutMs` = 5min). The slot is conceptually held by the running container — `slotReleased()` is called once per cleanup from `cleanupWorker`, never from the dispatcher.
+- **Transient Docker errors retry.** `ECONNREFUSED` / `ECONNRESET` / `ENOTFOUND` on the Docker socket, registry HTTP 429, container-name 409 collisions, and the `SLOT_WAIT_TIMEOUT` itself all classify as transient and propagate unchanged so BullMQ retries via `attempts: 4` + `backoff: { type: 'exponential', delay: 5000 }` (~75s total before exhaustion). Both `cascade-jobs` and `cascade-dashboard-jobs` use the same retry config.
+- **Terminal errors fail fast.** `TypeError` / `ZodError` (validation) and image-not-found *after* fallback exhaustion are wrapped in BullMQ's `UnrecoverableError`, which skips the retry budget entirely.
+- **Failed-event compensation releases locks.** Every dispatch failure (transient retry exhaustion, terminal error, slot-wait timeout exhaustion) flows through `worker.on('failed')`, which calls `releaseLocksForFailedJob` to release the work-item lock, agent-type counter, and recently-dispatched dedup mark. Without this, the locks leak for ~30min and silently reject every follow-up webhook for the same trio.
+- **Webhook decision reasons are three-way.** When the work-item lock check rejects a webhook, the message distinguishes:
+  - `Job queued: ...` (success — not a lock rejection)
+  - `Awaiting worker slot: ...` (lock held + dispatch in flight — healthy)
+  - `Work item locked (no active dispatch): ...` (wedged-lock canary — the lock-state classifier could correlate the lock count with neither an active worker nor a queued/waiting BullMQ job; this fires a Sentry capture tagged `wedged_lock_canary` so any regression in compensation is loud)
+
+The wedged-lock canary should never fire under normal operation. Its presence in webhook logs or Sentry is itself a regression invariant: a code path acquired a lock without registering its compensation.
+
 ## Review agent — context shape (debugging)
 
 Review agent receives a **compact per-file diff context**, not full file contents. Each changed file is a `### <file> (<status>, +N -M)` section with a unified diff hunk. Budget: `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` = 200k tokens, per-file cap 10%.

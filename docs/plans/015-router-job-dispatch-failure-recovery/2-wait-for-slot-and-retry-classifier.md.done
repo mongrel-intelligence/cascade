@@ -6,7 +6,7 @@ plan_slug: wait-for-slot-and-retry-classifier
 level: plan
 parent_spec: docs/specs/015-router-job-dispatch-failure-recovery.md
 depends_on: [1-failed-event-lock-compensation.md]
-status: wip
+status: done
 ---
 
 # 015/2: Wait-for-slot capacity, retry budget, error classifier
@@ -227,20 +227,20 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (slot-waiter primitive)
-- [ ] AC #2 (guardedSpawn awaits)
-- [ ] AC #3 (cleanupWorker calls slotReleased)
-- [ ] AC #4 (classifier taxonomy)
-- [ ] AC #5 (queue retry config)
-- [ ] AC #6 (UnrecoverableError wrap)
-- [ ] AC #7 (end-to-end retry behavior)
-- [ ] AC #8 (capacity-throw test replaced)
-- [ ] AC #9 (CLAUDE.md updated)
-- [ ] AC #10 (CHANGELOG)
-- [ ] AC #11 (Plan 1 regression)
-- [ ] AC #12 (TDD discipline)
-- [ ] AC #13 (build)
-- [ ] AC #14 (unit tests)
-- [ ] AC #15 (integration)
-- [ ] AC #16 (lint)
-- [ ] AC #17 (typecheck)
+- [x] AC #1 (slot-waiter primitive)
+- [x] AC #2 (guardedSpawn awaits)
+- [x] AC #3 (cleanupWorker calls slotReleased)
+- [x] AC #4 (classifier taxonomy)
+- [x] AC #5 (queue retry config)
+- [x] AC #6 (UnrecoverableError wrap)
+- [x] AC #7 (end-to-end retry behavior)
+- [x] AC #8 (capacity-throw test replaced)
+- [x] AC #9 (CLAUDE.md updated)
+- [x] AC #10 (CHANGELOG)
+- [x] AC #11 (Plan 1 regression)
+- [x] AC #12 (TDD discipline)
+- [x] AC #13 (build)
+- [x] AC #14 (unit tests)
+- [x] AC #15 (integration)
+- [x] AC #16 (lint)
+- [x] AC #17 (typecheck)

@@ -55,7 +55,12 @@ function getQueue(): Queue<DashboardJob> {
 		queue = new Queue<DashboardJob>(QUEUE_NAME, {
 			connection: parseRedisUrl(redisUrl),
 			defaultJobOptions: {
-				attempts: 1,
+				// Spec 015/2: bounded retries on dispatch failures, parity with
+				// the cascade-jobs queue. Manual-run / retry-run / debug-analysis
+				// jobs hit the same dispatch path — should benefit from the same
+				// transient-failure absorption.
+				attempts: 4,
+				backoff: { type: 'exponential', delay: 5_000 },
 				removeOnComplete: { age: 24 * 60 * 60, count: 100 },
 				removeOnFail: { age: 7 * 24 * 60 * 60 },
 			},

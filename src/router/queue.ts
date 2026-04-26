@@ -76,7 +76,14 @@ export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob | LinearJob
 export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {
 	connection,
 	defaultJobOptions: {
-		attempts: 1, // No retries - agents handle their own errors
+		// Spec 015/2: bounded retries on dispatch failures only. Terminal
+		// errors (validation, image-not-found-after-fallback) bypass via
+		// `UnrecoverableError`. Agents themselves still handle their own
+		// internal errors — these attempts apply only to the dispatch path
+		// (the time between BullMQ pulling the job and the worker
+		// container *starting*, before the agent is even running).
+		attempts: 4,
+		backoff: { type: 'exponential', delay: 5_000 },
 		removeOnComplete: {
 			age: 24 * 60 * 60, // Keep completed jobs for 24 hours
 			count: 100, // Keep last 100 completed jobs

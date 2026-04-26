@@ -18,6 +18,24 @@ vi.mock('../../../src/router/container-manager.js', () => ({
 	stopOrphanCleanup: vi.fn(),
 }));
 
+vi.mock('../../../src/router/slot-waiter.js', () => ({
+	acquireSlot: vi.fn().mockResolvedValue(undefined),
+	clearAllWaiters: vi.fn(),
+}));
+
+vi.mock('../../../src/router/dispatch-error-classifier.js', () => ({
+	classifyDispatchError: vi.fn().mockReturnValue('transient'),
+}));
+
+vi.mock('bullmq', () => ({
+	UnrecoverableError: class extends Error {
+		constructor(message: string) {
+			super(message);
+			this.name = 'UnrecoverableError';
+		}
+	},
+}));
+
 vi.mock('../../../src/router/snapshot-cleanup.js', () => ({
 	startSnapshotCleanup: vi.fn(),
 	stopSnapshotCleanup: vi.fn(),
@@ -30,6 +48,7 @@ vi.mock('../../../src/router/config.js', () => ({
 		workerImage: 'test-worker:latest',
 		workerMemoryMb: 512,
 		workerTimeoutMs: 5000,
+		slotWaitTimeoutMs: 5 * 60 * 1000,
 		dockerNetwork: 'test-network',
 	},
 }));
@@ -57,6 +76,8 @@ import {
 	startOrphanCleanup,
 	stopOrphanCleanup,
 } from '../../../src/router/container-manager.js';
+import { classifyDispatchError } from '../../../src/router/dispatch-error-classifier.js';
+import { acquireSlot } from '../../../src/router/slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from '../../../src/router/snapshot-cleanup.js';
 import {
 	startWorkerProcessor,
@@ -77,6 +98,8 @@ const mockStopOrphanCleanup = vi.mocked(stopOrphanCleanup);
 const mockStartSnapshotCleanup = vi.mocked(startSnapshotCleanup);
 const mockStopSnapshotCleanup = vi.mocked(stopSnapshotCleanup);
 const mockLogger = vi.mocked(logger);
+const mockAcquireSlot = vi.mocked(acquireSlot);
+const mockClassifyDispatchError = vi.mocked(classifyDispatchError);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -176,19 +199,100 @@ describe('startWorkerProcessor', () => {
 		expect(mockSpawnWorker).toHaveBeenCalledWith(fakeJob);
 	});
 
-	it('processFn throws when at capacity', async () => {
+	// REPLACED in spec 015/2: capacity miss now waits for a slot instead of
+	// throwing. The previous assertion `processFn throws when at capacity`
+	// is intentionally gone (per spec AC #9) — preserved here as an
+	// inverted test pinning the new contract.
+	it('processFn awaits a slot when at capacity, then dispatches when one frees', async () => {
 		startWorkerProcessor();
 
 		const cascadeJobsCall = mockCreateQueueWorker.mock.calls.find(
 			(call) => call[0].queueName === 'cascade-jobs',
 		);
-		const processFn = cascadeJobsCall?.[0].processFn;
+		const processFn = cascadeJobsCall?.[0].processFn as (j: unknown) => Promise<void>;
 
-		// At capacity
-		mockGetActiveWorkerCount.mockReturnValue(3); // equals maxWorkers
+		// `acquireSlot` resolves once a slot is available — drive that here.
+		let resolveAcquire: () => void = () => {};
+		mockAcquireSlot.mockImplementationOnce(
+			() =>
+				new Promise<void>((res) => {
+					resolveAcquire = res;
+				}),
+		);
+
+		mockSpawnWorker.mockClear();
 		const fakeJob = { id: 'j2', data: { type: 'trello', projectId: 'p1' } };
-		await expect(processFn(fakeJob)).rejects.toThrow('No worker slots available');
+		const inflight = processFn(fakeJob);
+
+		// Before the slot frees, spawnWorker must NOT have been called.
+		await Promise.resolve();
 		expect(mockSpawnWorker).not.toHaveBeenCalled();
+
+		// Free the slot — processFn proceeds to spawnWorker.
+		resolveAcquire();
+		await inflight;
+		expect(mockSpawnWorker).toHaveBeenCalledWith(fakeJob);
+	});
+
+	it("processFn rejects with code 'SLOT_WAIT_TIMEOUT' when the wait exceeds the timeout", async () => {
+		startWorkerProcessor();
+
+		const cascadeJobsCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-jobs',
+		);
+		const processFn = cascadeJobsCall?.[0].processFn as (j: unknown) => Promise<void>;
+
+		const timeoutErr = Object.assign(new Error('Slot wait timed out'), {
+			code: 'SLOT_WAIT_TIMEOUT',
+		});
+		mockAcquireSlot.mockRejectedValueOnce(timeoutErr);
+		// Slot timeout classifies as transient → propagates unchanged so
+		// BullMQ retries via attempts/backoff.
+		mockClassifyDispatchError.mockReturnValueOnce('transient');
+
+		mockSpawnWorker.mockClear();
+		const fakeJob = { id: 'j2', data: { type: 'trello', projectId: 'p1' } };
+		await expect(processFn(fakeJob)).rejects.toMatchObject({ code: 'SLOT_WAIT_TIMEOUT' });
+		expect(mockSpawnWorker).not.toHaveBeenCalled();
+	});
+
+	it('processFn propagates a transient spawn error unchanged so BullMQ retries', async () => {
+		startWorkerProcessor();
+
+		const cascadeJobsCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-jobs',
+		);
+		const processFn = cascadeJobsCall?.[0].processFn as (j: unknown) => Promise<void>;
+
+		const transientErr = Object.assign(new Error('ECONNREFUSED docker.sock'), {
+			code: 'ECONNREFUSED',
+		});
+		mockSpawnWorker.mockRejectedValueOnce(transientErr);
+		mockClassifyDispatchError.mockReturnValueOnce('transient');
+
+		const fakeJob = { id: 'j3', data: { type: 'trello', projectId: 'p1' } };
+		await expect(processFn(fakeJob)).rejects.toBe(transientErr);
+	});
+
+	it('processFn wraps a terminal spawn error in UnrecoverableError so retries are skipped', async () => {
+		startWorkerProcessor();
+
+		const cascadeJobsCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-jobs',
+		);
+		const processFn = cascadeJobsCall?.[0].processFn as (j: unknown) => Promise<void>;
+
+		const terminalErr = Object.assign(new TypeError("Cannot read 'foo'"), {});
+		mockSpawnWorker.mockRejectedValueOnce(terminalErr);
+		mockClassifyDispatchError.mockReturnValueOnce('terminal');
+
+		const fakeJob = { id: 'j4', data: { type: 'trello', projectId: 'p1' } };
+		const rejectionSpy = vi.fn();
+		await processFn(fakeJob).catch(rejectionSpy);
+
+		expect(rejectionSpy).toHaveBeenCalledTimes(1);
+		const thrown = rejectionSpy.mock.calls[0][0];
+		expect((thrown as Error).name).toBe('UnrecoverableError');
 	});
 });
 
