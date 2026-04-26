@@ -6,7 +6,7 @@ plan_slug: failed-event-lock-compensation
 level: plan
 parent_spec: docs/specs/015-router-job-dispatch-failure-recovery.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 015/1: Failed-event lock compensation + decision-reason taxonomy
