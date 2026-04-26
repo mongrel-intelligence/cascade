@@ -6,7 +6,7 @@ plan_slug: wait-for-slot-and-retry-classifier
 level: plan
 parent_spec: docs/specs/015-router-job-dispatch-failure-recovery.md
 depends_on: [1-failed-event-lock-compensation.md]
-status: pending
+status: wip
 ---
 
 # 015/2: Wait-for-slot capacity, retry budget, error classifier
