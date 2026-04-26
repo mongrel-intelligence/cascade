@@ -1,0 +1,246 @@
+---
+id: 015
+slug: router-job-dispatch-failure-recovery
+plan: 2
+plan_slug: wait-for-slot-and-retry-classifier
+level: plan
+parent_spec: docs/specs/015-router-job-dispatch-failure-recovery.md
+depends_on: [1-failed-event-lock-compensation.md]
+status: pending
+---
+
+# 015/2: Wait-for-slot capacity, retry budget, error classifier
+
+> Part 2 of 2 in the 015-router-job-dispatch-failure-recovery plan. See [parent spec](../../specs/015-router-job-dispatch-failure-recovery.md).
+
+## Summary
+
+This plan closes the **lost-job** half of the spec's bug class. It replaces the synchronous "throw on capacity" pattern in the dispatch path with an in-process slot-waiter that suspends until a worker slot frees up (bounded by a timeout that surfaces a real Sentry-visible error). It also adds bounded retry-with-backoff semantics to both queues, gated by an error classifier that decides whether a thrown error is transient (Docker daemon hiccup, image-pull rate-limit, container-name race — retry up to a small budget) or terminal (validation failure, missing credentials, fallback image not found — fail fast with no retry).
+
+After this plan ships, a card moved to a triggering state while the worker pool is at capacity reliably runs the agent as soon as capacity frees, with no further user action and no permanently failed BullMQ entry. A briefly unreachable Docker daemon resolves on retry. A sustained Docker outage exhausts the retry budget within minutes and surfaces a clear failed-run record + Sentry capture — never silent loss.
+
+This plan also delivers the AC #9 contract change: the existing `'processFn throws when at capacity'` test (`tests/unit/router/worker-manager.test.ts:179`) is **replaced**, not deleted — its assertion flips from "throws" to "awaits a slot, then dispatches when one frees." Plan 1's failed-event compensator stays as the safety net underneath.
+
+The CLAUDE.md update covering both halves of the new contract (decision-reason taxonomy from Plan 1 + dispatch retry contract from Plan 2) lands here so the documented invariant is consistent.
+
+**Components delivered:**
+- A small in-house slot-waiter (semaphore-style counter + queued resolvers, ~30 lines, zero new deps) that integrates with `getActiveWorkerCount()` and `routerConfig.maxWorkers`.
+- `guardedSpawn` rewritten: instead of throwing on capacity, awaits the slot (bounded timeout); on timeout, throws an explicitly-tagged error that the retry path can act on.
+- A dispatch-error classifier `classifyDispatchError(err)` that returns `'transient' | 'terminal'`; terminal errors are wrapped in BullMQ's `UnrecoverableError` so they bypass the retry budget.
+- `attempts` raised on both queue defaults with exponential backoff configured (concrete numbers below); per-job overrides stay possible for future use.
+- Replacement of the existing capacity-throw test; new tests for slot-waiter + classifier + retry-on-transient + fail-fast-on-terminal + sustained-outage-surfaces-error.
+- CLAUDE.md passage updated to document the new dispatch-retry + decision-reason contract.
+
+**Deferred (out of spec):**
+- Worker-pool autoscaling, BullMQ migration, lock-semantics changes, snapshot-fallback redesign, manual-run bypass changes, failed-set UI, startup re-enqueue sweep — all explicit non-goals in the spec.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (capacity wait → run starts when capacity frees, no permanently failed job) — **full**
+- Spec AC #2 (transient Docker error → retry succeeds, no permanently failed job) — **full**
+- Spec AC #3 (sustained outage → run marked failed, Sentry captured, no silent loss) — **full**
+- Spec AC #9 (test contract change — old throw-on-capacity replaced) — **full** (Plan 1 added new tests; Plan 2 replaces the existing one)
+
+Regression-tested but not newly satisfied:
+- Spec AC #4, #5, #6 (lock-leak / decision reason — already delivered by Plan 1; Plan 2 adds tests confirming the new failure modes don't reintroduce leaks)
+- Spec AC #7, #8 (manual-run bypass + clean-exit — Plan 1 pinned these; Plan 2's tests must keep them green)
+
+---
+
+## Depends On
+
+- Plan 1 (`failed-event-lock-compensation`) — provides the failed-event compensation hook on both queues. Plan 2 introduces new failure modes (slot-wait timeout, retry exhaustion, terminal errors via `UnrecoverableError`); each of those failure paths flows through BullMQ's `'failed'` event and relies on Plan 1's compensator releasing locks. Without Plan 1, Plan 2's new exhaustion path would re-create the wedged-lock symptom.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Slot-waiter primitive
+
+**Tests first** (`tests/unit/router/slot-waiter.test.ts` — new file):
+
+- `acquire — resolves immediately when capacity is below max` — unit — set `maxWorkers = 3`; mock `getActiveWorkerCount` to return `1`; call `acquireSlot()`; assert it resolves within the same microtask. Expected red: `Error: Cannot find module './slot-waiter'`.
+- `acquire — suspends when at capacity, resolves when a slot frees` — unit — `maxWorkers = 1`, count starts at `1`; call `acquireSlot()`; assert promise is pending; emit a `slotReleased()` notification; assert promise resolves. Expected red: module-not-found, then "promise never resolves" timeout.
+- `acquire — bounded timeout rejects with a tagged error if no slot frees in time` — unit — at capacity, call `acquireSlot({ timeoutMs: 50 })`; assert it rejects with `error.code === 'SLOT_WAIT_TIMEOUT'` after ~50ms. Expected red: never rejects (no timeout implemented).
+- `acquire — multiple waiters resolve FIFO as slots free` — unit — at capacity, queue 3 waiters; emit `slotReleased()` once; assert exactly one waiter resolves and the other two stay pending; emit again; assert the second resolves. Expected red: all three resolve simultaneously, or none.
+- `acquire — slotReleased called with no waiters is a no-op` — unit — call `slotReleased()` when nothing is waiting; assert no throw. Expected red: same as first test.
+- `slotReleased — does not double-release waiters when called multiple times` — unit — queue 1 waiter; call `slotReleased()` twice; assert the waiter resolves exactly once (no `unhandledRejection` from a double-resolution path). Expected red: waiter rejected, or never resolves.
+
+**Implementation** (`src/router/slot-waiter.ts`):
+- Internal queue `pendingResolvers: Array<{ resolve: () => void; reject: (e: Error) => void; timeoutHandle: NodeJS.Timeout }>`.
+- Export `acquireSlot(opts: { timeoutMs: number }): Promise<void>` — checks `getActiveWorkerCount() < routerConfig.maxWorkers`; if true, resolves immediately; otherwise pushes a resolver onto the queue with a `setTimeout` that rejects with a tagged `Error & { code: 'SLOT_WAIT_TIMEOUT' }`.
+- Export `slotReleased(): void` — pops + resolves the head of the queue, clearing its timeout. No-op if empty.
+- Export `clearAllWaiters()` for test cleanup + router shutdown (rejects pending waiters with a tagged `code: 'SHUTDOWN'`).
+- Use a `code` field instead of error-message string-matching so the retry classifier doesn't depend on free-form text.
+
+### 2. `guardedSpawn` rewrite — wait-for-slot
+
+**Tests first** (`tests/unit/router/worker-manager.test.ts` — REPLACE the existing line-179 test):
+
+- (replace) `processFn awaits a slot when at capacity, then dispatches when one frees` — unit — `maxWorkers = 1`, mock `getActiveWorkerCount` to return `1` initially, `0` after a tick; start `processFn(fakeJob)`; assert `mockSpawnWorker` not called yet; advance fake timers + emit `slotReleased`; assert `mockSpawnWorker` is now called. Expected red: today's contract throws synchronously — assertion `mockSpawnWorker.toHaveBeenCalled()` fails. (Removes the existing `'processFn throws when at capacity'` assertion.)
+- `processFn rejects with code: 'SLOT_WAIT_TIMEOUT' when the wait exceeds the configured ceiling` — unit — at-capacity for the entire wait window; assert promise rejects with the tagged error. Expected red: today rejects with the untagged `Error('No worker slots available')`.
+- `processFn calls slotReleased after spawnWorker resolves` — unit — happy path; assert `mockSlotReleased` is invoked once after a successful spawn. (Note: today, slot accounting is implicit via container-exit; we add an explicit `slotReleased` so the waiter queue advances even when many spawns happen back-to-back without container exits in between.) Expected red: spy not called.
+- `processFn — when spawnWorker throws, the slot is still released so other waiters proceed` — unit — `mockSpawnWorker` rejects; assert `mockSlotReleased` is still invoked (try/finally semantics) and the rejection propagates. Expected red: `slotReleased` not called → next waiter never proceeds.
+
+**Implementation** (`src/router/worker-manager.ts`):
+- Replace `guardedSpawn`'s body with: `await acquireSlot({ timeoutMs: routerConfig.slotWaitTimeoutMs })`; then `try { await spawnWorker(job); } finally { /* note: existing exit path handles slotReleased on container exit; the dispatcher does NOT call it here, see decision below */ }`.
+- **Decision**: do NOT call `slotReleased()` from `guardedSpawn` itself. The slot is conceptually held by the running container, not by the dispatcher. `slotReleased()` is called once from `cleanupWorker` (in `active-workers.ts`) at container-exit time. This keeps a single source of truth for "slot freed = container exited." The test "calls slotReleased after spawnWorker resolves" above is therefore reframed: it asserts slot accounting is wired through container-exit, not through dispatcher exit. Update that test accordingly. (Stated explicitly so /implement does not get confused by the initial draft.)
+- New config field `slotWaitTimeoutMs` in `routerConfig` (default e.g. `5 * 60 * 1000` = 5min — enough for typical worker runs to complete, short enough that a stuck pool surfaces within a webhook receiver's life). Document the default in the config module.
+
+### 3. Hook `slotReleased` into `cleanupWorker`
+
+**Tests first** (`tests/unit/router/active-workers.test.ts` — extend):
+
+- `cleanupWorker — calls slotReleased exactly once per cleanup` — unit — register a worker; call `cleanupWorker(jobId)`; assert spy called once. Expected red: spy not called.
+- `cleanupWorker — calls slotReleased even on the crash path (exitCode != 0)` — unit — call with `cleanupWorker(jobId, 137, { oomKilled: true })`; assert spy still called once. Expected red: spy not called.
+- `cleanupWorker — does NOT double-call slotReleased on duplicate cleanup invocations` — unit — call `cleanupWorker(jobId)` twice (e.g. timeout-then-exit race); assert spy called exactly once. Expected red: spy called twice (the existing `if (worker)` guard handles this if we put `slotReleased` inside the same block).
+
+**Implementation** (`src/router/active-workers.ts`):
+- Inside the existing `if (worker) { ... }` block in `cleanupWorker`, after the existing lock-release calls and before the `activeWorkers.delete(jobId)` line, call `slotReleased()`. The existing `if (worker)` guard already ensures idempotence.
+
+### 4. Dispatch-error classifier
+
+**Tests first** (`tests/unit/router/dispatch-error-classifier.test.ts` — new file):
+
+- `classifyDispatchError — Docker daemon unreachable error → 'transient'` — unit — synthesize an error with `err.code === 'ECONNREFUSED'` and a Dockerode-shaped message; assert classifier returns `'transient'`. Expected red: module-not-found.
+- `classifyDispatchError — image-pull rate-limit (HTTP 429 from registry) → 'transient'` — unit — synthesize an error matching the dockerode rate-limit shape; assert `'transient'`. Expected red: as above.
+- `classifyDispatchError — container name collision race ("name already in use") → 'transient'` — unit — synthesize the dockerode 409 conflict error; assert `'transient'`. Expected red: as above.
+- `classifyDispatchError — image not found after fallback (the `isImageNotFoundError` path that already throws today) → 'terminal'` — unit — pass an error matching `isImageNotFoundError()`; assert `'terminal'`. Expected red: as above.
+- `classifyDispatchError — validation error (e.g. missing credentials, malformed config) → 'terminal'` — unit — pass a non-Docker `TypeError`-shaped error; assert `'terminal'`. Expected red: as above.
+- `classifyDispatchError — slot-wait timeout (code: 'SLOT_WAIT_TIMEOUT') → 'transient'` — unit — pass the slot-waiter timeout error; assert `'transient'`. The slot-wait timeout itself is treated as transient because the next retry will likely find a slot; only repeated timeouts within the retry budget surface as a real outage. Expected red: as above.
+- `classifyDispatchError — unknown error (no recognizable shape) → 'transient'` — unit — pass `new Error('something weird')`; assert `'transient'` (default-to-retry is the safer choice; a true bug surfaces via attempt exhaustion). Expected red: as above.
+
+**Implementation** (`src/router/dispatch-error-classifier.ts`):
+- Export `classifyDispatchError(err: unknown): 'transient' | 'terminal'`.
+- Recognize: `ECONNREFUSED`, `ECONNRESET`, `ENOTFOUND` on the Docker socket → transient; HTTP 429 from registry → transient; HTTP 409 "name already in use" → transient; the existing `isImageNotFoundError(err)` shape (after fallback already exhausted) → terminal; explicit `TypeError` / `ZodError` shapes → terminal; `code: 'SLOT_WAIT_TIMEOUT'` → transient; default → transient.
+- Re-use the existing `isImageNotFoundError` predicate from `container-manager.ts` (export it if not already exported).
+
+### 5. Wire classifier into `guardedSpawn` + retry config on both queues
+
+**Tests first** (`tests/unit/router/worker-manager.test.ts` — extend):
+
+- `processFn — when spawnWorker rejects with a transient error, propagates the rejection unchanged so BullMQ retries via attempts/backoff` — unit — mock spawnWorker to reject with an `ECONNREFUSED`-shaped error; assert processFn rejects with the same error (not wrapped in `UnrecoverableError`). Expected red: today's processFn does not differentiate, so this test should pass as a baseline; it pins behavior so Plan 2 doesn't accidentally swallow transient errors.
+- `processFn — when spawnWorker rejects with a terminal error, wraps in BullMQ's UnrecoverableError so retries are skipped` — unit — mock spawnWorker to reject with a `ZodError`-shaped error (or a wrapped image-not-found); assert processFn rejects with `instanceof UnrecoverableError`. Expected red: rejection is the original error, not `UnrecoverableError`.
+
+**Tests first** (`tests/integration/router/dispatch-retry.test.ts` — new file):
+
+- `cascade-jobs queue — retries a transient dispatch failure with backoff and eventually succeeds` — integration — push a real job; mock spawnWorker to reject with an `ECONNREFUSED`-shaped error on attempt 1, succeed on attempt 2; assert the job ultimately moves to `completed` state, not `failed`. Expected red: job moves to `failed` after attempt 1 (current `attempts: 1` behavior).
+- `cascade-jobs queue — terminal dispatch failure does NOT retry` — integration — mock spawnWorker to reject with a `ZodError`; assert exactly one attempt, job moves to `failed`. Expected red: with `attempts > 1` but no UnrecoverableError wrap, BullMQ would retry — this test catches that mistake.
+- `cascade-jobs queue — sustained transient outage exhausts retries within the configured window and surfaces failure` — integration — mock spawnWorker to always reject with `ECONNREFUSED`; assert exactly N attempts (matching the configured budget), final state `failed`, and that the failed-event compensator from Plan 1 runs once at exhaustion (verifies the compose with Plan 1 works). Expected red: missing retry, or compensator running multiple times during retries.
+- `cascade-dashboard-jobs queue — same retry behavior on a manual-run job` — integration — mirror of the first test against the dashboard queue. Expected red: dashboard queue still has `attempts: 1`, no retries.
+
+**Implementation**:
+- In `src/router/worker-manager.ts`'s `guardedSpawn`, wrap the `spawnWorker` call in `try { await spawnWorker(job); } catch (err) { if (classifyDispatchError(err) === 'terminal') throw new UnrecoverableError(String(err)); throw err; }`. (The slot is released by the container-exit path, not here.)
+- In `src/router/queue.ts` and `src/queue/client.ts`, change `defaultJobOptions.attempts` from `1` to **4** and add `backoff: { type: 'exponential', delay: 5_000 }`. Concrete budget: attempts 1 (immediate) + retry at ~5s + ~10s + ~20s + ~40s = total wait ~75s. Sustained-outage detection within ~90s. Tunable via env or config in a future patch; keep them as plain literals for now.
+- The retry attempts apply to the entire processFn invocation, including the slot-wait. A retry attempt that re-acquires the slot is normal behavior; a retry attempt whose slot-wait also times out classifies as transient and proceeds to the next retry.
+
+### 6. CLAUDE.md update + CHANGELOG entry
+
+**Tests first**: n/a — documentation change (no tests, but `/implement`'s Phase 6 verifies the file changed).
+
+**Implementation**:
+- Edit the existing CLAUDE.md "Worker exit diagnostics" / "Work-item concurrency lock" section. Add a new short subsection titled "Dispatch failure semantics" capturing:
+  - Capacity miss now waits for a slot (bounded timeout, default 5min).
+  - Transient Docker errors retry with exponential backoff up to 4 attempts (~75s total).
+  - Terminal errors (validation, image-not-found-after-fallback) skip retries via `UnrecoverableError`.
+  - Failed-event compensation releases work-item / agent-type / dedup locks on every dispatch failure path.
+  - Webhook decision reasons split: `Job queued` / `Awaiting worker slot: …` / `Work item locked (no active dispatch): …`. The third is a regression canary — its presence in webhook logs means a code path acquired a lock without registering its compensation.
+- `CHANGELOG.md`: entry under the next release: "Router: dispatch capacity miss now waits for a worker slot instead of throwing; transient Docker errors retry with exponential backoff; terminal errors skip retries. Combined with plan 015/1, the original silent black-hole failure mode is closed."
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/router/slot-waiter.test.ts` (new): 6 tests
+- [ ] `tests/unit/router/worker-manager.test.ts` (replace + extend): 1 replacement + 2 new tests
+- [ ] `tests/unit/router/active-workers.test.ts` (extend): 3 new tests for `slotReleased` integration with `cleanupWorker`
+- [ ] `tests/unit/router/dispatch-error-classifier.test.ts` (new): 7 tests covering the transient/terminal taxonomy
+
+### Integration tests
+- [ ] `tests/integration/router/dispatch-retry.test.ts` (new): 4 tests covering `cascade-jobs` + `cascade-dashboard-jobs` × transient retry succeeds + terminal skips + sustained exhausts.
+
+### Acceptance tests
+- [ ] AC #1: integration test "transient capacity → wait then dispatch when slot frees" (in slot-waiter integration scenarios)
+- [ ] AC #2: integration test "transient Docker → retry → success"
+- [ ] AC #3: integration test "sustained outage → retry exhaustion → marked failed + Sentry"
+- [ ] AC #9: the existing capacity-throw test is replaced; CI fails if both old and new assertions are present.
+
+### Regression coverage (Plan 1 ACs)
+- [ ] All Plan 1 integration tests in `tests/integration/router/dispatch-failure-compensation.test.ts` continue to pass against the new dispatch contract. The existing tests already cover the lock-release path; Plan 2's new failure modes (slot-wait timeout, retry exhaustion, UnrecoverableError) all flow through the same `'failed'` event hook, so the existing tests should pass without modification. If they need adjustment, that's a sign the compensator needs broader extractor coverage — handle it then.
+
+---
+
+## Manual Verification (for `[manual]`-tagged ACs only)
+
+n/a — all ACs auto-tested.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. The slot-waiter primitive resolves immediately when capacity is below max, suspends when at capacity, resolves on `slotReleased`, and times out cleanly with a tagged error.
+2. `guardedSpawn` no longer throws on capacity; it waits for a slot up to `slotWaitTimeoutMs`.
+3. `cleanupWorker` calls `slotReleased` exactly once per cleanup, including on the crash path.
+4. `classifyDispatchError` correctly partitions transient vs terminal errors per the taxonomy above; the slot-wait timeout itself classifies as transient.
+5. Both `cascade-jobs` and `cascade-dashboard-jobs` queue defaults specify `attempts: 4` with exponential backoff `delay: 5000`.
+6. Terminal errors are wrapped in `UnrecoverableError` so BullMQ skips retries.
+7. A transient dispatch failure on either queue retries and eventually succeeds; a terminal failure does not retry; a sustained outage exhausts the budget within ~90s and surfaces a failed run + Sentry capture.
+8. The previously-existing `'processFn throws when at capacity'` test is replaced (not deleted) with the wait-for-slot contract. CI must not have both assertions present.
+9. CLAUDE.md is updated with the new dispatch-failure-semantics passage covering both halves of the contract (Plan 1 + Plan 2).
+10. CHANGELOG.md has the Plan 2 entry.
+11. Plan 1's integration tests continue to pass against the new dispatch contract (regression).
+12. All new/modified code has corresponding tests written before the implementation.
+13. `npm run build` passes.
+14. `npm test` passes.
+15. `npm run test:integration` passes.
+16. `npm run lint` passes.
+17. `npm run typecheck` passes.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | New subsection (under the existing "Worker exit diagnostics" / lock section) titled "Dispatch failure semantics" — captures wait-for-slot contract, retry budget + classifier, failed-event compensation, three-way decision-reason taxonomy. |
+| `CHANGELOG.md` | Entry under the next release describing wait-for-slot + retry-with-backoff + classifier. References the spec ID 015. |
+
+---
+
+## Out of Scope (this plan)
+
+- Worker-pool autoscaling / `maxWorkers` adjustments — explicit non-goal in spec.
+- BullMQ → another queue migration — explicit non-goal in spec.
+- Work-item-lock semantics — explicit non-goal in spec (one-per-type stays).
+- Snapshot reuse / fallback-to-base-image logic — explicit non-goal in spec.
+- Manual-run lock-bypass behavior changes — explicit non-goal in spec.
+- Failed-set inspection UI — explicit non-goal in spec.
+- Startup re-enqueue sweep that picks up jobs already in the failed set — explicit non-goal in spec.
+- Cleanup of the existing dead `linear-1777217350854-2qvhjo` job — operational, out of scope per spec.
+- Cross-router-instance lock coordination — out of scope per spec; existing DB-fallback continues to handle restarts.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (slot-waiter primitive)
+- [ ] AC #2 (guardedSpawn awaits)
+- [ ] AC #3 (cleanupWorker calls slotReleased)
+- [ ] AC #4 (classifier taxonomy)
+- [ ] AC #5 (queue retry config)
+- [ ] AC #6 (UnrecoverableError wrap)
+- [ ] AC #7 (end-to-end retry behavior)
+- [ ] AC #8 (capacity-throw test replaced)
+- [ ] AC #9 (CLAUDE.md updated)
+- [ ] AC #10 (CHANGELOG)
+- [ ] AC #11 (Plan 1 regression)
+- [ ] AC #12 (TDD discipline)
+- [ ] AC #13 (build)
+- [ ] AC #14 (unit tests)
+- [ ] AC #15 (integration)
+- [ ] AC #16 (lint)
+- [ ] AC #17 (typecheck)
