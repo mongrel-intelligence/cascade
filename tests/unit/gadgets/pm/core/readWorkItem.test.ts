@@ -1,12 +1,30 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockPMProvider } from '../../../../helpers/mockPMProvider.js';
 
 const mockProvider = createMockPMProvider();
 
+const { mockDownloadAndPrepareImages, mockWriteRuntimeImages } = vi.hoisted(() => ({
+	mockDownloadAndPrepareImages: vi.fn().mockResolvedValue({ images: [], failures: [] }),
+	mockWriteRuntimeImages: vi.fn().mockResolvedValue({ paths: [], failures: [] }),
+}));
+
 vi.mock('../../../../../src/pm/index.js', () => ({
 	getPMProvider: vi.fn(() => mockProvider),
 	filterImageMedia: vi.fn((refs) => refs.filter((r) => r.mimeType.startsWith('image/'))),
+	getPMProviderOrNull: vi.fn(() => mockProvider),
+}));
+
+vi.mock('../../../../../src/pm/download-and-prepare.js', () => ({
+	downloadAndPrepareImages: mockDownloadAndPrepareImages,
+}));
+
+vi.mock('../../../../../src/gadgets/pm/core/writeRuntimeImages.js', () => ({
+	writeRuntimeImages: mockWriteRuntimeImages,
+}));
+
+vi.mock('../../../../../src/utils/logging.js', () => ({
+	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 import {
@@ -206,6 +224,166 @@ describe('readWorkItem', () => {
 		const secondPos = result.indexOf('Second');
 		// Second comment appears first (reversed order)
 		expect(secondPos).toBeLessThan(firstPos);
+	});
+
+	// =====================================================================
+	// Spec 016/2: runtime gadget downloads + writes images to disk
+	// =====================================================================
+	describe('spec 016/2 — runtime image delivery', () => {
+		beforeEach(() => {
+			mockDownloadAndPrepareImages.mockReset();
+			mockDownloadAndPrepareImages.mockResolvedValue({ images: [], failures: [] });
+			mockWriteRuntimeImages.mockReset();
+			mockWriteRuntimeImages.mockResolvedValue({ paths: [], failures: [] });
+		});
+
+		afterEach(() => {
+			vi.restoreAllMocks();
+		});
+
+		it('when work item has images, downloads + writes them and inlines paths into text', async () => {
+			mockProvider.getWorkItem.mockResolvedValue({
+				...baseItem,
+				inlineMedia: [
+					{
+						url: 'https://uploads.linear.app/abc',
+						mimeType: 'image/*',
+						altText: 'Screenshot.png',
+						source: 'description',
+					},
+				],
+			});
+			mockProvider.getChecklists.mockResolvedValue([]);
+			mockProvider.getAttachments.mockResolvedValue([]);
+			mockDownloadAndPrepareImages.mockResolvedValue({
+				images: [
+					{
+						base64Data: Buffer.from('PNG').toString('base64'),
+						mimeType: 'image/png',
+						altText: 'Screenshot.png',
+					},
+				],
+				failures: [],
+			});
+			mockWriteRuntimeImages.mockResolvedValue({
+				paths: ['.cascade/context/images/work-item-item1-img-0.png'],
+				failures: [],
+			});
+
+			const result = await readWorkItem('item1', false);
+
+			// Text should mention the on-disk path the agent can Read.
+			expect(result).toContain('.cascade/context/images/work-item-item1-img-0.png');
+			expect(mockDownloadAndPrepareImages).toHaveBeenCalledTimes(1);
+			expect(mockWriteRuntimeImages).toHaveBeenCalledTimes(1);
+			expect(mockWriteRuntimeImages).toHaveBeenCalledWith(
+				expect.objectContaining({
+					workItemId: 'item1',
+					images: expect.arrayContaining([expect.objectContaining({ mimeType: 'image/png' })]),
+				}),
+			);
+		});
+
+		it('when work item has no images, returns text unchanged (no disk write)', async () => {
+			mockProvider.getWorkItem.mockResolvedValue(baseItem);
+			mockProvider.getChecklists.mockResolvedValue([]);
+			mockProvider.getAttachments.mockResolvedValue([]);
+
+			const result = await readWorkItem('item1', false);
+
+			expect(result).toContain('# Test Work Item');
+			expect(mockWriteRuntimeImages).not.toHaveBeenCalled();
+		});
+
+		it('emits the diagnostic log line at runtime path with same prefix as boot path', async () => {
+			const { logger } = await import('../../../../../src/utils/logging.js');
+			vi.mocked(logger.info).mockClear();
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				...baseItem,
+				inlineMedia: [{ url: 'https://x/a.png', mimeType: 'image/png', source: 'description' }],
+			});
+			mockProvider.getChecklists.mockResolvedValue([]);
+			mockProvider.getAttachments.mockResolvedValue([]);
+			mockDownloadAndPrepareImages.mockResolvedValue({
+				images: [{ base64Data: 'aGk=', mimeType: 'image/png', altText: undefined }],
+				failures: [],
+			});
+			mockWriteRuntimeImages.mockResolvedValue({
+				paths: ['.cascade/context/images/work-item-item1-img-0.png'],
+				failures: [],
+			});
+
+			await readWorkItem('item1', false);
+
+			expect(logger.info).toHaveBeenCalledWith(
+				'[image-pipeline] work-item-fetch summary',
+				expect.objectContaining({
+					workItemId: 'item1',
+					urlsDetected: expect.any(Number),
+					urlsAfterFilter: expect.any(Number),
+					urlsDownloaded: 1,
+					urlsFailed: 0,
+				}),
+			);
+		});
+
+		it('when download fails, the failure is recorded in the diagnostic log; no path appears in text', async () => {
+			const { logger } = await import('../../../../../src/utils/logging.js');
+			vi.mocked(logger.info).mockClear();
+
+			mockProvider.getWorkItem.mockResolvedValue({
+				...baseItem,
+				inlineMedia: [{ url: 'https://x/fail.png', mimeType: 'image/png', source: 'description' }],
+			});
+			mockProvider.getChecklists.mockResolvedValue([]);
+			mockProvider.getAttachments.mockResolvedValue([]);
+			mockDownloadAndPrepareImages.mockResolvedValue({
+				images: [],
+				failures: [{ url: 'https://x/fail.png', reason: 'network error' }],
+			});
+
+			const result = await readWorkItem('item1', false);
+
+			// No on-disk path included.
+			expect(result).not.toContain('.cascade/context/images/work-item');
+			// Failure was visible in the diagnostic log line.
+			expect(logger.info).toHaveBeenCalledWith(
+				'[image-pipeline] work-item-fetch summary',
+				expect.objectContaining({ urlsDownloaded: 0, urlsFailed: 1 }),
+			);
+		});
+
+		it('text shape preserved: existing sections (Description, Comments) remain', async () => {
+			mockProvider.getWorkItem.mockResolvedValue({
+				...baseItem,
+				inlineMedia: [{ url: 'https://x/a.png', mimeType: 'image/png', source: 'description' }],
+			});
+			mockProvider.getChecklists.mockResolvedValue([]);
+			mockProvider.getAttachments.mockResolvedValue([]);
+			mockProvider.getWorkItemComments.mockResolvedValue([
+				{
+					id: 'c1',
+					author: { name: 'A', id: 'u', username: 'a' },
+					date: '2024-01-01T00:00:00Z',
+					text: 'a comment',
+				},
+			]);
+			mockDownloadAndPrepareImages.mockResolvedValue({
+				images: [{ base64Data: 'aGk=', mimeType: 'image/png', altText: undefined }],
+				failures: [],
+			});
+			mockWriteRuntimeImages.mockResolvedValue({
+				paths: ['.cascade/context/images/work-item-item1-img-0.png'],
+				failures: [],
+			});
+
+			const result = await readWorkItem('item1', true);
+
+			expect(result).toContain('## Description');
+			expect(result).toContain('a comment');
+			expect(result).toContain('.cascade/context/images/work-item-item1-img-0.png');
+		});
 	});
 });
 

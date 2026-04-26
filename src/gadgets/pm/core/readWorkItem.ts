@@ -1,5 +1,6 @@
 import type { Attachment, MediaReference } from '../../../pm/index.js';
-import { filterImageMedia, getPMProvider } from '../../../pm/index.js';
+import { filterImageMedia, getPMProvider, getPMProviderOrNull } from '../../../pm/index.js';
+import { logger } from '../../../utils/logging.js';
 
 interface Label {
 	name: string;
@@ -164,10 +165,88 @@ export async function readWorkItemWithMedia(
 	return { text, media: dedupedMedia };
 }
 
+/**
+ * Format the on-disk paths for a successfully-written batch of runtime
+ * images. Replaces the existing "Pre-fetched Images" URL list with a
+ * "Local Image Files" section that the agent can hand to its file-read
+ * tool. Failed downloads (if any) are surfaced inline so the agent
+ * doesn't silently miss missing context.
+ */
+function formatRuntimeImagePaths(
+	paths: string[],
+	failures: { url: string; reason: string }[],
+): string {
+	if (paths.length === 0 && failures.length === 0) return '';
+	const lines: string[] = ['## Local Image Files', ''];
+	for (const path of paths) {
+		lines.push(`- ${path}`);
+	}
+	if (failures.length > 0) {
+		lines.push('', '### Failed Image Downloads');
+		for (const f of failures) {
+			lines.push(`- ${f.url} — ${f.reason}`);
+		}
+	}
+	lines.push('');
+	return `${lines.join('\n')}\n`;
+}
+
+/**
+ * Spec 016/2: runtime gadget downloads + writes images to disk so the
+ * agent can read them mid-run. Returns text whose pre-fetched-images
+ * section now lists local file paths the agent can hand to its
+ * file-read tool, not just URL refs.
+ *
+ * Each fetch emits the AC#5 grep-stable diagnostic line — same format
+ * as the boot-path emission in `fetchWorkItemStep`.
+ */
 export async function readWorkItem(workItemId: string, includeComments = true): Promise<string> {
 	try {
-		const { text } = await readWorkItemWithMedia(workItemId, includeComments);
-		return text;
+		const { text, media } = await readWorkItemWithMedia(workItemId, includeComments);
+
+		// Spec 016/2: download + write any image media so agent can Read them.
+		const { downloadAndPrepareImages } = await import('../../../pm/download-and-prepare.js');
+		const { writeRuntimeImages } = await import('./writeRuntimeImages.js');
+
+		const provider = getPMProviderOrNull();
+		const noopLogWriter = () => {
+			// downloadAndPrepareImages takes a LogWriter; runtime gadget
+			// already emits its own diagnostic line below, so per-failure
+			// detail is captured there.
+		};
+
+		const { images, failures } = await downloadAndPrepareImages(workItemId, media, noopLogWriter);
+
+		let writePaths: string[] = [];
+		let writeFailures: { reason: string }[] = [];
+		if (images.length > 0) {
+			const writeResult = await writeRuntimeImages({ workItemId, images });
+			writePaths = writeResult.paths;
+			writeFailures = writeResult.failures;
+		}
+
+		// AC#5 diagnostic line — same prefix as the boot-path emission.
+		const urlsByMimeType: Record<string, number> = {};
+		for (const ref of media) {
+			urlsByMimeType[ref.mimeType] = (urlsByMimeType[ref.mimeType] ?? 0) + 1;
+		}
+		logger.info('[image-pipeline] work-item-fetch summary', {
+			provider: provider?.type ?? 'unknown',
+			workItemId,
+			urlsDetected: media.length,
+			urlsAfterFilter: media.length, // already filtered by readWorkItemWithMedia
+			urlsDownloaded: images.length,
+			urlsFailed: failures.length + writeFailures.length,
+			urlsByMimeType,
+		});
+
+		// Append the local file paths section so agents can Read them.
+		const downloadFailures: { url: string; reason: string }[] = failures.map((f) => ({
+			url: f.url,
+			reason: f.reason,
+		}));
+		const augmented = text + formatRuntimeImagePaths(writePaths, downloadFailures);
+		return augmented;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		return `Error reading work item: ${message}`;

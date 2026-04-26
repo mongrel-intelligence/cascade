@@ -6,7 +6,7 @@ plan_slug: runtime-gadget-image-delivery
 level: plan
 parent_spec: docs/specs/016-pm-image-delivery-reliability.md
 depends_on: [1-boot-path-mime-fix-and-diagnostic-log.md]
-status: wip
+status: done
 ---
 
 # 016/2: Runtime gadget image delivery (mid-run pickup)
@@ -170,18 +170,18 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (text contains real file paths)
-- [ ] AC #2 (files exist on disk + bytes match)
-- [ ] AC #3 (mid-run pickup)
-- [ ] AC #4 (diagnostic log line at runtime)
-- [ ] AC #5 (naming convention consistency boot/runtime)
-- [ ] AC #6 (.bin fallback + warn for unresolved MIME)
-- [ ] AC #7 (text shape backward-compatible)
-- [ ] AC #8 (failed downloads marked + counted)
-- [ ] AC #9 (TDD discipline)
-- [ ] AC #10 (build)
-- [ ] AC #11 (unit tests)
-- [ ] AC #12 (integration tests)
-- [ ] AC #13 (lint)
-- [ ] AC #14 (typecheck)
-- [ ] AC #15 (docs)
+- [x] AC #1 (text contains real file paths)
+- [x] AC #2 (files exist on disk + bytes match)
+- [x] AC #3 (mid-run pickup)
+- [x] AC #4 (diagnostic log line at runtime)
+- [x] AC #5 (naming convention consistency boot/runtime)
+- [x] AC #6 (.bin fallback + warn for unresolved MIME)
+- [x] AC #7 (text shape backward-compatible)
+- [x] AC #8 (failed downloads marked + counted)
+- [x] AC #9 (TDD discipline)
+- [x] AC #10 (build)
+- [x] AC #11 (unit tests)
+- [x] AC #12 (integration tests)
+- [x] AC #13 (lint)
+- [x] AC #14 (typecheck)
+- [x] AC #15 (docs)
