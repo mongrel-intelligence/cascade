@@ -88,6 +88,7 @@ describe('spec 016/1 — boot-path image pipeline (module-integration)', () => {
 		mockReadWorkItemWithMedia.mockResolvedValue({
 			text: '# MNG-357\n\n![](https://uploads.linear.app/abc-123-def-456)',
 			media: filtered, // pass the real-extracted refs
+			urlsDetected: filtered.length,
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'linear' } as never);
 		mockLinearDownload.mockResolvedValue({
@@ -109,6 +110,7 @@ describe('spec 016/1 — boot-path image pipeline (module-integration)', () => {
 		mockReadWorkItemWithMedia.mockResolvedValue({
 			text: '# x',
 			media: refs,
+			urlsDetected: 1,
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'linear' } as never);
 		mockLinearDownload.mockResolvedValue({
@@ -137,7 +139,11 @@ describe('spec 016/1 — boot-path image pipeline (module-integration)', () => {
 		const refs = extractMarkdownImages('![](https://trello.com/foo.png)');
 		expect(refs[0].mimeType).toBe('image/png'); // extension-resolved
 
-		mockReadWorkItemWithMedia.mockResolvedValue({ text: '# t', media: refs });
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# t',
+			media: refs,
+			urlsDetected: refs.length,
+		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
 		mockTrelloDownload.mockResolvedValue({
 			buffer: Buffer.from('y'),
