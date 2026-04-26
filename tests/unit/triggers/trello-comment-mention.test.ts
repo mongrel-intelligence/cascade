@@ -1,16 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoist mocks before imports
-const { mockGetMe, mockGetCard } = vi.hoisted(() => ({
-	mockGetMe: vi.fn(),
+const { mockResolveTrelloBotIdentity, mockGetCard } = vi.hoisted(() => ({
+	mockResolveTrelloBotIdentity: vi.fn(),
 	mockGetCard: vi.fn(),
 }));
 
 vi.mock('../../../src/trello/client.js', () => ({
 	trelloClient: {
-		getMe: mockGetMe,
 		getCard: mockGetCard,
 	},
+}));
+
+vi.mock('../../../src/router/bot-identity-resolvers.js', () => ({
+	resolveTrelloBotIdentity: (...args: unknown[]) => mockResolveTrelloBotIdentity(...args),
 }));
 
 import {
@@ -23,10 +26,6 @@ vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
-
-// We need to reset the module-level cache between tests.
-// The module uses a module-level variable `cachedMemberInfo`.
-// We can reset it by re-importing with vi.resetModules() or by calling the exported functions.
 
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import { TrelloCommentMentionTrigger } from '../../../src/triggers/trello/comment-mention.js';
@@ -104,9 +103,8 @@ describe('TrelloCommentMentionTrigger', () => {
 		vi.resetAllMocks();
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		trigger = new TrelloCommentMentionTrigger();
-		// Reset the module-level member info cache by re-importing.
-		// The cache is a module-level variable, so we set up getMe to always respond.
-		mockGetMe.mockResolvedValue({ id: BOT_MEMBER_ID, username: BOT_USERNAME });
+		// Set up the bot identity resolver to return a valid identity for each test.
+		mockResolveTrelloBotIdentity.mockResolvedValue({ id: BOT_MEMBER_ID, username: BOT_USERNAME });
 		mockGetCard.mockResolvedValue({
 			id: 'card-1',
 			idList: PLANNING_LIST_ID,
@@ -235,8 +233,8 @@ describe('TrelloCommentMentionTrigger', () => {
 			expect(result1?.agentType).toBe('respond-to-planning-comment');
 			expect(result2?.agentType).toBe('respond-to-planning-comment');
 
-			// getMe should have been called AT MOST once (cached after first call or cached from prior test)
-			expect(mockGetMe.mock.calls.length).toBeLessThanOrEqual(1);
+			// resolveTrelloBotIdentity should be called for each handle call (no module-level caching)
+			expect(mockResolveTrelloBotIdentity.mock.calls.length).toBe(2);
 		});
 	});
 });

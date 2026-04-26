@@ -9,7 +9,12 @@ import {
 	releaseReviewDispatch,
 } from './review-dispatch-dedup.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { evaluateAuthorMode, parsePrNumberFromRef, resolveWorkItemId } from './utils.js';
+import {
+	evaluateAuthorMode,
+	parsePrNumberFromRef,
+	resolveWorkItemDisplayData,
+	resolveWorkItemId,
+} from './utils.js';
 
 const MAX_RETRIES = 12;
 const RETRY_DELAY_MS = 10_000;
@@ -156,6 +161,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
 
 		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
@@ -224,6 +230,8 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			prUrl: prDetails.htmlUrl,
 			prTitle: prDetails.title,
 			workItemId,
+			workItemUrl,
+			workItemTitle,
 			waitForChecks: true,
 			onBlocked: () => releaseReviewDispatch(dedupKey),
 		};

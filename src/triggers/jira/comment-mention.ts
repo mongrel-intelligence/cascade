@@ -1,35 +1,16 @@
 /**
  * JIRA comment @mention trigger.
  *
- * Fires when someone @mentions the CASCADE bot user in a JIRA issue comment.
- * Runs the respond-to-planning-comment agent.
+ * Fires when someone @mentions the CASCADE bot user in a JIRA issue comment
+ * on an issue in the PLANNING status. Runs the respond-to-planning-comment agent.
  */
 
-import { jiraClient } from '../../jira/client.js';
 import { getJiraConfig } from '../../pm/config.js';
+import { resolveJiraBotIdentity } from '../../router/bot-identity-resolvers.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { JiraWebhookPayload } from './types.js';
-
-// Cache authenticated user info to avoid repeated API calls
-let cachedUserInfo: { accountId: string; displayName: string } | null = null;
-
-async function getAuthenticatedUserInfo(): Promise<{ accountId: string; displayName: string }> {
-	if (cachedUserInfo) {
-		return cachedUserInfo;
-	}
-	const me = await jiraClient.getMyself();
-	cachedUserInfo = {
-		accountId: me.accountId ?? '',
-		displayName: me.displayName ?? '',
-	};
-	logger.info('Cached authenticated JIRA user info', {
-		accountId: cachedUserInfo.accountId,
-		displayName: cachedUserInfo.displayName,
-	});
-	return cachedUserInfo;
-}
 
 /**
  * Extract plain text from a comment body.
@@ -87,6 +68,35 @@ function hasMention(body: unknown, accountId: string, depth = 0): boolean {
 	return false;
 }
 
+/**
+ * Check if the issue is in the configured PLANNING status.
+ * Returns false (and logs) when the project has no planning status configured
+ * or the issue's current status doesn't match.
+ */
+function isInPlanningStatus(
+	project: TriggerContext['project'],
+	issueKey: string,
+	currentStatusName: string | undefined,
+): boolean {
+	const planningStatusName = getJiraConfig(project)?.statuses.planning;
+	if (!planningStatusName) {
+		logger.debug(
+			'Planning status not configured for JIRA project, skipping comment mention trigger',
+			{ projectId: project.id },
+		);
+		return false;
+	}
+	if (currentStatusName !== planningStatusName) {
+		logger.debug('JIRA issue not in planning status, skipping comment mention trigger', {
+			issueKey,
+			currentStatus: currentStatusName,
+			planningStatus: planningStatusName,
+		});
+		return false;
+	}
+	return true;
+}
+
 export class JiraCommentMentionTrigger implements TriggerHandler {
 	name = 'jira-comment-mention';
 	description =
@@ -132,8 +142,14 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve our JIRA identity
-		const userInfo = await getAuthenticatedUserInfo();
+		// Resolve our JIRA identity using the shared per-project cached resolver
+		const userInfo = await resolveJiraBotIdentity(ctx.project.id);
+		if (!userInfo) {
+			logger.warn('JIRA comment trigger: could not resolve bot user identity, skipping', {
+				projectId: ctx.project.id,
+			});
+			return null;
+		}
 		logger.info('JIRA bot identity resolved', {
 			botAccountId: userInfo.accountId,
 			botDisplayName: userInfo.displayName,
@@ -161,17 +177,23 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
+		// Gate on PLANNING status — only respond to comments on PLANNING issues
+		const currentStatusName = payload.issue?.fields?.status?.name;
+		if (!isInPlanningStatus(ctx.project, issueKey, currentStatusName)) {
+			return null;
+		}
+		const jiraConfig = getJiraConfig(ctx.project);
+
 		const commentText = extractText(commentBody);
 		const authorName = commentAuthor?.displayName || 'unknown';
 
 		// Capture work item display data from the issue payload and Jira config
-		const jiraConfig = getJiraConfig(ctx.project);
 		const workItemUrl = jiraConfig?.baseUrl
 			? `${jiraConfig.baseUrl}/browse/${issueKey}`
 			: undefined;
 		const workItemTitle = payload.issue?.fields?.summary ?? undefined;
 
-		logger.info('JIRA comment @mention detected, triggering agent', {
+		logger.info('JIRA comment @mention detected on PLANNING issue, triggering agent', {
 			issueKey,
 			commentAuthor: authorName,
 			botAccountId: userInfo.accountId,
@@ -181,7 +203,8 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 			agentType: 'respond-to-planning-comment',
 			agentInput: {
 				workItemId: issueKey,
-				triggerCommentText: commentText,
+				triggerCommentBody: commentText,
+				triggerCommentText: commentText, // @deprecated — use triggerCommentBody
 				triggerCommentAuthor: authorName,
 				workItemUrl,
 				workItemTitle,

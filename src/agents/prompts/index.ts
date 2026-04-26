@@ -189,12 +189,12 @@ export interface TaskPromptInput {
 	workItemId?: string;
 	prNumber?: number;
 	prBranch?: string;
-	// PM comment trigger fields
-	triggerCommentText?: string;
-	triggerCommentAuthor?: string;
-	// PR comment trigger fields
+	// Comment trigger fields (unified for PM and SCM comment-mention triggers)
 	triggerCommentBody?: string;
 	triggerCommentPath?: string;
+	triggerCommentAuthor?: string;
+	/** @deprecated Use triggerCommentBody. Kept as backward-compatible alias. */
+	triggerCommentText?: string;
 	// Allow extra fields for future extensibility
 	[key: string]: unknown;
 }
@@ -210,9 +210,9 @@ export function buildTaskPromptContext(input: TaskPromptInput): TaskPromptContex
 		workItemId: input.workItemId,
 		prNumber: input.prNumber,
 		prBranch: input.prBranch,
-		commentText: input.triggerCommentText,
+		commentText: input.triggerCommentBody ?? input.triggerCommentText,
 		commentAuthor: input.triggerCommentAuthor,
-		commentBody: input.triggerCommentBody,
+		commentBody: input.triggerCommentBody ?? input.triggerCommentText,
 		commentPath: input.triggerCommentPath,
 	};
 }

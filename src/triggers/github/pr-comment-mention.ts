@@ -5,7 +5,7 @@ import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
-import { resolveWorkItemId } from './utils.js';
+import { resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
 /**
  * Trigger that fires when someone @mentions the reviewer bot in a PR comment.
@@ -118,6 +118,7 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
 
 		logger.info('PR comment @mention detected, triggering respond-to-pr-comment agent', {
 			prNumber,
@@ -144,6 +145,8 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prUrl,
 			prTitle,
 			workItemId,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

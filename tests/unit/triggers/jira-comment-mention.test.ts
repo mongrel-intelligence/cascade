@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Hoist mocks before any imports
-const { mockJiraClientGetMyself, mockCheckTriggerEnabled, mockLogger } = vi.hoisted(() => ({
-	mockJiraClientGetMyself: vi.fn(),
+const { mockResolveJiraBotIdentity, mockCheckTriggerEnabled, mockLogger } = vi.hoisted(() => ({
+	mockResolveJiraBotIdentity: vi.fn(),
 	mockCheckTriggerEnabled: vi.fn().mockResolvedValue(true),
 	mockLogger: {
 		info: vi.fn(),
@@ -12,10 +12,8 @@ const { mockJiraClientGetMyself, mockCheckTriggerEnabled, mockLogger } = vi.hois
 	},
 }));
 
-vi.mock('../../../src/jira/client.js', () => ({
-	jiraClient: {
-		getMyself: mockJiraClientGetMyself,
-	},
+vi.mock('../../../src/router/bot-identity-resolvers.js', () => ({
+	resolveJiraBotIdentity: (...args: unknown[]) => mockResolveJiraBotIdentity(...args),
 }));
 
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => ({
@@ -33,6 +31,7 @@ const BOT_ACCOUNT_ID = 'bot-account-001';
 const BOT_DISPLAY_NAME = 'CascadeBot';
 const OTHER_ACCOUNT_ID = 'user-account-456';
 const ISSUE_KEY = 'PROJ-123';
+const PLANNING_STATUS = 'Planning';
 
 function makeProject() {
 	return {
@@ -40,7 +39,10 @@ function makeProject() {
 		name: 'Test Project',
 		repo: 'owner/repo',
 		baseBranch: 'main',
-		jira: { projectKey: 'PROJ' },
+		jira: {
+			projectKey: 'PROJ',
+			statuses: { planning: PLANNING_STATUS },
+		},
 	} as TriggerContext['project'];
 }
 
@@ -49,6 +51,7 @@ function makeCtx(
 		source?: TriggerContext['source'];
 		webhookEvent?: string;
 		issueKey?: string;
+		issueStatusName?: string;
 		commentBody?: unknown;
 		commentAuthorAccountId?: string;
 		commentAuthorDisplayName?: string;
@@ -56,7 +59,13 @@ function makeCtx(
 ): TriggerContext {
 	const payload = {
 		webhookEvent: overrides.webhookEvent ?? 'comment_created',
-		issue: { key: overrides.issueKey ?? ISSUE_KEY },
+		issue: {
+			key: overrides.issueKey ?? ISSUE_KEY,
+			fields: {
+				status: { name: overrides.issueStatusName ?? PLANNING_STATUS },
+				summary: 'Test Issue Summary',
+			},
+		},
 		comment: {
 			body: overrides.commentBody ?? `[~accountid:${BOT_ACCOUNT_ID}] please help`,
 			author: {
@@ -97,7 +106,7 @@ describe('JiraCommentMentionTrigger', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		vi.mocked(mockCheckTriggerEnabled).mockResolvedValue(true);
-		mockJiraClientGetMyself.mockResolvedValue({
+		mockResolveJiraBotIdentity.mockResolvedValue({
 			accountId: BOT_ACCOUNT_ID,
 			displayName: BOT_DISPLAY_NAME,
 		});
@@ -205,12 +214,32 @@ describe('JiraCommentMentionTrigger', () => {
 			expect(result).toBeNull();
 		});
 
-		it('includes triggerCommentText in agentInput (wiki markup)', async () => {
+		it('returns null when issue is not in PLANNING status', async () => {
+			const result = await trigger.handle(makeCtx({ issueStatusName: 'In Progress' }));
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when planning status is not configured in project', async () => {
+			const ctx = makeCtx();
+			// Override project to remove planning status config
+			(ctx as Record<string, unknown>).project = {
+				...makeProject(),
+				jira: { projectKey: 'PROJ', statuses: {} },
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('includes triggerCommentText and triggerCommentBody in agentInput (wiki markup)', async () => {
 			const result = await trigger.handle(
 				makeCtx({ commentBody: `[~accountid:${BOT_ACCOUNT_ID}] please do this thing` }),
 			);
 
 			expect(result?.agentInput.triggerCommentText).toContain('please do this thing');
+			expect(result?.agentInput.triggerCommentBody).toContain('please do this thing');
 		});
 
 		it('includes comment author display name in agentInput', async () => {
@@ -229,7 +258,7 @@ describe('JiraCommentMentionTrigger', () => {
 			expect(result?.agentInput.triggerCommentAuthor).toBe('unknown');
 		});
 
-		it('handles multiple calls correctly (caches user info)', async () => {
+		it('handles multiple calls correctly (calls resolveJiraBotIdentity each time)', async () => {
 			// First call
 			const result1 = await trigger.handle(makeCtx());
 			// Second call
@@ -237,8 +266,8 @@ describe('JiraCommentMentionTrigger', () => {
 
 			expect(result1).not.toBeNull();
 			expect(result2).not.toBeNull();
-			// getMyself should be called at most once per trigger instance
-			expect(mockJiraClientGetMyself.mock.calls.length).toBeLessThanOrEqual(2);
+			// resolveJiraBotIdentity is called per handle() invocation
+			expect(mockResolveJiraBotIdentity.mock.calls.length).toBe(2);
 		});
 	});
 });

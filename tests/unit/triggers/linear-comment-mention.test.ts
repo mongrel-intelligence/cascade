@@ -37,6 +37,10 @@ const mockProject = {
 	baseBranch: 'main',
 	branchPrefix: 'feature/',
 	pm: { type: 'linear' as const },
+	linear: {
+		teamId: 'team-abc',
+		statuses: { planning: 'state-todo' },
+	},
 } as TriggerContext['project'];
 
 function buildCtx(
@@ -238,6 +242,7 @@ describe('LinearCommentMentionTrigger', () => {
 				id: 'fallback-issue-id',
 				// no identifier
 				url: 'https://linear.app/org/issue/fallback',
+				stateId: 'state-todo', // must be in planning state
 			};
 			const result = await trigger.handle(ctx);
 			expect(result?.workItemId).toBe('fallback-issue-id');
@@ -258,6 +263,38 @@ describe('LinearCommentMentionTrigger', () => {
 			const ctx = buildCtx({ issueId: 'issue-uuid-99' });
 			const result = await trigger.handle(ctx);
 			expect(result?.agentInput.linearIssueId).toBe('issue-uuid-99');
+		});
+
+		it('returns null when issue is not in PLANNING state', async () => {
+			const ctx = buildCtx();
+			const data = ctx.payload as Record<string, unknown>;
+			(data.data as Record<string, unknown>).issue = {
+				id: ISSUE_ID,
+				identifier: ISSUE_IDENTIFIER,
+				title: 'Test issue',
+				teamId: 'team-abc',
+				url: 'https://linear.app/org/issue/TEAM-99',
+				stateId: 'state-in-progress', // not planning
+			};
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('returns null when planning state is not configured in project', async () => {
+			const ctx = buildCtx();
+			(ctx as Record<string, unknown>).project = {
+				...mockProject,
+				linear: { teamId: 'team-abc', statuses: {} }, // no planning state
+			};
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('includes triggerCommentBody (canonical) in agentInput', async () => {
+			const body = `@[Bot](${BOT_USER_ID}) please implement feature X`;
+			const result = await trigger.handle(buildCtx({ commentBody: body }));
+
+			expect(result?.agentInput.triggerCommentBody).toBe(body);
 		});
 	});
 });

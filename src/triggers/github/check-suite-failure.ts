@@ -4,7 +4,7 @@ import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { parsePrNumberFromRef, resolveWorkItemId } from './utils.js';
+import { parsePrNumberFromRef, resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
 /**
  * Resolve a PR number from a check_suite payload.
@@ -121,6 +121,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
 
 		// Get ALL check runs for this commit to verify they're all complete
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
@@ -205,6 +206,8 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			prUrl: prDetails.htmlUrl,
 			prTitle: prDetails.title,
 			workItemId,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

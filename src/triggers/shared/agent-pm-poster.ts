@@ -27,6 +27,7 @@ const TRUNCATION_NOTICE = '\n\n_[Review body truncated — view full review on G
 const AGENT_OUTPUT_CONFIG: Record<string, { emoji: string; header: string }> = {
 	'respond-to-ci': { emoji: '🔧', header: 'CI Fix Summary' },
 	'respond-to-review': { emoji: '💬', header: 'Review Response Summary' },
+	'respond-to-pr-comment': { emoji: '📝', header: 'PR Comment Response' },
 	'resolve-conflicts': { emoji: '🔀', header: 'Conflict Resolution Summary' },
 };
 

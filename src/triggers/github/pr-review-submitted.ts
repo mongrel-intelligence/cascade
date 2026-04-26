@@ -3,7 +3,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestReviewPayload, isGitHubPullRequestReviewPayload } from './types.js';
-import { resolveWorkItemId } from './utils.js';
+import { resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
 export class PRReviewSubmittedTrigger implements TriggerHandler {
 	name = 'pr-review-submitted';
@@ -59,6 +59,7 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
 
 		logger.info('PR review submitted, triggering review agent', {
 			prNumber,
@@ -83,6 +84,8 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 			prUrl: reviewPayload.pull_request.html_url,
 			prTitle: reviewPayload.pull_request.title,
 			workItemId,
+			workItemUrl,
+			workItemTitle,
 		};
 	}
 }

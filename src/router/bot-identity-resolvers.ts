@@ -19,13 +19,18 @@ import {
 // JIRA bot identity
 // ---------------------------------------------------------------------------
 
-const jiraBotIdentityCache = new BotIdentityCache<string>('accountId');
+export interface JiraBotIdentity {
+	accountId: string;
+	displayName: string;
+}
+
+const jiraBotIdentityCache = new BotIdentityCache<JiraBotIdentity>('identity');
 
 /**
- * Resolve the JIRA account ID for the bot credentials linked to a project.
+ * Resolve the JIRA bot identity (accountId + displayName) for a project.
  * Cached per-project with 60s TTL. Returns null on any failure.
  */
-export async function resolveJiraBotAccountId(projectId: string): Promise<string | null> {
+export async function resolveJiraBotIdentity(projectId: string): Promise<JiraBotIdentity | null> {
 	return jiraBotIdentityCache.resolve(projectId, async () => {
 		const creds = await resolveJiraCredentials(projectId);
 		if (!creds) return null;
@@ -35,9 +40,19 @@ export async function resolveJiraBotAccountId(projectId: string): Promise<string
 		});
 		if (!response.ok) return null;
 
-		const data = (await response.json()) as { accountId?: string };
-		return data.accountId ?? null;
+		const data = (await response.json()) as { accountId?: string; displayName?: string };
+		if (!data.accountId) return null;
+		return { accountId: data.accountId, displayName: data.displayName ?? '' };
 	});
+}
+
+/**
+ * Resolve the JIRA account ID for the bot credentials linked to a project.
+ * Cached per-project with 60s TTL. Returns null on any failure.
+ */
+export async function resolveJiraBotAccountId(projectId: string): Promise<string | null> {
+	const identity = await resolveJiraBotIdentity(projectId);
+	return identity?.accountId ?? null;
 }
 
 /** @internal Visible for testing only */
@@ -49,13 +64,20 @@ export function _resetJiraBotCache(): void {
 // Trello bot identity
 // ---------------------------------------------------------------------------
 
-const trelloBotIdentityCache = new BotIdentityCache<string>('memberId');
+export interface TrelloBotIdentity {
+	id: string;
+	username: string;
+}
+
+const trelloBotIdentityCache = new BotIdentityCache<TrelloBotIdentity>('identity');
 
 /**
- * Resolve the Trello member ID for the bot credentials linked to a project.
+ * Resolve the Trello bot identity (id + username) for a project.
  * Cached per-project with 60s TTL. Returns null on any failure.
  */
-export async function resolveTrelloBotMemberId(projectId: string): Promise<string | null> {
+export async function resolveTrelloBotIdentity(
+	projectId: string,
+): Promise<TrelloBotIdentity | null> {
 	return trelloBotIdentityCache.resolve(projectId, async () => {
 		const creds = await resolveTrelloCredentials(projectId);
 		if (!creds) return null;
@@ -66,9 +88,19 @@ export async function resolveTrelloBotMemberId(projectId: string): Promise<strin
 		);
 		if (!response.ok) return null;
 
-		const data = (await response.json()) as { id?: string };
-		return data.id ?? null;
+		const data = (await response.json()) as { id?: string; username?: string };
+		if (!data.id) return null;
+		return { id: data.id, username: data.username ?? '' };
 	});
+}
+
+/**
+ * Resolve the Trello member ID for the bot credentials linked to a project.
+ * Cached per-project with 60s TTL. Returns null on any failure.
+ */
+export async function resolveTrelloBotMemberId(projectId: string): Promise<string | null> {
+	const identity = await resolveTrelloBotIdentity(projectId);
+	return identity?.id ?? null;
 }
 
 /** @internal Visible for testing only */

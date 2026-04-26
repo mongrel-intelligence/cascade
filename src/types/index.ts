@@ -38,13 +38,18 @@ export interface AgentInput {
 	originalWorkItemUrl?: string;
 	detectedAgentType?: string;
 
-	// Trello comment trigger fields
-	triggerCommentText?: string;
-	triggerCommentAuthor?: string;
-
-	// PR comment trigger fields (for respond-to-pr-comment and similar agents)
+	// Unified comment trigger fields — both PM (Trello/JIRA/Linear) and SCM (GitHub) triggers use these
+	/** The body text of the triggering comment. Canonical field for all comment-mention triggers. */
 	triggerCommentBody?: string;
 	triggerCommentPath?: string;
+	triggerCommentAuthor?: string;
+
+	/**
+	 * @deprecated Use `triggerCommentBody` instead.
+	 * Retained for one release as a backward-compatible alias. PM comment-mention
+	 * triggers populate both fields with the same value.
+	 */
+	triggerCommentText?: string;
 
 	// Interactive mode (local development)
 	interactive?: boolean;

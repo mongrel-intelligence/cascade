@@ -1,5 +1,6 @@
 import { lookupWorkItemForPR } from '../../db/repositories/prWorkItemsRepository.js';
 import type { PersonaIdentities } from '../../github/personas.js';
+import { getPMProviderOrNull } from '../../pm/context.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
@@ -128,4 +129,34 @@ export async function resolveWorkItemId(
 	}
 
 	return undefined;
+}
+
+/**
+ * Fetch work item display data (URL and title) from the active PM provider.
+ *
+ * Best-effort: returns an empty object on any error so callers can safely
+ * spread the result without checking for failure. Requires a PM provider
+ * to be in scope (set up by `withPMScope`).
+ *
+ * @param workItemId - The work item ID to look up (Trello card ID, JIRA issue key, etc.)
+ */
+export async function resolveWorkItemDisplayData(
+	workItemId: string | undefined,
+): Promise<{ workItemUrl?: string; workItemTitle?: string }> {
+	if (!workItemId) return {};
+	try {
+		const provider = getPMProviderOrNull();
+		if (!provider) return {};
+		const workItem = await provider.getWorkItem(workItemId);
+		return {
+			workItemUrl: workItem.url ?? undefined,
+			workItemTitle: workItem.title ?? undefined,
+		};
+	} catch (err) {
+		logger.debug('Could not resolve work item display data (best-effort)', {
+			workItemId,
+			error: String(err),
+		});
+		return {};
+	}
 }

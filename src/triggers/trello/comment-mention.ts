@@ -1,26 +1,11 @@
 import { getTrelloConfig } from '../../pm/config.js';
+import { resolveTrelloBotIdentity } from '../../router/bot-identity-resolvers.js';
 import { trelloClient } from '../../trello/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { TrelloWebhookPayload } from '../types.js';
 import { isTrelloWebhookPayload } from '../types.js';
-
-// Cache authenticated member info to avoid repeated API calls
-let cachedMemberInfo: { id: string; username: string } | null = null;
-
-async function getAuthenticatedMemberInfo(): Promise<{ id: string; username: string }> {
-	if (cachedMemberInfo) {
-		return cachedMemberInfo;
-	}
-	const me = await trelloClient.getMe();
-	cachedMemberInfo = { id: me.id, username: me.username };
-	logger.info('Cached authenticated member info', {
-		memberId: cachedMemberInfo.id,
-		username: cachedMemberInfo.username,
-	});
-	return cachedMemberInfo;
-}
 
 /**
  * Trigger that fires when someone @mentions the CASCADE bot in a Trello card comment
@@ -61,8 +46,14 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Resolve our Trello identity
-		const memberInfo = await getAuthenticatedMemberInfo();
+		// Resolve our Trello identity using the shared per-project cached resolver
+		const memberInfo = await resolveTrelloBotIdentity(ctx.project.id);
+		if (!memberInfo) {
+			logger.warn('Trello comment trigger: could not resolve bot member identity, skipping', {
+				projectId: ctx.project.id,
+			});
+			return null;
+		}
 
 		// Check for @mention (case-insensitive)
 		const mentionPattern = new RegExp(`@${memberInfo.username}\\b`, 'i');
@@ -116,7 +107,8 @@ export class TrelloCommentMentionTrigger implements TriggerHandler {
 			agentType: 'respond-to-planning-comment',
 			agentInput: {
 				workItemId: cardId,
-				triggerCommentText: commentText,
+				triggerCommentBody: commentText,
+				triggerCommentText: commentText, // @deprecated — use triggerCommentBody
 				triggerCommentAuthor: commentAuthor,
 				workItemUrl,
 				workItemTitle,

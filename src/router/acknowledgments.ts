@@ -119,12 +119,15 @@ export async function deleteLinearAck(
 // for backward compatibility with pm/ integrations and router/trello.ts.
 // ---------------------------------------------------------------------------
 
+export type { JiraBotIdentity, TrelloBotIdentity } from './bot-identity-resolvers.js';
 export {
 	_resetJiraBotCache,
 	_resetLinearBotCache,
 	_resetTrelloBotCache,
 	resolveJiraBotAccountId,
+	resolveJiraBotIdentity,
 	resolveLinearBotUserId,
+	resolveTrelloBotIdentity,
 	resolveTrelloBotMemberId,
 } from './bot-identity-resolvers.js';
 
