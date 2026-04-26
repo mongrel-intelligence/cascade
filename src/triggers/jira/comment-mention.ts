@@ -86,7 +86,7 @@ function isInPlanningStatus(
 		);
 		return false;
 	}
-	if (currentStatusName !== planningStatusName) {
+	if (currentStatusName?.toLowerCase() !== planningStatusName.toLowerCase()) {
 		logger.debug('JIRA issue not in planning status, skipping comment mention trigger', {
 			issueKey,
 			currentStatus: currentStatusName,
