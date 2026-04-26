@@ -34,6 +34,8 @@ export interface WorkItemWithMedia {
 	text: string;
 	/** All image media references discovered in the work item description, card attachments, and comments (deduplicated by URL) */
 	media: MediaReference[];
+	/** The total number of media and attachment references found before MIME-type filtering */
+	urlsDetected: number;
 }
 
 function formatLabels(labels: Label[]): string {
@@ -118,11 +120,15 @@ export async function readWorkItemWithMedia(
 
 	// Collect all image media references
 	const allMedia: MediaReference[] = [];
+	let urlsDetected = 0;
+
 	if (item.inlineMedia && item.inlineMedia.length > 0) {
+		urlsDetected += item.inlineMedia.length;
 		allMedia.push(...filterImageMedia(item.inlineMedia));
 	}
 
 	// Add image-type card attachments as media references
+	urlsDetected += attachments.length;
 	allMedia.push(
 		...filterImageMedia(
 			attachments.map((att) => ({
@@ -143,6 +149,7 @@ export async function readWorkItemWithMedia(
 		const comments = await provider.getWorkItemComments(workItemId);
 		for (const comment of comments) {
 			if (comment.inlineMedia && comment.inlineMedia.length > 0) {
+				urlsDetected += comment.inlineMedia.length;
 				allMedia.push(...filterImageMedia(comment.inlineMedia));
 			}
 		}
@@ -162,7 +169,7 @@ export async function readWorkItemWithMedia(
 	// Append pre-fetched images section listing discovered images
 	text += formatPreFetchedImages(dedupedMedia);
 
-	return { text, media: dedupedMedia };
+	return { text, media: dedupedMedia, urlsDetected };
 }
 
 /**
@@ -202,29 +209,30 @@ function formatRuntimeImagePaths(
  */
 export async function readWorkItem(workItemId: string, includeComments = true): Promise<string> {
 	try {
-		const { text, media } = await readWorkItemWithMedia(workItemId, includeComments);
+		const { text, media, urlsDetected } = await readWorkItemWithMedia(workItemId, includeComments);
 
 		// Spec 016/2: download + write any image media so agent can Read them.
 		const { downloadAndPrepareImages } = await import('../../../pm/download-and-prepare.js');
 		const { writeRuntimeImages } = await import('./writeRuntimeImages.js');
 
 		const provider = getPMProviderOrNull();
-		const noopLogWriter = () => {
-			// downloadAndPrepareImages takes a LogWriter; runtime gadget
-			// already emits its own diagnostic line below, so per-failure
-			// detail is captured there.
+		const logWriter = (
+			level: 'INFO' | 'WARN' | 'ERROR',
+			message: string,
+			meta?: Record<string, unknown>,
+		) => {
+			logger[level.toLowerCase() as 'info' | 'warn' | 'error'](message, meta);
 		};
 
-		const { images, failures } = await downloadAndPrepareImages(workItemId, media, noopLogWriter);
+		const { images, failures } = await downloadAndPrepareImages(workItemId, media, logWriter);
 
 		let writePaths: string[] = [];
-		let writeFailures: { reason: string }[] = [];
+		let writeFailures: { path: string; reason: string }[] = [];
 		if (images.length > 0) {
 			const writeResult = await writeRuntimeImages({ workItemId, images });
 			writePaths = writeResult.paths;
 			writeFailures = writeResult.failures;
 		}
-
 		// AC#5 diagnostic line — same prefix as the boot-path emission.
 		const urlsByMimeType: Record<string, number> = {};
 		for (const ref of media) {
@@ -233,8 +241,8 @@ export async function readWorkItem(workItemId: string, includeComments = true): 
 		logger.info('[image-pipeline] work-item-fetch summary', {
 			provider: provider?.type ?? 'unknown',
 			workItemId,
-			urlsDetected: media.length,
-			urlsAfterFilter: media.length, // already filtered by readWorkItemWithMedia
+			urlsDetected,
+			urlsAfterFilter: media.length,
 			urlsDownloaded: images.length,
 			urlsFailed: failures.length + writeFailures.length,
 			urlsByMimeType,
@@ -245,6 +253,9 @@ export async function readWorkItem(workItemId: string, includeComments = true): 
 			url: f.url,
 			reason: f.reason,
 		}));
+		for (const f of writeFailures) {
+			downloadFailures.push({ url: f.path, reason: `Local write failed: ${f.reason}` });
+		}
 		const augmented = text + formatRuntimeImagePaths(writePaths, downloadFailures);
 		return augmented;
 	} catch (error) {

@@ -231,6 +231,7 @@ describe('fetchWorkItemStep', () => {
 		mockReadWorkItemWithMedia.mockResolvedValue({
 			text: '# Card Title\n\nDescription',
 			media: [],
+			urlsDetected: 0,
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
 
@@ -398,6 +399,7 @@ describe('fetchWorkItemStep', () => {
 				{ url: 'https://trello.com/b.png', mimeType: 'image/png', source: 'description' },
 				{ url: 'https://trello.com/c.png', mimeType: 'image/png', source: 'description' },
 			],
+			urlsDetected: 3,
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
 		mockTrelloDownload
@@ -424,7 +426,7 @@ describe('fetchWorkItemStep', () => {
 	});
 
 	it('emits the diagnostic line even when no images are present (urlsDetected: 0)', async () => {
-		mockReadWorkItemWithMedia.mockResolvedValue({ text: '# Card', media: [] });
+		mockReadWorkItemWithMedia.mockResolvedValue({ text: '# Card', media: [], urlsDetected: 0 });
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
 
 		const params = makeParams({ workItemId: 'card-1' });
@@ -456,6 +458,7 @@ describe('fetchWorkItemStep', () => {
 					source: 'description',
 				},
 			],
+			urlsDetected: 2,
 		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'linear' } as never);
 		mockLinearDownload.mockResolvedValue({ buffer: Buffer.from('x'), mimeType: 'image/png' });
@@ -483,7 +486,11 @@ describe('fetchWorkItemStep', () => {
 			mimeType: 'image/png',
 			source: 'description' as const,
 		}));
-		mockReadWorkItemWithMedia.mockResolvedValue({ text: '# Card', media: manyMedia });
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Card',
+			media: manyMedia,
+			urlsDetected: 35,
+		});
 		mockGetPMProviderOrNull.mockReturnValue({ type: 'trello' } as never);
 		mockTrelloDownload.mockResolvedValue({ buffer: Buffer.from('data'), mimeType: 'image/png' });
 

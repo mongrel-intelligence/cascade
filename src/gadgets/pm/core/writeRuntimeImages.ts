@@ -74,7 +74,7 @@ export interface WriteRuntimeImagesResult {
 	/** Repo-relative paths of successfully-written image files. */
 	paths: string[];
 	/** Per-image write failures (if any). */
-	failures: { reason: string }[];
+	failures: { path: string; reason: string }[];
 }
 
 /**
@@ -97,7 +97,7 @@ export async function writeRuntimeImages(
 	await mkdir(baseDir, { recursive: true });
 
 	const paths: string[] = [];
-	const failures: { reason: string }[] = [];
+	const failures: { path: string; reason: string }[] = [];
 
 	for (let i = 0; i < images.length; i++) {
 		const img = images[i];
@@ -107,9 +107,7 @@ export async function writeRuntimeImages(
 		// Repo-relative path is what we return to the caller for inclusion in
 		// the agent's text response — the agent's Read tool consumes paths
 		// relative to its workspace root.
-		const relativePath = repoDir
-			? `${DEFAULT_CONTEXT_IMAGES_RELATIVE}/${filename}`
-			: `${DEFAULT_CONTEXT_IMAGES_RELATIVE}/${filename}`;
+		const relativePath = `${DEFAULT_CONTEXT_IMAGES_RELATIVE}/${filename}`;
 
 		try {
 			const buffer = Buffer.from(img.base64Data, 'base64');
@@ -123,7 +121,7 @@ export async function writeRuntimeImages(
 				path: relativePath,
 				reason,
 			});
-			failures.push({ reason });
+			failures.push({ path: relativePath, reason });
 		}
 	}
 

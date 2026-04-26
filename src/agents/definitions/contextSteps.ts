@@ -18,7 +18,7 @@ import {
 } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
 import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../../pm/config.js';
-import { getPMProviderOrNull, MAX_IMAGES_PER_WORK_ITEM } from '../../pm/index.js';
+import { getPMProviderOrNull } from '../../pm/index.js';
 import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
@@ -85,7 +85,11 @@ export function fetchContextFilesStep(params: FetchContextParams): ContextInject
 export async function fetchWorkItemStep(params: FetchContextParams): Promise<ContextInjection[]> {
 	if (!params.input.workItemId) return [];
 	try {
-		const { text: cardData, media } = await readWorkItemWithMedia(params.input.workItemId, true);
+		const {
+			text: cardData,
+			media,
+			urlsDetected,
+		} = await readWorkItemWithMedia(params.input.workItemId, true);
 
 		const injection: ContextInjection = {
 			toolName: 'ReadWorkItem',
@@ -98,10 +102,9 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 		// `downloadAndPrepareImages` helper so the runtime gadget (spec 016/2)
 		// uses the same code path.
 		const { downloadAndPrepareImages } = await import('../../pm/download-and-prepare.js');
-		const limited = media.slice(0, MAX_IMAGES_PER_WORK_ITEM);
 		const { images, failures } = await downloadAndPrepareImages(
 			params.input.workItemId,
-			limited,
+			media,
 			params.logWriter,
 		);
 
@@ -117,8 +120,8 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 		params.logWriter('INFO', '[image-pipeline] work-item-fetch summary', {
 			provider: provider?.type ?? 'unknown',
 			workItemId: params.input.workItemId,
-			urlsDetected: media.length,
-			urlsAfterFilter: limited.length,
+			urlsDetected,
+			urlsAfterFilter: media.length,
 			urlsDownloaded: images.length,
 			urlsFailed: failures.length,
 			urlsByMimeType,
