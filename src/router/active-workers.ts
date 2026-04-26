@@ -62,11 +62,26 @@ export function getActiveWorkerCount(): number {
 
 /**
  * Get summary info for currently active workers.
+ *
+ * Includes the resolved `(projectId, workItemId, agentType)` trio so callers
+ * (specifically the lock-state classifier added in spec 015/1) can correlate
+ * an in-memory lock count against actual dispatch state. The fields are
+ * `undefined` for workers whose job data didn't carry the corresponding
+ * identifier — never synthesized.
  */
-export function getActiveWorkers(): Array<{ jobId: string; startedAt: Date }> {
+export function getActiveWorkers(): Array<{
+	jobId: string;
+	startedAt: Date;
+	projectId?: string;
+	workItemId?: string;
+	agentType?: string;
+}> {
 	return Array.from(activeWorkers.values()).map((w) => ({
 		jobId: w.jobId,
 		startedAt: w.startedAt,
+		projectId: w.projectId,
+		workItemId: w.workItemId,
+		agentType: w.agentType,
 	}));
 }
 

@@ -6,7 +6,7 @@ plan_slug: failed-event-lock-compensation
 level: plan
 parent_spec: docs/specs/015-router-job-dispatch-failure-recovery.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 015/1: Failed-event lock compensation + decision-reason taxonomy
@@ -204,16 +204,16 @@ CLAUDE.md is intentionally NOT updated by this plan; Plan 2 ships the unified pa
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (compensator releases all 3 locks on both queues)
-- [ ] AC #2 (subsequent webhook not blocked by stranded state)
-- [ ] AC #3 (three decision-reason branches)
-- [ ] AC #4 (wedged-lock Sentry canary)
-- [ ] AC #5 (manual-run bypass regression)
-- [ ] AC #6 (clean-exit regression)
-- [ ] AC #7 (TDD discipline)
-- [ ] AC #8 (build)
-- [ ] AC #9 (unit tests)
-- [ ] AC #10 (integration test)
-- [ ] AC #11 (lint)
-- [ ] AC #12 (typecheck)
-- [ ] AC #13 (docs)
+- [x] AC #1 (compensator releases all 3 locks on both queues)
+- [x] AC #2 (subsequent webhook not blocked by stranded state)
+- [x] AC #3 (three decision-reason branches)
+- [x] AC #4 (wedged-lock Sentry canary)
+- [x] AC #5 (manual-run bypass regression)
+- [x] AC #6 (clean-exit regression)
+- [x] AC #7 (TDD discipline)
+- [x] AC #8 (build)
+- [x] AC #9 (unit tests)
+- [x] AC #10 (integration test)
+- [x] AC #11 (lint)
+- [x] AC #12 (typecheck)
+- [x] AC #13 (docs)

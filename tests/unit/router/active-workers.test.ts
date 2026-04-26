@@ -115,7 +115,41 @@ describe('active-workers', () => {
 			activeWorkers.set('job-1', makeActiveWorker({ jobId: 'job-1', startedAt }));
 			const workers = getActiveWorkers();
 			expect(workers).toHaveLength(1);
-			expect(workers[0]).toEqual({ jobId: 'job-1', startedAt });
+			// Allow extra (projectId/workItemId/agentType) fields — they're added
+			// in spec 015/1 so the lock-state classifier can correlate locks with
+			// active dispatch state. Pin only the load-bearing fields here.
+			expect(workers[0]).toMatchObject({ jobId: 'job-1', startedAt });
+		});
+
+		it('returns projectId, workItemId, agentType for each tracked worker (spec 015/1)', () => {
+			const startedAt = new Date();
+			activeWorkers.set(
+				'job-7',
+				makeActiveWorker({
+					jobId: 'job-7',
+					startedAt,
+					projectId: 'ucho',
+					workItemId: 'MNG-350',
+					agentType: 'implementation',
+				}),
+			);
+			const workers = getActiveWorkers();
+			expect(workers).toHaveLength(1);
+			expect(workers[0]).toMatchObject({
+				jobId: 'job-7',
+				startedAt,
+				projectId: 'ucho',
+				workItemId: 'MNG-350',
+				agentType: 'implementation',
+			});
+		});
+
+		it('omitted projectId/workItemId/agentType remain undefined (no synthetic defaults)', () => {
+			activeWorkers.set('job-bare', makeActiveWorker({ jobId: 'job-bare' }));
+			const workers = getActiveWorkers();
+			expect(workers[0]?.projectId).toBeUndefined();
+			expect(workers[0]?.workItemId).toBeUndefined();
+			expect(workers[0]?.agentType).toBeUndefined();
 		});
 	});
 

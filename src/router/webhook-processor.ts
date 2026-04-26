@@ -15,6 +15,7 @@ import {
 	getCoalesceWindowMs,
 	registerPendingCreate,
 } from '../pm/create-coalesce-window.js';
+import { captureException } from '../sentry.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { logger } from '../utils/logging.js';
 import { isDuplicateAction, markActionProcessed } from './action-dedup.js';
@@ -23,6 +24,7 @@ import {
 	markAgentTypeEnqueued,
 	markRecentlyDispatched,
 } from './agent-type-lock.js';
+import { classifyLockState } from './lock-state-classifier.js';
 import type { RouterPlatformAdapter } from './platform-adapter.js';
 import { addJob } from './queue.js';
 import { isWorkItemLocked, markWorkItemEnqueued } from './work-item-lock.js';
@@ -190,10 +192,44 @@ export async function processRouterWebhook(
 				blockedAgentType: result.agentType,
 				reason: lockStatus.reason,
 			});
+			// Spec 015/1: distinguish "queued behind a real active dispatch" from
+			// "lock leaked by a prior dispatch failure". Defaults to awaiting-slot
+			// on classifier error so a transient infra blip doesn't mis-fire the
+			// canary.
+			const classification = await classifyLockState({
+				projectId: project.id,
+				workItemId: result.workItemId,
+				agentType: result.agentType,
+			});
+			const reasonSuffix = lockStatus.reason ?? 'active run exists';
+			if (classification === 'wedged') {
+				// Regression invariant: after spec 015/1 ships, this should never
+				// fire under normal operation. Capture loudly so any leak is
+				// observable in production.
+				captureException(
+					new Error(
+						`wedged work-item lock: projectId=${project.id} workItemId=${result.workItemId} agentType=${result.agentType}`,
+					),
+					{
+						tags: { source: 'wedged_lock_canary' },
+						extra: {
+							projectId: project.id,
+							workItemId: result.workItemId,
+							agentType: result.agentType,
+							reason: lockStatus.reason,
+						},
+					},
+				);
+				return {
+					shouldProcess: true,
+					projectId: project.id,
+					decisionReason: `Work item locked (no active dispatch): ${reasonSuffix}`,
+				};
+			}
 			return {
 				shouldProcess: true,
 				projectId: project.id,
-				decisionReason: `Work item locked: ${lockStatus.reason ?? 'active run exists'}`,
+				decisionReason: `Awaiting worker slot: ${reasonSuffix}`,
 			};
 		}
 	}

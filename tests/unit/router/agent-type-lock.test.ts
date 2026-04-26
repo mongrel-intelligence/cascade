@@ -19,6 +19,7 @@ import {
 	checkAgentTypeConcurrency,
 	clearAgentTypeEnqueued,
 	clearAllAgentTypeLocks,
+	clearRecentlyDispatched,
 	isAgentTypeLocked,
 	markAgentTypeEnqueued,
 	markRecentlyDispatched,
@@ -193,6 +194,28 @@ describe('agent-type-lock', () => {
 			expect(wasRecentlyDispatched('proj1', 'planning', 'TF-8')).toBe(true);
 			expect(wasRecentlyDispatched('proj1', 'planning', 'TF-10')).toBe(false);
 			expect(wasRecentlyDispatched('proj1', 'planning')).toBe(false);
+		});
+
+		it('clearRecentlyDispatched removes the dedup entry for a (projectId, agentType, dedupScope) trio', () => {
+			markRecentlyDispatched('proj1', 'implementation', 'w1');
+			expect(wasRecentlyDispatched('proj1', 'implementation', 'w1')).toBe(true);
+			clearRecentlyDispatched('proj1', 'implementation', 'w1');
+			expect(wasRecentlyDispatched('proj1', 'implementation', 'w1')).toBe(false);
+		});
+
+		it('clearRecentlyDispatched is a no-op when the key was not previously marked', () => {
+			expect(() => clearRecentlyDispatched('proj1', 'implementation', 'w1')).not.toThrow();
+			expect(wasRecentlyDispatched('proj1', 'implementation', 'w1')).toBe(false);
+		});
+
+		it('clearRecentlyDispatched leaves entries for other (agentType, scope) keys untouched', () => {
+			markRecentlyDispatched('proj1', 'implementation', 'w1');
+			markRecentlyDispatched('proj1', 'review', 'w1');
+			markRecentlyDispatched('proj1', 'implementation', 'w2');
+			clearRecentlyDispatched('proj1', 'implementation', 'w1');
+			expect(wasRecentlyDispatched('proj1', 'implementation', 'w1')).toBe(false);
+			expect(wasRecentlyDispatched('proj1', 'review', 'w1')).toBe(true);
+			expect(wasRecentlyDispatched('proj1', 'implementation', 'w2')).toBe(true);
 		});
 	});
 

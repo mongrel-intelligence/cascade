@@ -24,15 +24,23 @@ vi.mock('../../../src/router/action-dedup.js', () => ({
 	isDuplicateAction: vi.fn().mockReturnValue(false),
 	markActionProcessed: vi.fn(),
 }));
+vi.mock('../../../src/router/lock-state-classifier.js', () => ({
+	classifyLockState: vi.fn().mockResolvedValue('awaiting-slot'),
+}));
+vi.mock('../../../src/sentry.js', () => ({
+	captureException: vi.fn(),
+}));
 
 import { isDuplicateAction, markActionProcessed } from '../../../src/router/action-dedup.js';
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import type { RouterProjectConfig } from '../../../src/router/config.js';
+import { classifyLockState } from '../../../src/router/lock-state-classifier.js';
 import type { RouterPlatformAdapter } from '../../../src/router/platform-adapter.js';
 import type { CascadeJob } from '../../../src/router/queue.js';
 import { addJob } from '../../../src/router/queue.js';
 import { processRouterWebhook } from '../../../src/router/webhook-processor.js';
 import { isWorkItemLocked, markWorkItemEnqueued } from '../../../src/router/work-item-lock.js';
+import { captureException } from '../../../src/sentry.js';
 import type { TriggerRegistry } from '../../../src/triggers/registry.js';
 
 const mockProject: RouterProjectConfig = {
@@ -348,7 +356,62 @@ describe('processRouterWebhook', () => {
 		expect(addJob).toHaveBeenCalled();
 	});
 
-	it('skips job when work item is locked', async () => {
+	it("emits 'Awaiting worker slot' when lock held and classifier returns 'awaiting-slot' (spec 015/1)", async () => {
+		const triggerResult = {
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+			workItemId: 'card1',
+		};
+		vi.mocked(isWorkItemLocked).mockResolvedValueOnce({
+			locked: true,
+			reason: 'in-memory same-type: 1 enqueued (max 1 per type)',
+		});
+		vi.mocked(classifyLockState).mockResolvedValueOnce('awaiting-slot');
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(true);
+		expect(result.projectId).toBe('p1');
+		expect(result.decisionReason).toBe(
+			'Awaiting worker slot: in-memory same-type: 1 enqueued (max 1 per type)',
+		);
+		expect(addJob).not.toHaveBeenCalled();
+		expect(adapter.postAck).not.toHaveBeenCalled();
+	});
+
+	it("emits 'Work item locked (no active dispatch)' when classifier returns 'wedged' (spec 015/1)", async () => {
+		const triggerResult = {
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+			workItemId: 'card1',
+		};
+		vi.mocked(isWorkItemLocked).mockResolvedValueOnce({
+			locked: true,
+			reason: 'in-memory same-type: 1 enqueued (max 1 per type)',
+		});
+		vi.mocked(classifyLockState).mockResolvedValueOnce('wedged');
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe(
+			'Work item locked (no active dispatch): in-memory same-type: 1 enqueued (max 1 per type)',
+		);
+		// Wedged-lock canary fires a Sentry capture so the regression invariant
+		// is loud — see spec 015/1 AC #6.
+		expect(captureException).toHaveBeenCalledWith(
+			expect.any(Error),
+			expect.objectContaining({
+				tags: expect.objectContaining({ source: 'wedged_lock_canary' }),
+			}),
+		);
+	});
+
+	it('preserves existing log fields when work item is locked', async () => {
 		const triggerResult = {
 			agentType: 'implementation',
 			agentInput: { cardId: 'card1' },
@@ -358,16 +421,44 @@ describe('processRouterWebhook', () => {
 			locked: true,
 			reason: 'db: active run exists',
 		});
+		vi.mocked(classifyLockState).mockResolvedValueOnce('awaiting-slot');
+		const { logger } = await import('../../../src/utils/logging.js');
+		vi.mocked(logger.info).mockClear();
 		const adapter = makeMockAdapter({
 			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
 		});
 
-		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
-		expect(result.shouldProcess).toBe(true);
-		expect(result.projectId).toBe('p1');
-		expect(result.decisionReason).toBe('Work item locked: db: active run exists');
-		expect(addJob).not.toHaveBeenCalled();
-		expect(adapter.postAck).not.toHaveBeenCalled();
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		// Find the Skipping … log call. Existing structure pins these fields.
+		const skipCall = vi
+			.mocked(logger.info)
+			.mock.calls.find((c) => String(c[0]).includes('work item already locked'));
+		expect(skipCall).toBeDefined();
+		expect(skipCall?.[1]).toMatchObject({
+			source: 'trello',
+			projectId: 'p1',
+			workItemId: 'card1',
+			blockedAgentType: 'implementation',
+			reason: 'db: active run exists',
+		});
+	});
+
+	it('does not call classifyLockState when work item is not locked (perf invariant)', async () => {
+		vi.mocked(classifyLockState).mockClear();
+		vi.mocked(isWorkItemLocked).mockResolvedValueOnce({ locked: false });
+		const triggerResult = {
+			agentType: 'implementation',
+			agentInput: { cardId: 'card1' },
+			workItemId: 'card1',
+		};
+		vi.mocked(addJob).mockResolvedValueOnce('job-x');
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+		});
+
+		await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		// Happy path must not pay the queue-lookup cost.
+		expect(classifyLockState).not.toHaveBeenCalled();
 	});
 
 	it('calls onBlocked when work item is locked', async () => {

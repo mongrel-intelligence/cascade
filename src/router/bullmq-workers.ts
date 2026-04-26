@@ -10,6 +10,7 @@ import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { parseRedisUrl } from '../utils/redis.js';
+import { releaseLocksForFailedJob } from './dispatch-compensator.js';
 
 // Re-export so existing callers (worker-manager.ts) don't need to change imports.
 export { parseRedisUrl };
@@ -53,6 +54,25 @@ export function createQueueWorker<T = unknown>(config: QueueWorkerConfig<T>): Wo
 			tags: { source: 'bullmq_dispatch', queue: queueName },
 			extra: { jobId: job?.id },
 		});
+		// Compensate in-memory state (work-item lock, agent-type lock,
+		// recently-dispatched dedup mark) acquired by the webhook → enqueue
+		// path. Without this, dispatch failures wedge the locks until their
+		// TTLs expire — see spec 015. Compensator never throws, but we still
+		// guard so a future regression in it can't poison the worker.
+		if (job) {
+			void releaseLocksForFailedJob(job.data).catch((compErr) => {
+				logger.error(
+					'[WorkerManager] compensator threw — already swallowed by it; logging defensively',
+					{
+						jobId: job.id,
+						error: String(compErr),
+					},
+				);
+				captureException(compErr instanceof Error ? compErr : new Error(String(compErr)), {
+					tags: { source: 'dispatch_compensator_uncaught', queue: queueName },
+				});
+			});
+		}
 	});
 
 	worker.on('error', (err) => {

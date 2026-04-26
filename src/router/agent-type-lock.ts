@@ -150,6 +150,20 @@ export function wasRecentlyDispatched(
 }
 
 /**
+ * Compensating action for `markRecentlyDispatched` — used by the BullMQ
+ * `failed`-event handler so a permanently-failed dispatch doesn't keep
+ * deduping a fresh webhook for ~60s while the user re-tries.
+ */
+export function clearRecentlyDispatched(
+	projectId: string,
+	agentType: string,
+	dedupScope?: string,
+): void {
+	const key = makeDedupKey(projectId, agentType, dedupScope);
+	dedupMap.delete(key);
+}
+
+/**
  * Mark an agent type as recently dispatched for a project/scope.
  * The mark expires after DEDUP_TTL_MS and is NOT cleared on completion.
  */

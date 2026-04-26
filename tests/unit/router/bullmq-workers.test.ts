@@ -14,6 +14,10 @@ vi.mock('../../../src/sentry.js', () => ({
 	captureException: vi.fn(),
 }));
 
+vi.mock('../../../src/router/dispatch-compensator.js', () => ({
+	releaseLocksForFailedJob: vi.fn().mockResolvedValue(undefined),
+}));
+
 // Mock logger
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: {
@@ -30,16 +34,20 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { Worker } from 'bullmq';
 import { createQueueWorker, parseRedisUrl } from '../../../src/router/bullmq-workers.js';
+import { releaseLocksForFailedJob } from '../../../src/router/dispatch-compensator.js';
 import { captureException } from '../../../src/sentry.js';
 import { logger } from '../../../src/utils/logging.js';
 
 const MockWorker = vi.mocked(Worker);
 const mockCaptureException = vi.mocked(captureException);
 const mockLogger = vi.mocked(logger);
+const mockReleaseLocksForFailedJob = vi.mocked(releaseLocksForFailedJob);
 
 beforeEach(() => {
 	MockWorker.mockClear();
 	mockCaptureException.mockClear();
+	mockReleaseLocksForFailedJob.mockClear();
+	mockReleaseLocksForFailedJob.mockResolvedValue(undefined);
 	// Re-establish default mock so each test gets a fresh mock worker
 	MockWorker.mockImplementation(
 		(_queueName, _processFn, _opts) =>
@@ -191,5 +199,72 @@ describe('createQueueWorker', () => {
 				tags: expect.objectContaining({ queue: 'my-special-queue' }),
 			}),
 		);
+	});
+
+	it("worker.on('failed') invokes releaseLocksForFailedJob with job.data", () => {
+		const worker = createQueueWorker(baseConfig);
+		const mockOn = vi.mocked(worker.on);
+
+		const failedCall = mockOn.mock.calls.find((call) => call[0] === 'failed');
+		const handler = failedCall?.[1] as (
+			job: { id: string; data: unknown } | undefined,
+			err: Error,
+		) => void;
+		const jobData = { type: 'linear', payload: 'foo' };
+		handler({ id: 'job-99', data: jobData }, new Error('boom'));
+
+		expect(mockReleaseLocksForFailedJob).toHaveBeenCalledTimes(1);
+		expect(mockReleaseLocksForFailedJob).toHaveBeenCalledWith(jobData);
+	});
+
+	it("worker.on('failed') still logs and Sentries on top of compensating", () => {
+		mockLogger.error.mockReset();
+		const worker = createQueueWorker(baseConfig);
+
+		const handler = vi.mocked(worker.on).mock.calls.find((c) => c[0] === 'failed')?.[1] as (
+			job: { id: string; data: unknown } | undefined,
+			err: Error,
+		) => void;
+		handler({ id: 'job-100', data: { type: 'github' } }, new Error('nope'));
+
+		expect(mockLogger.error).toHaveBeenCalled();
+		expect(mockCaptureException).toHaveBeenCalled();
+		expect(mockReleaseLocksForFailedJob).toHaveBeenCalled();
+	});
+
+	it("worker.on('failed') swallows compensator throws", async () => {
+		mockReleaseLocksForFailedJob.mockRejectedValueOnce(new Error('compensator boom'));
+		const worker = createQueueWorker(baseConfig);
+		const mockOn = vi.mocked(worker.on);
+
+		const handler = mockOn.mock.calls.find((c) => c[0] === 'failed')?.[1] as (
+			job: { id: string; data: unknown } | undefined,
+			err: Error,
+		) => void;
+
+		// Calling the handler must not propagate the compensator rejection.
+		// We invoke it and let the microtask queue drain — there must be no
+		// unhandled rejection in test logs.
+		expect(() =>
+			handler({ id: 'job-101', data: { type: 'github' } }, new Error('x')),
+		).not.toThrow();
+		// Drain the rejection by giving microtasks a turn.
+		await new Promise((r) => setImmediate(r));
+		// Test passes if we got here without an unhandled rejection killing vitest.
+	});
+
+	it("worker.on('failed') does not call compensator when job is undefined", () => {
+		const worker = createQueueWorker(baseConfig);
+		const mockOn = vi.mocked(worker.on);
+
+		const handler = mockOn.mock.calls.find((c) => c[0] === 'failed')?.[1] as (
+			job: { id: string; data: unknown } | undefined,
+			err: Error,
+		) => void;
+		handler(undefined, new Error('orphan'));
+
+		expect(mockReleaseLocksForFailedJob).not.toHaveBeenCalled();
+		// Existing log + Sentry behavior preserved
+		expect(mockLogger.error).toHaveBeenCalled();
 	});
 });
