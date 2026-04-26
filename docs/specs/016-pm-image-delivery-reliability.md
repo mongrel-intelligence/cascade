@@ -1,0 +1,129 @@
+---
+id: 016
+slug: pm-image-delivery-reliability
+level: spec
+title: PM image delivery reliability
+created: 2026-04-26
+status: draft
+---
+
+# 016: PM image delivery reliability
+
+## Problem & Motivation
+
+CASCADE's image-injection pipeline silently drops user-pasted screenshots from Linear work items, leaving agent workers running with empty `.cascade/context/images/` directories. The agent then proceeds without the visual context the user provided, often reporting back to the user that "the image asset was not present in this workspace" or guessing at the bug being reported. For a product whose value proposition is "you describe what's broken, the agent fixes it," a silently-missing screenshot is a credibility-class failure.
+
+The bug surfaced in production on 2026-04-26 against Linear card MNG-357 (ucho project). A user attached a screenshot to the card. The planning agent ran on the Codex engine, observed the image was missing, and re-wrote the issue description telling the next agent in the pipeline to "translate the screenshot into a concrete route, viewport, and failing assertion before editing code" — bypassing the user-attached visual context entirely. The cascade run log shows `hasOffloadedContext: false` at agent startup; the agent's first tool call was a directory probe (`find .cascade/context/images -maxdepth 2 -type f`) that returned empty.
+
+The root cause is a stack of three independent gaps. First, Linear's user-pasted-image URLs are extension-less (`https://uploads.linear.app/<uuid>/<filename-no-ext>`); the URL-based MIME-type heuristic returns `application/octet-stream` for them, and the pre-download image-only filter drops them as non-images. Second, the runtime gadget that lets agents fetch a work item mid-run is text-only — it discards the media references the underlying provider returns, so even if the boot-path delivered images, an agent re-reading the work item finds nothing. Third, the existing instrumentation only logs *post*-download outcomes ("downloaded N of M") — the upstream extract/filter step that drops Linear screenshots is invisible in run logs, making this exact incident class essentially undiagnosable without source diving.
+
+This spec closes all three gaps. It mirrors the lesson from spec 015 (router job dispatch failure recovery): a silent failure mode in the agent platform must be replaced with a single, grep-stable log line that makes the failure observable, and the contract that produced the failure must be hardened so the failure can't recur.
+
+---
+
+## Goals
+
+1. A user pastes a screenshot into a Linear work item. Any agent type — planning, implementation, review, backlog-manager — running for that work item sees the image as a readable file in its workspace, regardless of which engine (Codex, OpenCode, Claude Code) executes the agent.
+2. An agent that re-reads a work item mid-run via the runtime read-work-item gadget receives the same image-on-disk treatment, so a teammate adding a screenshot after the agent has started can still be picked up.
+3. Every work-item fetch emits a single structured log line that summarizes detected URLs, post-filter URLs, downloads attempted, downloads successful, and downloads failed — enough to diagnose any future "no image delivered" report by grepping one line in the run log.
+4. The fix generalizes beyond Linear: Trello and JIRA flow through the same MIME-resolution path and gain the same Content-Type-first authority and runtime-gadget delivery — without any provider-specific URL hostname matching.
+5. Existing healthy paths continue to behave identically: Trello and JIRA images that *did* work before still work; PR #948's Claude-Code initial-input ImageBlockParam delivery is untouched; the existing MediaReference shape consumed by downstream code remains compatible.
+
+---
+
+## Non-goals
+
+- Migrating Codex / OpenCode to native multimodal SDK delivery (analogous to PR #948 for Claude Code) — separate spec when the SDKs offer the surface.
+- Backfilling missed screenshots for prior agent runs. Agents that already finished without their image stay finished; no retroactive re-dispatch.
+- Trello/JIRA-specific MIME detection improvements beyond what the shared resolution path already covers.
+- A dashboard UI surfacing "image was not delivered to this run" — operational, separate effort.
+- Magic-byte sniffing as a third MIME-resolution tier. The auth'd PM endpoints (Linear, Trello, JIRA) are trusted to return correct Content-Type on the response; adding a sniffer adds a dep with no observable benefit.
+- Compressing, resizing, format-converting images on the fly. The worker reads what was uploaded, byte-for-byte.
+
+---
+
+## Constraints
+
+- The fix must not change the wire shape of `MediaReference` consumed by downstream code. Adding a sentinel value to its existing `mimeType` field is acceptable; renaming or removing the field is not.
+- The fix must not introduce a new pre-download HTTP round-trip per image. Resolving MIME via the existing GET response is acceptable; a separate HEAD request before the GET is not.
+- The diagnostic log line must be observable through the standard `cascade runs logs` and Loki paths used today. No new log sink, no new dashboard.
+- The runtime gadget's behavioral change must be backward-compatible with agents that simply read the gadget's text output. Agents that ignore the new file paths still get a usable text response.
+- File-on-disk delivery must work for engines that do *not* speak multimodal SDK content blocks (Codex today; possibly others tomorrow). The disk-write path is the lowest-common-denominator delivery contract and stays the canonical one.
+- The on-disk file naming must encode the work item identifier so an agent that traverses `.cascade/context/images/` can correlate files to the work item without inspecting metadata.
+
+---
+
+## User stories / Requirements
+
+1. **As a CASCADE user**, when I paste a screenshot into a Linear issue and move it to a triggering state, the agent that runs has my screenshot available as a file it can read. I never have to describe the screenshot in words to compensate.
+2. **As a CASCADE user**, when I add a screenshot to a Linear issue *after* the agent has already started running, the agent can pick it up by re-reading the work item mid-run.
+3. **As an operator diagnosing a "no image delivered" report**, I can read the agent's run log, find a single line that tells me how many images were detected on the work item, how many survived filtering, how many were downloaded, and how many failed — and I can correlate failures to URLs without reading source.
+4. **As a maintainer adding a new PM provider**, the image-delivery pipeline works for my provider with no provider-specific MIME-detection branching. Whatever URLs my adapter exposes flow through the same resolution path that Linear, Trello, and JIRA use.
+5. **As a CASCADE engineering team**, we have a captured fixture of the Linear GraphQL `Issue` payload for a card with a pasted screenshot, so future changes to Linear's API surface are detectable as a regression.
+
+---
+
+## Research Notes
+
+- HTTP/1.1 RFC 7231 §3.1.1.5 specifies that the `Content-Type` header is authoritative for the media type of the returned representation. URL-extension-based inference is a heuristic, not a contract. ([RFC 7231](https://www.rfc-editor.org/rfc/rfc7231#section-3.1.1.5))
+- WHATWG MIME Sniffing Standard codifies authority order: `Content-Type` header first, resource metadata second, structural sniffing third. Our case never needs the third tier because PM hosts are trusted. ([mimesniff.spec.whatwg.org](https://mimesniff.spec.whatwg.org/))
+- The "trust file extensions, fail closed on unknown" pattern is well-known to drop legitimate content from extension-less URLs. CDN platforms (Cloudflare, S3-with-CloudFront) document this exact failure mode in their content-handling guides.
+- BullMQ's failed-event compensation pattern from spec 015 — "every silent failure mode must surface a single grep-stable diagnostic log line" — generalizes here. Same product credibility argument: agents that silently miss user context look broken even when every line of code is technically correct.
+- Linear's developer documentation describes `Issue.description` as a Markdown field; user-pasted images are stored as standard Markdown image syntax pointing at `uploads.linear.app/<uuid>` URLs. The `Issue.attachments` GraphQL connection serves a different purpose (link previews, integration cards) and is not where pasted images live.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|------|--------|----------|--------|
+| Node `fetch` built-in `Content-Type` parsing | Authoritative MIME from response header | **Use** | Already in the worker runtime; zero new dep. |
+| [`file-type`](https://www.npmjs.com/package/file-type) (magic-byte sniffer) | Tier-3 MIME fallback when extension AND Content-Type both fail | **Skip** | Trusted PM hosts return correct Content-Type. Adds dep weight with no observable benefit for our use case; revisit only if a provider proves untrustworthy. |
+| Linear GraphQL fixture capture | Regression detection if Linear's payload shape ever changes | **Use** (one-shot capture, not a runtime dep) | Standard testing pattern; lives in test fixtures. |
+
+---
+
+## Strategic decisions
+
+1. **MIME authority order: Content-Type-first, URL-extension-second, no magic-byte sniffing.** Pre-download URL-extension inference becomes a hint, not a verdict. The download response's `Content-Type` resolves the actual MIME. Magic-byte sniffing is a deliberate non-goal — trusted PM hosts return correct Content-Type, the dep cost isn't justified.
+2. **Pre-download MIME representation: `image/*` wildcard sentinel.** When the URL-extension heuristic returns `application/octet-stream` AND the URL came from a path that PM providers commonly produce extension-less (Linear's `uploads.linear.app/<uuid>`), the `MediaReference.mimeType` is set to `image/*`. The image-only filter is extended to accept the wildcard. The wildcard never reaches disk — it's resolved to a concrete MIME at download time. This is smaller-surface and MIME-spec-valid (`image/*` is a legal Accept-range MIME) compared to introducing a sibling `mimeTypeIsHint` field.
+3. **Runtime read-work-item gadget delivers files on disk, not base64-inline.** The agent's file-read tool consumes paths; base64 in text doesn't fit. The boot path and the runtime path produce identical artifacts: files under `.cascade/context/images/` named to encode the work item identifier.
+4. **Disk file naming: `work-item-<id>-img-<index>.<ext>`.** Extension is derived from the *resolved* MIME (image/png → `.png`). When MIME resolution fails entirely (download succeeded but Content-Type was missing/unparseable), use `.bin` and emit a warn log — never silently degrade.
+5. **Linear payload investigation always ships the fixture and the coverage test, regardless of what Linear's API exposes.** If we find no surprise (likely), document the description-markdown contract in the integrations README. If we find a new surface (e.g. an `attachments(includeInline: true)` argument), integrate it under the same shared resolution path. Either way, the fixture is the regression net for future Linear API drift.
+6. **Diagnostic log line is required for AC sign-off, not optional.** This spec includes a structured one-liner at extraction time, mirroring the wedged-lock canary from spec 015. Without it, the next "no image delivered" incident will be just as opaque as MNG-357 was.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. A user attaches a screenshot to a Linear issue (description paste or comment paste). Triggering an agent run for that issue results in the agent finding the screenshot as a readable file in its workspace, regardless of engine — Codex, OpenCode, or Claude Code. No engine-specific re-implementation; the disk-write path remains the canonical lowest-common-denominator.
+2. The same flow works for Trello and JIRA work items that contain images (regression-safe — these worked before; they continue to work).
+3. An agent that calls the runtime read-work-item gadget mid-run for a work item that has images receives a text response whose pre-fetched-images section lists actual local file paths the agent can read with its file-read tool. The files exist on disk at the listed paths.
+4. A teammate adds an image to a work item *after* an agent has started running. When the agent re-reads the work item via the runtime gadget, the new image is downloaded and made available on disk in the same way as boot-time images.
+5. Every work-item fetch (boot or runtime) emits a single structured log line summarizing: provider, work-item identifier, URLs detected, URLs that survived filtering, URLs successfully downloaded, URLs that failed. The format is grep-stable: it appears verbatim in the cascade run log surface and in production log aggregation. An operator can filter for it with one expression and triage any "no image delivered" report from the resulting line alone.
+6. PR #948's Claude-Code initial-input ImageBlockParam path is untouched and still works for Claude-Code engines. Tests that pinned that behavior continue to pass without modification.
+7. A captured fixture file exists for a Linear `Issue` GraphQL payload containing a user-pasted screenshot, plus a regression test that asserts our extraction picks up every image in it. The test fails loudly if Linear changes its payload shape in a way that loses inline images.
+8. A new PM provider added later (e.g. Asana, GitLab) inherits the working pipeline by writing only its adapter — no new code in the shared MIME-resolution, download-and-write, or runtime-gadget surfaces. The single-entrypoint invariant from spec 009 is preserved.
+9. The end-to-end MNG-357 scenario reproduces clean: a fresh Linear issue with a pasted screenshot, a planning agent run on Codex, and `.cascade/context/images/work-item-<id>-img-0.<ext>` exists in the worker container; the cascade run log shows `hasOffloadedContext: true` and the new diagnostic line shows non-zero downloads.
+
+---
+
+## Documentation Impact (high-level)
+
+- `CHANGELOG.md` — entry under the next release per shipping plan: one for the boot-path MIME fix, one for the runtime-gadget mid-run delivery, one for the Linear-payload investigation outcome.
+- `src/integrations/README.md` — the canonical adding-a-new-PM-provider doc gains a section on image delivery: the contract a provider must satisfy (extract URLs from descriptions and comments; expose `getAttachments` only for non-inline attachment-style media; trust the shared MIME resolution path; do nothing extra for image delivery), and the diagnostic log line operators rely on. Also: confirmed scope of Linear's GraphQL surface for inline images, captured fixture path, and what to do if a provider's host serves untrustworthy `Content-Type` headers.
+
+CLAUDE.md is not updated by this spec. The diagnostic log line is observable, but the *invariant* is provider-adapter-level (a property of `src/integrations/README.md`'s contract). The dispatch-failure semantics from spec 015 already established the broader "silent-failure → single-line diagnostic" pattern in CLAUDE.md; this spec is a concrete instance of that pattern, not a new cross-cutting rule.
+
+---
+
+## Out of Scope
+
+- Codex / OpenCode native multimodal SDK delivery analogous to PR #948 — separate future spec.
+- Magic-byte sniffing fallback for MIME resolution.
+- Backfilling already-finished agent runs that missed images.
+- Image compression / resize / format conversion on the worker side.
+- A dashboard surface for "image was not delivered to this run" notifications.
+- Trello/JIRA-specific URL-detection improvements beyond what the shared Content-Type-first resolution naturally covers.
+- Replacing the `cascade runs logs` log surface with a structured event stream.
+- Cross-router-instance lock coordination for image downloads (not a real concern — each worker container has its own filesystem).

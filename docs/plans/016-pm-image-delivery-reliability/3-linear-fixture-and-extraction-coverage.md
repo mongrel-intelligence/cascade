@@ -1,0 +1,163 @@
+---
+id: 016
+slug: pm-image-delivery-reliability
+plan: 3
+plan_slug: linear-fixture-and-extraction-coverage
+level: plan
+parent_spec: docs/specs/016-pm-image-delivery-reliability.md
+depends_on: []
+status: pending
+---
+
+# 016/3: Linear payload fixture + extraction-coverage regression test
+
+> Part 3 of 3 in the 016-pm-image-delivery-reliability plan. See [parent spec](../../specs/016-pm-image-delivery-reliability.md).
+
+## Summary
+
+This plan ships the regression net for the spec's image-delivery contract: a captured Linear GraphQL `Issue` payload for an issue with at least one user-pasted screenshot, plus a unit test that asserts our extraction picks up every image in it. If Linear ever changes the payload shape in a way that loses inline images (renames the field, replaces markdown with a structured JSON tree, drops the upload host), the test fails loudly with a clear message.
+
+It also confirms the Linear GraphQL surface for inline images. The hypothesis from spec 016 is that `Issue.description` markdown is the canonical surface — `Issue.attachments` returns formal Attachment records (link previews, integration cards) and is NOT where pasted images live. This plan probes Linear's API to verify, captures the result in the fixture, and documents the conclusion in `src/integrations/README.md`. If Linear exposes a previously-unknown surface (e.g. an `attachments(includeInline: true)` filter, or a `descriptionData` rich-text JSON tree), this plan integrates that surface under Plan 1's shared resolution path.
+
+This plan has no code dependency on Plan 1 or Plan 2 in production code (it lives entirely in tests + docs), but it logically follows them because the regression test exercises the new contract Plan 1 + Plan 2 establish. If Plan 1 or Plan 2's contract changed before this plan ships, the regression test would need to be updated to match.
+
+**Components delivered:**
+- `tests/fixtures/linear-issue-with-screenshot.json` — a captured Linear GraphQL `Issue` payload for a real test issue (or a faithfully reconstructed equivalent if we don't want to commit a real one) with at least one user-pasted screenshot in the description AND at least one in a comment. The fixture covers the common cases: extension-less `uploads.linear.app/<uuid>` URL, extensioned URL with a filename, image embedded in markdown with alt text, image embedded with no alt text.
+- A unit test that loads the fixture, runs the Linear adapter's extraction path on it, and asserts every image in the fixture is detected by `extractMarkdownImages` (or whatever extraction surface ends up canonical for Linear). Test fails with a specific message if a fixture image is missed.
+- An optional Linear API probe (one-shot, manual or scripted) that captures the fixture from a real Linear issue. Not part of the test run; a tools script.
+- `src/integrations/README.md` updates: a new subsection under "Image delivery contract" titled "Linear: GraphQL surface for inline images" that documents the conclusion of the investigation. Either: (a) confirms `Issue.description` markdown is canonical and points to the fixture; OR (b) describes the new GraphQL surface integrated under Plan 1's shared path.
+
+**Deferred to later plans in this spec:**
+- None — this is the last plan.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #7 (Linear GraphQL fixture + regression test) — **full**
+
+---
+
+## Depends On
+
+None in code. Logically follows Plan 1 + Plan 2 because the regression net is for the contract those plans establish, but the test itself only depends on `extractMarkdownImages` (the Linear adapter's existing surface) and the fixture.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Capture or construct the Linear fixture
+
+**Tests first** (no — this task is fixture authorship; the test in task 2 is the gating fail-loud).
+
+**Implementation** (`tests/fixtures/linear-issue-with-screenshot.json` — new file):
+
+Two modes for capturing:
+
+- **Mode A: capture from real Linear API.** Run a one-shot probe script (tooled in `tools/capture-linear-fixture.ts` or via a `cascade` admin command) that calls the Linear GraphQL `Issue` query for a real test issue with a pasted screenshot. Save the JSON response verbatim. The fixture should be sanitized to remove team/user identifying data but preserve URL shapes, markdown, and any structural fields Linear returns.
+- **Mode B: faithfully reconstruct.** Build the fixture manually from Linear's documented GraphQL schema. Less authoritative but commits no real production data.
+
+**Recommendation: Mode A with sanitization.** A real-API capture is the only way to catch Linear's actual payload quirks (field ordering, optional fields present-but-null vs absent, URL hostname canonicalization, etc.). Sanitize team IDs, user emails, and any free-form text that might leak. Keep the URL hosts (`uploads.linear.app`), the markdown image syntax, and any structural fields Linear returns even if we don't read them today.
+
+Fixture must contain:
+1. At least one extension-less `uploads.linear.app/<uuid>` markdown image in the issue description.
+2. At least one extensioned URL (e.g. `https://example.com/foo.png`) in the issue description.
+3. At least one comment with a pasted screenshot.
+4. The Linear `Issue.attachments` connection populated (with non-image-paste attachments — link previews, etc.) to confirm we DON'T mistake them for inline images.
+
+### 2. Extraction-coverage regression test
+
+**Tests first** (`tests/unit/pm/linear/extraction-coverage.test.ts` — new file):
+
+- `Linear extraction — picks up every inline image in the fixture issue description` — unit — load `tests/fixtures/linear-issue-with-screenshot.json`; pass `description` field through `extractMarkdownImages`; assert returned `MediaReference[]` contains every URL in the fixture's description that we expect to be picked up. Expected red: depends on whether Plan 1 has been merged. If Plan 1 is merged: passes (no implementation change needed for this plan). If Plan 1 is NOT yet merged in the dev branch this is being implemented against: this test fails with `expected length 2, got 0` because the extension-less Linear URL was filtered out — making this test a useful check against shipping Plan 3 ahead of Plan 1.
+- `Linear extraction — picks up every inline image in fixture comments` — unit — same as above but for comments (each comment's body passed through `extractMarkdownImages`). Expected red: same as above.
+- `Linear extraction — does NOT mistake Issue.attachments link previews for inline images` — unit — assert that the formal `Issue.attachments` records in the fixture (link previews, integration cards) are NOT included in the inline-image MediaReference list. Expected red: passes if the adapter correctly separates `attachments` from inline media (the existing code does); fails right reason if Plan 3 accidentally widens extraction to include them.
+- `Linear extraction — fails LOUDLY if a fixture image is missed (regression net)` — unit — manually omit one URL from the expected list AND assert the test fails. (This is a meta-test confirming the test mechanism works; included once and then removed in cleanup.) Documents the failure-message format the spec AC#7 requires.
+
+**Implementation**: none — this is pure regression testing. If Plan 1 + Plan 2 have shipped correctly, the tests pass. If they haven't, the tests fail and the regression net catches it.
+
+### 3. `src/integrations/README.md` Linear-specific update
+
+**Tests first**: n/a (documentation).
+
+**Implementation**: After completing the Linear API probe (task 1, Mode A), append the conclusion to `src/integrations/README.md`'s "Image delivery contract" section (Plan 1 introduced this section). The new subsection:
+
+- **Title**: "Linear: GraphQL surface for inline images"
+- **Body**: Document what Linear's API actually exposes for user-pasted screenshots. Confirm that `Issue.description` markdown is canonical (or describe the alternative if found). Cite the fixture path. Note that `Issue.attachments` is for formal Attachment records (link previews, integration cards) and should not be queried for inline images.
+- **If a new surface was found** (e.g. `descriptionData`, an `attachments(includeInline: true)` filter): document the integration; otherwise, document the rule "use `extractMarkdownImages` over `Issue.description` and over each `Comment.body`."
+
+If task 1's Linear API probe finds a surprise, update Plan 1's `extractMarkdownImages` call site in `src/pm/linear/adapter.ts` to also probe the new surface — but this should be RARE; the likely outcome is "description markdown is canonical, no production code change."
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/pm/linear/extraction-coverage.test.ts` (new): 4 tests covering description extraction, comment extraction, attachment-record exclusion, and the meta-test for the regression net.
+
+### Integration tests
+- [ ] None new — this plan is fixture + extraction unit tests + docs.
+
+### Acceptance tests
+- [ ] AC#7: covered by the extraction-coverage tests + the fixture file.
+
+---
+
+## Manual Verification (for `[manual]`-tagged ACs only)
+
+n/a — all ACs auto-tested.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `tests/fixtures/linear-issue-with-screenshot.json` exists and contains at least one extension-less `uploads.linear.app/<uuid>` markdown image in the description, at least one extensioned URL, at least one comment with a pasted image, AND populated `Issue.attachments` records (link previews — NOT inline images).
+2. The extraction-coverage regression test loads the fixture and asserts every inline image is detected; fails LOUDLY (with a specific message identifying the missing URL) if any are dropped.
+3. The fixture is sanitized — no team IDs, user emails, or free-form leaky text.
+4. `src/integrations/README.md` has a new "Linear: GraphQL surface for inline images" subsection under "Image delivery contract" documenting the investigation conclusion, referring to the fixture path.
+5. If the Linear API probe found a previously-unknown inline-image surface, the Linear adapter's extraction path is widened to query it (still under Plan 1's shared resolution); otherwise, no production code changes.
+6. All new/modified code has corresponding tests written before the implementation.
+7. `npm run build` passes.
+8. `npm test` passes.
+9. `npm run lint` passes.
+10. `npm run typecheck` passes.
+11. All documentation listed in this plan's Documentation Impact has been updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | Entry under the next release: "PM image delivery: captured Linear GraphQL fixture (`tests/fixtures/linear-issue-with-screenshot.json`) plus regression test pinning our inline-image extraction. Fails loudly if Linear ever changes its issue payload shape in a way that loses inline images. Documents the canonical Linear GraphQL surface for inline images in the integrations README." |
+| `src/integrations/README.md` | New subsection "Linear: GraphQL surface for inline images" under the "Image delivery contract" section (Plan 1 introduced this top-level section). Documents the investigation conclusion. |
+
+---
+
+## Out of Scope (this plan)
+
+- The boot-path MIME fix and diagnostic log line (Plan 1).
+- The runtime gadget image delivery (Plan 2).
+- Trello/JIRA fixture captures for analogous regression coverage — they don't have the extension-less URL bug Linear has; deferred to a future spec if they ever exhibit similar drift.
+- Codex / OpenCode native multimodal SDK delivery — out of scope per spec.
+- Magic-byte sniffing — out of scope per spec.
+- Backfilling missed screenshots for prior runs — out of scope per spec.
+- Image compression / resize / format conversion — out of scope per spec.
+- Dashboard surface for "image not delivered" — out of scope per spec.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (fixture file exists with correct shape)
+- [ ] AC #2 (regression test fails loudly on missed images)
+- [ ] AC #3 (fixture sanitization)
+- [ ] AC #4 (README "Linear GraphQL surface" subsection)
+- [ ] AC #5 (new-surface integration if found, else no-op)
+- [ ] AC #6 (TDD discipline)
+- [ ] AC #7 (build)
+- [ ] AC #8 (unit tests)
+- [ ] AC #9 (lint)
+- [ ] AC #10 (typecheck)
+- [ ] AC #11 (docs)

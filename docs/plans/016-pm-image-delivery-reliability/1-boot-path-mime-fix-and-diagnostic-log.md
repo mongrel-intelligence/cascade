@@ -1,0 +1,211 @@
+---
+id: 016
+slug: pm-image-delivery-reliability
+plan: 1
+plan_slug: boot-path-mime-fix-and-diagnostic-log
+level: plan
+parent_spec: docs/specs/016-pm-image-delivery-reliability.md
+depends_on: []
+status: pending
+---
+
+# 016/1: Boot-path MIME fix + diagnostic log line
+
+> Part 1 of 3 in the 016-pm-image-delivery-reliability plan. See [parent spec](../../specs/016-pm-image-delivery-reliability.md).
+
+## Summary
+
+This plan fixes the MNG-357 root cause — Linear's extension-less pasted-image URLs (`https://uploads.linear.app/<uuid>/<filename>`) get dropped at the pre-download MIME filter because `mimeTypeFromUrl` returns `application/octet-stream` and `filterImageMedia` excludes anything that isn't an image MIME. The fix defers MIME authority to the download response's `Content-Type` header by introducing an `image/*` wildcard sentinel that survives the filter and is resolved to a concrete MIME at download time.
+
+It also adds the diagnostic log line that AC#5 requires. Today the only image-pipeline log is the post-download `fetchWorkItemStep: image download complete` summary; the upstream extract-and-filter step is invisible. After this plan ships, every work-item-fetch emits ONE structured log line at `INFO` level with a stable shape: provider, work-item-id, urls-detected, urls-after-filter, urls-downloaded, urls-failed. An operator can grep for it and triage any "no image delivered" report from that line alone.
+
+This plan does NOT change the runtime read-work-item gadget (Plan 2) and does NOT add the Linear GraphQL fixture (Plan 3). It also does NOT touch PR #948's Claude-Code initial-input ImageBlockParam path — but a regression test pins that path so Plan 2 and beyond can't accidentally break it.
+
+**Components delivered:**
+- New behavior in `src/pm/media.ts`: extension-less URLs that PM providers commonly produce (Linear's `uploads.linear.app/<uuid>` shape) are tagged with `mimeType: 'image/*'` instead of `application/octet-stream`. The wildcard is added to `IMAGE_MIME_TYPES`-equivalent acceptance in `isImageMimeType` (a single check).
+- New extraction-step diagnostic log line (one INFO log per call), emitted from a new helper that wraps the existing extract → filter → download → write pipeline. Format pinned by test.
+- Regression tests: extension-less Linear URL flows end-to-end (extract → filter → download → write); extension-bearing Trello/JIRA URLs still work (no regression); the new diagnostic log shape is asserted; PR #948's Claude-Code ImageBlockParam path is pinned by a regression test that fails loudly if the boot-path image stripping behavior changes.
+- A small refactor extracting the existing download-and-base64 loop in `fetchWorkItemStep` (`src/agents/definitions/contextSteps.ts:107-153`) into a shared module-internal helper. Plan 2 will import this helper for the runtime gadget; Plan 1 only refactors and consumes from one site.
+
+**Deferred to later plans in this spec:**
+- The runtime read-work-item gadget that delivers images mid-run (Plan 2).
+- The Linear GraphQL fixture + extraction-coverage regression test (Plan 3).
+- `src/integrations/README.md`'s Linear-specific GraphQL surface confirmation (Plan 3).
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (Linear screenshot on-disk for all engines, boot path) — **full**
+- Spec AC #2 (Trello/JIRA images regression-safe) — **full** (regression tests)
+- Spec AC #5 (single grep-stable diagnostic log line) — **partial** (boot path here; runtime path same format in Plan 2)
+- Spec AC #6 (PR #948 Claude-Code path untouched) — **full** (regression test pins it)
+- Spec AC #8 (new-provider invariant preserved) — **full** (no provider-specific code added in shared resolution)
+- Spec AC #9 (MNG-357 end-to-end reproduces clean) — **full**
+
+---
+
+## Depends On
+
+None. This plan is the foundation of the spec.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Extension-less PM URL detection + `image/*` wildcard sentinel
+
+**Tests first** (`tests/unit/pm/media.test.ts` — extend existing file):
+
+- `mimeTypeFromUrl — returns 'image/*' for extension-less Linear URL` — unit — input `https://uploads.linear.app/abc-123-def-456` (no extension); assert returns `'image/*'`. Expected red: `AssertionError: expected 'application/octet-stream' to be 'image/*'`.
+- `mimeTypeFromUrl — returns 'image/png' for extensioned PM URL (regression-safe)` — unit — input `https://example.com/foo.png`; assert returns `'image/png'`. Expected red: passes already (regression pin); fails only if we accidentally regress the extensioned path.
+- `mimeTypeFromUrl — returns 'application/octet-stream' for non-PM extension-less URL (no over-broad behavior)` — unit — input `https://example.com/random-file`; assert returns `'application/octet-stream'`. Expected red: passes already; fails if we over-broaden the wildcard logic to all extension-less URLs (which would degrade observability).
+- `mimeTypeFromUrl — returns 'image/*' for extension-less Linear comment-pasted URL` — unit — input `https://uploads.linear.app/<uuid>/Screenshot 2026-04-26 at 10.30.png` (some Linear URLs DO have extensions but with spaces; some don't); covers the no-extension fallback. Expected red: same as test 1 if the path has no `.<ext>` segment.
+- `isImageMimeType — accepts the 'image/*' wildcard sentinel` — unit — input `'image/*'`; assert returns `true`. Expected red: `AssertionError: expected false to be true` (`IMAGE_MIME_TYPES` set doesn't contain `'image/*'`).
+- `isImageMimeType — preserves existing strict acceptance for known image MIMEs` — unit — input `'image/png'` returns true, `'application/pdf'` returns false. Regression pin.
+
+**Implementation** (`src/pm/media.ts`):
+- Add `IMAGE_HOST_ALLOWLIST` constant: `Set<string>` containing `'uploads.linear.app'`. (Could grow to include trusted hosts for other providers if they prove to need it; today Linear is the only one.) Documented inline comment: this list represents trusted PM-provider upload hosts whose extension-less URLs we should treat as candidate images and resolve at download time.
+- Modify `mimeTypeFromUrl(url)`: after computing `ext` from the pathname, if the resolved MIME is `'application/octet-stream'` AND the URL's hostname is in `IMAGE_HOST_ALLOWLIST`, return `'image/*'` instead.
+- Modify `isImageMimeType(mime)`: accept `'image/*'` (the wildcard) in addition to the existing concrete-MIME set.
+- Do NOT change `filterImageMedia` — it already calls `isImageMimeType`, so widening that predicate flows through.
+- Do NOT add a HEAD request; resolve at GET (the existing `downloadMedia` path).
+
+### 2. Diagnostic log line at extract-time
+
+**Tests first** (`tests/unit/agents/definitions/contextSteps.test.ts` — extend existing or create new file if absent):
+
+- `fetchWorkItemStep — emits diagnostic log line with extracted, post-filter, downloaded, failed counts` — unit — mock `readWorkItemWithMedia` to return 3 image refs (mix of extensioned + extension-less); mock `downloadMedia` to succeed for 2, fail for 1; assert exactly ONE INFO-level log call matches `'work-item-fetch image pipeline'` (or whatever the agreed prefix becomes) with structured fields `{ provider, workItemId, urlsDetected: 3, urlsAfterFilter: 3, urlsDownloaded: 2, urlsFailed: 1 }`. Expected red: `expected logger.info to have been called with object containing 'work-item-fetch image pipeline'` — today no such log exists.
+- `fetchWorkItemStep — log line emitted even when no images are present (urlsDetected: 0)` — unit — mock returns no images; assert the log line still fires with all-zero counts. Why: an operator triaging "no image delivered" reports needs to see "0 detected upstream" as positive confirmation, not absence-of-log. Expected red: same.
+- `fetchWorkItemStep — log fields include the post-resolve mime distribution` — unit — mock returns 1 extensioned PNG and 1 extension-less Linear; downloads both; assert log includes `urlsByMimeType: { 'image/png': 1, 'image/*': 1 }` (or similar — the test pins the field name and shape, not the exact map keys). Expected red: same.
+- `fetchWorkItemStep — log line is INFO level (not DEBUG)` — unit — assert the call is on `logger.info`, not `logger.debug`. Why: AC#5 requires "single grep-stable line in the cascade run log surface" — DEBUG is filtered out by default. Expected red: passes if log doesn't exist (vacuous), fails right reason if implementation uses wrong level.
+
+**Implementation** (`src/agents/definitions/contextSteps.ts`):
+- Add a structured log call inside `fetchWorkItemStep`, AFTER the download Promise.all resolves and BEFORE the function returns. Exact shape:
+  ```
+  logger.info('[image-pipeline] work-item-fetch summary', {
+    provider: <providerType>,
+    workItemId,
+    urlsDetected: <pre-filter count>,
+    urlsAfterFilter: <post-filterImageMedia count>,
+    urlsDownloaded: <success count>,
+    urlsFailed: <failure count>,
+    urlsByMimeType: <Record<string, number>>,
+  });
+  ```
+- The provider type is available via `getPMProviderOrNull()?.type`.
+- `urlsByMimeType` is built from the resolved `DownloadMediaResult.mimeType` for successes; failures contribute to a separate `failuresByReason` field if useful (defer to test contract).
+- The log line is grep-stable via the literal prefix `[image-pipeline] work-item-fetch summary`. Document this in the integrations README (see Doc Impact below).
+
+### 3. Refactor: extract download-and-base64 loop into a shared helper
+
+**Tests first** (`tests/unit/pm/download-and-prepare.test.ts` — new file):
+
+- `downloadAndPrepareImages — downloads each ref, returns success array + failure array` — unit — pass 3 refs; mock `downloadMedia` per-provider; assert returned shape `{ images: [...], failures: [{url, reason}] }`. Expected red: module not found.
+- `downloadAndPrepareImages — preserves base64 + altText + mimeType from the resolved download` — unit — pass extension-less Linear ref; mock download to return `{ buffer, mimeType: 'image/png' }`; assert resulting image's mimeType is `'image/png'` (NOT `'image/*'` — the wildcard was resolved). Expected red: module not found.
+- `downloadAndPrepareImages — caps at MAX_IMAGES_PER_WORK_ITEM` — unit — pass 12 refs, MAX_IMAGES_PER_WORK_ITEM=10; assert only 10 attempted. Expected red: module not found.
+- `downloadAndPrepareImages — picks per-provider download client (jiraClient / linearClient / trelloClient)` — unit — set provider to 'linear'; assert `linearClient.downloadAttachment` is the one called. Expected red: module not found.
+
+**Implementation** (`src/pm/download-and-prepare.ts` — new file):
+- Function signature: `downloadAndPrepareImages(workItemId: string, media: MediaReference[], logWriter: LogWriter): Promise<{ images: ContextInjectionImage[]; failures: { url: string; reason: string }[] }>`.
+- Lifts the loop currently at `src/agents/definitions/contextSteps.ts:107-153` into this module unchanged (same provider-dispatch, same Promise.all, same per-failure WARN log).
+- The new diagnostic log (task 2 above) calls this helper, then emits the summary.
+- Plan 2 will import this helper for the runtime gadget. This plan only consumes it from `fetchWorkItemStep` — the runtime gadget consumer is deliberately out of scope here.
+
+**Reuse + refactor**: After the helper exists, modify `fetchWorkItemStep` to call it instead of the inline loop. The diagnostic log (task 2) is wired around the helper call. Same external behavior; same returned shape.
+
+### 4. Regression test: PR #948's Claude-Code ImageBlockParam path stays untouched
+
+**Tests first** (`tests/unit/backends/claude-code/image-injection.test.ts` — extend existing PR #948 test file or create if absent):
+
+- `Claude Code backend — initial-input image-strip-before-buildTaskPrompt invariant holds` — unit — feed a `ContextInjection` with `images` populated; assert that `buildTaskPrompt` (or its mock) receives an injection where `images` field is absent/empty AND that `buildPromptWithImages` is called with the original images. Expected red: passes already (regression pin); fails right reason if Plan 1 accidentally regresses the strip-before-buildTaskPrompt logic.
+- `Claude Code backend — multimodal SDK content blocks include the prepared base64 + mimeType` — unit — assert the resulting SDK call includes `ImageBlockParam` content blocks matching the input images. Expected red: passes already; fails right reason if Plan 1's MIME-resolution refactor breaks the data flowing into the SDK call.
+
+**Implementation**: none. These are pure regression pins. If they don't already exist (PR #948 may have a different test file), create the minimum coverage to pin the behavior. If PR #948 left no tests on this surface, that's a finding to surface — but the spec's AC#6 cannot be satisfied without a test that pins the behavior, so adding it is in-scope here.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/pm/media.test.ts`: 6 new tests covering `mimeTypeFromUrl` extension-less Linear URL handling + `isImageMimeType` wildcard acceptance + Trello/JIRA regression pins
+- [ ] `tests/unit/agents/definitions/contextSteps.test.ts`: 4 new tests covering the diagnostic log line shape, level, and zero-image case
+- [ ] `tests/unit/pm/download-and-prepare.test.ts` (new): 4 tests covering the extracted helper's contract (shape, MIME resolution, cap, per-provider dispatch)
+- [ ] `tests/unit/backends/claude-code/image-injection.test.ts`: 2 regression pins for PR #948's strip-before-buildTaskPrompt invariant
+
+### Integration tests
+- [ ] `tests/integration/pm/image-pipeline.test.ts` (new): one happy-path integration that exercises the real `mimeTypeFromUrl` + real `isImageMimeType` + real `filterImageMedia` + real `downloadAndPrepareImages` (with `downloadMedia` stubbed to control Content-Type) + real diagnostic log emission, end-to-end with an extension-less Linear-shaped URL.
+
+### Acceptance tests
+- [ ] AC#1: integration test "extension-less Linear URL flows end-to-end and lands on disk"
+- [ ] AC#2: regression tests "Trello PNG URL still flows" + "JIRA attachment URL still flows"
+- [ ] AC#5 (boot path): unit test pinning the diagnostic log line shape and level
+- [ ] AC#6: regression pins for PR #948's Claude-Code path
+- [ ] AC#8: covered by AC#1 + AC#2 (no provider-specific code added)
+- [ ] AC#9: integration test that simulates the MNG-357 scenario (extension-less Linear URL → boot path → file on disk + log line shows `urlsDownloaded: 1`)
+
+---
+
+## Manual Verification (for `[manual]`-tagged ACs only)
+
+n/a — all ACs auto-tested.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. An extension-less Linear-shaped URL (`https://uploads.linear.app/<uuid>/...` with no `.png`/`.jpg` extension) flows through extract → filter → download → write end-to-end. The resulting `MediaReference.mimeType` after download resolves to `'image/png'` (or whatever the response Content-Type header reports), NOT `'image/*'` or `'application/octet-stream'`.
+2. Extension-bearing Trello and JIRA URLs continue to flow through with no behavior change.
+3. Every `fetchWorkItemStep` invocation emits exactly ONE structured INFO-level log line with the literal prefix `[image-pipeline] work-item-fetch summary` and structured fields `{ provider, workItemId, urlsDetected, urlsAfterFilter, urlsDownloaded, urlsFailed, urlsByMimeType }`.
+4. PR #948's Claude-Code initial-input ImageBlockParam path passes a regression test that fails loudly if the strip-before-buildTaskPrompt invariant changes.
+5. `downloadAndPrepareImages` is a callable helper module exporting the prep loop with a stable shape `Promise<{ images, failures }>`. `fetchWorkItemStep` uses it (refactor not new code path).
+6. `mimeTypeFromUrl` returns `'image/*'` for extension-less URLs whose hostname is in `IMAGE_HOST_ALLOWLIST` (currently `uploads.linear.app`); returns the existing extension-derived MIME for everything else; returns `'application/octet-stream'` for unknown extension-less hosts (preserving observability of unrecognized cases).
+7. `isImageMimeType('image/*')` returns true; `isImageMimeType('application/pdf')` returns false (regression).
+8. All new/modified code has corresponding tests written before the implementation.
+9. `npm run build` passes.
+10. `npm test` passes.
+11. `npm run test:integration` passes for the new integration test.
+12. `npm run lint` passes.
+13. `npm run typecheck` passes.
+14. All documentation listed in this plan's Documentation Impact has been updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | Entry under the next release: "PM image delivery: extension-less PM-provider URLs (Linear `uploads.linear.app/<uuid>`) are no longer dropped by the pre-download MIME filter. Defers MIME authority to the download response's Content-Type header. Adds a single grep-stable diagnostic log line at extract time: `[image-pipeline] work-item-fetch summary`. Closes the silent screenshot-drop bug class verified live on 2026-04-26 (ucho/MNG-357)." |
+| `src/integrations/README.md` | Add a new section titled "Image delivery contract" near the end. Documents: (a) the shared MIME resolution path (Content-Type-first, URL-extension-second, no magic-byte sniffing); (b) the `IMAGE_HOST_ALLOWLIST` for trusted PM-provider upload hosts and how to add a new entry; (c) the `[image-pipeline] work-item-fetch summary` diagnostic log line operators rely on, with field schema; (d) the rule that providers should NOT do their own MIME resolution — let the shared path handle it. Cross-link to spec 016. |
+
+---
+
+## Out of Scope (this plan)
+
+- The runtime read-work-item gadget downloading + writing images (Plan 2).
+- Linear GraphQL fixture + extraction-coverage regression test (Plan 3).
+- Codex / OpenCode native multimodal SDK delivery — out of scope per spec.
+- Magic-byte sniffing — out of scope per spec.
+- Backfilling missed screenshots for prior runs — out of scope per spec.
+- Image compression / resize / format conversion — out of scope per spec.
+- Dashboard surface for "image not delivered" — out of scope per spec.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1 (extension-less Linear URL flows end-to-end)
+- [ ] AC #2 (Trello/JIRA regression)
+- [ ] AC #3 (diagnostic log line shape + level)
+- [ ] AC #4 (PR #948 regression pin)
+- [ ] AC #5 (downloadAndPrepareImages shared helper)
+- [ ] AC #6 (mimeTypeFromUrl wildcard for allowlist hosts)
+- [ ] AC #7 (isImageMimeType wildcard acceptance)
+- [ ] AC #8 (TDD discipline)
+- [ ] AC #9 (build)
+- [ ] AC #10 (unit tests)
+- [ ] AC #11 (integration tests)
+- [ ] AC #12 (lint)
+- [ ] AC #13 (typecheck)
+- [ ] AC #14 (docs)
