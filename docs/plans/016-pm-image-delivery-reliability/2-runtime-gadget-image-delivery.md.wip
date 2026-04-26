@@ -6,7 +6,7 @@ plan_slug: runtime-gadget-image-delivery
 level: plan
 parent_spec: docs/specs/016-pm-image-delivery-reliability.md
 depends_on: [1-boot-path-mime-fix-and-diagnostic-log.md]
-status: pending
+status: wip
 ---
 
 # 016/2: Runtime gadget image delivery (mid-run pickup)
