@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { accessSync, constants, existsSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
@@ -45,6 +46,24 @@ export function resolveClaudeModel(cascadeModel: string): string {
 	throw new Error(
 		`Model "${cascadeModel}" is not compatible with the Claude Code engine. Configure a Claude-compatible model (e.g. "${DEFAULT_CLAUDE_CODE_MODEL}") or switch to a different engine.`,
 	);
+}
+
+/**
+ * Resolve the absolute path to the `claude` CLI for `pathToClaudeCodeExecutable`.
+ * Skips the SDK's platform-subpackage probe, which is broken on glibc Linux
+ * because it tries the `-musl` variant first and errors on ENOENT.
+ */
+export function resolveClaudeCodeExecutablePath(): string {
+	const fromEnv = process.env.CLAUDE_CODE_EXECUTABLE_PATH?.trim();
+	if (fromEnv) return fromEnv;
+	try {
+		return execFileSync('which', ['claude'], {
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		}).trim();
+	} catch {
+		return '/usr/local/bin/claude';
+	}
 }
 
 /**
@@ -295,6 +314,7 @@ export class ClaudeCodeEngine extends NativeToolEngine {
 						tools: sdkTools,
 						allowedTools: sdkTools,
 						persistSession: true,
+						pathToClaudeCodeExecutable: resolveClaudeCodeExecutablePath(),
 						hooks,
 						env,
 						debug: true,

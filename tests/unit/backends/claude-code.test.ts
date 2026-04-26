@@ -26,6 +26,7 @@ import {
 	buildToolGuidance,
 	ClaudeCodeEngine,
 	ensureOnboardingFlag,
+	resolveClaudeCodeExecutablePath,
 	resolveClaudeModel,
 } from '../../../src/backends/claude-code/index.js';
 import {
@@ -1431,6 +1432,93 @@ describe('ensureOnboardingFlag', () => {
 		ensureOnboardingFlag();
 
 		expect(readFileSync(claudeJsonPath, 'utf8')).toBe(existingContent);
+	});
+});
+
+describe('resolveClaudeCodeExecutablePath', () => {
+	const ENV_KEY = 'CLAUDE_CODE_EXECUTABLE_PATH';
+	let original: string | undefined;
+
+	beforeEach(() => {
+		original = process.env[ENV_KEY];
+		unsetEnv(ENV_KEY);
+	});
+
+	afterEach(() => {
+		if (original === undefined) unsetEnv(ENV_KEY);
+		else process.env[ENV_KEY] = original;
+	});
+
+	it('honors CLAUDE_CODE_EXECUTABLE_PATH override', () => {
+		process.env[ENV_KEY] = '/opt/custom/claude';
+		expect(resolveClaudeCodeExecutablePath()).toBe('/opt/custom/claude');
+	});
+
+	it('trims whitespace from the env override', () => {
+		process.env[ENV_KEY] = '  /opt/custom/claude  ';
+		expect(resolveClaudeCodeExecutablePath()).toBe('/opt/custom/claude');
+	});
+
+	it('returns a non-empty string from `which claude` or the docker fallback', () => {
+		const resolved = resolveClaudeCodeExecutablePath();
+		expect(typeof resolved).toBe('string');
+		expect(resolved.length).toBeGreaterThan(0);
+	});
+});
+
+describe('execute — pathToClaudeCodeExecutable', () => {
+	const ENV_KEY = 'CLAUDE_CODE_EXECUTABLE_PATH';
+	let original: string | undefined;
+
+	function mockStream(messages: Array<{ type: string; [key: string]: unknown }>) {
+		const iterator = messages[Symbol.iterator]();
+		mockQuery.mockReturnValue({
+			[Symbol.asyncIterator]() {
+				return {
+					next() {
+						return Promise.resolve(iterator.next());
+					},
+				};
+			},
+		} as ReturnType<typeof query>);
+	}
+
+	beforeEach(() => {
+		original = process.env[ENV_KEY];
+		mockQuery.mockReset();
+	});
+
+	afterEach(() => {
+		if (original === undefined) unsetEnv(ENV_KEY);
+		else process.env[ENV_KEY] = original;
+	});
+
+	it('passes pathToClaudeCodeExecutable to query() so the SDK skips its native-binary probe', async () => {
+		mockStream([
+			{ type: 'result', subtype: 'success', result: 'Done', total_cost_usd: 0, num_turns: 1 },
+		]);
+
+		await new ClaudeCodeEngine().execute(makeInput());
+
+		const opts = mockQuery.mock.calls[0]?.[0]?.options as
+			| { pathToClaudeCodeExecutable?: unknown }
+			| undefined;
+		expect(typeof opts?.pathToClaudeCodeExecutable).toBe('string');
+		expect((opts?.pathToClaudeCodeExecutable as string).length).toBeGreaterThan(0);
+	});
+
+	it('forwards CLAUDE_CODE_EXECUTABLE_PATH override into query() options', async () => {
+		process.env[ENV_KEY] = '/opt/custom/claude';
+		mockStream([
+			{ type: 'result', subtype: 'success', result: 'Done', total_cost_usd: 0, num_turns: 1 },
+		]);
+
+		await new ClaudeCodeEngine().execute(makeInput());
+
+		const opts = mockQuery.mock.calls[0]?.[0]?.options as
+			| { pathToClaudeCodeExecutable?: unknown }
+			| undefined;
+		expect(opts?.pathToClaudeCodeExecutable).toBe('/opt/custom/claude');
 	});
 });
 
