@@ -629,6 +629,23 @@ export const linearClient = {
 		};
 	},
 
+	/**
+	 * Downloads a Linear-hosted image (e.g. `uploads.linear.app/…`) and
+	 * returns its raw bytes and MIME type.
+	 *
+	 * Linear personal API keys are sent **bare** in the `Authorization` header
+	 * (no `Bearer` prefix). `Content-Type` is intentionally omitted here
+	 * because this is a GET download request, not a JSON API call.
+	 *
+	 * @param url - The attachment/inline image URL to download.
+	 * @returns `{ buffer, mimeType }` on success, `null` on any failure.
+	 */
+	async downloadAttachment(url: string): Promise<{ buffer: Buffer; mimeType: string } | null> {
+		const { apiKey } = getLinearCredentials();
+		const { downloadMedia } = await import('../pm/media.js');
+		return downloadMedia(url, { Authorization: apiKey });
+	},
+
 	// ===== Reactions =====
 
 	async createReaction(commentId: string, emoji: string): Promise<LinearReaction> {

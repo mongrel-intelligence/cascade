@@ -23,6 +23,7 @@ import {
 } from '../_shared/inline-checklist.js';
 import type { LinearConfig } from '../config.js';
 import type { ContainerId, LabelId } from '../ids.js';
+import { extractMarkdownImages } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
@@ -57,6 +58,7 @@ export class LinearPMProvider implements PMProvider {
 
 	async getWorkItem(id: string): Promise<WorkItem> {
 		const issue = await linearClient.getIssue(id);
+		const inlineMedia = extractMarkdownImages(issue.description ?? '', 'description');
 		return {
 			id: issue.identifier || issue.id,
 			title: issue.title,
@@ -70,21 +72,26 @@ export class LinearPMProvider implements PMProvider {
 					color: l.color,
 				}),
 			),
+			inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
 		};
 	}
 
 	async getWorkItemComments(id: string): Promise<WorkItemComment[]> {
 		const comments = await linearClient.getIssueComments(id);
-		return comments.map((c) => ({
-			id: c.id,
-			date: c.createdAt,
-			text: c.body,
-			author: {
-				id: c.user?.id ?? '',
-				name: c.user?.displayName ?? c.user?.name ?? '',
-				username: c.user?.email ?? '',
-			},
-		}));
+		return comments.map((c) => {
+			const inlineMedia = extractMarkdownImages(c.body, 'comment');
+			return {
+				id: c.id,
+				date: c.createdAt,
+				text: c.body,
+				author: {
+					id: c.user?.id ?? '',
+					name: c.user?.displayName ?? c.user?.name ?? '',
+					username: c.user?.email ?? '',
+				},
+				inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
+			};
+		});
 	}
 
 	async updateWorkItem(

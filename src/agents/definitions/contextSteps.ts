@@ -106,6 +106,7 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 
 			const { jiraClient } = await import('../../jira/client.js');
 			const { trelloClient } = await import('../../trello/client.js');
+			const { linearClient } = await import('../../linear/client.js');
 
 			const results = await Promise.all(
 				limited.map(async (ref) => {
@@ -113,6 +114,8 @@ export async function fetchWorkItemStep(params: FetchContextParams): Promise<Con
 						let downloaded: { buffer: Buffer; mimeType: string } | null = null;
 						if (provider?.type === 'jira') {
 							downloaded = await jiraClient.downloadAttachment(ref.url);
+						} else if (provider?.type === 'linear') {
+							downloaded = await linearClient.downloadAttachment(ref.url);
 						} else {
 							downloaded = await trelloClient.downloadAttachment(ref.url);
 						}

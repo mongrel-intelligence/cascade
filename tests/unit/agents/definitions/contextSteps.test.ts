@@ -14,6 +14,7 @@ vi.mock('../../../../src/gadgets/todo/storage.js', () => ({
 
 const mockTrelloDownload = vi.fn();
 const mockJiraDownload = vi.fn();
+const mockLinearDownload = vi.fn();
 
 vi.mock('../../../../src/trello/client.js', () => ({
 	trelloClient: {
@@ -24,6 +25,12 @@ vi.mock('../../../../src/trello/client.js', () => ({
 vi.mock('../../../../src/jira/client.js', () => ({
 	jiraClient: {
 		downloadAttachment: mockJiraDownload,
+	},
+}));
+
+vi.mock('../../../../src/linear/client.js', () => ({
+	linearClient: {
+		downloadAttachment: mockLinearDownload,
 	},
 }));
 
@@ -206,6 +213,7 @@ describe('fetchWorkItemStep', () => {
 	beforeEach(() => {
 		mockTrelloDownload.mockReset();
 		mockJiraDownload.mockReset();
+		mockLinearDownload.mockReset();
 	});
 
 	it('returns empty array when no workItemId', async () => {
@@ -286,6 +294,39 @@ describe('fetchWorkItemStep', () => {
 		expect(result[0].images).toHaveLength(1);
 		expect(mockJiraDownload).toHaveBeenCalledWith('https://jira.example.com/img.jpeg');
 		expect(mockTrelloDownload).not.toHaveBeenCalled();
+	});
+
+	it('uses linearClient.downloadAttachment for linear provider', async () => {
+		mockReadWorkItemWithMedia.mockResolvedValue({
+			text: '# Linear issue with screenshot',
+			media: [
+				{
+					url: 'https://uploads.linear.app/abc/screenshot.png',
+					mimeType: 'image/png',
+					altText: 'screenshot',
+					source: 'description',
+				},
+			],
+		});
+		mockGetPMProviderOrNull.mockReturnValue({ type: 'linear' } as never);
+		mockLinearDownload.mockResolvedValue({
+			buffer: Buffer.from('linear-image-data'),
+			mimeType: 'image/png',
+		});
+
+		const result = await fetchWorkItemStep(makeParams({ workItemId: 'LINEAR-1' }));
+
+		expect(result[0].images).toHaveLength(1);
+		expect(result[0].images?.[0]).toEqual({
+			base64Data: Buffer.from('linear-image-data').toString('base64'),
+			mimeType: 'image/png',
+			altText: 'screenshot',
+		});
+		expect(mockLinearDownload).toHaveBeenCalledWith(
+			'https://uploads.linear.app/abc/screenshot.png',
+		);
+		expect(mockTrelloDownload).not.toHaveBeenCalled();
+		expect(mockJiraDownload).not.toHaveBeenCalled();
 	});
 
 	it('logs WARN and skips when download returns null, stripping query params from URL', async () => {

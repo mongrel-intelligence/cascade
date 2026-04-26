@@ -286,3 +286,57 @@ describe('linearClient.createLabel — duplicate idempotency', () => {
 		).rejects.toThrow('team not found');
 	});
 });
+
+// ===== downloadAttachment =====
+
+describe('linearClient.downloadAttachment', () => {
+	const originalFetch = globalThis.fetch;
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+		vi.restoreAllMocks();
+	});
+
+	it('sends bare Authorization header (no Bearer prefix) and returns buffer + mimeType', async () => {
+		const imageBytes = Buffer.from('linear-image-data');
+		const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			new Response(imageBytes, {
+				status: 200,
+				headers: { 'Content-Type': 'image/png' },
+			}),
+		);
+
+		const result = await withLinearCredentials({ apiKey: 'lin_api_testkey' }, () =>
+			linearClient.downloadAttachment('https://uploads.linear.app/abc/screenshot.png'),
+		);
+
+		expect(result).not.toBeNull();
+		// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+		expect(result!.mimeType).toBe('image/png');
+		// biome-ignore lint/style/noNonNullAssertion: guarded by expect above
+		expect(result!.buffer).toBeInstanceOf(Buffer);
+
+		const [url, options] = fetchSpy.mock.calls[0];
+		expect(url).toBe('https://uploads.linear.app/abc/screenshot.png');
+		// Linear personal keys are bare — no "Bearer" prefix
+		expect(options?.headers).toEqual({ Authorization: 'lin_api_testkey' });
+		// Content-Type is NOT included (this is a GET download, not a GraphQL mutation)
+		expect((options?.headers as Record<string, string>)?.['Content-Type']).toBeUndefined();
+	});
+
+	it('returns null on non-OK response', async () => {
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('Forbidden', { status: 403 }));
+
+		const result = await withLinearCredentials({ apiKey: 'lin_api_testkey' }, () =>
+			linearClient.downloadAttachment('https://uploads.linear.app/abc/screenshot.png'),
+		);
+
+		expect(result).toBeNull();
+	});
+
+	it('throws when called outside withLinearCredentials scope', async () => {
+		await expect(
+			linearClient.downloadAttachment('https://uploads.linear.app/abc/screenshot.png'),
+		).rejects.toThrow('No Linear credentials in scope');
+	});
+});

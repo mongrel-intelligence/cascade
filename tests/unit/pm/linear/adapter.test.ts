@@ -126,6 +126,39 @@ describe('LinearPMProvider', () => {
 			const result = await provider.getWorkItem('issue-uuid');
 			expect(result.description).toBe('');
 		});
+
+		it('populates inlineMedia when description contains markdown images', async () => {
+			mockGetIssue.mockResolvedValue(
+				makeIssue({
+					description:
+						'Here is a screenshot:\n\n![screenshot](https://uploads.linear.app/abc/def.png)',
+				}),
+			);
+
+			const result = await provider.getWorkItem('issue-uuid');
+
+			expect(result.inlineMedia).toHaveLength(1);
+			expect(result.inlineMedia?.[0]).toMatchObject({
+				url: 'https://uploads.linear.app/abc/def.png',
+				mimeType: 'image/png',
+				altText: 'screenshot',
+				source: 'description',
+			});
+		});
+
+		it('returns undefined inlineMedia when description has no images', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: 'Plain text, no images here.' }));
+
+			const result = await provider.getWorkItem('issue-uuid');
+
+			expect(result.inlineMedia).toBeUndefined();
+		});
+
+		it('returns undefined inlineMedia when description is null', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: null }));
+			const result = await provider.getWorkItem('issue-uuid');
+			expect(result.inlineMedia).toBeUndefined();
+		});
 	});
 
 	// =========================================================================
@@ -178,6 +211,53 @@ describe('LinearPMProvider', () => {
 			expect(result[0].author.id).toBe('');
 			expect(result[0].author.name).toBe('');
 			expect(result[0].author.username).toBe('');
+		});
+
+		it('populates inlineMedia when comment body contains markdown images', async () => {
+			mockGetIssueComments.mockResolvedValue([
+				{
+					id: 'c3',
+					body: 'See this image: ![diagram](https://uploads.linear.app/xyz/diagram.png)',
+					createdAt: '2024-01-03T00:00:00Z',
+					updatedAt: '2024-01-03T00:00:00Z',
+					issueId: 'issue-uuid',
+					user: {
+						id: 'u1',
+						name: 'Bob',
+						email: 'bob@example.com',
+						displayName: 'Bob',
+						avatarUrl: null,
+						active: true,
+					},
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('issue-uuid');
+
+			expect(result[0].inlineMedia).toHaveLength(1);
+			expect(result[0].inlineMedia?.[0]).toMatchObject({
+				url: 'https://uploads.linear.app/xyz/diagram.png',
+				mimeType: 'image/png',
+				altText: 'diagram',
+				source: 'comment',
+			});
+		});
+
+		it('returns undefined inlineMedia when comment body has no images', async () => {
+			mockGetIssueComments.mockResolvedValue([
+				{
+					id: 'c4',
+					body: 'Just text, no images.',
+					createdAt: '2024-01-04T00:00:00Z',
+					updatedAt: '2024-01-04T00:00:00Z',
+					issueId: 'issue-uuid',
+					user: null,
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('issue-uuid');
+
+			expect(result[0].inlineMedia).toBeUndefined();
 		});
 	});
 
