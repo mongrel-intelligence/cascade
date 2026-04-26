@@ -41,10 +41,17 @@ const IMAGE_MIME_TYPES = new Set([
 /**
  * Returns true when the supplied MIME type represents a common image format.
  *
+ * Also accepts the `'image/*'` wildcard sentinel — used by spec 016/1 for
+ * extension-less PM-provider URLs whose MIME is resolved at download-time
+ * via the response's Content-Type header. The wildcard never reaches disk;
+ * `downloadMedia` resolves it to a concrete MIME before the bytes are written.
+ *
  * @param mime - The MIME type string to test (e.g. `'image/png'`).
  */
 export function isImageMimeType(mime: string): boolean {
-	return IMAGE_MIME_TYPES.has(mime.toLowerCase().trim());
+	const normalized = mime.toLowerCase().trim();
+	if (normalized === 'image/*') return true;
+	return IMAGE_MIME_TYPES.has(normalized);
 }
 
 /**
@@ -78,18 +85,43 @@ const EXTENSION_MIME_MAP: Record<string, string> = {
 };
 
 /**
+ * Trusted PM-provider upload hosts whose extension-less URLs we treat as
+ * candidate images and resolve at download-time via the response's
+ * Content-Type header. Spec 016/1.
+ *
+ * Linear's user-pasted-screenshot URLs (`https://uploads.linear.app/<uuid>`)
+ * have no file extension in the pathname; before this allowlist they fell
+ * through to `'application/octet-stream'` and were silently filtered out by
+ * `filterImageMedia`. To add a new trusted host: append the bare hostname
+ * here. Do NOT add hosts whose Content-Type headers are unreliable — the
+ * wildcard sentinel skips the URL-extension verdict and trusts the response.
+ */
+const IMAGE_HOST_ALLOWLIST: ReadonlySet<string> = new Set(['uploads.linear.app']);
+
+/**
  * Infers a MIME type from the file extension in a URL.
- * Returns `'application/octet-stream'` when the extension is unknown.
+ *
+ * Returns `'application/octet-stream'` when the extension is unknown — except
+ * for hosts in {@link IMAGE_HOST_ALLOWLIST}, where extension-less URLs return
+ * the `'image/*'` wildcard sentinel so they survive the pre-download image
+ * filter. Spec 016/1.
  *
  * @param url - The URL to examine.
  */
 function mimeTypeFromUrl(url: string): string {
 	try {
-		const pathname = new URL(url).pathname;
+		const parsed = new URL(url);
+		const pathname = parsed.pathname;
 		const ext = pathname.split('.').pop()?.toLowerCase() ?? '';
-		return EXTENSION_MIME_MAP[ext] ?? 'application/octet-stream';
+		const fromExt = EXTENSION_MIME_MAP[ext];
+		if (fromExt) return fromExt;
+		// Spec 016/1: trusted PM upload hosts return `image/*` for extension-less
+		// URLs so the download path can resolve the real MIME from the response.
+		if (IMAGE_HOST_ALLOWLIST.has(parsed.hostname)) return 'image/*';
+		return 'application/octet-stream';
 	} catch {
-		// Relative URL or malformed URL — try a simple extension check
+		// Relative URL or malformed URL — try a simple extension check; no host,
+		// so cannot apply the allowlist.
 		const ext = url.split('?')[0].split('.').pop()?.toLowerCase() ?? '';
 		return EXTENSION_MIME_MAP[ext] ?? 'application/octet-stream';
 	}

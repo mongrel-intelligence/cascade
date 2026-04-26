@@ -241,3 +241,47 @@ Different PM providers have different native concepts of "checklist". The `PMPro
 **Why inline markdown for Linear and JIRA?** Both providers support markdown checkboxes natively in their description editors but lack a dedicated lightweight checklist primitive — sub-issues and subtasks are full work items, which clutters boards when used for things like acceptance criteria or implementation steps. Inline markdown matches Trello's lightweight semantics without creating orphan issues. See [spec 008](../../docs/specs/008-inline-checklists.md) for full rationale.
 
 The shared engine that parses, appends, toggles, and removes inline checklist items lives at `src/pm/_shared/inline-checklist.ts` and is consumed by both the Linear and JIRA adapters.
+
+---
+
+## Image delivery contract
+
+Spec 016 hardened the work-item-image pipeline so user-pasted screenshots (Linear especially, but the rules generalize) reliably reach the agent worker as files on disk. New PM providers should follow this contract; do nothing extra and image delivery just works.
+
+### How the shared resolution path works
+
+1. **Extract URL refs** from the work-item description and each comment via `extractMarkdownImages()` (`src/pm/media.ts`). A `MediaReference` is produced for every `![alt](url)` match. The provider does NOT need its own extraction logic.
+2. **Pre-download MIME inference** (a hint, not a verdict): `mimeTypeFromUrl()` derives a MIME from the URL pathname's extension. For URLs whose hostname is in `IMAGE_HOST_ALLOWLIST` (currently `uploads.linear.app`) AND whose pathname has no recognised extension, the inference returns `'image/*'` — a wildcard sentinel that survives the image-only filter. Add a host to the allowlist only if its `Content-Type` headers are reliable.
+3. **Filter** via `filterImageMedia()` — drops anything that isn't an image MIME or the `image/*` wildcard.
+4. **Download** via `downloadAndPrepareImages()` (`src/pm/download-and-prepare.ts`) — the shared per-provider dispatch loop. The download response's `Content-Type` header is the AUTHORITATIVE MIME — it resolves the wildcard and overrides any URL-extension-derived guess.
+5. **Write to disk** at `.cascade/context/images/work-item-<id>-img-<index>.<ext>` — extension is derived from the resolved MIME.
+
+### What providers should NOT do
+
+- Don't write your own MIME-detection logic. The shared resolution path covers all known PM provider URL shapes.
+- Don't download images yourself in your adapter — let `downloadAndPrepareImages` do it.
+- Don't surface `getAttachments()` for inline-pasted images. That method is for formal Attachment records (Slack/GitHub link previews, integration cards) — distinct from inline pastes which live in description / comment markdown.
+
+### Diagnostic log line
+
+Every work-item fetch (boot path AND runtime read-work-item gadget) emits one INFO-level log line with the literal prefix `[image-pipeline] work-item-fetch summary` and the field schema:
+
+```
+{
+  provider: 'linear' | 'trello' | 'jira' | 'unknown',
+  workItemId: string,
+  urlsDetected: number,    // pre-filter count
+  urlsAfterFilter: number, // post-filterImageMedia count
+  urlsDownloaded: number,
+  urlsFailed: number,
+  urlsByMimeType: Record<string, number>,
+}
+```
+
+Operators triaging a "no image delivered" report grep for the literal prefix in `cascade runs logs <runId>` output. One line per fetch tells the whole story.
+
+### When a provider's host serves untrustworthy `Content-Type`
+
+If your provider's upload host returns `application/octet-stream` (or wrong) on the actual GET response, the download-time resolution can't recover. Two options: (a) don't add the host to `IMAGE_HOST_ALLOWLIST` — let the URL-extension path do its job; (b) if URLs are also extension-less, file an issue describing the host's behavior so we can layer in a per-host content-type override. Don't hard-code MIMEs in your adapter — keep MIME resolution shared.
+
+See [spec 016](../../docs/specs/016-pm-image-delivery-reliability.md) for the full rationale and the live incident this contract closed.

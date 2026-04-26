@@ -6,7 +6,7 @@ plan_slug: boot-path-mime-fix-and-diagnostic-log
 level: plan
 parent_spec: docs/specs/016-pm-image-delivery-reliability.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 016/1: Boot-path MIME fix + diagnostic log line
@@ -195,17 +195,17 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (extension-less Linear URL flows end-to-end)
-- [ ] AC #2 (Trello/JIRA regression)
-- [ ] AC #3 (diagnostic log line shape + level)
-- [ ] AC #4 (PR #948 regression pin)
-- [ ] AC #5 (downloadAndPrepareImages shared helper)
-- [ ] AC #6 (mimeTypeFromUrl wildcard for allowlist hosts)
-- [ ] AC #7 (isImageMimeType wildcard acceptance)
-- [ ] AC #8 (TDD discipline)
-- [ ] AC #9 (build)
-- [ ] AC #10 (unit tests)
-- [ ] AC #11 (integration tests)
-- [ ] AC #12 (lint)
-- [ ] AC #13 (typecheck)
-- [ ] AC #14 (docs)
+- [x] AC #1 (extension-less Linear URL flows end-to-end)
+- [x] AC #2 (Trello/JIRA regression)
+- [x] AC #3 (diagnostic log line shape + level)
+- [x] AC #4 (PR #948 regression pin)
+- [x] AC #5 (downloadAndPrepareImages shared helper)
+- [x] AC #6 (mimeTypeFromUrl wildcard for allowlist hosts)
+- [x] AC #7 (isImageMimeType wildcard acceptance)
+- [x] AC #8 (TDD discipline)
+- [x] AC #9 (build)
+- [x] AC #10 (unit tests)
+- [x] AC #11 (integration tests)
+- [x] AC #12 (lint)
+- [x] AC #13 (typecheck)
+- [x] AC #14 (docs)

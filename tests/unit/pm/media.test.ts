@@ -72,6 +72,16 @@ describe('isImageMimeType', () => {
 	it('trims whitespace before checking', () => {
 		expect(isImageMimeType('  image/png  ')).toBe(true);
 	});
+
+	// Spec 016/1: image/* wildcard sentinel for extension-less PM URLs whose
+	// MIME is resolved at download-time via Content-Type header.
+	it("accepts the 'image/*' wildcard sentinel", () => {
+		expect(isImageMimeType('image/*')).toBe(true);
+	});
+
+	it("preserves strict acceptance: 'application/*' is NOT an image wildcard", () => {
+		expect(isImageMimeType('application/*')).toBe(false);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -119,6 +129,36 @@ describe('filterImageMedia', () => {
 // ---------------------------------------------------------------------------
 
 describe('extractMarkdownImages', () => {
+	// Spec 016/1: extension-less Linear pasted-image URLs must survive the
+	// pre-download MIME filter via the image/* wildcard sentinel.
+	describe('spec 016/1 — extension-less PM URLs', () => {
+		it("returns mimeType 'image/*' for extension-less Linear uploads.linear.app URL", () => {
+			const refs = extractMarkdownImages('![](https://uploads.linear.app/abc-123-def-456)');
+			expect(refs).toHaveLength(1);
+			expect(refs[0].mimeType).toBe('image/*');
+		});
+
+		it('returns concrete mimeType for extensioned Linear URL (regression-safe)', () => {
+			const refs = extractMarkdownImages(
+				'![Screenshot](https://uploads.linear.app/abc/Screenshot.png)',
+			);
+			expect(refs).toHaveLength(1);
+			expect(refs[0].mimeType).toBe('image/png');
+		});
+
+		it("returns 'application/octet-stream' for extension-less non-PM URL (no over-broad wildcard)", () => {
+			const refs = extractMarkdownImages('![](https://example.com/random-file)');
+			expect(refs).toHaveLength(1);
+			expect(refs[0].mimeType).toBe('application/octet-stream');
+		});
+
+		it("Trello PNG URL still returns 'image/png' (regression)", () => {
+			const refs = extractMarkdownImages('![](https://trello.com/foo.png)');
+			expect(refs).toHaveLength(1);
+			expect(refs[0].mimeType).toBe('image/png');
+		});
+	});
+
 	// Basic happy path
 	it('extracts a single image', () => {
 		const refs = extractMarkdownImages('Hello ![logo](https://example.com/logo.png)');
