@@ -6,7 +6,7 @@ plan_slug: linear-fixture-and-extraction-coverage
 level: plan
 parent_spec: docs/specs/016-pm-image-delivery-reliability.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 016/3: Linear payload fixture + extraction-coverage regression test
