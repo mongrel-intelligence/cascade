@@ -29,13 +29,16 @@ export interface LinearWebhookCommentTriggerData {
 	userId: string;
 	createdAt: string;
 	updatedAt: string;
+	// Linear's Comment webhook ships only these six fields on the nested
+	// issue — no `stateId`, no `state`, no labels. Verified against prod
+	// payloads on 2026-04-26.
 	issue?: {
 		id: string;
 		identifier: string;
 		title: string;
 		teamId: string;
 		url: string;
-		stateId: string;
+		team?: { id: string; key: string; name: string };
 	};
 }
 

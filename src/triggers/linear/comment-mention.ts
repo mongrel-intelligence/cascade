@@ -1,8 +1,11 @@
 /**
  * Linear comment @mention trigger.
  *
- * Fires when someone @mentions the CASCADE bot user in a Linear issue comment
- * on an issue in the PLANNING state. Runs the respond-to-planning-comment agent.
+ * Fires when someone @mentions the CASCADE bot user in a Linear issue comment.
+ * Runs the respond-to-planning-comment agent, which is itself responsible for
+ * any planning-only behavior — Linear's Comment webhook payload does not ship
+ * the issue's current state, so the trigger cannot gate on it without an extra
+ * GraphQL round-trip.
  *
  * Linear webhook structure for comment creation:
  *   action: 'create', type: 'Comment'
@@ -12,7 +15,6 @@
  *   data.issue.identifier: the issue identifier (e.g. TEAM-123)
  */
 
-import { getLinearConfig } from '../../pm/config.js';
 import { resolveLinearBotIdentity } from '../../router/bot-identity-resolvers.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -131,29 +133,9 @@ export class LinearCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Gate on PLANNING state — only respond to comments on PLANNING issues
-		const linearConfig = getLinearConfig(ctx.project);
-		const planningStateId = linearConfig?.statuses.planning;
-		if (!planningStateId) {
-			logger.debug(
-				'Planning state not configured for Linear project, skipping comment mention trigger',
-				{ projectId: ctx.project.id },
-			);
-			return null;
-		}
-		const currentStateId = issue?.stateId;
-		if (currentStateId !== planningStateId) {
-			logger.debug('Linear issue not in planning state, skipping comment mention trigger', {
-				issueIdentifier,
-				currentStateId,
-				planningStateId,
-			});
-			return null;
-		}
-
 		const issueUrl = issue?.url;
 
-		logger.info('Linear comment @mention detected on PLANNING issue, triggering agent', {
+		logger.info('Linear comment @mention detected, triggering agent', {
 			issueIdentifier,
 			commentAuthorId,
 			botUserId,

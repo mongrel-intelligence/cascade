@@ -56,6 +56,9 @@ function buildCtx(
 		noIssue?: boolean;
 	} = {},
 ): TriggerContext {
+	// Linear's Comment webhook payload does NOT include `stateId` on the
+	// nested issue object — see prod payloads from 2026-04-26. Mirror that
+	// shape here so the test fixture matches reality.
 	const issue = overrides.noIssue
 		? undefined
 		: {
@@ -64,7 +67,6 @@ function buildCtx(
 				title: 'Test issue',
 				teamId: 'team-abc',
 				url: overrides.issueUrl ?? 'https://linear.app/org/issue/TEAM-99',
-				stateId: 'state-todo',
 			};
 
 	return {
@@ -242,7 +244,6 @@ describe('LinearCommentMentionTrigger', () => {
 				id: 'fallback-issue-id',
 				// no identifier
 				url: 'https://linear.app/org/issue/fallback',
-				stateId: 'state-todo', // must be in planning state
 			};
 			const result = await trigger.handle(ctx);
 			expect(result?.workItemId).toBe('fallback-issue-id');
@@ -265,29 +266,48 @@ describe('LinearCommentMentionTrigger', () => {
 			expect(result?.agentInput.linearIssueId).toBe('issue-uuid-99');
 		});
 
-		it('returns null when issue is not in PLANNING state', async () => {
-			const ctx = buildCtx();
-			const data = ctx.payload as Record<string, unknown>;
-			(data.data as Record<string, unknown>).issue = {
-				id: ISSUE_ID,
-				identifier: ISSUE_IDENTIFIER,
-				title: 'Test issue',
-				teamId: 'team-abc',
-				url: 'https://linear.app/org/issue/TEAM-99',
-				stateId: 'state-in-progress', // not planning
+		// Regression: PR #1201 added a `currentStateId !== planningStateId`
+		// gate that read `data.issue.stateId`. Linear's Comment webhook
+		// payload does not ship `stateId` on the nested issue (verified
+		// across prod payloads 8cd0108a / b93e4925 / 6548cd14 / 3d95b210
+		// on 2026-04-26), so the gate always failed and the trigger
+		// silently dropped every legitimate @mention. The agent itself
+		// is responsible for any planning-only behavior.
+		it('fires on a real prod-shape Comment payload that omits issue.stateId', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'linear',
+				payload: {
+					action: 'create',
+					type: 'Comment',
+					organizationId: 'org-mongrel',
+					webhookTimestamp: 1777242085749,
+					data: {
+						id: '733cf70a-e145-4fa1-ad9b-c03bda0c73fb',
+						body: '@cascade let\'s keep naming closer to "sandbox" so we stay container-provider agnostic',
+						issueId: ISSUE_ID,
+						userId: OTHER_USER_ID,
+						createdAt: '2026-04-26T22:21:25.354Z',
+						updatedAt: '2026-04-26T22:21:25.338Z',
+						// Six keys, no stateId — matches prod
+						issue: {
+							id: ISSUE_ID,
+							identifier: ISSUE_IDENTIFIER,
+							title: 'Test issue',
+							teamId: 'team-abc',
+							url: 'https://linear.app/org/issue/TEAM-99',
+							team: { id: 'team-abc', key: 'TEAM', name: 'team' },
+						} as unknown as Record<string, unknown>,
+					},
+					url: 'https://linear.app',
+				},
 			};
-			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
-		});
 
-		it('returns null when planning state is not configured in project', async () => {
-			const ctx = buildCtx();
-			(ctx as Record<string, unknown>).project = {
-				...mockProject,
-				linear: { teamId: 'team-abc', statuses: {} }, // no planning state
-			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-planning-comment');
+			expect(result?.workItemId).toBe(ISSUE_IDENTIFIER);
 		});
 
 		it('includes triggerCommentBody (canonical) in agentInput', async () => {
