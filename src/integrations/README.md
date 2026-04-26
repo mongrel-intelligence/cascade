@@ -284,4 +284,14 @@ Operators triaging a "no image delivered" report grep for the literal prefix in 
 
 If your provider's upload host returns `application/octet-stream` (or wrong) on the actual GET response, the download-time resolution can't recover. Two options: (a) don't add the host to `IMAGE_HOST_ALLOWLIST` — let the URL-extension path do its job; (b) if URLs are also extension-less, file an issue describing the host's behavior so we can layer in a per-host content-type override. Don't hard-code MIMEs in your adapter — keep MIME resolution shared.
 
+### Linear: GraphQL surface for inline images
+
+Spec 016/3 captured a fixture and pinned the rule for Linear specifically. The findings:
+
+- **`Issue.description` (markdown) is the canonical surface for inline-pasted images.** When a user pastes a screenshot into Linear's issue editor, Linear stores the upload at `https://uploads.linear.app/<uuid>` (often extension-less) and inserts standard markdown image syntax `![alt](url)` into the description. The Linear adapter's `extractMarkdownImages(issue.description)` is the right call — it's what `getWorkItem` already does at `src/pm/linear/adapter.ts:61`.
+- **Comment bodies follow the same convention.** Each `Comment.body` field is markdown; pasted screenshots show up as `![](https://uploads.linear.app/<uuid>)` exactly like the description. `extractMarkdownImages(comment.body, 'comment')` covers them.
+- **`Issue.attachments` is the WRONG surface for inline images.** The Linear GraphQL `Issue.attachments` connection holds formal Attachment records — link previews from Slack threads, GitHub PRs, Sentry alerts, and other integration cards. They have `url` fields but they are NOT user-pasted screenshots. The Linear adapter's `getAttachments(issueId)` (at `src/linear/client.ts:542`) correctly returns these as `LinearAttachment` for the dedicated attachment surface; do NOT extract images from this connection.
+- **Regression net.** The captured fixture lives at `tests/fixtures/linear-issue-with-screenshot.json`. The unit test at `tests/unit/pm/linear/extraction-coverage.test.ts` loads the fixture and asserts every inline image is extracted — fails LOUDLY with a clear message if Linear ever changes payload shape in a way that loses inline images.
+- **No new GraphQL surface to query.** As of spec 016/3 the Linear API exposes inline-pasted images only via the `description` and `Comment.body` markdown fields. There is no `descriptionData` rich-text JSON tree that would expose them differently, and no `attachments(includeInline: true)` filter. Future Linear API drift would surface as a fixture-test failure.
+
 See [spec 016](../../docs/specs/016-pm-image-delivery-reliability.md) for the full rationale and the live incident this contract closed.

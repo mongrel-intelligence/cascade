@@ -1,0 +1,97 @@
+{
+  "_comment": "Reconstructed Linear GraphQL Issue payload for spec 016/3 regression coverage. Models a real issue with multiple inline-pasted screenshots (description + comment) plus formal Attachment records (link previews) that must NOT be picked up as inline images. Sanitized: synthetic team/user/issue IDs, no leaky free-form text. Test fixture only — never imported by production code.",
+  "_purpose": "Pinned by tests/unit/pm/linear/extraction-coverage.test.ts. If Linear changes the Issue payload shape in a way that loses inline images, that test fails loudly.",
+  "issue": {
+    "id": "issue-test-fixture-uuid-0001",
+    "identifier": "MNG-FIXTURE",
+    "title": "Bug from screenshot fixture",
+    "url": "https://linear.app/example/issue/MNG-FIXTURE/bug-from-screenshot-fixture",
+    "createdAt": "2026-04-26T00:00:00.000Z",
+    "updatedAt": "2026-04-26T00:00:00.000Z",
+    "description": "## Repro\n\nThe Tasks Hub mobile layout breaks when the title wraps to a third line.\n\n![](https://uploads.linear.app/abc-123-def-456-extension-less-uuid)\n\n## Expected\n\nLayout should match the design in this annotated screenshot:\n\n![Annotated mockup](https://uploads.linear.app/xyz-789-with-alt-text/Mockup.png)\n\nReference image hosted externally:\n\n![External logo](https://example.com/logo.svg)\n\nA non-image link (should NOT be picked up as media):\n\n[See related ticket](https://linear.app/example/issue/MNG-100)",
+    "state": {
+      "id": "state-todo-uuid-0001",
+      "name": "Todo",
+      "type": "unstarted"
+    },
+    "team": {
+      "id": "team-uuid-0001",
+      "key": "MNG",
+      "name": "Mongrel"
+    },
+    "labelIds": ["label-bug-uuid-0001"],
+    "labels": {
+      "nodes": [
+        {
+          "id": "label-bug-uuid-0001",
+          "name": "bug",
+          "color": "#ff0000"
+        }
+      ]
+    },
+    "attachments": {
+      "_comment": "Linear's Issue.attachments connection holds formal Attachment records — link previews from Slack/GitHub/Sentry/etc. — NOT inline-pasted screenshots. The extraction-coverage test asserts these are NOT mistaken for inline images.",
+      "nodes": [
+        {
+          "id": "attachment-slack-uuid-0001",
+          "title": "Discussion in #engineering",
+          "url": "https://acme.slack.com/archives/C123/p1700000000000000",
+          "subtitle": "Slack thread",
+          "metadata": {
+            "type": "slack-thread"
+          },
+          "createdAt": "2026-04-26T00:00:00.000Z",
+          "updatedAt": "2026-04-26T00:00:00.000Z"
+        },
+        {
+          "id": "attachment-github-uuid-0001",
+          "title": "Related PR #1199",
+          "url": "https://github.com/example/repo/pull/1199",
+          "subtitle": "GitHub PR",
+          "metadata": {
+            "type": "github-pr",
+            "prNumber": 1199
+          },
+          "createdAt": "2026-04-26T00:00:00.000Z",
+          "updatedAt": "2026-04-26T00:00:00.000Z"
+        },
+        {
+          "id": "attachment-sentry-uuid-0001",
+          "title": "Sentry issue PROJ-1234",
+          "url": "https://sentry.io/organizations/example/issues/1234/",
+          "subtitle": "Sentry alert",
+          "metadata": {
+            "type": "sentry-issue",
+            "level": "error"
+          },
+          "createdAt": "2026-04-26T00:00:00.000Z",
+          "updatedAt": "2026-04-26T00:00:00.000Z"
+        }
+      ]
+    },
+    "comments": {
+      "nodes": [
+        {
+          "id": "comment-uuid-0001",
+          "body": "Repro happens on iOS Safari 17. Here's a screenshot from my phone:\n\n![](https://uploads.linear.app/comment-screenshot-uuid)",
+          "createdAt": "2026-04-26T00:01:00.000Z",
+          "user": {
+            "id": "user-uuid-0001",
+            "name": "Test User",
+            "displayName": "Test User"
+          }
+        },
+        {
+          "id": "comment-uuid-0002",
+          "body": "I confirmed the same on Android Chrome. No screenshot — text-only comment.",
+          "createdAt": "2026-04-26T00:02:00.000Z",
+          "user": {
+            "id": "user-uuid-0002",
+            "name": "Another User",
+            "displayName": "Another User"
+          }
+        }
+      ]
+    }
+  }
+}

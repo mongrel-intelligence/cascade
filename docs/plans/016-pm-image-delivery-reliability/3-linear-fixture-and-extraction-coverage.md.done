@@ -6,7 +6,7 @@ plan_slug: linear-fixture-and-extraction-coverage
 level: plan
 parent_spec: docs/specs/016-pm-image-delivery-reliability.md
 depends_on: []
-status: wip
+status: done
 ---
 
 # 016/3: Linear payload fixture + extraction-coverage regression test
@@ -150,14 +150,14 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1 (fixture file exists with correct shape)
-- [ ] AC #2 (regression test fails loudly on missed images)
-- [ ] AC #3 (fixture sanitization)
-- [ ] AC #4 (README "Linear GraphQL surface" subsection)
-- [ ] AC #5 (new-surface integration if found, else no-op)
-- [ ] AC #6 (TDD discipline)
-- [ ] AC #7 (build)
-- [ ] AC #8 (unit tests)
-- [ ] AC #9 (lint)
-- [ ] AC #10 (typecheck)
-- [ ] AC #11 (docs)
+- [x] AC #1 (fixture file exists with correct shape)
+- [x] AC #2 (regression test fails loudly on missed images)
+- [x] AC #3 (fixture sanitization)
+- [x] AC #4 (README "Linear GraphQL surface" subsection)
+- [x] AC #5 (new-surface integration if found, else no-op — confirmed no-op: description markdown is canonical)
+- [x] AC #6 (TDD discipline)
+- [x] AC #7 (build)
+- [x] AC #8 (unit tests)
+- [x] AC #9 (lint)
+- [x] AC #10 (typecheck)
+- [x] AC #11 (docs)
