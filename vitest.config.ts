@@ -27,6 +27,13 @@ const sharedTest = {
 	unstubEnvs: true,
 	setupFiles: ['./tests/setup.ts'],
 
+	// hookTimeout bumped from the 10s default — several manifest tests do
+	// dynamic-import in `beforeAll` (~2.3s isolated, but well over 10s under
+	// the parallel-fork CPU pressure of the full pre-push run). Matches the
+	// integration project's 30s. testTimeout left at the 5s default — that's
+	// per-test logic, not module-load.
+	hookTimeout: 30_000,
+
 	// ── Dependency resolution ─────────────────────────────────────────────────
 	// Explicit moduleDirectories reduces file-system traversal during collect.
 	// Cache note: in CI, cache node_modules/.vitest between runs for speed.
