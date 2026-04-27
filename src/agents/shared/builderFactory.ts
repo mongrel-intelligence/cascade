@@ -43,6 +43,10 @@ export interface CreateBuilderOptions {
 	runId?: string;
 	/** Base branch for PR creation (e.g. 'main', 'dev'). Passed to session state. */
 	baseBranch?: string;
+	/** PR HEAD branch name. Threaded into Finish validation so `hasUnpushedCommits`
+	 * can use ls-remote SHA comparison instead of `@{upstream}` (which breaks in
+	 * detached HEAD — every PR-checkout worker is in this shape). */
+	prBranch?: string;
 	/** Project ID for PR ↔ work item linking. Passed to session state. */
 	projectId?: string;
 	/** Work item ID for PR ↔ work item linking. Passed to session state. */
@@ -89,6 +93,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 		initSessionState({
 			agentType,
 			baseBranch: options.baseBranch,
+			prBranch: options.prBranch,
 			projectId: options.projectId,
 			workItemId: options.workItemId,
 			hooks: options.hooks,

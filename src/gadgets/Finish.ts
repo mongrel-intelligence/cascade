@@ -13,6 +13,7 @@ export const Finish = createGadgetClass(finishDef, async (params) => {
 		reviewSubmitted: state.reviewSubmitted,
 		hooks: state.hooks,
 		initialHeadSha: state.initialHeadSha,
+		prBranch: state.prBranch,
 	});
 
 	if (!result.valid) {

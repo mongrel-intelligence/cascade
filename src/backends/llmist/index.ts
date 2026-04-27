@@ -107,6 +107,7 @@ export class LlmistEngine implements AgentEngine {
 			llmCallAccumulator,
 			runId,
 			baseBranch: input.project.baseBranch,
+			prBranch: agentInput.prBranch as string | undefined,
 			projectId: input.project.id,
 			workItemId: agentInput.workItemId,
 			workItemUrl: agentInput.workItemUrl as string | undefined,

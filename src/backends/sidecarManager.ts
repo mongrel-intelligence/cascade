@@ -70,6 +70,9 @@ export function createCompletionArtifacts(
 	if (input.headSha) {
 		projectSecrets.CASCADE_INITIAL_HEAD_SHA = input.headSha as string;
 	}
+	if (input.prBranch) {
+		projectSecrets.CASCADE_PR_BRANCH = input.prBranch as string;
+	}
 
 	return {
 		prSidecarPath,

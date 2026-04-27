@@ -20,11 +20,19 @@ export interface InitSessionStateOptions {
 	workItemUrl?: string;
 	workItemTitle?: string;
 	initialHeadSha?: string;
+	/**
+	 * The PR HEAD branch name. Threaded into Finish validation so that
+	 * `hasUnpushedCommits` can use ls-remote SHA comparison instead of the
+	 * `@{upstream}` / `rev-parse --abbrev-ref` chain that breaks in detached HEAD
+	 * (the shape every PR-checkout worker is in via `refs/pull/N/head`).
+	 */
+	prBranch?: string;
 }
 
 interface SessionStateData {
 	agentType: string | null;
 	baseBranch: string;
+	prBranch: string | null;
 	projectId: string | null;
 	workItemId: string | null;
 	workItemUrl: string | null;
@@ -50,6 +58,7 @@ export class SessionState {
 	private state: SessionStateData = {
 		agentType: null,
 		baseBranch: 'main',
+		prBranch: null,
 		projectId: null,
 		workItemId: null,
 		workItemUrl: null,
@@ -70,6 +79,7 @@ export class SessionState {
 		const {
 			agentType,
 			baseBranch,
+			prBranch,
 			projectId,
 			workItemId,
 			hooks,
@@ -80,6 +90,7 @@ export class SessionState {
 		this.state = {
 			agentType,
 			baseBranch: baseBranch ?? 'main',
+			prBranch: prBranch ?? null,
 			projectId: projectId ?? null,
 			workItemId: workItemId ?? null,
 			workItemUrl: workItemUrl ?? null,

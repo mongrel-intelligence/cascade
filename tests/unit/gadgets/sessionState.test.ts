@@ -44,6 +44,7 @@ describe('initSessionState', () => {
 
 		expect(state.agentType).toBe('implementation');
 		expect(state.baseBranch).toBe('main');
+		expect(state.prBranch).toBeNull();
 		expect(state.projectId).toBeNull();
 		expect(state.workItemId).toBeNull();
 		expect(state.initialHeadSha).toBeNull();
@@ -53,6 +54,17 @@ describe('initSessionState', () => {
 		expect(state.reviewUrl).toBeNull();
 		expect(state.initialCommentId).toBeNull();
 		expect(state.hooks).toEqual({});
+	});
+
+	it('round-trips prBranch when provided', () => {
+		initSessionState({ agentType: 'respond-to-review', prBranch: 'feature/x' });
+		expect(getSessionState().prBranch).toBe('feature/x');
+	});
+
+	it('clears prBranch on re-init when omitted', () => {
+		initSessionState({ agentType: 'respond-to-review', prBranch: 'feature/x' });
+		initSessionState({ agentType: 'implementation' });
+		expect(getSessionState().prBranch).toBeNull();
 	});
 
 	it('initializes with all parameters', () => {

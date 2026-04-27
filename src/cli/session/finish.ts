@@ -53,6 +53,7 @@ export default class Finish extends Command {
 			reviewSubmitted: flags['review-submitted'] || evidence.hasAuthoritativeReview,
 			hooks,
 			initialHeadSha: process.env.CASCADE_INITIAL_HEAD_SHA ?? null,
+			prBranch: process.env.CASCADE_PR_BRANCH ?? null,
 		});
 
 		if (!result.valid) {
