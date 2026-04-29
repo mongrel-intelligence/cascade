@@ -261,6 +261,54 @@ describe('processRouterWebhook', () => {
 		expect(addJob).toHaveBeenCalled();
 	});
 
+	// 2026-04-29: prod check_suite-triggered respond-to-ci dispatch logged
+	// `Job queued: respond-to-ci agent for work item (unknown)` because the
+	// GitHub adapter's parseWebhook only extracts `event.workItemId` from
+	// `payload.pull_request.number` — `check_suite` payloads have it under
+	// `check_suite.pull_requests[0].number`. The trigger handler resolves it
+	// internally and returns `result.workItemId` / `result.prNumber`; the
+	// decisionReason should prefer those over the parse-time event field.
+	it('decisionReason prefers result.workItemId over event.workItemId when both differ', async () => {
+		const triggerResult = {
+			agentType: 'respond-to-ci',
+			agentInput: {},
+			workItemId: 'PROJ-42',
+		};
+		vi.mocked(addJob).mockResolvedValue('job-1');
+		const adapter = makeMockAdapter({
+			// parseWebhook resolved workItemId to undefined (e.g. check_suite payload)
+			parseWebhook: vi.fn().mockResolvedValue({
+				eventType: 'check_suite',
+				workItemId: undefined,
+			}),
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+			postAck: vi.fn().mockResolvedValue({ commentId: 'c', message: 'm' }),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.decisionReason).toBe('Job queued: respond-to-ci agent for work item PROJ-42');
+	});
+
+	it('decisionReason falls back to result.prNumber when workItemId is unavailable', async () => {
+		const triggerResult = {
+			agentType: 'respond-to-ci',
+			agentInput: {},
+			prNumber: 155,
+		};
+		vi.mocked(addJob).mockResolvedValue('job-1');
+		const adapter = makeMockAdapter({
+			parseWebhook: vi.fn().mockResolvedValue({
+				eventType: 'check_suite',
+				workItemId: undefined,
+			}),
+			dispatchWithCredentials: vi.fn().mockResolvedValue(triggerResult),
+			postAck: vi.fn().mockResolvedValue({ commentId: 'c', message: 'm' }),
+		});
+
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.decisionReason).toBe('Job queued: respond-to-ci agent for work item PR #155');
+	});
+
 	it('posts ack comment before enqueuing job', async () => {
 		const callOrder: string[] = [];
 		const triggerResult = { agentType: 'implementation', agentInput: {} };

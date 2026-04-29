@@ -13,6 +13,7 @@
 import { getCoalesceWindowMs } from '../pm/coalesce-config.js';
 import { captureException } from '../sentry.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
+import type { TriggerResult } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { isDuplicateAction, markActionProcessed } from './action-dedup.js';
 import {
@@ -23,9 +24,29 @@ import {
 	markRecentlyDispatched,
 } from './agent-type-lock.js';
 import { classifyLockState } from './lock-state-classifier.js';
-import type { RouterPlatformAdapter } from './platform-adapter.js';
+import type { ParsedWebhookEvent, RouterPlatformAdapter } from './platform-adapter.js';
 import { addJob, scheduleCoalescedJob } from './queue.js';
 import { clearWorkItemEnqueued, isWorkItemLocked, markWorkItemEnqueued } from './work-item-lock.js';
+
+/**
+ * Pick the most specific work-item label for a webhook log decisionReason.
+ *
+ * `event.workItemId` is set at parse time (`adapter.parseWebhook`) — for
+ * GitHub `pull_request`-shaped events the parser populates it from
+ * `payload.pull_request.number`, but for `check_suite` webhooks the PR
+ * number lives under `payload.check_suite.pull_requests[0].number` and the
+ * parser leaves the field undefined. The trigger handler resolves it
+ * internally and returns `result.workItemId` / `result.prNumber`; both are
+ * better diagnostic labels than `(unknown)` and the dashboard webhook log
+ * should prefer them.
+ *
+ * Order: result.workItemId > `PR #<result.prNumber>` > event.workItemId > `(unknown)`.
+ */
+function resolveWorkItemLabel(result: TriggerResult, event: ParsedWebhookEvent): string {
+	if (result.workItemId) return result.workItemId;
+	if (typeof result.prNumber === 'number') return `PR #${result.prNumber}`;
+	return event.workItemId ?? '(unknown)';
+}
 
 export interface ProcessRouterWebhookResult {
 	/** Whether the event was of a processable type for this platform. */
@@ -269,7 +290,7 @@ export async function processRouterWebhook(
 			return {
 				shouldProcess: true,
 				projectId: project.id,
-				decisionReason: `Coalesced dispatch scheduled: ${result.agentType} agent for work item ${result.workItemId ?? '(unknown)'}`,
+				decisionReason: `Coalesced dispatch scheduled: ${result.agentType} agent for work item ${resolveWorkItemLabel(result, event)}`,
 			};
 		}
 	}
@@ -414,6 +435,6 @@ export async function processRouterWebhook(
 	return {
 		shouldProcess: true,
 		projectId: project.id,
-		decisionReason: `Job queued: ${result.agentType} agent for work item ${event.workItemId ?? '(unknown)'}`,
+		decisionReason: `Job queued: ${result.agentType} agent for work item ${resolveWorkItemLabel(result, event)}`,
 	};
 }
