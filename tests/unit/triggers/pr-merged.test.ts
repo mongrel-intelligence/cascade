@@ -52,10 +52,14 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 
-// Mock the snapshot manager so we can verify invalidation calls
-const mockInvalidateSnapshot = vi.fn();
-vi.mock('../../../src/router/snapshot-manager.js', () => ({
-	invalidateSnapshot: (...args: unknown[]) => mockInvalidateSnapshot(...args),
+// Mock the snapshot-cleanup helper so we can verify invalidation+rmi calls.
+// pr-merged calls `invalidateAndRemoveSnapshot` (the helper that BOTH clears
+// the in-memory registry AND `docker rmi`s the image), not the registry-only
+// `invalidateSnapshot`. The latter alone leaks the docker image — see the
+// 2026-04-29 disk-fill incident.
+const mockInvalidateAndRemoveSnapshot = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../src/router/snapshot-cleanup.js', () => ({
+	invalidateAndRemoveSnapshot: (...args: unknown[]) => mockInvalidateAndRemoveSnapshot(...args),
 }));
 
 // Register PM integrations in the registry via the canonical bootstrap path
@@ -91,7 +95,8 @@ describe('PRMergedTrigger', () => {
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
-		mockInvalidateSnapshot.mockClear();
+		mockInvalidateAndRemoveSnapshot.mockReset();
+		mockInvalidateAndRemoveSnapshot.mockResolvedValue(undefined);
 	});
 
 	describe('matches', () => {
@@ -703,7 +708,7 @@ describe('PRMergedTrigger', () => {
 			await trigger.handle(ctx);
 
 			// Snapshot should be invalidated for the project+workItem pair
-			expect(mockInvalidateSnapshot).toHaveBeenCalledWith(mockProject.id, 'abc123');
+			expect(mockInvalidateAndRemoveSnapshot).toHaveBeenCalledWith(mockProject.id, 'abc123');
 		});
 
 		it('does not invalidate snapshot when PR is not merged', async () => {
@@ -737,7 +742,7 @@ describe('PRMergedTrigger', () => {
 			await trigger.handle(ctx);
 
 			// No invalidation when PR is not merged
-			expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
+			expect(mockInvalidateAndRemoveSnapshot).not.toHaveBeenCalled();
 		});
 
 		it('does not invalidate snapshot when no work item is linked', async () => {
@@ -772,7 +777,7 @@ describe('PRMergedTrigger', () => {
 			await trigger.handle(ctx);
 
 			// No invalidation when there's no linked work item
-			expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
+			expect(mockInvalidateAndRemoveSnapshot).not.toHaveBeenCalled();
 		});
 	});
 });

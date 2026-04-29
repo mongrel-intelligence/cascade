@@ -15,7 +15,7 @@ import Docker from 'dockerode';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
-import { evictSnapshots, type SnapshotMetadata } from './snapshot-manager.js';
+import { evictSnapshots, invalidateSnapshot, type SnapshotMetadata } from './snapshot-manager.js';
 
 const SNAPSHOT_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -77,7 +77,7 @@ function dockerStatusCode(err: unknown): number | undefined {
  * a running container is preserved (Docker returns 409). 404 means the image
  * has already been removed by some other path. Both are harmless and silent.
  */
-async function removeSnapshotImage(metadata: SnapshotMetadata): Promise<void> {
+export async function removeSnapshotImage(metadata: SnapshotMetadata): Promise<void> {
 	try {
 		await docker.getImage(metadata.imageName).remove({ force: false });
 		logger.info('[SnapshotCleanup] Removed snapshot image:', {
@@ -129,4 +129,24 @@ export async function runSnapshotCleanup(): Promise<void> {
 	await Promise.all(evicted.map(removeSnapshotImage));
 
 	logger.info('[SnapshotCleanup] Cleanup pass complete:', { count: evicted.length });
+}
+
+/**
+ * Eagerly invalidate a snapshot AND remove its Docker image. Called on PR
+ * merge: the snapshot was built for a specific work-item state and is no
+ * longer valid. Without this, `invalidateSnapshot` alone clears the registry
+ * entry but leaves the image in Docker storage — and the periodic 5-min
+ * cleanup loop iterates registry entries only, so the orphaned image is
+ * leaked permanently. That leak is what filled prod disk to 100% on
+ * 2026-04-29.
+ *
+ * Safe to call when no snapshot exists for the pair (no-op).
+ */
+export async function invalidateAndRemoveSnapshot(
+	projectId: string,
+	workItemId: string,
+): Promise<void> {
+	const removed = invalidateSnapshot(projectId, workItemId);
+	if (!removed) return;
+	await removeSnapshotImage(removed);
 }

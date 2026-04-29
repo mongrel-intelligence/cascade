@@ -50,8 +50,11 @@ vi.mock('../../../src/router/config.js', () => ({
 	},
 }));
 
+const mockInvalidateSnapshot = vi.fn();
+
 vi.mock('../../../src/router/snapshot-manager.js', () => ({
 	evictSnapshots: (...args: unknown[]) => mockEvictSnapshots(...args),
+	invalidateSnapshot: (...args: unknown[]) => mockInvalidateSnapshot(...args),
 }));
 
 // ---------------------------------------------------------------------------
@@ -59,6 +62,7 @@ vi.mock('../../../src/router/snapshot-manager.js', () => ({
 // ---------------------------------------------------------------------------
 
 import {
+	invalidateAndRemoveSnapshot,
 	runSnapshotCleanup,
 	startSnapshotCleanup,
 	stopSnapshotCleanup,
@@ -234,6 +238,61 @@ describe('snapshot-cleanup', () => {
 			await runSnapshotCleanup();
 
 			expect(mockImageRemove).toHaveBeenCalledTimes(3);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// invalidateAndRemoveSnapshot — eager rmi when a PR merges (no 5-min wait)
+	// -------------------------------------------------------------------------
+
+	describe('invalidateAndRemoveSnapshot', () => {
+		beforeEach(() => {
+			mockInvalidateSnapshot.mockReset();
+		});
+
+		it('calls docker.getImage().remove() when invalidate returned metadata', async () => {
+			// Live regression: prior to this fix, pr-merged.ts called
+			// `invalidateSnapshot()` (registry-only) and never called
+			// `docker rmi`. The image was orphaned in the Docker daemon —
+			// the periodic 5-min cleanup loop only iterates registry entries
+			// and would never see it. The unregistered image leaked
+			// permanently, contributing to today's disk-fill incident.
+			const metadata = makeMetadata({ imageName: 'cascade-snapshot-proj-1-card-abc:latest' });
+			mockInvalidateSnapshot.mockReturnValue(metadata);
+
+			await invalidateAndRemoveSnapshot('proj-1', 'card-abc');
+
+			expect(mockInvalidateSnapshot).toHaveBeenCalledWith('proj-1', 'card-abc');
+			expect(mockDockerGetImage).toHaveBeenCalledWith('cascade-snapshot-proj-1-card-abc:latest');
+			expect(mockImageRemove).toHaveBeenCalledOnce();
+		});
+
+		it('is a no-op when no snapshot was registered (no docker call)', async () => {
+			mockInvalidateSnapshot.mockReturnValue(undefined);
+
+			await invalidateAndRemoveSnapshot('proj-missing', 'card-missing');
+
+			expect(mockInvalidateSnapshot).toHaveBeenCalledWith('proj-missing', 'card-missing');
+			expect(mockDockerGetImage).not.toHaveBeenCalled();
+			expect(mockImageRemove).not.toHaveBeenCalled();
+		});
+
+		it('swallows 404 (image already gone) without warning or sentry capture', async () => {
+			mockInvalidateSnapshot.mockReturnValue(makeMetadata());
+			mockImageRemove.mockRejectedValueOnce(makeDockerError(404, 'no such image'));
+
+			await expect(invalidateAndRemoveSnapshot('proj-1', 'card-1')).resolves.toBeUndefined();
+			expect(mockLogger.warn).not.toHaveBeenCalled();
+			expect(mockCaptureException).not.toHaveBeenCalled();
+		});
+
+		it('swallows 409 (image in use) without warning or sentry capture', async () => {
+			mockInvalidateSnapshot.mockReturnValue(makeMetadata());
+			mockImageRemove.mockRejectedValueOnce(makeDockerError(409, 'image in use'));
+
+			await expect(invalidateAndRemoveSnapshot('proj-1', 'card-1')).resolves.toBeUndefined();
+			expect(mockLogger.warn).not.toHaveBeenCalled();
+			expect(mockCaptureException).not.toHaveBeenCalled();
 		});
 	});
 });

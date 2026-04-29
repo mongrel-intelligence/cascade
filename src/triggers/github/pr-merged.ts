@@ -1,7 +1,7 @@
 import { githubClient } from '../../github/client.js';
 import { getPMProvider } from '../../pm/context.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
-import { invalidateSnapshot } from '../../router/snapshot-manager.js';
+import { invalidateAndRemoveSnapshot } from '../../router/snapshot-cleanup.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
@@ -47,10 +47,17 @@ export class PRMergedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Fire-and-forget: invalidate any stale snapshot for this work item now that
-		// the PR is merged. The snapshot was built for a specific state of the work
-		// item and is no longer valid after the work is done.
-		invalidateSnapshot(ctx.project.id, workItemId);
+		// Fire-and-forget: invalidate the registry entry AND `docker rmi` the
+		// underlying image. Registry-only invalidation orphans the image (the
+		// periodic cleanup loop iterates registry entries) — see 2026-04-29
+		// disk-fill incident.
+		void invalidateAndRemoveSnapshot(ctx.project.id, workItemId).catch((err: unknown) => {
+			logger.warn('Failed to invalidate+remove snapshot on PR merge', {
+				projectId: ctx.project.id,
+				workItemId,
+				error: String(err),
+			});
+		});
 
 		const pmConfig = resolveProjectPMConfig(ctx.project);
 		const mergedStatus = pmConfig.statuses.merged;

@@ -155,17 +155,27 @@ export function getSnapshot(
 
 /**
  * Invalidate (remove) snapshot metadata for a project+workItem pair.
- * Safe to call even if no snapshot exists.
+ * Returns the removed metadata so the caller can `docker rmi` the underlying
+ * image. Returns undefined when no entry was registered. Removing the in-memory
+ * entry without removing the image would orphan the image (the periodic cleanup
+ * loop iterates registry entries only) — callers MUST act on the returned
+ * metadata. See snapshot-cleanup.invalidateAndRemoveSnapshot for the canonical
+ * caller.
  */
-export function invalidateSnapshot(projectId: string, workItemId: string): void {
+export function invalidateSnapshot(
+	projectId: string,
+	workItemId: string,
+): SnapshotMetadata | undefined {
 	const key = snapshotKey(projectId, workItemId);
-	const hadEntry = snapshots.delete(key);
-	if (hadEntry) {
+	const removed = snapshots.get(key);
+	snapshots.delete(key);
+	if (removed) {
 		logger.info('[SnapshotManager] Snapshot invalidated:', {
 			projectId,
 			workItemId,
 		});
 	}
+	return removed;
 }
 
 /**

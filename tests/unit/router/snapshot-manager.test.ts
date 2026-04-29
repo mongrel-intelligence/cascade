@@ -203,6 +203,27 @@ describe('snapshot-manager', () => {
 			expect(getSnapshot('proj-1', 'card-2')).toBeDefined();
 			expect(getSnapshotCount()).toBe(1);
 		});
+
+		// Spec: invalidate-on-PR-merge should also `docker rmi` the image. The
+		// caller (pr-merged trigger) owns the rmi via the snapshot-cleanup
+		// helper; for that helper to know which image to remove, invalidate
+		// must return the metadata of the entry it removed (or undefined
+		// when nothing was registered).
+		it('returns the removed metadata when an entry was registered', () => {
+			registerSnapshot('proj-1', 'card-abc', 'cascade-snapshot-proj-1-card-abc:latest');
+
+			const removed = invalidateSnapshot('proj-1', 'card-abc');
+
+			expect(removed).toBeDefined();
+			expect(removed?.imageName).toBe('cascade-snapshot-proj-1-card-abc:latest');
+			expect(removed?.projectId).toBe('proj-1');
+			expect(removed?.workItemId).toBe('card-abc');
+		});
+
+		it('returns undefined when no entry was registered', () => {
+			const removed = invalidateSnapshot('proj-missing', 'card-missing');
+			expect(removed).toBeUndefined();
+		});
 	});
 
 	// -------------------------------------------------------------------------
