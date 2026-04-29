@@ -702,11 +702,18 @@ describe('processRouterWebhook', () => {
 			expect(markAgentTypeEnqueued).toHaveBeenCalled();
 		});
 
-		it('skips lock marking when activeExists=true (no new job was created)', async () => {
+		it('regression pin (MNG-422 2026-04-29): an active job for the same coalesceKey does NOT block a new schedule — locks marked + scheduled decision reason', async () => {
+			// Before the unique-jobId rewrite, an active job for the same
+			// coalesceKey caused scheduleCoalescedJob to return
+			// `activeExists: true` and the caller dropped the new event entirely.
+			// That silently lost the splitting agent for MNG-422 while planning
+			// was still running. After the rewrite, scheduleCoalescedJob always
+			// produces a fresh unique jobId; the active prior job no longer
+			// blocks the new schedule. Locks ARE marked for the new job and the
+			// decision reason is the normal "Coalesced dispatch scheduled".
 			vi.mocked(scheduleCoalescedJob).mockResolvedValue({
-				jobId: 'coalesce:p1:PROJ-1',
+				jobId: 'coalesce:p1:PROJ-1:1234567890-abc123',
 				superseded: false,
-				activeExists: true,
 			});
 			const adapter = makeMockAdapter({
 				type: 'jira',
@@ -720,11 +727,11 @@ describe('processRouterWebhook', () => {
 
 			const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 
-			// No new job → must not mark any in-memory locks
-			expect(markWorkItemEnqueued).not.toHaveBeenCalled();
-			expect(markAgentTypeEnqueued).not.toHaveBeenCalled();
-			expect(markRecentlyDispatched).not.toHaveBeenCalled();
-			expect(result.decisionReason).toMatch(/active job already running/);
+			// New job WAS created → locks must be marked
+			expect(markWorkItemEnqueued).toHaveBeenCalled();
+			expect(markAgentTypeEnqueued).toHaveBeenCalled();
+			expect(result.decisionReason).toMatch(/Coalesced dispatch scheduled/);
+			expect(result.decisionReason).not.toMatch(/active job already running/);
 		});
 
 		it('falls back to normal dispatch when PM_COALESCE_WINDOW_MS=0 (disable)', async () => {

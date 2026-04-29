@@ -138,83 +138,97 @@ export async function addJob(job: CascadeJob): Promise<string> {
 }
 
 export interface ScheduleCoalescedJobResult {
+	/** The unique BullMQ job id for the newly-scheduled delayed job. */
 	jobId: string;
+	/** True when a prior pending (delayed/waiting) job for the same coalesceKey was removed. */
 	superseded: boolean;
 	/**
-	 * Data from the superseded delayed/waiting job. Present when
-	 * `superseded === true`. Used by the caller to release the orphaned
-	 * in-memory locks that were marked for the previous dispatch — those locks
-	 * are never released via `worker.on('failed')` because BullMQ's `remove()`
-	 * does not fire that event.
+	 * Data from the first superseded pending job (when `superseded === true`).
+	 * Used by the caller to release the orphaned in-memory locks that were
+	 * marked for the previous dispatch — those locks are never released via
+	 * `worker.on('failed')` because BullMQ's `remove()` does not fire that event.
 	 */
 	supersededJobData?: CascadeJob;
-	/**
-	 * True when a job with the same coalesce ID is already active (running).
-	 * BullMQ silently ignores `add()` for a duplicate active jobId, so we skip
-	 * the `add()` call entirely and return this flag instead. The caller must
-	 * NOT mark new in-memory locks — no new job was created.
-	 */
-	activeExists?: boolean;
 }
 
 /**
- * Schedule a PM job as a BullMQ delayed job keyed by `coalesceKey`.
+ * Schedule a PM job as a BullMQ delayed job, coalescing within `delayMs` of
+ * other events with the same `coalesceKey`.
  *
- * If a delayed/waiting job with the same key already exists it is removed
- * before the new job is added, superseding the previous dispatch. Active
- * (already running) jobs are left untouched and `activeExists` is returned
- * as `true` so the caller can skip lock marking.
+ * **Identifier strategy.** Each call produces a UNIQUE jobId
+ * (`coalesce:${coalesceKey}:${timestamp}-${rand}`) and stores `coalesceKey`
+ * as the BullMQ "job name" — that name is what we filter by when locating
+ * prior pending jobs to supersede. Reusing a deterministic
+ * `coalesce:${coalesceKey}` jobId (the prior design) was a live bug:
+ * BullMQ's `add(name, data, { jobId })` is a silent no-op when a job with
+ * that id already exists in the completed/failed/active set, and BullMQ
+ * keeps completed jobs for 24h via `removeOnComplete: { age: 86400 }` —
+ * so any new event for a coalesceKey whose previous job had already
+ * completed within 24h was silently dropped. (Live incident 2026-04-29:
+ * splitting agent for `MNG-422` was lost because the same-id planning job
+ * was still running when the splitting webhook arrived.)
  *
- * This replaces the in-memory `create-coalesce-window.ts` mechanism with a
- * durable, per-key deduplication that coalesces across any agent types for
- * the same `${projectId}:${workItemId}` within the settle window.
+ * **Supersede semantics.** Only `'delayed'` and `'waiting'` jobs supersede:
+ * those are the dedup targets — multiple webhooks within the 10s window
+ * for the same `(projectId, workItemId)`. Active jobs are NOT considered
+ * (they're busy doing the previous unit of work; the new event becomes its
+ * own delayed dispatch behind it). Completed/failed jobs are NOT considered
+ * (they're done — the new event is real new intent and must run).
+ *
+ * **Concurrency.** The getDelayed → getWaiting → filter → remove → add
+ * sequence is not atomic. Two concurrent schedules for the same coalesceKey
+ * may both observe the same prior pending job, both attempt to remove it
+ * (one wins, the other no-ops), then both add() new jobs with distinct
+ * unique jobIds. The result is up to two delayed jobs firing — equivalent
+ * to two unrelated webhooks landing back-to-back, which the downstream
+ * pipeline already handles via the in-flight work-item lock. The prior
+ * deterministic-id design had a worse failure mode (silent drop); this
+ * accepts a rare extra-firing in exchange for never losing events.
  */
 export async function scheduleCoalescedJob(
 	job: CascadeJob,
 	coalesceKey: string,
 	delayMs: number,
 ): Promise<ScheduleCoalescedJobResult> {
-	const jobId = `coalesce:${coalesceKey}`;
+	// Build a colon-free unique jobId. BullMQ rejects custom ids that contain
+	// `:` unless the id has exactly 3 colon-separated parts (legacy repeatable-
+	// job compatibility); the prior deterministic `coalesce:${coalesceKey}`
+	// happened to have 3 parts (`coalesce`, projectId, workItemId) so it
+	// passed, but a 4th `:${timestamp}` segment would not. Using `_` as the
+	// internal separator also keeps the id compatible with Docker container
+	// names (which reject colons — verified by the spec-017 follow-up
+	// hotfix at src/router/container-manager.ts:485).
+	const safeKey = coalesceKey.replace(/:/g, '_');
+	const newJobId = `coalesce_${safeKey}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+	// Find any pending (delayed/waiting) jobs for the same coalesceKey by
+	// matching the BullMQ "job name". Note: getDelayed/getWaiting do NOT
+	// include active/completed/failed jobs — the supersede behavior is by
+	// design scoped to "events that haven't fired yet".
+	const [delayed, waiting] = await Promise.all([jobQueue.getDelayed(), jobQueue.getWaiting()]);
+	const pending = [...delayed, ...waiting].filter((j) => j.name === coalesceKey);
+
 	let superseded = false;
 	let supersededJobData: CascadeJob | undefined;
-
-	// Remove any existing delayed/waiting job with the same key so the new
-	// job supersedes it. Active jobs are left alone — they are already running.
-	//
-	// TOCTOU NOTE: The getJob → getState → remove → add sequence is not atomic.
-	// Two concurrent webhook handlers for the same coalesceKey can both read the
-	// existing delayed job, both attempt remove() (the second no-ops silently),
-	// and then both call add() — but BullMQ silently ignores a duplicate jobId
-	// for a non-completed job, so the second event's data is lost. In practice
-	// this race is rare: the coalesce window exists for events tens-to-hundreds
-	// of milliseconds apart, not truly simultaneous arrivals. A Lua-script
-	// atomic compare-and-replace would close this, but the operational impact is
-	// low enough that a documented best-effort approach is acceptable here.
-	const existing = await jobQueue.getJob(jobId);
-	if (existing) {
-		const state = await existing.getState();
-		if (state === 'delayed' || state === 'waiting') {
-			// Capture job data before removal so the caller can release orphaned locks.
-			supersededJobData = existing.data;
-			await existing.remove();
-			superseded = true;
-		} else if (state === 'active') {
-			// An active (running) job already holds this ID. BullMQ would
-			// silently ignore add() for a duplicate active jobId — no new job
-			// would be created, but the caller wouldn't know and would mark
-			// locks incorrectly. Return activeExists=true so the caller can
-			// log accurately and skip marking new in-memory locks.
-			logger.info('Coalesced job skipped — active job with same ID already running', {
-				jobId,
-				coalesceKey,
-			});
-			return { jobId, superseded: false, activeExists: true };
-		}
+	if (pending.length > 0) {
+		// Capture the first job's data for lock cleanup. Multiple concurrent
+		// schedules for the same key are uncommon (the window is 10s), but
+		// remove() ALL matching pending jobs to keep the queue tidy.
+		supersededJobData = pending[0].data as CascadeJob;
+		await Promise.all(pending.map((j) => j.remove()));
+		superseded = true;
 	}
 
-	await jobQueue.add(job.type, job, { jobId, delay: delayMs });
-	logger.info('Coalesced job scheduled', { jobId, coalesceKey, delayMs, superseded });
-	return { jobId, superseded, supersededJobData };
+	await jobQueue.add(coalesceKey, job, { jobId: newJobId, delay: delayMs });
+	logger.info('Coalesced job scheduled', {
+		jobId: newJobId,
+		coalesceKey,
+		delayMs,
+		superseded,
+		supersededCount: pending.length,
+	});
+
+	return { jobId: newJobId, superseded, supersededJobData };
 }
 
 // Get queue stats

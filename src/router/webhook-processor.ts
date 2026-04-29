@@ -164,30 +164,17 @@ export async function processRouterWebhook(
 			}
 
 			// Schedule as a delayed BullMQ job; supersedes any prior pending job
-			// with the same key so only the latest event fires.
+			// with the same key so only the latest event fires within the window.
+			// Each schedule produces a UNIQUE jobId — active/completed/failed jobs
+			// for the same coalesceKey do NOT block a new schedule (the prior
+			// deterministic-id design silently dropped events; see the
+			// `scheduleCoalescedJob` JSDoc for the live MNG-422 incident).
 			try {
-				const { superseded, supersededJobData, activeExists } = await scheduleCoalescedJob(
+				const { superseded, supersededJobData } = await scheduleCoalescedJob(
 					job,
 					result.coalesceKey,
 					windowMs,
 				);
-
-				// When an active job is already running for this coalesceKey, BullMQ
-				// would silently ignore any new add(). No new job was created, so skip
-				// lock marking and return an accurate decision reason.
-				if (activeExists) {
-					logger.info(`${adapter.type} coalesced dispatch skipped — active job already running`, {
-						agentType: result.agentType,
-						workItemId: result.workItemId,
-						projectId: project.id,
-						coalesceKey: result.coalesceKey,
-					});
-					return {
-						shouldProcess: true,
-						projectId: project.id,
-						decisionReason: `Coalesced dispatch skipped: active job already running for work item ${result.workItemId ?? '(unknown)'}`,
-					};
-				}
 
 				if (superseded) {
 					logger.info(`${adapter.type} coalesced dispatch superseded prior pending job`, {

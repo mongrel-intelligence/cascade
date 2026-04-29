@@ -6,21 +6,18 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // inside factory closures.
 // ---------------------------------------------------------------------------
 
-const { mockJobInstance, mockQueueInstance } = vi.hoisted(() => {
-	const mockJobInstance = {
-		getState: vi.fn(),
-		remove: vi.fn(),
-	};
+const { mockQueueInstance } = vi.hoisted(() => {
 	const mockQueueInstance = {
 		on: vi.fn(),
 		add: vi.fn().mockResolvedValue({ id: 'test-job-id' }),
-		getJob: vi.fn().mockResolvedValue(null),
+		getDelayed: vi.fn().mockResolvedValue([]),
+		getWaiting: vi.fn().mockResolvedValue([]),
 		getWaitingCount: vi.fn().mockResolvedValue(0),
 		getActiveCount: vi.fn().mockResolvedValue(0),
 		getCompletedCount: vi.fn().mockResolvedValue(0),
 		getFailedCount: vi.fn().mockResolvedValue(0),
 	};
-	return { mockJobInstance, mockQueueInstance };
+	return { mockQueueInstance };
 });
 
 vi.mock('bullmq', () => ({
@@ -61,73 +58,148 @@ const sampleJob: CascadeJob = {
 	receivedAt: new Date().toISOString(),
 };
 
+interface FakeBullJob {
+	name: string;
+	data: CascadeJob;
+	remove: ReturnType<typeof vi.fn>;
+}
+
+function makeFakeJob(name: string, data: CascadeJob): FakeBullJob {
+	return {
+		name,
+		data,
+		remove: vi.fn().mockResolvedValue(undefined),
+	};
+}
+
 describe('scheduleCoalescedJob', () => {
 	beforeEach(() => {
-		mockQueueInstance.getJob.mockResolvedValue(null);
-		mockQueueInstance.add.mockResolvedValue({ id: 'coalesce:proj-1:PROJ-42' });
-		mockJobInstance.getState.mockReset();
-		mockJobInstance.remove.mockReset();
+		mockQueueInstance.getDelayed.mockResolvedValue([]);
+		mockQueueInstance.getWaiting.mockResolvedValue([]);
+		mockQueueInstance.add.mockResolvedValue({ id: 'mock-id' });
 	});
 
-	it('schedules a new delayed job when no existing job exists', async () => {
-		mockQueueInstance.getJob.mockResolvedValue(null);
-
+	it('schedules a new delayed job when no prior pending job exists', async () => {
 		const result = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
 
-		expect(result.jobId).toBe('coalesce:proj-1:PROJ-42');
 		expect(result.superseded).toBe(false);
+		expect(result.supersededJobData).toBeUndefined();
+		expect(result.jobId).toMatch(/^coalesce_proj-1_PROJ-42_/);
+		// The BullMQ "job name" is the coalesceKey — that's what `getDelayed/getWaiting`
+		// filter on to find supersede targets.
 		expect(mockQueueInstance.add).toHaveBeenCalledWith(
-			'jira',
+			'proj-1:PROJ-42',
 			sampleJob,
-			expect.objectContaining({ jobId: 'coalesce:proj-1:PROJ-42', delay: 10_000 }),
+			expect.objectContaining({ jobId: result.jobId, delay: 10_000 }),
 		);
 	});
 
-	it('removes existing delayed job and returns superseded=true with supersededJobData', async () => {
-		const existingData: CascadeJob = {
+	it('supersedes a prior delayed job with the same coalesceKey', async () => {
+		const priorData: CascadeJob = {
 			...sampleJob,
-			projectId: 'proj-old',
-			triggerResult: { agentType: 'planning', workItemId: 'PROJ-42', agentInput: {} },
+			triggerResult: {
+				agentType: 'planning',
+				workItemId: 'PROJ-42',
+				agentInput: {},
+			},
 		};
-		const mockJobWithData = { ...mockJobInstance, data: existingData };
-		mockJobWithData.getState = vi.fn().mockResolvedValue('delayed');
-		mockJobWithData.remove = vi.fn().mockResolvedValue(undefined);
-		mockQueueInstance.getJob.mockResolvedValue(mockJobWithData);
+		const priorJob = makeFakeJob('proj-1:PROJ-42', priorData);
+		mockQueueInstance.getDelayed.mockResolvedValue([priorJob]);
 
 		const result = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
 
 		expect(result.superseded).toBe(true);
-		expect(result.supersededJobData).toEqual(existingData);
-		expect(mockJobWithData.remove).toHaveBeenCalledOnce();
+		expect(result.supersededJobData).toEqual(priorData);
+		expect(priorJob.remove).toHaveBeenCalledOnce();
 		expect(mockQueueInstance.add).toHaveBeenCalledWith(
-			'jira',
+			'proj-1:PROJ-42',
 			sampleJob,
-			expect.objectContaining({ jobId: 'coalesce:proj-1:PROJ-42', delay: 10_000 }),
+			expect.objectContaining({ jobId: result.jobId, delay: 10_000 }),
 		);
 	});
 
-	it('returns activeExists=true and skips add() when an active job has the same ID', async () => {
-		mockJobInstance.getState.mockResolvedValue('active');
-		mockJobInstance.remove.mockResolvedValue(undefined);
-		mockQueueInstance.getJob.mockResolvedValue(mockJobInstance);
+	it('supersedes a prior waiting job (in addition to delayed)', async () => {
+		const priorJob = makeFakeJob('proj-1:PROJ-42', sampleJob);
+		mockQueueInstance.getWaiting.mockResolvedValue([priorJob]);
+
+		const result = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
+
+		expect(result.superseded).toBe(true);
+		expect(priorJob.remove).toHaveBeenCalledOnce();
+	});
+
+	it('regression pin (MNG-422 live bug 2026-04-29): does NOT block the new schedule when an active job has the same coalesceKey', async () => {
+		// Active jobs do NOT appear in getDelayed/getWaiting — they're in the
+		// 'active' set. The new helper deliberately ignores active jobs so the
+		// new event always gets its own delayed dispatch. Before this fix, the
+		// helper reused the deterministic jobId `coalesce:${coalesceKey}` and
+		// BullMQ silently no-op'd add() because of the duplicate id; the
+		// splitting agent for MNG-422 was silently dropped while planning was
+		// still running.
+		mockQueueInstance.getDelayed.mockResolvedValue([]);
+		mockQueueInstance.getWaiting.mockResolvedValue([]);
 
 		const result = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
 
 		expect(result.superseded).toBe(false);
-		expect(result.activeExists).toBe(true);
-		expect(mockJobInstance.remove).not.toHaveBeenCalled();
-		// Must NOT add a new job — BullMQ would silently ignore it for active IDs
-		// and the caller would incorrectly mark locks for a non-existent job.
-		expect(mockQueueInstance.add).not.toHaveBeenCalled();
+		expect(mockQueueInstance.add).toHaveBeenCalledOnce();
+		expect(mockQueueInstance.add).toHaveBeenCalledWith(
+			'proj-1:PROJ-42',
+			sampleJob,
+			expect.objectContaining({ jobId: result.jobId, delay: 10_000 }),
+		);
 	});
 
-	it('uses the coalesceKey to derive the BullMQ job ID', async () => {
+	it('regression pin: does NOT block the new schedule when a completed/failed job exists with the same coalesceKey', async () => {
+		// Completed/failed jobs also do NOT appear in getDelayed/getWaiting.
+		// Before this fix, the helper would fall through to add() with the
+		// deterministic jobId, BullMQ silently no-op'd because the completed
+		// job (kept for 24h via `removeOnComplete: { age: 86400 }`) still held
+		// the id. New webhooks within 24h after a planning run would silently
+		// disappear.
+		mockQueueInstance.getDelayed.mockResolvedValue([]);
+		mockQueueInstance.getWaiting.mockResolvedValue([]);
+
+		const result = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
+
+		expect(result.superseded).toBe(false);
+		expect(mockQueueInstance.add).toHaveBeenCalledOnce();
+	});
+
+	it('only supersedes pending jobs whose name === coalesceKey (does not touch unrelated jobs)', async () => {
+		const matching = makeFakeJob('proj-1:PROJ-42', sampleJob);
+		const unrelated = makeFakeJob('proj-2:OTHER-99', sampleJob);
+		mockQueueInstance.getDelayed.mockResolvedValue([matching, unrelated]);
+
+		await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
+
+		expect(matching.remove).toHaveBeenCalledOnce();
+		expect(unrelated.remove).not.toHaveBeenCalled();
+	});
+
+	it('returns a unique jobId on each call (regression pin against deterministic-id reuse)', async () => {
+		const a = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
+		// Force a non-zero delta so the timestamp suffix differs even on fast clocks.
+		await new Promise((r) => setTimeout(r, 2));
+		const b = await scheduleCoalescedJob(sampleJob, 'proj-1:PROJ-42', 10_000);
+
+		expect(a.jobId).not.toBe(b.jobId);
+		expect(a.jobId).toMatch(/^coalesce_proj-1_PROJ-42_/);
+		expect(b.jobId).toMatch(/^coalesce_proj-1_PROJ-42_/);
+	});
+
+	it('uses the coalesceKey as the BullMQ job name and as a colon-replaced prefix in the jobId', async () => {
 		const result = await scheduleCoalescedJob(sampleJob, 'my-project:ISSUE-99', 5_000);
-		expect(result.jobId).toBe('coalesce:my-project:ISSUE-99');
+
+		// jobId has colons replaced with `_` so BullMQ accepts it and Docker
+		// container names derived from it stay valid.
+		expect(result.jobId).toMatch(/^coalesce_my-project_ISSUE-99_/);
+		expect(result.jobId).not.toContain(':');
+		// The BullMQ name (which we filter on for supersede) keeps the original colons.
 		expect(mockQueueInstance.add).toHaveBeenCalledWith(
-			expect.any(String),
+			'my-project:ISSUE-99',
 			expect.anything(),
-			expect.objectContaining({ jobId: 'coalesce:my-project:ISSUE-99' }),
+			expect.objectContaining({ jobId: result.jobId, delay: 5_000 }),
 		);
 	});
 });
