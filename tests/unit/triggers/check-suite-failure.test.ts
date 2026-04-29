@@ -27,6 +27,28 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
+/**
+ * Assert that a TriggerResult is a structured self-skip — i.e. `agentType` is
+ * null and `skipReason` is populated. Closes the 2026-04-29 prod incident
+ * where every self-skip looked like "No trigger matched for event" in the
+ * webhook log.
+ */
+function expectSkip(
+	result: Awaited<ReturnType<CheckSuiteFailureTrigger['handle']>>,
+	messageMatcher?: string | RegExp,
+): void {
+	expect(result?.agentType).toBeNull();
+	expect(result?.skipReason).toBeDefined();
+	expect(result?.skipReason?.handler).toBe('check-suite-failure');
+	if (messageMatcher !== undefined) {
+		if (typeof messageMatcher === 'string') {
+			expect(result?.skipReason?.message).toContain(messageMatcher);
+		} else {
+			expect(result?.skipReason?.message).toMatch(messageMatcher);
+		}
+	}
+}
+
 describe('CheckSuiteFailureTrigger', () => {
 	const trigger = new CheckSuiteFailureTrigger();
 
@@ -170,7 +192,7 @@ describe('CheckSuiteFailureTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('should return null when trigger is disabled', async () => {
+		it('returns a structured skip when trigger is disabled', async () => {
 			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
@@ -181,7 +203,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result, 'respond-to-ci trigger is disabled for this project');
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'respond-to-ci',
@@ -239,7 +261,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			});
 		});
 
-		it('returns null when PR targets non-base branch', async () => {
+		it('returns a structured skip when PR targets non-base branch', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -262,11 +284,11 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result, /targets develop, not project base branch main/);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
-		it('returns null when PR not authored by implementer persona', async () => {
+		it('returns a structured skip when PR not authored by any cascade persona', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -289,10 +311,47 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result, /not authored by a cascade persona.*author: some-human/);
 		});
 
-		it('returns null when no personaIdentities available', async () => {
+		// Fix 3: gate widening — both implementer AND reviewer personas should
+		// match. PR #155 incident: aaight is the implementer for ucho; respond-to-ci
+		// should also fire for PRs authored by the reviewer persona.
+		it('fires when PR is authored by the REVIEWER persona (not just the implementer)', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				user: { login: mockPersonaIdentities.reviewer },
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'failure' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('respond-to-ci');
+		});
+
+		it('returns a structured skip when no personaIdentities available', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -314,7 +373,7 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result, /persona identities could not be resolved/);
 		});
 
 		it('fires without work item when DB has no link', async () => {
@@ -351,7 +410,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			expect(result?.agentInput.workItemId).toBeUndefined();
 		});
 
-		it('returns null when not all checks are complete', async () => {
+		it('returns a structured skip when not all checks are complete', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -382,10 +441,10 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result, /Not all checks complete yet.*test/);
 		});
 
-		it('returns null when all checks actually passed (no failures)', async () => {
+		it('returns a structured skip when all checks actually passed (no failures)', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -416,10 +475,10 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result, /All 2 checks passed/);
 		});
 
-		it('posts warning and returns null after MAX_ATTEMPTS (3)', async () => {
+		it('posts warning and returns a structured skip after MAX_ATTEMPTS (3)', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -453,7 +512,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			// 4th attempt should be blocked
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result, /Max auto-fix attempts \(3\) reached for PR #42/);
 			expect(githubClient.createPRComment).toHaveBeenCalledWith(
 				'owner',
 				'repo',
@@ -599,10 +658,10 @@ describe('CheckSuiteFailureTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(githubClient.getOpenPRByBranch).toHaveBeenCalledWith('owner', 'repo', 'main');
-			expect(result).toBeNull();
+			expectSkip(result, /Could not resolve PR number/);
 		});
 
-		it('returns null when pull_requests is empty and head_branch is absent', async () => {
+		it('returns a structured skip when pull_requests is empty and head_branch is absent', async () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -624,7 +683,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(githubClient.getOpenPRByBranch).not.toHaveBeenCalled();
-			expect(result).toBeNull();
+			expectSkip(result, /Could not resolve PR number/);
 		});
 
 		it('resetFixAttempts clears attempts for a PR', async () => {

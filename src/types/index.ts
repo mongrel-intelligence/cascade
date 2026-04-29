@@ -124,6 +124,24 @@ export interface TriggerResult {
 	 * Typical key: `${projectId}:${workItemId}`.
 	 */
 	coalesceKey?: string;
+	/**
+	 * Structured self-skip signal — set when a matched handler decided NOT to
+	 * dispatch an agent (e.g. all-checks-not-complete, attempt limit hit, PR
+	 * not authored by a cascade persona). `agentType` MUST be `null` when
+	 * `skipReason` is set.
+	 *
+	 * The router promotes `skipReason.message` into the persisted webhook log's
+	 * `decisionReason` so operators can distinguish "no matcher matched" from
+	 * "matcher claimed the event but bailed" without trawling cascade-router
+	 * process logs. Bare `return null` from `handle()` keeps the legacy
+	 * "try-next-handler" semantic; structured skips terminate dispatch.
+	 */
+	skipReason?: {
+		/** Name of the handler that produced the skip (e.g. `'check-suite-failure'`). */
+		handler: string;
+		/** Human-readable explanation. Used verbatim in webhook log decisionReason. */
+		message: string;
+	};
 }
 
 export interface TriggerHandler {

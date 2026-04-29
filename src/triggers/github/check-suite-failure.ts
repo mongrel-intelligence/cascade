@@ -1,10 +1,24 @@
 import { githubClient } from '../../github/client.js';
+import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { parsePrNumberFromRef, resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
+
+/**
+ * Build a structured skip result so the router's webhook log decisionReason
+ * surfaces the real reason this handler bailed (instead of the generic
+ * "No trigger matched for event"). See `TriggerResult.skipReason`.
+ */
+function skip(handlerName: string, message: string): TriggerResult {
+	return {
+		agentType: null,
+		agentInput: {},
+		skipReason: { handler: handlerName, message },
+	};
+}
 
 /**
  * Resolve a PR number from a check_suite payload.
@@ -75,7 +89,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				this.name,
 			))
 		) {
-			return null;
+			return skip(this.name, 'respond-to-ci trigger is disabled for this project');
 		}
 
 		const payload = ctx.payload as GitHubCheckSuitePayload;
@@ -89,24 +103,33 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			payload.check_suite.head_branch,
 			this.name,
 		);
-		if (prNumber === null) return null;
+		if (prNumber === null) {
+			return skip(this.name, 'Could not resolve PR number from check_suite payload');
+		}
 		const headSha = payload.check_suite.head_sha;
 
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author being the implementer persona
+		// Gate on PR author being a cascade persona (implementer OR reviewer).
+		// Loop-prevention: only auto-fix CI on PRs authored by the bot personas;
+		// human-authored PRs are owned by the human.
 		if (!ctx.personaIdentities) {
 			logger.info('No persona identities available, skipping', { handler: this.name, prNumber });
-			return null;
+			return skip(
+				this.name,
+				'Cascade persona identities could not be resolved (token / GitHub API issue)',
+			);
 		}
-		const implLogin = ctx.personaIdentities.implementer;
-		if (prDetails.user.login !== implLogin && prDetails.user.login !== `${implLogin}[bot]`) {
-			logger.info('PR not authored by implementer persona, skipping check failure trigger', {
+		if (!isCascadeBot(prDetails.user.login, ctx.personaIdentities)) {
+			logger.info('PR not authored by a cascade persona, skipping check failure trigger', {
 				prNumber,
 				prAuthor: prDetails.user.login,
 			});
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} not authored by a cascade persona (author: ${prDetails.user.login})`,
+			);
 		}
 
 		// Only trigger for PRs targeting the project's base branch
@@ -116,7 +139,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				baseRef: prDetails.baseRef,
 				projectBaseBranch: ctx.project.baseBranch,
 			});
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} targets ${prDetails.baseRef}, not project base branch ${ctx.project.baseBranch}`,
+			);
 		}
 
 		// Resolve work item from DB
@@ -129,14 +155,18 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// Verify ALL checks have completed (not still running)
 		const allComplete = checkStatus.checkRuns.every((cr) => cr.status === 'completed');
 		if (!allComplete) {
+			const incomplete = checkStatus.checkRuns
+				.filter((cr) => cr.status !== 'completed')
+				.map((cr) => cr.name);
 			logger.info('Not all checks complete yet, waiting', {
 				prNumber,
 				totalChecks: checkStatus.totalCount,
-				incompleteChecks: checkStatus.checkRuns
-					.filter((cr) => cr.status !== 'completed')
-					.map((cr) => cr.name),
+				incompleteChecks: incomplete,
 			});
-			return null;
+			return skip(
+				this.name,
+				`Not all checks complete yet (${incomplete.length}/${checkStatus.totalCount} still running): ${incomplete.join(', ')}`,
+			);
 		}
 
 		// Verify at least one check failed
@@ -152,7 +182,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				prNumber,
 				totalChecks: checkStatus.totalCount,
 			});
-			return null;
+			return skip(
+				this.name,
+				`All ${checkStatus.totalCount} checks passed for PR #${prNumber} — no action needed`,
+			);
 		}
 
 		// Check attempt limit to prevent infinite loops
@@ -168,7 +201,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 				prNumber,
 				'⚠️ Unable to automatically fix failing checks after 3 attempts. Manual intervention required.',
 			);
-			return null;
+			return skip(
+				this.name,
+				`Max auto-fix attempts (${MAX_ATTEMPTS}) reached for PR #${prNumber} — manual intervention required`,
+			);
 		}
 
 		// Increment attempt counter

@@ -196,13 +196,37 @@ describe('processRouterWebhook', () => {
 		expect(addJob).not.toHaveBeenCalled();
 	});
 
-	it('does not queue when dispatch returns null', async () => {
+	it('does not queue when dispatch returns null (no matcher matched)', async () => {
 		const adapter = makeMockAdapter({
 			dispatchWithCredentials: vi.fn().mockResolvedValue(null),
 		});
 		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
 		expect(result.shouldProcess).toBe(true);
 		expect(result.decisionReason).toBe('No trigger matched for event');
+		expect(addJob).not.toHaveBeenCalled();
+	});
+
+	// Diagnostic upgrade: a structured skip from a matched handler must be
+	// surfaced in decisionReason — distinct from "no matcher matched". Closes
+	// the 2026-04-29 ucho/PR#155 incident where check_suite-failure self-skipped
+	// for an unknown reason and webhooklogs only said "No trigger matched for
+	// event", forcing log-trawling instead of dashboard-level diagnosis.
+	it('surfaces handler-specific skipReason in decisionReason when a matched handler self-skipped', async () => {
+		const adapter = makeMockAdapter({
+			dispatchWithCredentials: vi.fn().mockResolvedValue({
+				agentType: null,
+				agentInput: {},
+				skipReason: {
+					handler: 'check-suite-failure',
+					message: 'Not all checks complete yet, waiting',
+				},
+			}),
+		});
+		const result = await processRouterWebhook(adapter, {}, mockTriggerRegistry);
+		expect(result.shouldProcess).toBe(true);
+		expect(result.decisionReason).toBe(
+			'Trigger check-suite-failure skipped: Not all checks complete yet, waiting',
+		);
 		expect(addJob).not.toHaveBeenCalled();
 	});
 

@@ -143,8 +143,21 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		if (this.cachedPersonas !== undefined) return this.cachedPersonas;
 		try {
 			this.cachedPersonas = await resolvePersonaIdentities(projectId);
-		} catch {
-			// Resolution may fail — leave cachedPersonas undefined so callers can decide
+		} catch (err) {
+			// Surface the failure: every downstream gate that depends on
+			// personaIdentities will silently skip without these logs. Closes
+			// the 2026-04-29 incident class where ucho/PR#155's check_suite
+			// failure trigger could have been suppressed by an invisible
+			// token-resolution error.
+			logger.error('Failed to resolve cascade persona identities', {
+				projectId,
+				error: String(err),
+			});
+			captureException(err, {
+				tags: { source: 'persona_identity_resolution_failed' },
+				extra: { projectId },
+			});
+			// leave cachedPersonas undefined so callers can decide
 		}
 		return this.cachedPersonas;
 	}

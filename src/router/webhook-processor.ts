@@ -134,6 +134,25 @@ export async function processRouterWebhook(
 		};
 	}
 
+	// Structured skip — a matched handler ran but bailed (e.g. precondition
+	// unmet, dedup claim lost, PR not from cascade persona). Surface the
+	// handler-specific reason in webhook log decisionReason so operators can
+	// triage from the dashboard without trawling cascade-router process logs.
+	if (result.skipReason && result.agentType === null) {
+		logger.info(`${adapter.type} trigger self-skipped`, {
+			handler: result.skipReason.handler,
+			message: result.skipReason.message,
+			eventType: event.eventType,
+			workItemId: event.workItemId,
+			projectId: project.id,
+		});
+		return {
+			shouldProcess: true,
+			projectId: project.id,
+			decisionReason: `Trigger ${result.skipReason.handler} skipped: ${result.skipReason.message}`,
+		};
+	}
+
 	logger.info(`${adapter.type} trigger matched`, {
 		agentType: result.agentType || '(no agent)',
 		workItemId: event.workItemId,

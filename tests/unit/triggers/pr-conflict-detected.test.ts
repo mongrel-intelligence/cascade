@@ -110,7 +110,8 @@ describe('PRConflictDetectedTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'resolve-conflicts',
@@ -190,7 +191,8 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 		});
 
 		it('returns null when PR not authored by implementer persona', async () => {
@@ -222,7 +224,8 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 		});
 
 		it('returns null when no personaIdentities available', async () => {
@@ -248,7 +251,8 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 		});
 
 		it('fires without work item when DB has no link', async () => {
@@ -310,7 +314,8 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 		});
 
 		it('returns null when mergeable is null after retries', async () => {
@@ -337,7 +342,8 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 			// Should have retried 2 times + initial call = 3 calls
 			expect(githubClient.getPR).toHaveBeenCalledTimes(3);
 		});
@@ -415,7 +421,8 @@ describe('PRConflictDetectedTrigger', () => {
 			// 3rd attempt should be blocked
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expect(result?.agentType).toBeNull();
+			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 			expect(githubClient.createPRComment).toHaveBeenCalledWith(
 				'owner',
 				'repo',
