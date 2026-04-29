@@ -68,6 +68,7 @@ export const EMPTY_DEFINITION: AgentDefinition = {
 		taskPrompt:
 			'Analyze and process the work item with ID: <%= it.workItemId %>. The work item data has been pre-loaded.',
 	},
+	requiredContext: [],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
