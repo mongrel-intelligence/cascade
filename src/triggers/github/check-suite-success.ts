@@ -2,6 +2,8 @@ import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { gateBaseBranch } from '../shared/gates.js';
+import { skip } from '../shared/skip.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import {
 	buildReviewDispatchKey,
@@ -103,7 +105,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			this.name,
 		);
 		if (!triggerConfig.enabled) {
-			return null;
+			return skip(this.name, 'review trigger is disabled for this project');
 		}
 
 		const payload = ctx.payload as GitHubCheckSuitePayload;
@@ -119,7 +121,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				logger.info('Could not parse PR number from head_branch ref, skipping', {
 					handler: this.name,
 				});
-				return null;
+				return skip(this.name, 'Could not parse PR number from check_suite head_branch');
 			}
 			prNumber = parsed;
 		}
@@ -136,7 +138,10 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			this.name,
 		);
 		if (!authorResult) {
-			return null;
+			return skip(
+				this.name,
+				'Cascade persona identities could not be resolved (token / GitHub API issue)',
+			);
 		}
 		if (!authorResult.shouldTrigger) {
 			logger.info('PR author does not match configured authorMode, skipping', {
@@ -146,18 +151,14 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				isCascadePR: authorResult.isCascadePR,
 				authorMode: authorResult.authorMode,
 			});
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} author ${prDetails.user.login} does not match configured authorMode '${authorResult.authorMode}' (isCascadePR=${authorResult.isCascadePR})`,
+			);
 		}
 
-		// Only trigger for PRs targeting the project's base branch
-		if (prDetails.baseRef !== ctx.project.baseBranch) {
-			logger.info('PR targets non-base branch, skipping review trigger', {
-				prNumber,
-				baseRef: prDetails.baseRef,
-				projectBaseBranch: ctx.project.baseBranch,
-			});
-			return null;
-		}
+		const baseSkip = gateBaseBranch(prDetails.baseRef, prNumber, ctx.project, this.name);
+		if (baseSkip) return baseSkip;
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
@@ -186,7 +187,10 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 					reviewerUsername,
 					headSha,
 				});
-				return null;
+				return skip(
+					this.name,
+					`PR #${prNumber} already reviewed at HEAD ${headSha} by ${reviewerUsername} — no re-review needed`,
+				);
 			}
 			logger.info('New commits since last review, re-triggering review', {
 				prNumber,
@@ -199,7 +203,10 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// check_suite deliveries and other review-producing triggers.
 		const dedupKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
 		if (!claimReviewDispatch(dedupKey, this.name, { prNumber, headSha })) {
-			return null;
+			return skip(
+				this.name,
+				`Review dispatch for PR #${prNumber}@${headSha} already claimed by another path (dedup)`,
+			);
 		}
 
 		// The trigger decision is made — the review agent should run.

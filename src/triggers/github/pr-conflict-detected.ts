@@ -1,19 +1,17 @@
 import { githubClient } from '../../github/client.js';
-import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import {
+	gateAttemptLimit,
+	gateBaseBranch,
+	gateCascadePersona,
+	gateTriggerEnabled,
+	requirePersonaIdentities,
+} from '../shared/gates.js';
+import { skip } from '../shared/skip.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
-
-function skip(handlerName: string, message: string): TriggerResult {
-	return {
-		agentType: null,
-		agentInput: {},
-		skipReason: { handler: handlerName, message },
-	};
-}
 
 // Track conflict resolution attempts per PR to prevent infinite loops
 const conflictAttempts = new Map<number, number>();
@@ -44,60 +42,31 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via DB-driven system
-		if (
-			!(await checkTriggerEnabled(
-				ctx.project.id,
-				'resolve-conflicts',
-				'scm:pr-conflict-detected',
-				this.name,
-			))
-		) {
-			return skip(this.name, 'resolve-conflicts trigger is disabled for this project');
-		}
+		const enabled = await gateTriggerEnabled(
+			ctx.project.id,
+			'resolve-conflicts',
+			'scm:pr-conflict-detected',
+			this.name,
+		);
+		if (enabled) return enabled;
 
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const prNumber = payload.pull_request.number;
 		const repoFullName = payload.repository.full_name;
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
-		// Gate on PR author being a cascade persona (implementer OR reviewer).
-		// Loop-prevention: only auto-resolve conflicts on PRs authored by bot
-		// personas; human-authored PRs are owned by the human.
-		if (!ctx.personaIdentities) {
-			logger.info('No persona identities available, skipping', {
-				handler: this.name,
-				prNumber,
-			});
-			return skip(
-				this.name,
-				'Cascade persona identities could not be resolved (token / GitHub API issue)',
-			);
-		}
-		const prAuthorLogin = payload.pull_request.user.login;
-		if (!isCascadeBot(prAuthorLogin, ctx.personaIdentities)) {
-			logger.info('PR not authored by a cascade persona, skipping conflict detection trigger', {
-				prNumber,
-				prAuthor: prAuthorLogin,
-			});
-			return skip(
-				this.name,
-				`PR #${prNumber} not authored by a cascade persona (author: ${prAuthorLogin})`,
-			);
-		}
+		// Sync gate chain — author must be a cascade persona AND the PR must
+		// target the project's base branch. Loop-prevention: only auto-resolve
+		// conflicts on PRs authored by bot personas; human PRs are owned by
+		// the human.
+		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumber, this.name);
+		if (!personasResult.ok) return personasResult.skip;
 
-		// Only trigger for PRs targeting the project's base branch
-		if (payload.pull_request.base.ref !== ctx.project.baseBranch) {
-			logger.info('PR targets non-base branch, skipping conflict detection trigger', {
-				prNumber,
-				baseRef: payload.pull_request.base.ref,
-				projectBaseBranch: ctx.project.baseBranch,
-			});
-			return skip(
-				this.name,
-				`PR #${prNumber} targets ${payload.pull_request.base.ref}, not project base branch ${ctx.project.baseBranch}`,
-			);
-		}
+		const prAuthorLogin = payload.pull_request.user.login;
+		const gateChainSkip =
+			gateCascadePersona(prAuthorLogin, prNumber, personasResult.value, this.name) ??
+			gateBaseBranch(payload.pull_request.base.ref, prNumber, ctx.project, this.name);
+		if (gateChainSkip) return gateChainSkip;
 
 		// Fetch PR details, retrying if mergeable is null (GitHub computes it asynchronously)
 		let prDetails = await githubClient.getPR(owner, repo, prNumber);
@@ -132,23 +101,19 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 			return skip(this.name, `PR #${prNumber} is mergeable — no conflict detected`);
 		}
 
-		// Check attempt limit to prevent infinite loops
+		// Check attempt limit to prevent infinite loops. Side effect (PR
+		// comment) is handler-local because the warning text differs from
+		// other handlers and is part of the contract.
 		const attempts = conflictAttempts.get(prNumber) || 0;
-		if (attempts >= MAX_ATTEMPTS) {
-			logger.warn('Max conflict resolution attempts reached for PR', {
-				prNumber,
-				attempts,
-			});
+		const limitSkip = gateAttemptLimit(attempts, MAX_ATTEMPTS, prNumber, this.name);
+		if (limitSkip) {
 			await githubClient.createPRComment(
 				owner,
 				repo,
 				prNumber,
 				'⚠️ Unable to automatically resolve merge conflicts after 2 attempts. Manual intervention required.',
 			);
-			return skip(
-				this.name,
-				`Max conflict resolution attempts (${MAX_ATTEMPTS}) reached for PR #${prNumber} — manual intervention required`,
-			);
+			return limitSkip;
 		}
 
 		// Increment attempt counter

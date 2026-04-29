@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockConfigResolverModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('pr-opened');
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 
@@ -244,7 +247,7 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expect(await trigger.handle(ctx)).toBeNull();
+			expectSkip(await trigger.handle(ctx));
 			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test',
 				'review',
@@ -282,7 +285,7 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expect(await trigger.handle(ctx)).toBeNull();
+			expectSkip(await trigger.handle(ctx));
 		});
 
 		it('fires for implementer PR when authorMode=own', async () => {
@@ -348,7 +351,7 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expect(await trigger.handle(ctx)).toBeNull();
+			expectSkip(await trigger.handle(ctx));
 		});
 
 		it('returns null for implementer [bot] variant when authorMode=external', async () => {
@@ -380,7 +383,7 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expect(await trigger.handle(ctx)).toBeNull();
+			expectSkip(await trigger.handle(ctx));
 		});
 
 		it('fires for external PR when authorMode=external', async () => {
@@ -447,7 +450,7 @@ describe('PROpenedTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('fires for reviewer persona PR when authorMode=own', async () => {
@@ -564,7 +567,7 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expect(await trigger.handle(ctx)).toBeNull();
+			expectSkip(await trigger.handle(ctx));
 		});
 
 		it('fires with undefined workItemId when DB has no link', async () => {

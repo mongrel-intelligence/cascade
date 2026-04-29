@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockConfigResolverModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('pr-review-submitted');
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 
@@ -138,7 +141,7 @@ describe('PRReviewSubmittedTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'respond-to-review',
@@ -196,7 +199,7 @@ describe('PRReviewSubmittedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null for review from human user', async () => {
@@ -217,7 +220,7 @@ describe('PRReviewSubmittedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when no persona identities available', async () => {
@@ -229,7 +232,7 @@ describe('PRReviewSubmittedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('fires without work item when PR has no work item reference', async () => {

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('pr-comment-mention');
 
 // Hoist mocks before imports
 const { mockGetPR, mockIsCascadeBot } = vi.hoisted(() => ({
@@ -203,7 +206,7 @@ describe('PRCommentMentionTrigger', () => {
 			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			const result = await trigger.handle(buildCtx());
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test-project',
 				'respond-to-pr-comment',
@@ -242,13 +245,13 @@ describe('PRCommentMentionTrigger', () => {
 				}),
 			);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when persona identities are missing', async () => {
 			const result = await trigger.handle(buildCtx({ noPersonaIdentities: true }));
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when comment is from a bot persona', async () => {
@@ -256,7 +259,7 @@ describe('PRCommentMentionTrigger', () => {
 
 			const result = await trigger.handle(buildCtx());
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('fires with workItemId undefined when DB has no link', async () => {
@@ -343,7 +346,7 @@ describe('PRCommentMentionTrigger', () => {
 				}),
 			);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when comment author is a bot persona (inline)', async () => {
@@ -351,7 +354,7 @@ describe('PRCommentMentionTrigger', () => {
 
 			const result = await trigger.handle(buildCtx({ payload: buildReviewCommentPayload() }));
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('includes headSha from the review-comment payload (for post-checkout HEAD verification)', async () => {

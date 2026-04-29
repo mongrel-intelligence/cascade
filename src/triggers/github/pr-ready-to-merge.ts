@@ -7,6 +7,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { isLifecycleTriggerEnabled } from '../shared/lifecycle-check.js';
+import { skip } from '../shared/skip.js';
 import {
 	type GitHubCheckSuitePayload,
 	type GitHubPullRequestReviewPayload,
@@ -14,6 +15,8 @@ import {
 	isGitHubPullRequestReviewPayload,
 } from './types.js';
 import { resolveWorkItemId } from './utils.js';
+
+const HANDLER_NAME = 'pr-ready-to-merge';
 
 /** Merge PR automatically and move to MERGED; fall back to DONE on merge failure. */
 async function handleAutoMerge(
@@ -36,7 +39,10 @@ async function handleAutoMerge(
 				workItemId,
 				'⚠️ Auto-merge requested (auto label present), but no MERGED or DONE status configured. Manual action required.',
 			);
-			return null;
+			return skip(
+				HANDLER_NAME,
+				`PR #${prNumber} auto-merge requested but neither MERGED nor DONE status is configured — manual action required`,
+			);
 		}
 		await provider.moveWorkItem(workItemId, doneStatus);
 		await provider.addComment(
@@ -65,7 +71,10 @@ async function handleAutoMerge(
 				workItemId,
 				`⚠️ Auto-merge of PR #${prNumber} failed: ${String(err)}. No DONE status configured — manual action required.`,
 			);
-			return null;
+			return skip(
+				HANDLER_NAME,
+				`PR #${prNumber} auto-merge failed AND no DONE status fallback configured — manual action required`,
+			);
 		}
 		await provider.moveWorkItem(workItemId, doneStatus);
 		await provider.addComment(
@@ -113,7 +122,7 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Check lifecycle trigger config (stored in project_integrations.triggers)
 		if (!(await isLifecycleTriggerEnabled(ctx.project.id, 'prReadyToMerge', this.name))) {
-			return null;
+			return skip(this.name, 'prReadyToMerge lifecycle trigger is disabled for this project');
 		}
 
 		let prNumber: number;
@@ -133,7 +142,8 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 			headSha = payload.pull_request.head.sha;
 			repoFullName = payload.repository.full_name;
 		} else {
-			return null;
+			// Defensive — matches() ensured one of the two payloads.
+			return skip(this.name, 'Payload was neither check_suite nor pull_request_review');
 		}
 
 		const { owner, repo } = parseRepoFullName(repoFullName);
@@ -142,18 +152,27 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		if (!workItemId) {
 			logger.info('No work item linked to PR, skipping pr-ready-to-merge', { prNumber });
-			return null;
+			return skip(
+				this.name,
+				`No work item linked to PR #${prNumber} — nothing to move to DONE/MERGED`,
+			);
 		}
 
 		// Check 1: All checks must pass
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
 		if (!checkStatus.allPassing) {
+			const failing = checkStatus.checkRuns
+				.filter((c) => c.conclusion !== 'success')
+				.map((c) => c.name);
 			logger.debug('Not all checks passing', {
 				prNumber,
 				totalChecks: checkStatus.totalCount,
-				failing: checkStatus.checkRuns.filter((c) => c.conclusion !== 'success').map((c) => c.name),
+				failing,
 			});
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} has failing/in-progress checks (${failing.join(', ') || 'unknown'}) — not ready to merge`,
+			);
 		}
 
 		// Check 2: Must have approved review and no outstanding change requests
@@ -178,7 +197,10 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 				hasApproval,
 				hasChangeRequests,
 			});
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} not ready to merge: approved=${hasApproval}, changesRequested=${hasChangeRequests}`,
+			);
 		}
 
 		// All conditions met — check for auto label to determine MERGED vs DONE path
@@ -203,7 +225,10 @@ export class PRReadyToMergeTrigger implements TriggerHandler {
 		const doneStatus = pmConfig.statuses.done;
 		if (!doneStatus) {
 			logger.warn('No done status configured for project', { projectId: ctx.project.id });
-			return null;
+			return skip(
+				this.name,
+				`Project ${ctx.project.id} has no 'done' status configured — cannot move PR #${prNumber}'s work item`,
+			);
 		}
 
 		// Idempotency: skip if work item is already in the DONE status

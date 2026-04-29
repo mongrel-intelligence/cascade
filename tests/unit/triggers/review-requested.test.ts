@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { mockConfigResolverModule, mockTriggerCheckModule } from '../../helpers/sharedMocks.js';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('review-requested');
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 
@@ -102,7 +105,7 @@ describe('ReviewRequestedTrigger', () => {
 				// no personaIdentities
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when sender is the implementer persona (loop prevention)', async () => {
@@ -116,7 +119,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when sender is the reviewer persona (loop prevention)', async () => {
@@ -130,7 +133,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when a persona requests review from itself (loop prevention)', async () => {
@@ -144,7 +147,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when requested reviewer is not a CASCADE persona', async () => {
@@ -155,7 +158,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when no requested reviewer in payload', async () => {
@@ -169,7 +172,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('fires without work item when PR has no work item reference', async () => {
@@ -254,7 +257,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'review',

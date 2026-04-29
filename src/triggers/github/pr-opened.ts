@@ -1,5 +1,6 @@
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { skip } from '../shared/skip.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { isGitHubPullRequestPayload } from './types.js';
 import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
@@ -34,7 +35,7 @@ export class PROpenedTrigger implements TriggerHandler {
 			this.name,
 		);
 		if (!triggerConfig.enabled) {
-			return null;
+			return skip(this.name, 'review trigger is disabled for this project');
 		}
 
 		const payload = ctx.payload as {
@@ -60,7 +61,10 @@ export class PROpenedTrigger implements TriggerHandler {
 			this.name,
 		);
 		if (!authorResult) {
-			return null;
+			return skip(
+				this.name,
+				'Cascade persona identities could not be resolved (token / GitHub API issue)',
+			);
 		}
 		if (!authorResult.shouldTrigger) {
 			logger.info('PR author does not match configured authorMode, skipping', {
@@ -70,7 +74,10 @@ export class PROpenedTrigger implements TriggerHandler {
 				isCascadePR: authorResult.isCascadePR,
 				authorMode: authorResult.authorMode,
 			});
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} author ${prAuthor} does not match configured authorMode '${authorResult.authorMode}' (isCascadePR=${authorResult.isCascadePR})`,
+			);
 		}
 
 		// Resolve work item from DB

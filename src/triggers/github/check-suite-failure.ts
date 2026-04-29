@@ -1,24 +1,17 @@
 import { githubClient } from '../../github/client.js';
-import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import {
+	gateAttemptLimit,
+	gateBaseBranch,
+	gateCascadePersona,
+	gateTriggerEnabled,
+	requirePersonaIdentities,
+} from '../shared/gates.js';
+import { skip } from '../shared/skip.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { parsePrNumberFromRef, resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
-
-/**
- * Build a structured skip result so the router's webhook log decisionReason
- * surfaces the real reason this handler bailed (instead of the generic
- * "No trigger matched for event"). See `TriggerResult.skipReason`.
- */
-function skip(handlerName: string, message: string): TriggerResult {
-	return {
-		agentType: null,
-		agentInput: {},
-		skipReason: { handler: handlerName, message },
-	};
-}
 
 /**
  * Resolve a PR number from a check_suite payload.
@@ -80,17 +73,13 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via new DB-driven system
-		if (
-			!(await checkTriggerEnabled(
-				ctx.project.id,
-				'respond-to-ci',
-				'scm:check-suite-failure',
-				this.name,
-			))
-		) {
-			return skip(this.name, 'respond-to-ci trigger is disabled for this project');
-		}
+		const enabled = await gateTriggerEnabled(
+			ctx.project.id,
+			'respond-to-ci',
+			'scm:check-suite-failure',
+			this.name,
+		);
+		if (enabled) return enabled;
 
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
@@ -111,39 +100,16 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author being a cascade persona (implementer OR reviewer).
-		// Loop-prevention: only auto-fix CI on PRs authored by the bot personas;
-		// human-authored PRs are owned by the human.
-		if (!ctx.personaIdentities) {
-			logger.info('No persona identities available, skipping', { handler: this.name, prNumber });
-			return skip(
-				this.name,
-				'Cascade persona identities could not be resolved (token / GitHub API issue)',
-			);
-		}
-		if (!isCascadeBot(prDetails.user.login, ctx.personaIdentities)) {
-			logger.info('PR not authored by a cascade persona, skipping check failure trigger', {
-				prNumber,
-				prAuthor: prDetails.user.login,
-			});
-			return skip(
-				this.name,
-				`PR #${prNumber} not authored by a cascade persona (author: ${prDetails.user.login})`,
-			);
-		}
+		// Sync gate chain — author must be a cascade persona (implementer OR
+		// reviewer; loop-prevention) AND the PR must target the project's base
+		// branch. Both gates short-circuit on the first failure.
+		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumber, this.name);
+		if (!personasResult.ok) return personasResult.skip;
 
-		// Only trigger for PRs targeting the project's base branch
-		if (prDetails.baseRef !== ctx.project.baseBranch) {
-			logger.info('PR targets non-base branch, skipping check failure trigger', {
-				prNumber,
-				baseRef: prDetails.baseRef,
-				projectBaseBranch: ctx.project.baseBranch,
-			});
-			return skip(
-				this.name,
-				`PR #${prNumber} targets ${prDetails.baseRef}, not project base branch ${ctx.project.baseBranch}`,
-			);
-		}
+		const gateChainSkip =
+			gateCascadePersona(prDetails.user.login, prNumber, personasResult.value, this.name) ??
+			gateBaseBranch(prDetails.baseRef, prNumber, ctx.project, this.name);
+		if (gateChainSkip) return gateChainSkip;
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
@@ -188,23 +154,19 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			);
 		}
 
-		// Check attempt limit to prevent infinite loops
+		// Check attempt limit to prevent infinite loops. Side effect (PR
+		// comment) is handler-local because the warning text is contractual,
+		// not part of the gate's pure logic.
 		const attempts = fixAttempts.get(prNumber) || 0;
-		if (attempts >= MAX_ATTEMPTS) {
-			logger.warn('Max auto-fix attempts reached for PR', {
-				prNumber,
-				attempts,
-			});
+		const limitSkip = gateAttemptLimit(attempts, MAX_ATTEMPTS, prNumber, this.name);
+		if (limitSkip) {
 			await githubClient.createPRComment(
 				owner,
 				repo,
 				prNumber,
 				'⚠️ Unable to automatically fix failing checks after 3 attempts. Manual intervention required.',
 			);
-			return skip(
-				this.name,
-				`Max auto-fix attempts (${MAX_ATTEMPTS}) reached for PR #${prNumber} — manual intervention required`,
-			);
+			return limitSkip;
 		}
 
 		// Increment attempt counter

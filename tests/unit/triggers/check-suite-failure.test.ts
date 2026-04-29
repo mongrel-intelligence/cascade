@@ -27,27 +27,9 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 
-/**
- * Assert that a TriggerResult is a structured self-skip — i.e. `agentType` is
- * null and `skipReason` is populated. Closes the 2026-04-29 prod incident
- * where every self-skip looked like "No trigger matched for event" in the
- * webhook log.
- */
-function expectSkip(
-	result: Awaited<ReturnType<CheckSuiteFailureTrigger['handle']>>,
-	messageMatcher?: string | RegExp,
-): void {
-	expect(result?.agentType).toBeNull();
-	expect(result?.skipReason).toBeDefined();
-	expect(result?.skipReason?.handler).toBe('check-suite-failure');
-	if (messageMatcher !== undefined) {
-		if (typeof messageMatcher === 'string') {
-			expect(result?.skipReason?.message).toContain(messageMatcher);
-		} else {
-			expect(result?.skipReason?.message).toMatch(messageMatcher);
-		}
-	}
-}
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('check-suite-failure');
 
 describe('CheckSuiteFailureTrigger', () => {
 	const trigger = new CheckSuiteFailureTrigger();

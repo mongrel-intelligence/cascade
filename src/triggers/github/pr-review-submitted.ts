@@ -1,7 +1,8 @@
 import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { gateTriggerEnabled, requirePersonaIdentities } from '../shared/gates.js';
+import { skip } from '../shared/skip.js';
 import { type GitHubPullRequestReviewPayload, isGitHubPullRequestReviewPayload } from './types.js';
 import { resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
@@ -23,17 +24,13 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via new DB-driven system
-		if (
-			!(await checkTriggerEnabled(
-				ctx.project.id,
-				'respond-to-review',
-				'scm:pr-review-submitted',
-				this.name,
-			))
-		) {
-			return null;
-		}
+		const enabled = await gateTriggerEnabled(
+			ctx.project.id,
+			'respond-to-review',
+			'scm:pr-review-submitted',
+			this.name,
+		);
+		if (enabled) return enabled;
 
 		// Type assertion since we validated in matches()
 		const reviewPayload = ctx.payload as GitHubPullRequestReviewPayload;
@@ -41,20 +38,23 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 		const prNumber = reviewPayload.pull_request.number;
 		const reviewAuthor = reviewPayload.review.user.login;
 
-		// Only respond to reviews from the reviewer persona
-		if (!ctx.personaIdentities) {
-			logger.warn('No persona identities available, skipping review trigger', { prNumber });
-			return null;
-		}
+		// Only respond to reviews from the reviewer persona (NOT general
+		// cascade-bot — implementer reviews shouldn't trigger respond-to-review)
+		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumber, this.name);
+		if (!personasResult.ok) return personasResult.skip;
+		const personas = personasResult.value;
 
-		const persona = getPersonaForLogin(reviewAuthor, ctx.personaIdentities);
+		const persona = getPersonaForLogin(reviewAuthor, personas);
 		if (persona !== 'reviewer') {
 			logger.info('Skipping review not from reviewer persona', {
 				prNumber,
 				reviewAuthor,
-				expectedReviewer: ctx.personaIdentities.reviewer,
+				expectedReviewer: personas.reviewer,
 			});
-			return null;
+			return skip(
+				this.name,
+				`Review on PR #${prNumber} authored by ${reviewAuthor}, not the reviewer persona — not auto-responding`,
+			);
 		}
 
 		// Resolve work item from DB

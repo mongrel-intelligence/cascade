@@ -4,6 +4,9 @@ import {
 	mockGitHubClientModule,
 	mockTriggerCheckModule,
 } from '../../helpers/sharedMocks.js';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('check-suite-success');
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 
@@ -262,7 +265,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const checkSuiteResult = await trigger.handle(checkSuiteContext);
 
-			expect(checkSuiteResult).toBeNull();
+			expectSkip(checkSuiteResult);
 		});
 
 		it('returns null when PR targets non-base branch', async () => {
@@ -288,7 +291,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(githubClient.getPRReviews).not.toHaveBeenCalled();
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
@@ -316,7 +319,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -342,7 +345,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -379,7 +382,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -462,7 +465,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -618,7 +621,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			// Second call with same PR+SHA should be deduped
 			const result2 = await trigger.handle(ctx);
-			expect(result2).toBeNull();
+			expectSkip(result2, /already claimed by another path \(dedup\)/);
 		});
 
 		it('onBlocked callback clears the dedup entry', async () => {
@@ -809,7 +812,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test',
 				'review',
@@ -877,7 +880,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('triggers when PR authored by reviewer persona and authorMode=own', async () => {
@@ -939,7 +942,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('triggers for both authors when authorMode=all', async () => {

@@ -3,7 +3,8 @@ import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { gateTriggerEnabled, requirePersonaIdentities } from '../shared/gates.js';
+import { skip } from '../shared/skip.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
 import { resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
@@ -35,26 +36,30 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		// Check trigger config via new DB-driven system
-		if (
-			!(await checkTriggerEnabled(
-				ctx.project.id,
-				'respond-to-pr-comment',
-				'scm:pr-comment-mention',
-				this.name,
-			))
-		) {
-			return null;
+		const enabled = await gateTriggerEnabled(
+			ctx.project.id,
+			'respond-to-pr-comment',
+			'scm:pr-comment-mention',
+			this.name,
+		);
+		if (enabled) return enabled;
+
+		// Pre-extract prNumber from whichever payload type matches so subsequent
+		// skip-reasons carry PR context (operator-friendly diagnostics).
+		let prNumberHint: number | undefined;
+		if (isGitHubIssueCommentPayload(ctx.payload)) {
+			prNumberHint = ctx.payload.issue.number;
+		} else if (isGitHubPRReviewCommentPayload(ctx.payload)) {
+			prNumberHint = ctx.payload.pull_request.number;
 		}
 
 		// Require persona identities for @mention detection
-		if (!ctx.personaIdentities) {
-			logger.warn('No persona identities available, skipping @mention trigger');
-			return null;
-		}
+		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumberHint, this.name);
+		if (!personasResult.ok) return personasResult.skip;
+		const personas = personasResult.value;
 
 		// The implementer persona is who humans @mention (it writes code and responds)
-		const mentionTarget = ctx.personaIdentities.implementer;
+		const mentionTarget = personas.implementer;
 
 		// Extract comment body from whichever payload type matched
 		let commentBody: string;
@@ -100,20 +105,31 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 			prTitle = payload.pull_request.title;
 			repoFullName = payload.repository.full_name;
 		} else {
-			return null;
+			// Defensive — matches() ensured one of the two payloads, but the
+			// type narrowing exists for completeness.
+			return skip(
+				this.name,
+				'Comment payload was neither issue_comment nor pull_request_review_comment',
+			);
 		}
 
 		// Check for @mention of the implementer persona (case-insensitive)
 		const mentionPattern = new RegExp(`@${mentionTarget}\\b`, 'i');
 		if (!mentionPattern.test(commentBody)) {
 			logger.debug('No @mention in comment, skipping', { prNumber, mentionTarget });
-			return null;
+			return skip(
+				this.name,
+				`Comment on PR #${prNumber} does not @mention ${mentionTarget} — not a respond-to-pr-comment trigger`,
+			);
 		}
 
 		// Skip @mentions from any known bot persona
-		if (isCascadeBot(commentAuthor, ctx.personaIdentities)) {
+		if (isCascadeBot(commentAuthor, personas)) {
 			logger.info('Skipping @mention from cascade bot', { prNumber, commentAuthor });
-			return null;
+			return skip(
+				this.name,
+				`@mention on PR #${prNumber} is from cascade bot ${commentAuthor} (loop prevention)`,
+			);
 		}
 
 		// Resolve work item from DB

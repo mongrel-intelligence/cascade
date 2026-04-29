@@ -7,6 +7,7 @@ import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { isPipelineAtCapacity } from '../shared/backlog-check.js';
 import { isLifecycleTriggerEnabled } from '../shared/lifecycle-check.js';
+import { skip } from '../shared/skip.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
@@ -25,7 +26,7 @@ export class PRMergedTrigger implements TriggerHandler {
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Check lifecycle trigger config (stored in project_integrations.triggers)
 		if (!(await isLifecycleTriggerEnabled(ctx.project.id, 'prMerged', this.name))) {
-			return null;
+			return skip(this.name, 'prMerged lifecycle trigger is disabled for this project');
 		}
 
 		const payload = ctx.payload as GitHubPullRequestPayload;
@@ -37,14 +38,17 @@ export class PRMergedTrigger implements TriggerHandler {
 
 		if (!prDetails.merged) {
 			logger.info('PR closed but not merged, skipping', { prNumber });
-			return null;
+			return skip(
+				this.name,
+				`PR #${prNumber} closed but not merged — no MERGED-status move needed`,
+			);
 		}
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		if (!workItemId) {
 			logger.info('No work item linked to PR, skipping pr-merged', { prNumber });
-			return null;
+			return skip(this.name, `No work item linked to PR #${prNumber} — nothing to move to MERGED`);
 		}
 
 		// Fire-and-forget: invalidate the registry entry AND `docker rmi` the
@@ -66,7 +70,10 @@ export class PRMergedTrigger implements TriggerHandler {
 			logger.warn('No merged status configured for project', {
 				projectId: ctx.project.id,
 			});
-			return null;
+			return skip(
+				this.name,
+				`Project ${ctx.project.id} has no 'merged' status configured — cannot move PR #${prNumber}'s work item`,
+			);
 		}
 
 		const provider = getPMProvider();

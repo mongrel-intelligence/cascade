@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('pr-merged');
+
 import {
 	mockAcknowledgmentsModule,
 	mockConfigProvider,
@@ -167,7 +171,7 @@ describe('PRMergedTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(isLifecycleTriggerEnabled).toHaveBeenCalledWith('test', 'prMerged', 'pr-merged');
 		});
 
@@ -257,7 +261,7 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
@@ -292,7 +296,7 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
@@ -661,7 +665,7 @@ describe('PRMergedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 

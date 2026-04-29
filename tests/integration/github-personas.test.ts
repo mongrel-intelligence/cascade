@@ -20,6 +20,7 @@ import {
 import { PRReviewSubmittedTrigger } from '../../src/triggers/github/pr-review-submitted.js';
 import { ReviewRequestedTrigger } from '../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../src/types/index.js';
+import { expectSkip } from '../helpers/triggerAssertions.js';
 import { assertFound } from './helpers/assert.js';
 import { truncateAll } from './helpers/db.js';
 import {
@@ -272,6 +273,15 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				config: {},
 				triggers: { prReviewSubmitted: true },
 			});
+			// Agent + trigger configs must both be seeded so the
+			// gateTriggerEnabled gate passes and we can exercise the
+			// loop-prevention persona check.
+			await seedAgentConfig({ agentType: 'respond-to-review' });
+			await seedTriggerConfig({
+				agentType: 'respond-to-review',
+				triggerEvent: 'scm:pr-review-submitted',
+				enabled: true,
+			});
 
 			const project = await findProjectByRepoFromDb('owner/repo');
 			expect(project).toBeDefined();
@@ -290,11 +300,11 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				personaIdentities: TEST_PERSONAS,
 			};
 
-			// matches() returns true (persona checks are in handle()), but handle() returns null
-			// because the implementer is not the reviewer persona
+			// matches() returns true (persona checks are in handle()), but handle()
+			// returns a structured skip because the implementer is not the reviewer persona
 			expect(trigger.matches(ctxFromImpl)).toBe(true);
 			const result = await trigger.handle(ctxFromImpl);
-			expect(result).toBeNull();
+			expectSkip(result, 'pr-review-submitted', /not the reviewer persona/);
 		});
 
 		it('skips approved reviews (only changes_requested triggers respond-to-review)', async () => {
@@ -354,7 +364,7 @@ describe('GitHub Dual-Persona System (integration)', () => {
 			// scm:review-requested has defaultEnabled: false in definition
 			expect(trigger.matches(ctx)).toBe(true);
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result, 'review-requested', /trigger is disabled/);
 		});
 
 		it('triggers review when enabled via DB and persona is requested', async () => {
@@ -394,6 +404,7 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				provider: 'github',
 				config: {},
 			});
+			await seedAgentConfig({ agentType: 'review' });
 			await seedTriggerConfig({
 				agentType: 'review',
 				triggerEvent: 'scm:review-requested',
@@ -413,10 +424,10 @@ describe('GitHub Dual-Persona System (integration)', () => {
 			};
 
 			// external-reviewer is not a known persona — matches() passes (persona check is in handle())
-			// but handle() returns null because the requested reviewer isn't a CASCADE bot
+			// but handle() returns a structured skip because the requested reviewer isn't a CASCADE bot
 			expect(trigger.matches(ctx)).toBe(true);
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result, 'review-requested', /not a cascade persona/);
 		});
 	});
 });

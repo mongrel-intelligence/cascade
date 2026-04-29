@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { expectSkipFor } from '../../helpers/triggerAssertions.js';
+
+const expectSkip = expectSkipFor('pr-ready-to-merge');
+
 import {
 	mockAcknowledgmentsModule,
 	mockConfigProvider,
@@ -213,7 +217,7 @@ describe('PRReadyToMergeTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(isLifecycleTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'prReadyToMerge',
@@ -350,7 +354,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
@@ -382,7 +386,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 
@@ -421,7 +425,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('returns null when there are outstanding change requests', async () => {
@@ -467,7 +471,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('skips move and comment when card is already in DONE list', async () => {
@@ -575,7 +579,7 @@ describe('PRReadyToMergeTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result).toBeNull();
+			expectSkip(result);
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});
 	});
@@ -760,7 +764,7 @@ describe('PRReadyToMergeTrigger', () => {
 				'abc123',
 				expect.stringContaining('No DONE status configured'),
 			);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 
 		it('falls back to DONE when auto label present but no MERGED status configured', async () => {
@@ -844,7 +848,7 @@ describe('PRReadyToMergeTrigger', () => {
 				'abc123',
 				expect.stringContaining('no MERGED or DONE status configured'),
 			);
-			expect(result).toBeNull();
+			expectSkip(result);
 		});
 	});
 });
