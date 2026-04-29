@@ -25,8 +25,13 @@ vi.mock('../../../../src/agents/prompts/index.js', () => ({
 	validateTemplate: vi.fn().mockReturnValue({ valid: true }),
 }));
 
+const mockPipelineSnapshotStep = vi.fn();
+const mockWorkItemStep = vi.fn();
 vi.mock('../../../../src/agents/definitions/strategies.js', () => ({
-	CONTEXT_STEP_REGISTRY: {},
+	CONTEXT_STEP_REGISTRY: {
+		pipelineSnapshot: (...args: unknown[]) => mockPipelineSnapshotStep(...args),
+		workItem: (...args: unknown[]) => mockWorkItemStep(...args),
+	},
 }));
 
 import {
@@ -222,6 +227,177 @@ describe('getAgentProfile', () => {
 		expect(profile.finishHooks.requiresPR).toBe(true);
 		expect(profile.finishHooks.requiresReview).toBe(false);
 		expect(profile.finishHooks.requiresPushedChanges).toBe(true);
+	});
+
+	// ============================================================================
+	// requiredContext (Fix A + Fix C — backlog-manager scope safety)
+	//
+	// `requiredContext` is an agent-level array of context steps that:
+	// 1. ALWAYS run, regardless of whether the trigger has its own contextPipeline
+	//    or whether triggerEvent is undefined (manual trigger).
+	// 2. MUST produce >0 injections, otherwise the agent run aborts with a
+	//    structured error.
+	//
+	// Closes the prod incident on 2026-04-29 where backlog-manager was manually
+	// triggered with `triggerEvent: undefined`, ran with no pipelineSnapshot
+	// pre-load, freelanced by listing all PM containers, and moved cards from
+	// SPLITTING to TODO.
+	// ============================================================================
+
+	describe('requiredContext (always-run, fail-closed)', () => {
+		beforeEach(() => {
+			mockPipelineSnapshotStep.mockReset();
+			mockWorkItemStep.mockReset();
+		});
+
+		it('runs requiredContext steps even when triggerEvent is undefined (manual trigger)', async () => {
+			// Regression pin against the 2026-04-29 incident: manual `cascade runs
+			// trigger --agent-type backlog-manager` ran with NO pipelineSnapshot
+			// because resolveContextPipeline returned [] for undefined triggerEvent.
+			mockPipelineSnapshotStep.mockResolvedValue([
+				{ toolName: 'PipelineSnapshot', params: {}, result: 'ok', description: 'snapshot' },
+			]);
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({ requiredContext: ['pipelineSnapshot'] }),
+			);
+
+			const profile = await getAgentProfile('backlog-manager');
+			const result = await profile.fetchContext({
+				input: {}, // no triggerEvent — manual trigger
+			} as Parameters<typeof profile.fetchContext>[0]);
+
+			expect(mockPipelineSnapshotStep).toHaveBeenCalledOnce();
+			expect(result).toHaveLength(1);
+			expect(result[0].toolName).toBe('PipelineSnapshot');
+		});
+
+		it('aborts with a structured error when a requiredContext step returns 0 injections', async () => {
+			// Fix C: fail-closed. Today fetchPipelineSnapshotStep returns [] when
+			// no PM provider is in scope — agent runs with no snapshot and
+			// freelances. Required-step empty result must abort the run.
+			mockPipelineSnapshotStep.mockResolvedValue([]);
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({ requiredContext: ['pipelineSnapshot'] }),
+			);
+
+			const profile = await getAgentProfile('backlog-manager');
+
+			await expect(
+				profile.fetchContext({
+					input: {},
+				} as Parameters<typeof profile.fetchContext>[0]),
+			).rejects.toThrow(/required context step.*pipelineSnapshot/i);
+		});
+
+		it('aborts with a structured error when a requiredContext step throws', async () => {
+			mockPipelineSnapshotStep.mockRejectedValue(new Error('PM provider unavailable'));
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({ requiredContext: ['pipelineSnapshot'] }),
+			);
+
+			const profile = await getAgentProfile('backlog-manager');
+
+			await expect(
+				profile.fetchContext({
+					input: {},
+				} as Parameters<typeof profile.fetchContext>[0]),
+			).rejects.toThrow(/PM provider unavailable|required context step/i);
+		});
+
+		it('does not double-run a step that is in BOTH requiredContext and the trigger pipeline', async () => {
+			// Avoid duplicate snapshot fetch when a webhook trigger (e.g.
+			// scm:pr-merged) lists pipelineSnapshot in its contextPipeline AND
+			// the agent declares it as requiredContext.
+			mockPipelineSnapshotStep.mockResolvedValue([
+				{ toolName: 'PipelineSnapshot', params: {}, result: 'ok', description: 'snapshot' },
+			]);
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({
+					requiredContext: ['pipelineSnapshot'],
+					triggers: [
+						{
+							event: 'scm:pr-merged',
+							label: 'PR Merged',
+							defaultEnabled: false,
+							parameters: [],
+							contextPipeline: ['pipelineSnapshot'],
+						},
+					],
+				}),
+			);
+
+			const profile = await getAgentProfile('backlog-manager');
+			await profile.fetchContext({
+				input: { triggerEvent: 'scm:pr-merged' },
+			} as Parameters<typeof profile.fetchContext>[0]);
+
+			expect(mockPipelineSnapshotStep).toHaveBeenCalledOnce();
+		});
+
+		it('runs requiredContext FIRST, then non-required trigger pipeline steps', async () => {
+			const order: string[] = [];
+			mockPipelineSnapshotStep.mockImplementation(async () => {
+				order.push('pipelineSnapshot');
+				return [
+					{
+						toolName: 'PipelineSnapshot',
+						params: {},
+						result: 'ok',
+						description: 'snapshot',
+					},
+				];
+			});
+			mockWorkItemStep.mockImplementation(async () => {
+				order.push('workItem');
+				return [];
+			});
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({
+					requiredContext: ['pipelineSnapshot'],
+					triggers: [
+						{
+							event: 'pm:status-changed',
+							label: 'Status Changed',
+							defaultEnabled: true,
+							parameters: [],
+							contextPipeline: ['workItem'],
+						},
+					],
+				}),
+			);
+
+			const profile = await getAgentProfile('backlog-manager');
+			await profile.fetchContext({
+				input: { triggerEvent: 'pm:status-changed' },
+			} as Parameters<typeof profile.fetchContext>[0]);
+
+			expect(order).toEqual(['pipelineSnapshot', 'workItem']);
+		});
+
+		it('preserves existing behavior: agents without requiredContext are unaffected', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(
+				makeDefinition({
+					// No requiredContext field
+					triggers: [
+						{
+							event: 'pm:status-changed',
+							label: 'Status Changed',
+							defaultEnabled: true,
+							parameters: [],
+							contextPipeline: [],
+						},
+					],
+				}),
+			);
+
+			const profile = await getAgentProfile('implementation');
+			const result = await profile.fetchContext({
+				input: { triggerEvent: 'pm:status-changed' },
+			} as Parameters<typeof profile.fetchContext>[0]);
+
+			expect(result).toEqual([]);
+			expect(mockPipelineSnapshotStep).not.toHaveBeenCalled();
+		});
 	});
 });
 

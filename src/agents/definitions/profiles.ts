@@ -5,6 +5,7 @@
  * Capabilities determine tools, gadgets, and integration requirements.
  */
 
+import { captureException } from '../../sentry.js';
 import type { AgentInput } from '../../types/index.js';
 import type { Capability, IntegrationChecker } from '../capabilities/index.js';
 import {
@@ -174,6 +175,10 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 	// Get triggers for dynamic context pipeline resolution
 	const triggers = def.triggers ?? [];
 
+	// Agent-level required context steps — run regardless of trigger source,
+	// must produce >0 injections, and abort the run otherwise.
+	const requiredContext = def.requiredContext ?? [];
+
 	// Get task prompt template from prompts (required by schema)
 	const taskPromptTemplate = def.prompts.taskPrompt;
 
@@ -204,11 +209,44 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 			const contextPipeline = resolveContextPipeline(triggers, params.input.triggerEvent);
 
 			const injections: ContextInjection[] = [];
+			const ranSteps = new Set<ContextStepName>();
+
+			// Phase 1: required steps. Always run, regardless of trigger source.
+			// Empty result OR thrown error aborts the run — the safety net for
+			// manual retriggers and missing PM provider scope.
+			for (const step of requiredContext) {
+				const stepFn = resolveRegistry(CONTEXT_STEP_REGISTRY, step, 'requiredContext step');
+				let result: ContextInjection[];
+				try {
+					result = await stepFn(params);
+				} catch (err) {
+					captureException(err, {
+						tags: { source: 'context_pipeline_required_step_failed', step, agent: agentType },
+					});
+					throw err;
+				}
+				if (result.length === 0) {
+					const err = new Error(
+						`Required context step "${step}" produced no injections. Agent cannot run safely without it.`,
+					);
+					captureException(err, {
+						tags: { source: 'context_pipeline_required_step_failed', step, agent: agentType },
+					});
+					throw err;
+				}
+				injections.push(...result);
+				ranSteps.add(step);
+			}
+
+			// Phase 2: trigger pipeline. Skip steps already executed in phase 1.
 			for (const step of contextPipeline) {
+				if (ranSteps.has(step)) continue;
 				const stepFn = resolveRegistry(CONTEXT_STEP_REGISTRY, step, 'contextPipeline step');
 				const result = await stepFn(params);
 				injections.push(...result);
+				ranSteps.add(step);
 			}
+
 			return injections;
 		},
 		buildTaskPrompt: (input) =>

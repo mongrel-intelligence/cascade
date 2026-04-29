@@ -96,6 +96,7 @@ Manual intervention may be needed to unblock the backlog.
 
 ## Rules
 
+- **HARD CONSTRAINT — NEVER MOVE A <%= it.workItemNounCap || 'CARD' %> NOT IN BACKLOG.** The only valid source list is BACKLOG, and the only valid destination is TODO. Never move <%= it.workItemNounPlural || 'cards' %> from SPLITTING, PLANNING, TODO, IN_PROGRESS, IN_REVIEW, DONE, or MERGED — those <%= it.workItemNounPlural || 'cards' %> are already mid-pipeline and another agent or human owns their state. If you don't see a <%= it.workItemNoun || 'card' %> in the BACKLOG section of the Pipeline Snapshot, you CANNOT select it. NEVER call `ListWorkItems` against non-BACKLOG containers to discover candidates — the snapshot's BACKLOG section is the only valid source. If the snapshot is missing or its BACKLOG section is empty, ABORT — do not improvise by listing other lists.
 - ALWAYS check pipeline status FIRST before scanning the backlog
 - NEVER move <%= it.workItemNounPlural || 'cards' %> if the active pipeline is at capacity (<%= it.maxInFlightItems ?? 1 %> item(s))
 - EXIT SILENTLY if pipeline is at capacity - do not post comments

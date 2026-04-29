@@ -54,6 +54,15 @@ triggers:
     defaultEnabled: false
     contextPipeline: [pipelineSnapshot]
 
+# Required context — runs for EVERY invocation regardless of trigger source.
+# Manual `cascade runs trigger --agent-type backlog-manager` would otherwise
+# skip the per-trigger contextPipeline (triggerEvent is undefined), and the
+# agent would freelance with no snapshot. Empty pipelineSnapshot result
+# aborts the run with a structured error + Sentry capture under tag
+# `context_pipeline_required_step_failed` (closes the 2026-04-29 incident
+# where MNG-422 was pulled from SPLITTING into TODO).
+requiredContext: [pipelineSnapshot]
+
 strategies: {}
 
 prompts:

@@ -309,6 +309,24 @@ export const AgentDefinitionSchema = z.object({
 	hint: z.string(),
 	/** Custom prompts (taskPrompt required, systemPrompt optional) */
 	prompts: PromptsSchema,
+	/**
+	 * Context steps that MUST run AND succeed for every invocation of this
+	 * agent — regardless of trigger source (manual, webhook, internal). A
+	 * step is considered to have "succeeded" when it returns one or more
+	 * context injections; an empty result or a thrown error aborts the run
+	 * with a structured error and a Sentry capture under tag
+	 * `context_pipeline_required_step_failed`.
+	 *
+	 * Required steps run BEFORE the per-trigger `contextPipeline` and are
+	 * deduped (a step listed in both runs once). When `triggerEvent` is
+	 * undefined (manual `cascade runs trigger`), the per-trigger pipeline
+	 * is empty by definition — required steps are the only safety net.
+	 *
+	 * Use case: backlog-manager declares `requiredContext: [pipelineSnapshot]`
+	 * so manual retriggers cannot run with a missing pipeline snapshot and
+	 * freelance into selecting cards from non-BACKLOG lists.
+	 */
+	requiredContext: z.array(ContextStepNameSchema).default([]),
 });
 
 /**
