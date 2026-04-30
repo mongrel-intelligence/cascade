@@ -3,15 +3,17 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import {
-	gateAttemptLimit,
 	gateBaseBranch,
 	gateCascadePersona,
 	gateTriggerEnabled,
 	requirePersonaIdentities,
 } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
+import { dispatchRespondToCi, resetFixAttempts } from './respond-to-ci-dispatch.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
 import { parsePrNumberFromRef, resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
+
+export { resetFixAttempts };
 
 /**
  * Resolve a PR number from a check_suite payload.
@@ -45,15 +47,6 @@ async function resolvePrNumber(
 	return pr.number;
 }
 
-// Track fix attempts per PR to prevent infinite loops
-const fixAttempts = new Map<number, number>();
-const MAX_ATTEMPTS = 3;
-
-// Export for cleanup by PRReadyToMergeTrigger
-export function resetFixAttempts(prNumber: number): void {
-	fixAttempts.delete(prNumber);
-}
-
 export class CheckSuiteFailureTrigger implements TriggerHandler {
 	name = 'check-suite-failure';
 	description =
@@ -73,6 +66,10 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		// Early-exit on disabled trigger to avoid GitHub API calls when not needed.
+		// `dispatchRespondToCi` re-checks the same gate (it's the single source of
+		// truth for the success-handler's mixed-state fork too); the redundant call
+		// here is one DB lookup, which the trigger-enabled cache absorbs.
 		const enabled = await gateTriggerEnabled(
 			ctx.project.id,
 			'respond-to-ci',
@@ -154,58 +151,16 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			);
 		}
 
-		// Check attempt limit to prevent infinite loops. Side effect (PR
-		// comment) is handler-local because the warning text is contractual,
-		// not part of the gate's pure logic.
-		const attempts = fixAttempts.get(prNumber) || 0;
-		const limitSkip = gateAttemptLimit(attempts, MAX_ATTEMPTS, prNumber, this.name);
-		if (limitSkip) {
-			await githubClient.createPRComment(
-				owner,
-				repo,
-				prNumber,
-				'⚠️ Unable to automatically fix failing checks after 3 attempts. Manual intervention required.',
-			);
-			return limitSkip;
-		}
-
-		// Increment attempt counter
-		fixAttempts.set(prNumber, attempts + 1);
-
-		logger.info('Check suite failure on implementer PR - all checks complete', {
+		return dispatchRespondToCi({
+			ctx,
 			prNumber,
-			workItemId,
-			attempt: attempts + 1,
-			totalChecks: checkStatus.totalCount,
-			failedChecks: checkStatus.checkRuns
-				.filter(
-					(cr) =>
-						cr.conclusion === 'failure' ||
-						cr.conclusion === 'timed_out' ||
-						cr.conclusion === 'action_required',
-				)
-				.map((cr) => cr.name),
-		});
-
-		const prBranch = prDetails.headRef;
-
-		return {
-			agentType: 'respond-to-ci',
-			agentInput: {
-				prNumber,
-				prBranch,
-				repoFullName: payload.repository.full_name,
-				headSha,
-				triggerType: 'check-failure',
-				triggerEvent: 'scm:check-suite-failure',
-				workItemId: workItemId,
-			},
-			prNumber,
-			prUrl: prDetails.htmlUrl,
-			prTitle: prDetails.title,
+			prDetails,
+			payload,
 			workItemId,
 			workItemUrl,
 			workItemTitle,
-		};
+			checkStatus,
+			handlerName: this.name,
+		});
 	}
 }

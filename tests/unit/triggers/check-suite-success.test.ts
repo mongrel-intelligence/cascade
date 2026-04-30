@@ -15,6 +15,7 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckM
 vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
 import { githubClient } from '../../../src/github/client.js';
+import { resetFixAttempts } from '../../../src/triggers/github/check-suite-failure.js';
 import {
 	CheckSuiteSuccessTrigger,
 	recentlyDispatched,
@@ -44,6 +45,14 @@ describe('CheckSuiteSuccessTrigger', () => {
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		recentlyDispatched.clear();
+		resetFixAttempts(42);
+		// Default: aggregate status reflects all checks passing. Tests that need
+		// a mixed-state SHA override this per-case.
+		vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+			allPassing: true,
+			totalCount: 1,
+			checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
+		});
 	});
 
 	describe('matches', () => {
@@ -192,8 +201,9 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(githubClient.getPR).toHaveBeenCalledWith('owner', 'repo', 42);
-			// handle() no longer polls checks — it defers to worker via waitForChecks flag
-			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+			// handle() queries aggregate status to fork between review (allPassing)
+			// and respond-to-ci (any check failed on the SHA).
+			expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledWith('owner', 'repo', 'sha123');
 			expect(result).toEqual(
 				expect.objectContaining({
 					agentType: 'review',
@@ -320,6 +330,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expectSkip(result);
+			// Author gate fails BEFORE the aggregate-status fork — no API call.
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -346,6 +357,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expectSkip(result);
+			// Persona gate fails BEFORE the aggregate-status fork — no API call.
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -383,7 +395,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expectSkip(result);
-			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
 		it('re-triggers when review commitId differs from headSha', async () => {
@@ -466,7 +477,6 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expectSkip(result);
-			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
 		it('ignores COMMENTED reviews from implementer bot when checking for prior review', async () => {
@@ -794,6 +804,165 @@ describe('CheckSuiteSuccessTrigger', () => {
 				headSha: 'sha123',
 			});
 			expect(result?.waitForChecks).toBe(true);
+		});
+	});
+
+	// Mixed-state SHA: GitHub fires check_suite.completed once per workflow.
+	// When workflow A's suite succeeds but workflow B's suite (same SHA) failed
+	// fast and earlier — the failure handler at the time saw "not all complete
+	// yet" and deferred. The success event arrives last; without this fork it
+	// would dispatch review (which then silently skips at the worker because
+	// allPassing=false). Closes the gap so respond-to-ci is dispatched on the
+	// success event when aggregate state shows any failure.
+	describe('mixed-state SHA — aggregate-status fork', () => {
+		const baseImplementerPR = {
+			number: 42,
+			title: 'Test PR',
+			body: null,
+			state: 'open' as const,
+			headRef: 'feature/test',
+			headSha: 'sha123',
+			baseRef: 'main',
+			merged: false,
+			htmlUrl: 'https://github.com/owner/repo/pull/42',
+			user: { login: 'cascade-impl' },
+		};
+
+		it('dispatches respond-to-ci when aggregate has any failure on the SHA', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'CI', status: 'completed', conclusion: 'success' },
+					{ name: 'E2B Template Rebuild', status: 'completed', conclusion: 'failure' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('respond-to-ci');
+			expect(result?.agentInput.triggerEvent).toBe('scm:check-suite-failure');
+			expect(result?.agentInput.triggerType).toBe('check-failure');
+			expect(result?.agentInput.headSha).toBe('sha123');
+			expect(result?.prNumber).toBe(42);
+			// Should NOT carry waitForChecks — that's a review-path flag and the
+			// aggregate is already complete.
+			expect(result?.waitForChecks).toBeFalsy();
+		});
+
+		it('dispatches review when aggregate is all complete and all passing', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: true,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'CI', status: 'completed', conclusion: 'success' },
+					{ name: 'E2B Template Rebuild', status: 'completed', conclusion: 'success' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('dispatches review with waitForChecks when not all checks complete yet', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'CI', status: 'completed', conclusion: 'success' },
+					{ name: 'E2B Template Rebuild', status: 'in_progress', conclusion: null },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('review');
+			expect(result?.waitForChecks).toBe(true);
+		});
+
+		it('dispatches respond-to-ci on timed_out conclusion', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'CI', status: 'completed', conclusion: 'success' },
+					{ name: 'E2B Template Rebuild', status: 'completed', conclusion: 'timed_out' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('respond-to-ci');
+		});
+
+		it('dispatches respond-to-ci even when SHA was already reviewed (CI failure still needs fixing)', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-reviewer' },
+					state: 'approved',
+					body: 'LGTM',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+			]);
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 2,
+				checkRuns: [
+					{ name: 'CI', status: 'completed', conclusion: 'success' },
+					{ name: 'E2B Template Rebuild', status: 'completed', conclusion: 'failure' },
+				],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('respond-to-ci');
 		});
 	});
 

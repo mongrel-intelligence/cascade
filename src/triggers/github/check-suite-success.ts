@@ -5,6 +5,7 @@ import { parseRepoFullName } from '../../utils/repo.js';
 import { gateBaseBranch } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
+import { dispatchRespondToCi } from './respond-to-ci-dispatch.js';
 import {
 	buildReviewDispatchKey,
 	claimReviewDispatch,
@@ -61,12 +62,22 @@ export async function waitForChecks(
 }
 
 /**
- * Triggers review agent when all CI checks pass on a PR authored by the implementer persona.
+ * Dispatches an outcome agent when a check_suite completes with success
+ * conclusion on a PR authored by the implementer persona.
  *
- * This trigger fires when:
+ * Two outcomes — chosen from aggregate state across ALL check_runs on the
+ * head SHA, not just this suite's:
+ * - `review`              — every completed check passes, OR some are still
+ *                           in-progress (defer to worker via `waitForChecks`).
+ * - `respond-to-ci`       — every check is complete AND at least one failed.
+ *                           Closes the gap where GitHub fires the success
+ *                           event last after a fast-failing sibling suite,
+ *                           and no later `conclusion=failure` event will fire
+ *                           to wake `check-suite-failure`.
+ *
+ * The trigger fires when:
  * 1. A check_suite completes with success conclusion
  * 2. The PR author matches the configured author mode (own/external/all)
- * 3. All checks are actually passing (verified via API)
  *
  * Work item resolution uses the pr_work_items DB table only.
  * The trigger fires even without a linked work item — agents run, PM updates are simply skipped.
@@ -163,6 +174,36 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
+
+		// Mixed-state SHA fork: GitHub fires check_suite.completed once per
+		// workflow. When workflow A's suite succeeds but workflow B's suite on
+		// the same SHA failed earlier (and workflow B's failure handler skipped
+		// with "not all complete yet"), this success event is the one that
+		// closes the picture. If aggregate state has any failure, dispatch
+		// respond-to-ci instead of review — otherwise respond-to-ci is lost
+		// because no later check_suite event with conclusion=failure will fire.
+		// See PR #176 / 2026-04-30 for the live incident.
+		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
+		const allComplete = checkStatus.checkRuns.every((cr) => cr.status === 'completed');
+		const anyFailed = checkStatus.checkRuns.some(
+			(cr) =>
+				cr.conclusion === 'failure' ||
+				cr.conclusion === 'timed_out' ||
+				cr.conclusion === 'action_required',
+		);
+		if (allComplete && anyFailed) {
+			return dispatchRespondToCi({
+				ctx,
+				prNumber,
+				prDetails,
+				payload,
+				workItemId,
+				workItemUrl,
+				workItemTitle,
+				checkStatus,
+				handlerName: this.name,
+			});
+		}
 
 		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
