@@ -12,13 +12,11 @@
  */
 
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
-import { githubClient, withGitHubToken } from '../../github/client.js';
+import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import { logger, startWatchdog } from '../../utils/index.js';
-import { parseRepoFullName } from '../../utils/repo.js';
-import { safeOperation } from '../../utils/safeOperation.js';
 import type { TriggerRegistry } from '../registry.js';
 import { withAgentTypeConcurrency } from '../shared/concurrency.js';
 import { withPMScope } from '../shared/credential-scope.js';
@@ -26,7 +24,6 @@ import { postPMAckComment } from '../shared/pm-ack.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
 import type { TriggerResult } from '../types.js';
 import { postAcknowledgmentComment, updateInitialCommentWithError } from './ack-comments.js';
-import { pollWaitForChecks } from './check-polling.js';
 import { GitHubWebhookIntegration } from './integration.js';
 
 const integration = new GitHubWebhookIntegration();
@@ -195,7 +192,6 @@ async function runGitHubAgent(
 	}
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook orchestration with ack cleanup
 export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
@@ -244,35 +240,10 @@ export async function processGitHubWebhook(
 	if (ackCommentId) result.agentInput.ackCommentId = ackCommentId;
 	if (ackMessage) result.agentInput.ackMessage = ackMessage;
 
-	// Poll until all CI checks pass before starting agent (deferred from trigger)
-	if (result.waitForChecks) {
-		const githubToken = await getPersonaToken(project.id, 'implementation');
-		try {
-			const checksOk = await pollWaitForChecks(result, event.projectIdentifier, githubToken);
-			if (!checksOk) {
-				result.onBlocked?.();
-				// Clean up orphaned ack comment so the PR doesn't show a misleading "Reviewing" message
-				const ackId = result.agentInput.ackCommentId as number | undefined;
-				if (ackId && event.projectIdentifier) {
-					const { owner, repo } = parseRepoFullName(event.projectIdentifier);
-					const deleteToken = await getPersonaToken(
-						project.id,
-						result.agentType ?? 'implementation',
-					);
-					await withGitHubToken(deleteToken, () =>
-						safeOperation(() => githubClient.deletePRComment(owner, repo, ackId), {
-							action: 'delete ack comment after check polling timeout',
-							prNumber: result.prNumber,
-						}),
-					);
-				}
-				return;
-			}
-		} catch (err) {
-			result.onBlocked?.();
-			throw err;
-		}
-	}
+	// Worker-side `waitForChecks` polling was removed in PR #1245 follow-up:
+	// the success handler now defers (skips) on incomplete aggregate state, so
+	// no TriggerResult ever reaches this point with the flag set, and no
+	// worker bail-out can leave the dedup wedged.
 
 	logger.info('GitHub trigger matched', {
 		agentType: result.agentType || '(no agent)',

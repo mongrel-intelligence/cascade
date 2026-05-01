@@ -85,10 +85,6 @@ vi.mock('../../../src/triggers/github/ack-comments.js', () => ({
 	updateInitialCommentWithError: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../src/triggers/github/check-polling.js', () => ({
-	pollWaitForChecks: vi.fn().mockResolvedValue(true),
-}));
-
 vi.mock('../../../src/utils/index.js', () => ({
 	logger: {
 		debug: vi.fn(),
@@ -100,12 +96,10 @@ vi.mock('../../../src/utils/index.js', () => ({
 }));
 
 import { isPMFocusedAgent } from '../../../src/agents/definitions/loader.js';
-import { githubClient } from '../../../src/github/client.js';
 import {
 	postAcknowledgmentComment,
 	updateInitialCommentWithError,
 } from '../../../src/triggers/github/ack-comments.js';
-import { pollWaitForChecks } from '../../../src/triggers/github/check-polling.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
 import { withAgentTypeConcurrency } from '../../../src/triggers/shared/concurrency.js';
 import { postPMAckComment } from '../../../src/triggers/shared/pm-ack.js';
@@ -245,71 +239,10 @@ describe('processGitHubWebhook', () => {
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 
-	it('deletes ack comment when pollWaitForChecks returns false', async () => {
-		vi.mocked(pollWaitForChecks).mockResolvedValueOnce(false);
-		const onBlocked = vi.fn();
-		const registry = {
-			dispatch: vi.fn().mockResolvedValue({
-				agentType: 'review',
-				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
-				prNumber: 42,
-				waitForChecks: true,
-				onBlocked,
-			}),
-		};
-
-		await processGitHubWebhook(
-			validPayload,
-			'check_suite',
-			registry as never,
-			999, // ackCommentId from router
-			'👀 Reviewing',
-		);
-
-		expect(vi.mocked(githubClient.deletePRComment)).toHaveBeenCalledWith('owner', 'repo', 999);
-		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
-		expect(onBlocked).toHaveBeenCalledOnce();
-	});
-
-	it('does not attempt ack deletion when no ackCommentId on check timeout', async () => {
-		vi.mocked(pollWaitForChecks).mockResolvedValueOnce(false);
-		const onBlocked = vi.fn();
-		const registry = {
-			dispatch: vi.fn().mockResolvedValue({
-				agentType: 'review',
-				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
-				prNumber: 42,
-				waitForChecks: true,
-				onBlocked,
-			}),
-		};
-
-		await processGitHubWebhook(validPayload, 'check_suite', registry as never);
-
-		expect(vi.mocked(githubClient.deletePRComment)).not.toHaveBeenCalled();
-		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
-		expect(onBlocked).toHaveBeenCalledOnce();
-	});
-
-	it('releases the claim when pollWaitForChecks throws before review starts', async () => {
-		vi.mocked(pollWaitForChecks).mockRejectedValueOnce(new Error('GitHub API timeout'));
-		const onBlocked = vi.fn();
-		const registry = {
-			dispatch: vi.fn().mockResolvedValue({
-				agentType: 'review',
-				agentInput: { repoFullName: 'owner/repo', headSha: 'abc123' },
-				prNumber: 42,
-				waitForChecks: true,
-				onBlocked,
-			}),
-		};
-
-		await expect(
-			processGitHubWebhook(validPayload, 'check_suite', registry as never),
-		).rejects.toThrow('GitHub API timeout');
-		expect(onBlocked).toHaveBeenCalledOnce();
-		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
-	});
+	// `pollWaitForChecks` polling tests deleted: the worker-side polling layer
+	// was removed in PR #1245 follow-up. Aggregate-state defer-on-incomplete
+	// at the handler layer (see check-suite-success.test.ts) makes the worker
+	// bail-out path unreachable.
 
 	it('posts PM ack to PM tool when PM-focused agent triggered from GitHub', async () => {
 		vi.mocked(isPMFocusedAgent).mockResolvedValue(true);

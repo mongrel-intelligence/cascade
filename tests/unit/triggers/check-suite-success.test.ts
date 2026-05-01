@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	mockConfigResolverModule,
 	mockGitHubClientModule,
@@ -19,7 +19,6 @@ import { resetFixAttempts } from '../../../src/triggers/github/check-suite-failu
 import {
 	CheckSuiteSuccessTrigger,
 	recentlyDispatched,
-	waitForChecks,
 } from '../../../src/triggers/github/check-suite-success.js';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
@@ -176,7 +175,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns review result with waitForChecks flag when PR matches', async () => {
+		it('returns review result without waitForChecks flag when PR matches and aggregate is all-passing', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -218,9 +217,11 @@ describe('CheckSuiteSuccessTrigger', () => {
 					},
 					prNumber: 42,
 					workItemId: 'abc123',
-					waitForChecks: true,
 				}),
 			);
+			// waitForChecks is gone — handler defers on incomplete state instead
+			// of dispatching with a worker-side polling flag (PR #1245 incident).
+			expect(result?.waitForChecks).toBeUndefined();
 			expect(result?.onBlocked).toBeTypeOf('function');
 		});
 
@@ -432,7 +433,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
-			expect(result?.waitForChecks).toBe(true);
+			expect(result?.waitForChecks).toBeUndefined();
 		});
 
 		it('skips when latest of multiple reviews covers current HEAD', async () => {
@@ -530,7 +531,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
-			expect(result?.waitForChecks).toBe(true);
+			expect(result?.waitForChecks).toBeUndefined();
 		});
 
 		it('proceeds when PR has reviews from other users only', async () => {
@@ -568,7 +569,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('review');
-			expect(result?.waitForChecks).toBe(true);
+			expect(result?.waitForChecks).toBeUndefined();
 		});
 
 		it('fires without work item when DB has no link', async () => {
@@ -599,7 +600,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
 			expect(result?.agentInput.workItemId).toBeUndefined();
-			expect(result?.waitForChecks).toBe(true);
+			expect(result?.waitForChecks).toBeUndefined();
 		});
 
 		it('skips duplicate check_suite events for the same PR+SHA', async () => {
@@ -757,7 +758,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBe('db-work-item');
-			expect(result?.waitForChecks).toBe(true);
+			expect(result?.waitForChecks).toBeUndefined();
 		});
 
 		it('fires correctly when pull_requests is empty but head_branch has PR ref', async () => {
@@ -803,7 +804,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				prBranch: 'feature/test',
 				headSha: 'sha123',
 			});
-			expect(result?.waitForChecks).toBe(true);
+			expect(result?.waitForChecks).toBeUndefined();
 		});
 	});
 
@@ -883,7 +884,14 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result?.agentType).toBe('review');
 		});
 
-		it('dispatches review with waitForChecks when not all checks complete yet', async () => {
+		// Defer-on-incomplete: PR #1245 (2026-05-01) shipped a doomed worker
+		// because the success handler dispatched on the FIRST check_suite event
+		// (CodeQL completing) while CI's slower lint-and-test was still running.
+		// Worker polled 12×10s and bailed; the dedup then blocked the legitimate
+		// later success event. Mirrors the existing check-suite-failure deferral
+		// shape — the LAST check_suite event makes the dispatch decision based
+		// on full aggregate state.
+		it('skips with "Not all checks complete yet" when an in-progress check exists, naming the pending check', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
 			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
@@ -891,7 +899,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 				totalCount: 2,
 				checkRuns: [
 					{ name: 'CI', status: 'completed', conclusion: 'success' },
-					{ name: 'E2B Template Rebuild', status: 'in_progress', conclusion: null },
+					{ name: 'lint-and-test', status: 'in_progress', conclusion: null },
 				],
 			});
 
@@ -904,8 +912,49 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expect(result?.agentType).toBe('review');
-			expect(result?.waitForChecks).toBe(true);
+			expectSkip(result, /Not all checks complete yet.*lint-and-test/);
+			// Crucially, no agent dispatched — the worker bail-out path is gone.
+			expect(result?.agentType).toBeNull();
+			// Dedup must NOT be claimed for a deferred event; the next
+			// check_suite event for this SHA must be free to make the call.
+			expect(result?.onBlocked).toBeUndefined();
+		});
+
+		it('does NOT claim the review-dispatch dedup when deferring', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue(baseImplementerPR);
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			vi.mocked(githubClient.getCheckSuiteStatus)
+				.mockResolvedValueOnce({
+					// First event: CI still in progress → defer.
+					allPassing: false,
+					totalCount: 2,
+					checkRuns: [
+						{ name: 'CodeQL', status: 'completed', conclusion: 'success' },
+						{ name: 'lint-and-test', status: 'in_progress', conclusion: null },
+					],
+				})
+				.mockResolvedValueOnce({
+					// Later event: everything complete → must dispatch.
+					allPassing: true,
+					totalCount: 2,
+					checkRuns: [
+						{ name: 'CodeQL', status: 'completed', conclusion: 'success' },
+						{ name: 'lint-and-test', status: 'completed', conclusion: 'success' },
+					],
+				});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const firstResult = await trigger.handle(ctx);
+			expectSkip(firstResult, /Not all checks complete yet/);
+
+			const secondResult = await trigger.handle(ctx);
+			expect(secondResult?.agentType).toBe('review');
 		});
 
 		it('dispatches respond-to-ci on timed_out conclusion', async () => {
@@ -1194,83 +1243,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 });
 
-// ==========================================================================
-// waitForChecks() — exported standalone function
-// ==========================================================================
-
-describe('waitForChecks', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
-	it('returns immediately when all checks are passing', async () => {
-		vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-			allPassing: true,
-			checkRuns: [],
-		});
-
-		const result = await waitForChecks('owner', 'repo', 'sha123', 42);
-
-		expect(result.allPassing).toBe(true);
-		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(1);
-	});
-
-	it('returns immediately when all checks completed (some failed) — no point retrying', async () => {
-		vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
-			allPassing: false,
-			checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'failure' }],
-		});
-
-		const resultPromise = waitForChecks('owner', 'repo', 'sha123', 42);
-		// No timer needed since all completed
-		const result = await resultPromise;
-
-		expect(result.allPassing).toBe(false);
-		// Only called once (no in-progress checks → no retry)
-		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(1);
-	});
-
-	it('retries when some checks are still in-progress, returns when all pass', async () => {
-		vi.mocked(githubClient.getCheckSuiteStatus)
-			.mockResolvedValueOnce({
-				allPassing: false,
-				checkRuns: [{ name: 'ci', status: 'in_progress', conclusion: null }],
-			})
-			.mockResolvedValue({
-				allPassing: true,
-				checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'success' }],
-			});
-
-		const resultPromise = waitForChecks('owner', 'repo', 'sha123', 42);
-		// Advance past the RETRY_DELAY_MS (10000ms)
-		await vi.runAllTimersAsync();
-		const result = await resultPromise;
-
-		expect(result.allPassing).toBe(true);
-		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(2);
-	});
-
-	it('stops retrying when all checks complete (even if failed)', async () => {
-		vi.mocked(githubClient.getCheckSuiteStatus)
-			.mockResolvedValueOnce({
-				allPassing: false,
-				checkRuns: [{ name: 'ci', status: 'in_progress', conclusion: null }],
-			})
-			.mockResolvedValue({
-				allPassing: false,
-				checkRuns: [{ name: 'ci', status: 'completed', conclusion: 'failure' }],
-			});
-
-		const resultPromise = waitForChecks('owner', 'repo', 'sha123', 42);
-		await vi.runAllTimersAsync();
-		const result = await resultPromise;
-
-		expect(result.allPassing).toBe(false);
-		// Called once initially + once after retry (then stops since all completed)
-		expect(githubClient.getCheckSuiteStatus).toHaveBeenCalledTimes(2);
-	});
-});
+// waitForChecks() and the worker-side polling layer were deleted: the success
+// handler now defers (skips) when aggregate state is incomplete, and the LAST
+// check_suite event makes the dispatch decision. See the
+// `mixed-state SHA — aggregate-status fork` describe block above.

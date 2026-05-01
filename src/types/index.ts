@@ -107,8 +107,6 @@ export interface TriggerResult {
 	prUrl?: string;
 	/** Display title of the pull request. */
 	prTitle?: string;
-	/** When true, the worker must poll for all CI checks to pass before starting the agent. */
-	waitForChecks?: boolean;
 	/** Called when the router cannot enqueue the job (work-item lock, concurrency limit).
 	 *  Allows the trigger handler to undo side-effects like dedup marking. */
 	onBlocked?: () => void;

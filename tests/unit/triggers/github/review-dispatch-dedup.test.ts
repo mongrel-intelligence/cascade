@@ -18,7 +18,7 @@ import { logger } from '../../../../src/utils/logging.js';
 
 const mockLogger = vi.mocked(logger);
 
-const DEDUP_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes (was 30 min before PR #1245 follow-up)
 
 describe('buildReviewDispatchKey', () => {
 	it('returns correct format owner/repo:prNumber:headSha', () => {
@@ -112,7 +112,7 @@ describe('claimReviewDispatch', () => {
 		);
 	});
 
-	it('TTL expiration: a previously claimed key can be reclaimed after 30+ minutes', () => {
+	it('TTL expiration: a previously claimed key can be reclaimed after 5+ minutes', () => {
 		const key = buildReviewDispatchKey('acme', 'repo', 10, 'sha10');
 		claimReviewDispatch(key, 'check-suite-success', { prNumber: 10, headSha: 'sha10' });
 

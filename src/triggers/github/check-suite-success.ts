@@ -1,4 +1,4 @@
-import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
+import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
@@ -19,61 +19,34 @@ import {
 	resolveWorkItemId,
 } from './utils.js';
 
-const MAX_RETRIES = 12;
-const RETRY_DELAY_MS = 10_000;
-
 export { recentlyDispatched } from './review-dispatch-dedup.js';
-
-/**
- * Wait for all check suites to complete, retrying when some are still in-progress.
- * Returns immediately if all checks have completed (whether passing or failing).
- *
- * Called by the worker before starting the review agent (not in the trigger handler).
- */
-export async function waitForChecks(
-	owner: string,
-	repo: string,
-	headSha: string,
-	prNumber: number,
-): Promise<CheckSuiteStatus> {
-	let checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
-	if (checkStatus.allPassing) return checkStatus;
-
-	const hasInProgress = checkStatus.checkRuns.some((c) => c.status !== 'completed');
-	if (!hasInProgress) return checkStatus;
-
-	for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-		logger.info('Some checks still in progress, retrying', {
-			prNumber,
-			attempt,
-			maxRetries: MAX_RETRIES,
-			pending: checkStatus.checkRuns.filter((c) => c.status !== 'completed').map((c) => c.name),
-		});
-		await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-		checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
-		if (checkStatus.allPassing) break;
-
-		// If all completed but some failed, no point retrying
-		const stillRunning = checkStatus.checkRuns.some((c) => c.status !== 'completed');
-		if (!stillRunning) break;
-	}
-
-	return checkStatus;
-}
 
 /**
  * Dispatches an outcome agent when a check_suite completes with success
  * conclusion on a PR authored by the implementer persona.
  *
- * Two outcomes — chosen from aggregate state across ALL check_runs on the
- * head SHA, not just this suite's:
- * - `review`              — every completed check passes, OR some are still
- *                           in-progress (defer to worker via `waitForChecks`).
- * - `respond-to-ci`       — every check is complete AND at least one failed.
- *                           Closes the gap where GitHub fires the success
- *                           event last after a fast-failing sibling suite,
- *                           and no later `conclusion=failure` event will fire
- *                           to wake `check-suite-failure`.
+ * Three outcomes, chosen from aggregate state across ALL check_runs on the
+ * head SHA — never just from this individual suite. The LAST check_suite
+ * event for the SHA (regardless of polarity) is the one that makes the
+ * dispatch decision. Mirrors `check-suite-failure.handle`'s defer-on-
+ * incomplete shape.
+ *
+ * - `respond-to-ci` — every check is complete AND at least one failed.
+ *                     Closes the gap where GitHub fires the success
+ *                     event last after a fast-failing sibling suite, and no
+ *                     later `conclusion=failure` event will fire to wake
+ *                     `check-suite-failure`.
+ * - `review`        — every completed check passes.
+ * - skip            — some checks still in-progress. The next check_suite
+ *                     event for the SHA will re-evaluate aggregate state.
+ *                     No worker spawned; no dedup claimed; no orphan ack
+ *                     comment posted.
+ *
+ * Why no worker-side polling: PR #1245 (2026-05-01) shipped a doomed worker
+ * because the success handler dispatched on the FIRST event (CodeQL completing)
+ * while CI was still running. The worker polled 12×10s and bailed; the dedup
+ * then blocked the legitimate later success event from re-dispatching.
+ * Deferring at the handler layer makes that whole class of bug impossible.
  *
  * The trigger fires when:
  * 1. A check_suite completes with success conclusion
@@ -175,14 +148,17 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
 
-		// Mixed-state SHA fork: GitHub fires check_suite.completed once per
-		// workflow. When workflow A's suite succeeds but workflow B's suite on
-		// the same SHA failed earlier (and workflow B's failure handler skipped
-		// with "not all complete yet"), this success event is the one that
-		// closes the picture. If aggregate state has any failure, dispatch
-		// respond-to-ci instead of review — otherwise respond-to-ci is lost
-		// because no later check_suite event with conclusion=failure will fire.
-		// See PR #176 / 2026-04-30 for the live incident.
+		// Aggregate-state fork. GitHub fires check_suite.completed once per
+		// workflow; the LAST event to arrive (regardless of polarity) is the
+		// one that makes the dispatch decision. Three outcomes:
+		//   - !allComplete       → defer (skip). Next event re-evaluates.
+		//   - allComplete + any failed → respond-to-ci (closes the gap where
+		//                          a fast-failing sibling suite would lose
+		//                          dispatch — see PR #176 incident).
+		//   - allComplete + all passing → review.
+		// No `waitForChecks: true` worker-side polling — that path was deleted
+		// after PR #1245 (2026-05-01) where the worker polled 2 min, bailed,
+		// and the cross-process dedup blocked all retries.
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
 		const allComplete = checkStatus.checkRuns.every((cr) => cr.status === 'completed');
 		const anyFailed = checkStatus.checkRuns.some(
@@ -191,7 +167,24 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				cr.conclusion === 'timed_out' ||
 				cr.conclusion === 'action_required',
 		);
-		if (allComplete && anyFailed) {
+
+		if (!allComplete) {
+			const incomplete = checkStatus.checkRuns
+				.filter((cr) => cr.status !== 'completed')
+				.map((cr) => cr.name);
+			logger.info('Not all checks complete yet, waiting for next check_suite event', {
+				handler: this.name,
+				prNumber,
+				totalChecks: checkStatus.totalCount,
+				incompleteChecks: incomplete,
+			});
+			return skip(
+				this.name,
+				`Not all checks complete yet (${incomplete.length}/${checkStatus.totalCount} still running): ${incomplete.join(', ')}`,
+			);
+		}
+
+		if (anyFailed) {
 			return dispatchRespondToCi({
 				ctx,
 				prNumber,
@@ -205,7 +198,8 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			});
 		}
 
-		// Skip if the reviewer persona's latest review already covers the current HEAD SHA
+		// allComplete && !anyFailed → review path. Skip if the reviewer
+		// persona's latest review already covers the current HEAD SHA.
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
 
 		// Use persona identities to identify reviewer bot's reviews
@@ -250,12 +244,9 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			);
 		}
 
-		// The trigger decision is made — the review agent should run.
-		// Actual check polling (waitForChecks) is deferred to the worker via the flag.
-		// GitHub fires a check_suite webhook per individual suite completion.
-		// When multiple suites exist, the first webhook arrives before other suites finish.
-		// The worker will poll until all checks pass before starting the agent.
-		logger.info('Check-suite success trigger matched — deferring check polling to worker', {
+		// Aggregate state is already verified all-passing at this point — no
+		// worker-side polling needed. Dispatch immediately.
+		logger.info('Check-suite success trigger matched — dispatching review', {
 			prNumber,
 			workItemId,
 			headSha,
@@ -280,7 +271,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			workItemId,
 			workItemUrl,
 			workItemTitle,
-			waitForChecks: true,
 			onBlocked: () => releaseReviewDispatch(dedupKey),
 		};
 	}
