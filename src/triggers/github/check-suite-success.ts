@@ -19,8 +19,6 @@ import {
 	resolveWorkItemId,
 } from './utils.js';
 
-export { recentlyDispatched } from './review-dispatch-dedup.js';
-
 /**
  * Dispatches an outcome agent when a check_suite completes with success
  * conclusion on a PR authored by the implementer persona.
@@ -235,9 +233,11 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		}
 
 		// PR+SHA-scoped dedup prevents duplicate reviews across both duplicate
-		// check_suite deliveries and other review-producing triggers.
+		// check_suite deliveries and other review-producing triggers — including
+		// the post-completion-hook in the IMPL worker process. Backed by Redis
+		// so the dedup holds across processes (router + workers + future replicas).
 		const dedupKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
-		if (!claimReviewDispatch(dedupKey, this.name, { prNumber, headSha })) {
+		if (!(await claimReviewDispatch(dedupKey, this.name, { prNumber, headSha }))) {
 			return skip(
 				this.name,
 				`Review dispatch for PR #${prNumber}@${headSha} already claimed by another path (dedup)`,
@@ -271,7 +271,10 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			workItemId,
 			workItemUrl,
 			workItemTitle,
-			onBlocked: () => releaseReviewDispatch(dedupKey),
+			onBlocked: () => {
+				// Fire-and-forget — release is best-effort and the TTL is the safety net.
+				void releaseReviewDispatch(dedupKey);
+			},
 		};
 	}
 }

@@ -14,12 +14,21 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckM
 
 vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
+// Stub the Redis-backed dedup module so tests don't need a Redis connection.
+// Each `claim` resolves to true (success) by default; per-test overrides via
+// `mockClaimReviewDispatch.mockResolvedValueOnce(false)` simulate a duplicate.
+const mockClaimReviewDispatch = vi.fn().mockResolvedValue(true);
+const mockReleaseReviewDispatch = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../src/triggers/github/review-dispatch-dedup.js', () => ({
+	buildReviewDispatchKey: (owner: string, repo: string, prNumber: number, headSha: string) =>
+		`${owner}/${repo}:${prNumber}:${headSha}`,
+	claimReviewDispatch: (...args: unknown[]) => mockClaimReviewDispatch(...args),
+	releaseReviewDispatch: (...args: unknown[]) => mockReleaseReviewDispatch(...args),
+}));
+
 import { githubClient } from '../../../src/github/client.js';
 import { resetFixAttempts } from '../../../src/triggers/github/check-suite-failure.js';
-import {
-	CheckSuiteSuccessTrigger,
-	recentlyDispatched,
-} from '../../../src/triggers/github/check-suite-success.js';
+import { CheckSuiteSuccessTrigger } from '../../../src/triggers/github/check-suite-success.js';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createCheckSuitePayload, createMockProject } from '../../helpers/factories.js';
@@ -43,7 +52,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
-		recentlyDispatched.clear();
+		mockClaimReviewDispatch.mockReset().mockResolvedValue(true);
+		mockReleaseReviewDispatch.mockReset().mockResolvedValue(undefined);
 		resetFixAttempts(42);
 		// Default: aggregate status reflects all checks passing. Tests that need
 		// a mixed-state SHA override this per-case.
@@ -239,6 +249,9 @@ describe('CheckSuiteSuccessTrigger', () => {
 				user: { login: 'cascade-impl' },
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+			// Simulate Redis state: review-requested claims first (true), then
+			// check-suite-success loses the SET NX EX race (false).
+			mockClaimReviewDispatch.mockReset().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
 
 			const reviewRequestedContext: TriggerContext = {
 				project: mockProject,
@@ -618,6 +631,10 @@ describe('CheckSuiteSuccessTrigger', () => {
 			});
 			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
 
+			// Simulate the Redis-backed dedup: first claim succeeds, second loses
+			// the SET NX EX race and returns false.
+			mockClaimReviewDispatch.mockReset().mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -660,16 +677,14 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const result = await trigger.handle(ctx);
 			expect(result).not.toBeNull();
 			expect(result?.onBlocked).toBeTypeOf('function');
-			expect(recentlyDispatched.size).toBe(1);
+			// First handle() called claim once.
+			expect(mockClaimReviewDispatch).toHaveBeenCalledTimes(1);
 
-			// Simulate router calling onBlocked (work-item lock or concurrency block)
+			// Simulate router calling onBlocked (work-item lock or concurrency block) —
+			// it should release the dedup so a subsequent legitimate trigger can claim.
 			result?.onBlocked?.();
-			expect(recentlyDispatched.size).toBe(0);
-
-			// After onBlocked, a subsequent call should succeed (not be deduped)
-			const result2 = await trigger.handle(ctx);
-			expect(result2).not.toBeNull();
-			expect(result2?.agentType).toBe('review');
+			expect(mockReleaseReviewDispatch).toHaveBeenCalledTimes(1);
+			expect(mockReleaseReviewDispatch).toHaveBeenCalledWith('owner/repo:42:sha123');
 		});
 
 		it('allows review for same PR with a new SHA after dedup', async () => {
@@ -1196,8 +1211,8 @@ describe('CheckSuiteSuccessTrigger', () => {
 			const implResult = await trigger.handle(implCtx);
 			expect(implResult).not.toBeNull();
 
-			// External PR — clear dedup since we're testing author mode, not dedup
-			recentlyDispatched.clear();
+			// External PR — reset dedup mock since we're testing author mode, not dedup
+			mockClaimReviewDispatch.mockReset().mockResolvedValue(true);
 			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
 			setupMocks('external-contributor');
 			const extCtx: TriggerContext = {

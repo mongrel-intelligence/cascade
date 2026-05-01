@@ -276,7 +276,7 @@ async function tryDispatchPostCompletionReview(
 		}
 
 		const dedupKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
-		if (!claimReviewDispatch(dedupKey, 'post-completion-hook', { prNumber, headSha })) {
+		if (!(await claimReviewDispatch(dedupKey, 'post-completion-hook', { prNumber, headSha }))) {
 			logger.info('Skipping post-completion review: already dispatched', {
 				prNumber,
 				workItemId,

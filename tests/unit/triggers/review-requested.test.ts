@@ -8,7 +8,15 @@ vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModu
 
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
-import { recentlyDispatched } from '../../../src/triggers/github/review-dispatch-dedup.js';
+const mockClaimReviewDispatch = vi.fn().mockResolvedValue(true);
+const mockReleaseReviewDispatch = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../src/triggers/github/review-dispatch-dedup.js', () => ({
+	buildReviewDispatchKey: (owner: string, repo: string, prNumber: number, headSha: string) =>
+		`${owner}/${repo}:${prNumber}:${headSha}`,
+	claimReviewDispatch: (...args: unknown[]) => mockClaimReviewDispatch(...args),
+	releaseReviewDispatch: (...args: unknown[]) => mockReleaseReviewDispatch(...args),
+}));
+
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
@@ -29,7 +37,8 @@ describe('ReviewRequestedTrigger', () => {
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
-		recentlyDispatched.clear();
+		mockClaimReviewDispatch.mockReset().mockResolvedValue(true);
+		mockReleaseReviewDispatch.mockReset().mockResolvedValue(undefined);
 	});
 
 	const makeReviewRequestedPayload = (reviewerLogin = 'cascade-reviewer') => ({
@@ -230,9 +239,9 @@ describe('ReviewRequestedTrigger', () => {
 		});
 
 		it('overrides a prior dispatch and fires even when the same PR+SHA was already dispatched', async () => {
-			// Human-initiated review requests always supersede automated dispatch claims.
-			recentlyDispatched.set('owner/repo:42:abc123', Date.now());
-
+			// Human-initiated review requests always supersede automated dispatch claims:
+			// the handler unconditionally calls release before claim. We assert that
+			// release is invoked AND claim succeeds (post-release the slot is free).
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -243,6 +252,13 @@ describe('ReviewRequestedTrigger', () => {
 			const result = await trigger.handle(ctx);
 
 			expect(result?.agentType).toBe('review');
+			// The release-before-claim sequence:
+			expect(mockReleaseReviewDispatch).toHaveBeenCalledWith('owner/repo:42:abc123');
+			expect(mockClaimReviewDispatch).toHaveBeenCalledWith(
+				'owner/repo:42:abc123',
+				'review-requested',
+				expect.objectContaining({ prNumber: 42, headSha: 'abc123' }),
+			);
 		});
 	});
 

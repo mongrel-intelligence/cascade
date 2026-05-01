@@ -98,8 +98,8 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
 		const reviewDispatchKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
 		// Human-initiated review requests override any prior automated dispatch claim.
-		releaseReviewDispatch(reviewDispatchKey);
-		if (!claimReviewDispatch(reviewDispatchKey, this.name, { prNumber, headSha })) {
+		await releaseReviewDispatch(reviewDispatchKey);
+		if (!(await claimReviewDispatch(reviewDispatchKey, this.name, { prNumber, headSha }))) {
 			return skip(
 				this.name,
 				`Review dispatch for PR #${prNumber}@${headSha} already claimed by another path (dedup)`,
@@ -128,7 +128,9 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 			prUrl: payload.pull_request.html_url,
 			prTitle: payload.pull_request.title,
 			workItemId,
-			onBlocked: () => releaseReviewDispatch(reviewDispatchKey),
+			onBlocked: () => {
+				void releaseReviewDispatch(reviewDispatchKey);
+			},
 		};
 	}
 }
