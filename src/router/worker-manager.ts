@@ -19,6 +19,7 @@ import {
 	startOrphanCleanup,
 	stopOrphanCleanup,
 } from './container-manager.js';
+import { startDanglingImageCleanup, stopDanglingImageCleanup } from './dangling-image-cleanup.js';
 import { classifyDispatchError } from './dispatch-error-classifier.js';
 import type { CascadeJob } from './queue.js';
 import { acquireSlot, clearAllWaiters } from './slot-waiter.js';
@@ -101,6 +102,12 @@ export function startWorkerProcessor(): void {
 	// Start periodic snapshot eviction alongside orphan cleanup
 	startSnapshotCleanup();
 
+	// Start periodic dangling-image cleanup. Closes the leak class where
+	// `commitContainerToSnapshot` re-tags `cascade-snapshot-*:latest` and
+	// orphans the prior digest outside the snapshot registry. See
+	// dangling-image-cleanup.ts for the safety scope.
+	startDanglingImageCleanup();
+
 	// Reconcile pre-existing snapshot images on disk so the eviction loop can
 	// apply TTL/max-count/max-size policies to them. Best-effort — Docker
 	// outage at boot must not block the worker manager from starting.
@@ -118,6 +125,7 @@ export async function stopWorkerProcessor(): Promise<void> {
 	// Stop orphan cleanup and snapshot cleanup first
 	stopOrphanCleanup();
 	stopSnapshotCleanup();
+	stopDanglingImageCleanup();
 
 	if (dashboardWorker) {
 		await dashboardWorker.close();
