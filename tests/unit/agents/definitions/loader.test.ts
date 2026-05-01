@@ -162,10 +162,10 @@ describe('YAML agent definitions loader', () => {
 			]);
 		});
 
-		it('review agent triggers use PR context pipeline', () => {
+		it('review agent triggers use PR context pipeline with work item', () => {
 			const def = loadBuiltinDefinition('review');
 			const ciPassedTrigger = def.triggers.find((t) => t.event === 'scm:check-suite-success');
-			expect(ciPassedTrigger?.contextPipeline).toEqual(['prContext', 'contextFiles']);
+			expect(ciPassedTrigger?.contextPipeline).toEqual(['prContext', 'contextFiles', 'workItem']);
 		});
 
 		it('planning agent does not have pm:comment-mention trigger (routed to respond-to-planning-comment)', () => {

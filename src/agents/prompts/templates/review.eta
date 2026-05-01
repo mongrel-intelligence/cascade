@@ -19,7 +19,7 @@ CRITICAL:
 
 ### Phase 1: Strategic Analysis
 
-1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY. An initial comment has already been posted on the PR acknowledging the review is in progress.
+1. **Understand the change**: Read the PR description and all modified files. Understand WHAT changed and WHY. An initial comment has already been posted on the PR acknowledging the review is in progress. If a **ReadWorkItem** injection is present in the pre-fetched context, read the work item's title, description, acceptance criteria, and checklists to understand the original requirements behind this PR.
 
 2. **Explore the codebase** using `ListDirectory`, `ReadFile`, `RipGrep`, and `Tmux` to understand the context of the changes. Read CLAUDE.md and README.md for project conventions.
 
@@ -46,6 +46,8 @@ CRITICAL:
 4. **Read implementation context**: Check CLAUDE.md, README.md, and use ReadFile/ListDirectory to verify specifics.
 
 5. **Verify against PR description**: Compare what the PR description claims against what the code actually does. Flag any mismatches between described behavior and actual implementation (e.g., PR says "bottom right" but CSS centers the element).
+
+5a. **Verify against work item** (if ReadWorkItem context is present): Cross-reference the PR changes against the work item's acceptance criteria and checklists. Flag if the PR addresses only part of the work item requirements, or if the implementation deviates from the planned approach described in the work item. A PR description can claim anything — the work item is the ground truth for what was agreed upon.
 
 6. **Trace execution paths**: For each significant code change, mentally trace what happens at runtime. Don't assume bugs exist - verify them.
 

@@ -36,13 +36,13 @@ triggers:
         description: Filter PRs by author type
         options: [own, external, all]
         defaultValue: own
-    contextPipeline: [prContext, contextFiles]
+    contextPipeline: [prContext, contextFiles, workItem]
   - event: scm:review-requested
     label: On Review Requested
     description: Trigger review when a CASCADE persona is explicitly requested as reviewer
     defaultEnabled: false
     providers: [github]
-    contextPipeline: [prContext, contextFiles]
+    contextPipeline: [prContext, contextFiles, workItem]
   - event: scm:pr-opened
     label: PR Opened
     description: Trigger review when a new PR is opened (without waiting for CI)
@@ -55,7 +55,7 @@ triggers:
         description: Filter PRs by author type
         options: [own, external, all]
         defaultValue: own
-    contextPipeline: [prContext, contextFiles]
+    contextPipeline: [prContext, contextFiles, workItem]
 strategies: {}
 
 prompts:
@@ -80,6 +80,13 @@ prompts:
 
     You are not expected to review every skipped file — only fetch when the PR
     description or another file points you at it.
+
+    ## Work item context
+
+    If a **ReadWorkItem** pre-fetch is present, it contains the linked PM work item
+    (card/issue) with its description, acceptance criteria, and checklists. Use it
+    to verify that the PR fully addresses the work item's requirements — not just
+    what the PR description claims.
 
     ## Your task
 
