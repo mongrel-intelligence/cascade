@@ -32,6 +32,7 @@
  */
 
 import { Redis } from 'ioredis';
+import { routerConfig } from '../../router/config.js';
 import { captureException } from '../../sentry.js';
 import { logger } from '../../utils/logging.js';
 
@@ -48,14 +49,20 @@ let redisInstance: Redis | null = null;
  * Lazy singleton — first call connects, subsequent calls reuse the same
  * client. The worker process pays the connection cost only if it actually
  * dispatches a review (post-completion-hook).
+ *
+ * Reads the URL via `routerConfig.redisUrl` (captured at config.ts module
+ * load) rather than `process.env.REDIS_URL`. Worker processes call
+ * `scrubSensitiveEnv()` early in startup, which deletes `REDIS_URL` from
+ * `process.env`; reading lazily would see `undefined` and throw. The
+ * routerConfig snapshot survives the scrub the same way the DB pool's
+ * cached connection string does.
  */
 function getRedis(): Redis {
 	if (!redisInstance) {
-		const redisUrl = process.env.REDIS_URL;
-		if (!redisUrl) {
+		if (!routerConfig.redisUrl) {
 			throw new Error('REDIS_URL is required for review-dispatch dedup');
 		}
-		redisInstance = new Redis(redisUrl);
+		redisInstance = new Redis(routerConfig.redisUrl);
 	}
 	return redisInstance;
 }

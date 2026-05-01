@@ -316,3 +316,55 @@ describe('cross-process dedup invariant (PR #194 regression pin)', () => {
 		expect(secondResult).toBeNull();
 	});
 });
+
+// ─── Worker-scrub regression pin (PR #1250) ─────────────────────────────────
+//
+// `src/utils/envScrub.ts:13-18` deletes REDIS_URL from process.env early in
+// every cascade-worker process (after the DB pool is initialized). The
+// dedup module must survive this — `getRedis()` reads from the
+// `routerConfig.redisUrl` snapshot captured at config.ts load, not from
+// `process.env.REDIS_URL` lazily.
+//
+// Production incident: 2026-05-01T17:25:44 in worker
+// `cascade-worker-coalesce_ucho_MNG-461_*` threw `Error: REDIS_URL is
+// required for review-dispatch dedup` because the lazy read happened well
+// after the scrub had run. Sentry tag: `review_dedup_redis_down`.
+
+describe('survives mid-process REDIS_URL deletion (envScrub regression pin)', () => {
+	it('claims successfully even after process.env.REDIS_URL is deleted', async () => {
+		const key = buildReviewDispatchKey('acme', 'repo', 42, 'sha42');
+
+		// First claim with REDIS_URL set — should succeed and create the
+		// singleton client backed by the routerConfig snapshot.
+		const first = await claimReviewDispatch(key, 'check-suite-success', {
+			prNumber: 42,
+			headSha: 'sha42',
+		});
+		expect(first).toBe(true);
+
+		// Simulate worker-process envScrub by deleting the env var.
+		// Subsequent claims must STILL work because the singleton uses
+		// routerConfig.redisUrl (captured at module load), not process.env.
+		const previous = process.env.REDIS_URL;
+		delete process.env.REDIS_URL;
+		try {
+			// Same key → dedup hit (false). Crucially this does NOT throw
+			// `REDIS_URL is required` — the regression behaviour pre-PR-#1250.
+			const second = await claimReviewDispatch(key, 'post-completion-hook', {
+				prNumber: 42,
+				headSha: 'sha42',
+			});
+			expect(second).toBe(false);
+
+			// Different key → claim succeeds.
+			const otherKey = buildReviewDispatchKey('acme', 'repo', 43, 'sha43');
+			const third = await claimReviewDispatch(otherKey, 'post-completion-hook', {
+				prNumber: 43,
+				headSha: 'sha43',
+			});
+			expect(third).toBe(true);
+		} finally {
+			if (previous !== undefined) process.env.REDIS_URL = previous;
+		}
+	});
+});
