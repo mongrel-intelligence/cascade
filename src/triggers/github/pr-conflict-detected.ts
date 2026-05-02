@@ -35,8 +35,27 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 
 		const payload = ctx.payload;
 
-		// Only trigger on synchronize events (when PR head is pushed/updated)
-		if (payload.action !== 'synchronize') return false;
+		// Trigger on `opened`, `reopened`, and `synchronize` — the three
+		// actions that produce a candidate head SHA whose mergeability we
+		// should check:
+		//   - opened: brand-new PR. Bit us on ucho/PR #226 (2026-05-02) —
+		//     the impl bot opened the PR already CONFLICTING against `dev`,
+		//     and because the matcher previously accepted only `synchronize`,
+		//     `resolve-conflicts` never fired until someone pushed a commit.
+		//   - reopened: closed PR brought back; mergeability may have flipped
+		//     against the now-advanced base.
+		//   - synchronize: new commit pushed to existing PR (the original
+		//     intent of this trigger).
+		// `closed`, `edited`, `labeled`, etc. correctly stay rejected.
+		// The handler's `mergeable === null` retry loop covers GitHub's async
+		// mergeability computation that's most prominent on `opened`.
+		if (
+			payload.action !== 'opened' &&
+			payload.action !== 'reopened' &&
+			payload.action !== 'synchronize'
+		) {
+			return false;
+		}
 
 		return true;
 	}

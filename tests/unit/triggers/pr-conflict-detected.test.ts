@@ -77,21 +77,43 @@ describe('PRConflictDetectedTrigger', () => {
 			expect(trigger.matches(ctx)).toBe(false);
 		});
 
-		it('does not match non-synchronize action', () => {
+		// PR #226 (2026-05-02) regression pin: the impl bot opened the PR
+		// already conflicting against `dev`, but the matcher previously
+		// accepted only `synchronize`, so resolve-conflicts never fired
+		// until someone pushed a commit. Both `opened` and `reopened` must
+		// match so the handler's mergeability retry + dispatch path runs.
+		it('matches opened action (PR #226 regression pin)', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
 				payload: makeSynchronizePayload({ action: 'opened' }),
 			};
 
-			expect(trigger.matches(ctx)).toBe(false);
+			expect(trigger.matches(ctx)).toBe(true);
 		});
 
-		it('does not match closed action', () => {
+		it('matches reopened action', () => {
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
-				payload: makeSynchronizePayload({ action: 'closed' }),
+				payload: makeSynchronizePayload({ action: 'reopened' }),
+			};
+
+			expect(trigger.matches(ctx)).toBe(true);
+		});
+
+		it.each([
+			['closed'],
+			['edited'],
+			['labeled'],
+			['unlabeled'],
+			['assigned'],
+			['ready_for_review'],
+		])('does not match %s action', (action) => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeSynchronizePayload({ action }),
 			};
 
 			expect(trigger.matches(ctx)).toBe(false);
