@@ -488,11 +488,18 @@ describe('githubClient', () => {
 
 	describe('getCheckSuiteStatus', () => {
 		function mockWorkflowRuns(
-			runs: { id: number }[],
+			runs: { id: number; workflow_id?: number }[],
 			jobsMap: Record<number, { name: string; status: string; conclusion: string | null }[]>,
 		) {
+			// Default workflow_id to the run id so each run looks like its own
+			// distinct workflow — matches existing test semantics. Tests that
+			// exercise the rerun-dedup behavior pass workflow_id explicitly.
+			const runsWithWorkflowId = runs.map((r) => ({
+				workflow_id: r.workflow_id ?? r.id,
+				...r,
+			}));
 			mockActions.listWorkflowRunsForRepo.mockResolvedValue({
-				data: { workflow_runs: runs },
+				data: { workflow_runs: runsWithWorkflowId },
 			});
 			mockActions.listJobsForWorkflowRun.mockImplementation(({ run_id }: { run_id: number }) => {
 				return Promise.resolve({
@@ -585,6 +592,72 @@ describe('githubClient', () => {
 			expect(result.totalCount).toBe(2);
 			expect(result.checkRuns).toHaveLength(2);
 		});
+
+		// PR #231 (ucho, 2026-05-02) regression pin. Same `head_sha` had TWO
+		// workflow_runs of the same workflow (push + manual re-run, or two
+		// pushes resolving to the same SHA). The first run's job FAILED;
+		// the re-run SUCCEEDED. GitHub's `listWorkflowRunsForRepo` returns
+		// BOTH runs (sorted desc by created_at). Pre-fix, the aggregate
+		// included the stale failure → `anyFailed=true` → check-suite-success
+		// mistakenly forked to dispatch respond-to-ci on a green PR.
+		it('dedupes workflow runs by workflow_id, keeping only the latest re-run', async () => {
+			// Two runs of the same workflow on the same SHA. Returned by GitHub
+			// in descending created_at order: id=2 (latest, success) first,
+			// id=1 (oldest, failed) second.
+			mockWorkflowRuns(
+				[
+					{ id: 2, workflow_id: 100 }, // latest re-run — success
+					{ id: 1, workflow_id: 100 }, // first attempt — failed
+				],
+				{
+					2: [{ name: 'Rebuild ucho-cli template', status: 'completed', conclusion: 'success' }],
+					1: [{ name: 'Rebuild ucho-cli template', status: 'completed', conclusion: 'failure' }],
+				},
+			);
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
+
+			// Only the latest run's jobs should be in the result — the stale
+			// failure must NOT be counted.
+			expect(result.checkRuns).toHaveLength(1);
+			expect(result.checkRuns[0].conclusion).toBe('success');
+			expect(result.allPassing).toBe(true);
+			// And we should NOT have called listJobsForWorkflowRun for the
+			// older run (id=1) — that's what makes the dedup actually save
+			// API quota and avoid the bug.
+			expect(mockActions.listJobsForWorkflowRun).toHaveBeenCalledWith(
+				expect.objectContaining({ run_id: 2 }),
+			);
+			expect(mockActions.listJobsForWorkflowRun).not.toHaveBeenCalledWith(
+				expect.objectContaining({ run_id: 1 }),
+			);
+		});
+
+		it('keeps separate workflow_ids distinct (CI vs CodeQL on same SHA)', async () => {
+			// Two DIFFERENT workflows on the same SHA must both be kept —
+			// dedup is per-workflow_id, not per-SHA. Regression guard against
+			// over-aggressive dedup that would drop CodeQL because CI is also
+			// running.
+			mockWorkflowRuns(
+				[
+					{ id: 10, workflow_id: 100 },
+					{ id: 11, workflow_id: 200 },
+				],
+				{
+					10: [{ name: 'lint', status: 'completed', conclusion: 'success' }],
+					11: [{ name: 'codeql', status: 'completed', conclusion: 'success' }],
+				},
+			);
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getCheckSuiteStatus('owner', 'repo', 'sha123'),
+			);
+
+			expect(result.checkRuns).toHaveLength(2);
+			expect(result.allPassing).toBe(true);
+		});
 	});
 
 	describe('getPRDiff', () => {
@@ -676,7 +749,13 @@ describe('githubClient', () => {
 		});
 
 		it('getCheckSuiteStatus uses paginate for both workflow runs and jobs', async () => {
-			mockPaginate.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]); // 2 runs
+			// Distinct workflow_ids so getCheckSuiteStatus's per-workflow dedup
+			// keeps both runs (otherwise both would dedupe to a single
+			// `undefined` workflow_id key — see PR #231 dedup fix).
+			mockPaginate.mockResolvedValueOnce([
+				{ id: 1, workflow_id: 100 },
+				{ id: 2, workflow_id: 200 },
+			]);
 			mockPaginate.mockResolvedValueOnce([
 				{ name: 'job1', status: 'completed', conclusion: 'success' },
 			]);
@@ -705,8 +784,8 @@ describe('githubClient', () => {
 
 		it('getFailedWorkflowRunJobs uses paginate for both workflow runs and jobs', async () => {
 			mockPaginate.mockResolvedValueOnce([
-				{ id: 1, name: 'CI', conclusion: 'failure' },
-				{ id: 2, name: 'OK', conclusion: 'success' },
+				{ id: 1, workflow_id: 100, name: 'CI', conclusion: 'failure' },
+				{ id: 2, workflow_id: 200, name: 'OK', conclusion: 'success' },
 			]);
 			mockPaginate.mockResolvedValueOnce([
 				{ name: 'lint', conclusion: 'failure', steps: [{ name: 'eslint', conclusion: 'failure' }] },

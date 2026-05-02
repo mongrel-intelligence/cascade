@@ -316,9 +316,28 @@ export const githubClient = {
 			per_page: 100,
 		});
 
+		// Dedupe by workflow_id — keep only the most recent run per workflow.
+		// `listWorkflowRunsForRepo` returns runs sorted by `created_at` desc,
+		// so the first occurrence we see for a given workflow_id is the
+		// latest. Closes the bug where a failed-then-rerun workflow's stale
+		// FAILURE job (e.g. `Rebuild ucho-cli template` on ucho/PR #231)
+		// leaked into the aggregate-status query, made `anyFailed=true`, and
+		// caused the success handler to mistakenly fork to respond-to-ci on
+		// a PR whose CI was actually green at the LATEST attempt. The default
+		// `filter=latest` on `listJobsForWorkflowRun` only dedupes job
+		// attempts WITHIN a single workflow_run; it does not dedupe across
+		// multiple workflow_runs of the same workflow on the same SHA.
+		const latestRunByWorkflow = new Map<number, (typeof workflowRuns)[number]>();
+		for (const run of workflowRuns) {
+			if (!latestRunByWorkflow.has(run.workflow_id)) {
+				latestRunByWorkflow.set(run.workflow_id, run);
+			}
+		}
+		const dedupedRuns = [...latestRunByWorkflow.values()];
+
 		// Fetch jobs for each workflow run to get per-job granularity
 		const jobResults = await Promise.all(
-			workflowRuns.map((run) =>
+			dedupedRuns.map((run) =>
 				client.paginate(client.actions.listJobsForWorkflowRun, {
 					owner,
 					repo,
