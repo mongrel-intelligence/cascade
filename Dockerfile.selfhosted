@@ -36,7 +36,7 @@ WORKDIR /app
 
 # `cascade.managed=true` is the contract the router's dangling-image cleanup
 # loop filters on (src/router/dangling-image-cleanup.ts). Without this LABEL,
-# the loop matches zero images and reclaims nothing — see PR #12xx.
+# the loop matches zero images and reclaims nothing — see PR #1256.
 LABEL cascade.managed=true
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
