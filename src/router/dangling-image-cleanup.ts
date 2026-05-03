@@ -15,6 +15,19 @@
  * from being reaped — see the regression test of the same name in
  * `tests/unit/router/dangling-image-cleanup.test.ts`. Never widen the scope.
  *
+ * The label is applied by the cascade Dockerfiles themselves (every
+ * `Dockerfile.<svc>` at repo root carries `LABEL cascade.managed=true` in
+ * its production stage). PR #1243 originally shipped this loop without that
+ * Dockerfile contract — the loop was a no-op for days because no built
+ * image carried the label, and dangling rebuilds accumulated unchecked.
+ * The same regression test pins both halves of the contract: the filter
+ * shape AND the per-Dockerfile LABEL directive.
+ *
+ * The CONTAINER label of the same name (`cascade.managed=true`, set in
+ * `container-manager.ts` on every `docker run`) is a separate surface used
+ * by `orphan-cleanup.ts` to scope container reaping. It does not propagate
+ * to images; the Dockerfile LABEL is the only path to image-level matching.
+ *
  * The 5-min snapshot eviction loop and the 5-min orphan-container cleanup
  * loop are unaffected; this loop runs at 30 min because dangling
  * accumulation is gradual and `force: false` rmi is cheap.

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
@@ -241,6 +243,52 @@ describe('dangling-image-cleanup', () => {
 					tags: expect.objectContaining({ source: 'dangling_image_cleanup_scan' }),
 				}),
 			);
+		});
+	});
+
+	describe('Dockerfile LABEL contract — static guard', () => {
+		// Counterpart to the scan-filter regression guard above. The filter
+		// only matches images carrying the `cascade.managed=true` label, and
+		// the only way a built image gets that label is via a `LABEL`
+		// directive in the Dockerfile. PR #1243 shipped the cleanup loop
+		// without this contract — the loop was a no-op for days because no
+		// image carried the label. If a new `Dockerfile.<svc>` lands at the
+		// repo root without the directive, the cleanup loop silently stops
+		// reclaiming that service's dangling rebuilds. This test fails
+		// loudly the moment that happens.
+		const REPO_ROOT = join(__dirname, '..', '..', '..');
+		const dockerfiles = readdirSync(REPO_ROOT)
+			.filter((name) => name.startsWith('Dockerfile.'))
+			.sort();
+
+		it('finds the expected cascade Dockerfiles at repo root (sanity)', () => {
+			// Sanity: if this assertion fails the glob is broken or someone
+			// renamed the Dockerfiles, and the per-file assertions below
+			// would silently pass on an empty list.
+			expect(dockerfiles.length).toBeGreaterThanOrEqual(5);
+			expect(dockerfiles).toEqual(
+				expect.arrayContaining([
+					'Dockerfile.dashboard',
+					'Dockerfile.frontend',
+					'Dockerfile.router',
+					'Dockerfile.selfhosted',
+					'Dockerfile.worker',
+				]),
+			);
+		});
+
+		it.each([
+			'Dockerfile.router',
+			'Dockerfile.worker',
+			'Dockerfile.dashboard',
+			'Dockerfile.frontend',
+			'Dockerfile.selfhosted',
+		])('%s declares LABEL cascade.managed=true so dangling rebuilds match the cleanup filter', (filename) => {
+			const contents = readFileSync(join(REPO_ROOT, filename), 'utf8');
+			// Match `LABEL cascade.managed=true` (with optional quotes
+			// around the value). Tolerates `LABEL k=v k2=v2` chains.
+			const labelRegex = /^\s*LABEL\b[^\n]*\bcascade\.managed=("?)true\1/im;
+			expect(contents).toMatch(labelRegex);
 		});
 	});
 

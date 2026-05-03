@@ -15,6 +15,11 @@ RUN npm run build
 FROM node:22-bookworm AS production
 WORKDIR /app
 
+# `cascade.managed=true` is the contract the router's dangling-image cleanup
+# loop filters on (src/router/dangling-image-cleanup.ts). Without this LABEL,
+# the loop matches zero images and reclaims nothing — see PR #12xx.
+LABEL cascade.managed=true
+
 # Install pnpm globally (some repos use pnpm)
 RUN npm install -g pnpm --force
 
