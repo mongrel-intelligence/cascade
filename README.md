@@ -39,7 +39,7 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 ## ⚡ Features
 
 - **Multi-PM support** — Works with Trello, JIRA, and Linear out of the box
-- **11 agent types** — Splitting, planning, implementation, review, debug, respond-to-review, respond-to-CI, and more
+- **12 agent types** — Splitting, planning, implementation, review, debug, respond-to-review, respond-to-CI, alerting, and more
 - **Dual-persona GitHub model** — Separate implementer and reviewer bot accounts to prevent feedback loops
 - **Web dashboard + CLI** — Monitor runs, manage projects, configure triggers
 - **Extensible trigger system** — Add new events without touching core logic
@@ -78,6 +78,7 @@ Cascade runs as three independent services:
 | `debug` | Session log uploaded | Analyzes agent session logs and creates a debug card |
 | `resolve-conflicts` | Merge conflict detected | Resolves git merge conflicts |
 | `backlog-manager` | Scheduled / manual | Manages and prioritizes the backlog |
+| `alerting` | Sentry alert webhook | Investigates the alert (parses stacktrace, reads source) and files a bug investigation work item or comments on an existing one. Read-only — never edits source, opens PRs, or pushes commits. |
 
 ---
 

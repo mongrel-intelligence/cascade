@@ -16,6 +16,7 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 			'debug',
 			'backlog-manager',
 			'resolve-conflicts',
+			'alerting',
 		]),
 }));
 
@@ -827,5 +828,80 @@ describe('documentation planning in planning agent', () => {
 		const prompt = getSystemPrompt('planning');
 		// The partial's checklist heading should not be in planning prompt
 		expect(prompt).not.toContain('Documentation Update Checklist');
+	});
+});
+
+describe('alerting prompt (spec 018)', () => {
+	it('renders without throwing for the default empty context', () => {
+		expect(() => getSystemPrompt('alerting')).not.toThrow();
+	});
+
+	it('renders without throwing when an existing workItemId is provided', () => {
+		expect(() =>
+			getSystemPrompt('alerting', { workItemId: 'WI-1234', backlogListId: 'list-abc' }),
+		).not.toThrow();
+	});
+
+	it('renders without throwing when only a backlogListId is provided', () => {
+		expect(() => getSystemPrompt('alerting', { backlogListId: 'list-abc' })).not.toThrow();
+	});
+
+	it('contains all three phase markers in order', () => {
+		const prompt = getSystemPrompt('alerting');
+		// Match the heading shape ("Phase N: ...") rather than the bare token,
+		// so cross-references like "proceed to Phase 3" in earlier prose don't
+		// fool indexOf.
+		const phase1 = prompt.search(/Phase 1: \w/);
+		const phase2 = prompt.search(/Phase 2: \w/);
+		const phase3 = prompt.search(/Phase 3: \w/);
+		expect(phase1).toBeGreaterThanOrEqual(0);
+		expect(phase2).toBeGreaterThan(phase1);
+		expect(phase3).toBeGreaterThan(phase2);
+	});
+
+	it('contains the INVESTIGATE-AND-FILE-ONLY guardrail', () => {
+		const prompt = getSystemPrompt('alerting');
+		expect(prompt).toMatch(/INVESTIGATE-AND-FILE-ONLY/i);
+	});
+
+	it('includes the shared environment partial preamble', () => {
+		const prompt = getSystemPrompt('alerting');
+		// "Available Runtimes" is a stable heading from partials/environment.eta
+		expect(prompt).toContain('Available Runtimes');
+	});
+
+	it('directs commenting on the existing work item when workItemId is provided', () => {
+		const prompt = getSystemPrompt('alerting', {
+			workItemId: 'WI-1234',
+			backlogListId: 'list-abc',
+		});
+		// When both are present, the prompt should prefer commenting; check for an
+		// explicit comment-mode directive that references the workItemId.
+		expect(prompt).toMatch(/comment/i);
+		expect(prompt).toContain('WI-1234');
+	});
+
+	it('directs creating a backlog work item when only backlogListId is provided', () => {
+		const prompt = getSystemPrompt('alerting', { backlogListId: 'list-abc' });
+		expect(prompt).toMatch(/create/i);
+		expect(prompt).toContain('list-abc');
+	});
+
+	it('does not contain engine-specific tool-call syntax', () => {
+		const prompt = getSystemPrompt('alerting');
+		// Banned patterns: claude-code internal markers, OpenAI-specific
+		// chat-format markers, anything that screams "this prompt assumed
+		// a particular backend's tool-call shape".
+		expect(prompt).not.toMatch(/<\|im_start\|>/);
+		expect(prompt).not.toMatch(/<\|im_end\|>/);
+		expect(prompt).not.toMatch(/<function_calls>/);
+		expect(prompt).not.toMatch(/```tool_use/);
+	});
+
+	it('reinforces the read-only nature (no source edits / no PRs)', () => {
+		const prompt = getSystemPrompt('alerting');
+		// Defensive prose paralleling review.eta's "REVIEW ONLY" guardrail.
+		expect(prompt).toMatch(/do not edit|never edit|no source edits/i);
+		expect(prompt).toMatch(/no pull request|do not open a pr|never open a pr|no PR/i);
 	});
 });
