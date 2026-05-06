@@ -1,4 +1,3 @@
-/* biome-ignore lint/suspicious/noExplicitAny: test mocks */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/utils/runLink.js', () => ({
@@ -63,8 +62,9 @@ import {
 	buildExecutionPlan,
 	injectRunLinkSecrets,
 } from '../../../src/backends/secretOrchestrator.js';
+import type { AgentEngine } from '../../../src/backends/types.js';
 import { getSentryIntegrationConfig } from '../../../src/sentry/integration.js';
-import type { ProjectConfig } from '../../../src/types/index.js';
+import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { getDashboardUrl } from '../../../src/utils/runLink.js';
 
 const mockGetDashboardUrl = vi.mocked(getDashboardUrl);
@@ -83,6 +83,39 @@ function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 	};
 }
 
+function makeInput(
+	project: ProjectConfig,
+	triggerType: string,
+): AgentInput & { project: ProjectConfig; config: CascadeConfig } {
+	return {
+		project,
+		config: { projects: [] } as unknown as CascadeConfig,
+		triggerType: triggerType as AgentInput['triggerType'],
+	};
+}
+
+const noopLogWriter = () => {};
+const noopAgentLogger = {
+	info: () => {},
+	warn: () => {},
+	error: () => {},
+	debug: () => {},
+};
+
+const engine: AgentEngine = {
+	definition: {
+		id: 'claude-code',
+		label: 'Claude Code',
+		description: 'Test engine',
+		archetype: 'native-tool',
+		capabilities: [],
+		modelSelection: { type: 'free-text' },
+		logLabel: 'Engine Log',
+	},
+	execute: vi.fn(),
+	supportsAgentType: () => true,
+};
+
 beforeEach(() => {
 	mockGetDashboardUrl.mockReturnValue(undefined);
 	vi.clearAllMocks();
@@ -98,14 +131,14 @@ describe('buildExecutionPlan', () => {
 		const project = makeProject();
 		await buildExecutionPlan(
 			'alerting',
-			{ project, config: {}, triggerType: 'sentry:issue-created' } as unknown as any,
+			makeInput(project, 'sentry:issue-created'),
 			'/repo',
-			{} as unknown as any,
-			{} as unknown as any,
+			noopLogWriter,
+			noopAgentLogger,
 			'token',
 			false,
 			'claude-code',
-			{} as unknown as any,
+			engine,
 		);
 
 		expect(mockGetSentryIntegrationConfig).toHaveBeenCalledWith('test-project');
@@ -123,14 +156,14 @@ describe('buildExecutionPlan', () => {
 		const project = makeProject();
 		await buildExecutionPlan(
 			'implementation',
-			{ project, config: {}, triggerType: 'manual' } as unknown as any,
+			makeInput(project, 'manual'),
 			'/repo',
-			{} as unknown as any,
-			{} as unknown as any,
+			noopLogWriter,
+			noopAgentLogger,
 			'token',
 			false,
 			'claude-code',
-			{} as unknown as any,
+			engine,
 		);
 
 		expect(mockGetSentryIntegrationConfig).not.toHaveBeenCalled();
@@ -150,14 +183,14 @@ describe('buildExecutionPlan', () => {
 		const project = makeProject();
 		await buildExecutionPlan(
 			'alerting',
-			{ project, config: {}, triggerType: 'sentry:issue-created' } as unknown as any,
+			makeInput(project, 'sentry:issue-created'),
 			'/repo',
-			{} as unknown as any,
-			{} as unknown as any,
+			noopLogWriter,
+			noopAgentLogger,
 			'token',
 			false,
 			'claude-code',
-			{} as unknown as any,
+			engine,
 		);
 
 		expect(mockGetSentryIntegrationConfig).toHaveBeenCalledWith('test-project');

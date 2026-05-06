@@ -18,6 +18,7 @@
 // CLI, and dashboard, so a new provider can never be registered in some
 // runtime surfaces but not others.
 import './integrations/entrypoint.js';
+import { BootFailureError } from './agents/shared/bootFailureError.js';
 import { registerBuiltInEngines } from './backends/bootstrap.js';
 import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
@@ -490,6 +491,23 @@ export async function main(): Promise<void> {
 		await flush();
 		process.exit(0);
 	} catch (err) {
+		// Spec 018: distinguish boot-time failures (template load, plan
+		// resolution, context-pipeline assembly) from in-execution crashes
+		// via a dedicated exit code. The router's crash-reason interpreter
+		// surfaces "Worker boot failed" for exit code 2; BullMQ's failure
+		// compensation (spec 015) handles both equivalently.
+		if (err instanceof BootFailureError) {
+			logger.error('[Worker] Job failed at boot', {
+				jobId,
+				phase: err.phase,
+				error: String(err),
+			});
+			// Sentry capture already happened inside the shared pipeline's
+			// catch handler under tag `worker_boot_failure`; no need to
+			// re-capture here.
+			await flush();
+			process.exit(2);
+		}
 		logger.error('[Worker] Job failed', { jobId, error: String(err) });
 		captureException(err, { tags: { source: 'worker_job_failure' } });
 		await flush();

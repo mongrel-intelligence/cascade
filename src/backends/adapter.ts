@@ -1,7 +1,8 @@
 import { getAgentProfile } from '../agents/definitions/profiles.js';
+import { BootFailureError } from '../agents/shared/bootFailureError.js';
 import { executeAgentPipeline, type PipelineContext } from '../agents/shared/executionPipeline.js';
 import { setupRepository } from '../agents/shared/repository.js';
-import { finalizeEngineRun, tryCreateRun } from '../agents/shared/runTracking.js';
+import { finalizeEngineRun, tryUpdateRunPlanResolution } from '../agents/shared/runTracking.js';
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { recordInitialComment } from '../gadgets/sessionState.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
@@ -50,6 +51,20 @@ export async function executeWithEngine(
 
 		skipRepoDeletion: Boolean(input.logDir),
 
+		// Spec 018: create the run row UPFRONT so any boot-phase failure
+		// (template load, plan resolution, context-pipeline assembly) is
+		// recorded as a failed run visible in the dashboard. `model` and
+		// `maxIterations` are filled in via `tryUpdateRunPlanResolution`
+		// after `resolvePartialExecutionPlan` succeeds (deferred-fill).
+		runTracking: {
+			projectId: input.project.id,
+			workItemId: input.workItemId,
+			prNumber: input.prNumber as number | undefined,
+			agentType,
+			engineName: engine.definition.id,
+			triggerType: input.triggerType,
+		},
+
 		finalizeRun: (runId, fileLogger, outcome) =>
 			finalizeEngineRun(runId, fileLogger, {
 				status: outcome.status,
@@ -63,36 +78,47 @@ export async function executeWithEngine(
 
 		// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: webhook pipeline with sequential guard checks
 		execute: async (ctx: PipelineContext) => {
-			const { repoDir, fileLogger, logWriter, setRunId } = ctx;
+			const { repoDir, fileLogger, logWriter, runId } = ctx;
 			const log = createAgentLogger(fileLogger);
-			const profile = await getAgentProfile(agentType);
+			let profile: Awaited<ReturnType<typeof getAgentProfile>>;
+			try {
+				profile = await getAgentProfile(agentType);
+			} catch (err) {
+				throw new BootFailureError('agent definition lookup failed', {
+					phase: 'definition-lookup',
+					cause: err,
+				});
+			}
 			const isGitHubAck = isGitHubAckComment(input);
-			const partialInput = await resolvePartialExecutionPlan(
-				engine,
-				agentType,
-				input,
-				repoDir,
-				logWriter,
-				log,
-			);
+
+			// Spec 018: any failure in `resolvePartialExecutionPlan` (template
+			// load, model resolution, context-pipeline assembly) is a boot
+			// failure — the run row already exists from `runTracking` above,
+			// so we wrap and re-throw as `BootFailureError`. The shared
+			// pipeline's catch handler tags Sentry with `worker_boot_failure`
+			// and lets the error propagate so the worker exits with code 2.
+			let partialInput: Awaited<ReturnType<typeof resolvePartialExecutionPlan>>;
+			try {
+				partialInput = await resolvePartialExecutionPlan(
+					engine,
+					agentType,
+					input,
+					repoDir,
+					logWriter,
+					log,
+				);
+			} catch (err) {
+				throw new BootFailureError('plan resolution failed', {
+					phase: 'plan-resolution',
+					cause: err,
+				});
+			}
+
+			// Plan resolution succeeded — fill in the deferred run-row fields.
+			await tryUpdateRunPlanResolution(runId, partialInput.model, partialInput.maxIterations);
 
 			const { reviewSidecarPath, prSidecarPath, nativeToolRuntimeCleanup } = partialInput;
 			const { pushedChangesSidecarPath, pmWriteSidecarPath } = partialInput;
-
-			// Create run record now that we have model and maxIterations
-			const runId = await tryCreateRun(
-				{
-					projectId: input.project.id,
-					workItemId: input.workItemId,
-					prNumber: input.prNumber as number | undefined,
-					agentType,
-					engineName: engine.definition.id,
-					triggerType: input.triggerType,
-				},
-				partialInput.model,
-				partialInput.maxIterations,
-			);
-			if (runId) setRunId(runId);
 
 			// Seed session state so GitHub progress updates target the existing ack comment
 			if (isGitHubAck) {

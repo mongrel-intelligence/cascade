@@ -79,6 +79,11 @@ export class SentryMetricAlertTrigger implements TriggerHandler {
 			agentType: 'alerting',
 			agentInput: {
 				triggerEvent: 'alerting:metric-alert',
+				// Synthesized stable identifier — see SentryIssueAlertTrigger for
+				// rationale. For metric alerts there's no per-firing event id, so
+				// the identifier groups by org + alert title (best effort: an alert
+				// rule rename will produce a new group, which is acceptable).
+				workItemId: `sentry:metric:${sentryConfig.organizationSlug}:${alertTitle}`,
 				alertOrgId: sentryConfig.organizationSlug,
 				alertTitle,
 				alertIssueUrl: innerPayload.data?.web_url,

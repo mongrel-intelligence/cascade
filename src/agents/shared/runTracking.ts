@@ -6,8 +6,10 @@ import {
 	createRun,
 	storeRunLogs,
 	updateRunJobId,
+	updateRunPlanResolution,
 } from '../../db/repositories/runsRepository.js';
 import { logger } from '../../utils/logging.js';
+import { BootFailureError } from './bootFailureError.js';
 import type { FileLogger } from './executionPipeline.js';
 
 // ============================================================================
@@ -28,7 +30,10 @@ export interface RunTrackingInput {
 // ============================================================================
 
 /**
- * Create a DB run record, suppressing errors so agent execution is unaffected.
+ * Create a DB run record. Spec 018 intentionally treats creation failure as a
+ * boot failure instead of a silent warn-and-continue: without this row, the
+ * dashboard cannot show the job at all.
+ *
  * If JOB_ID env var is set (Docker mode), store it immediately after run creation.
  */
 export async function tryCreateRun(
@@ -61,8 +66,10 @@ export async function tryCreateRun(
 
 		return runId;
 	} catch (err) {
-		logger.warn('Failed to create run record', { error: String(err) });
-		return undefined;
+		throw new BootFailureError('failed to create run record', {
+			phase: 'run-record',
+			cause: err,
+		});
 	}
 }
 
@@ -105,4 +112,24 @@ export async function finalizeEngineRun(
 	if (!runId) return;
 	await tryStoreRunLogs(runId, fileLogger);
 	await tryCompleteRun(runId, input);
+}
+
+/**
+ * Spec 018: deferred-fill for plan-resolution fields. The run row is created
+ * upfront so boot-time failures are visible; this helper fills in `model` and
+ * `maxIterations` after `resolvePartialExecutionPlan` succeeds. Errors are
+ * suppressed (the run can proceed without these fields populated; observability
+ * shouldn't block agent execution).
+ */
+export async function tryUpdateRunPlanResolution(
+	runId: string | undefined,
+	model: string | undefined,
+	maxIterations: number | undefined,
+): Promise<void> {
+	if (!runId) return;
+	try {
+		await updateRunPlanResolution(runId, model, maxIterations);
+	} catch (err) {
+		logger.warn('Failed to update run plan resolution', { runId, error: String(err) });
+	}
 }

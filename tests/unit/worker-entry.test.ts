@@ -96,6 +96,7 @@ vi.mock('../../src/agents/prompts/index.js', () => ({
 
 // ── Imports (after vi.mock calls) ─────────────────────────────────────────────
 
+import { BootFailureError } from '../../src/agents/shared/bootFailureError.js';
 import { loadProjectConfigById } from '../../src/config/provider.js';
 import { getRunById } from '../../src/db/repositories/runsRepository.js';
 import {
@@ -946,5 +947,28 @@ describe('main() - environment variable validation', () => {
 			expect.objectContaining({ message: 'Webhook processing failed' }),
 			expect.objectContaining({ tags: { source: 'worker_job_failure' } }),
 		);
+	});
+
+	it('exits 2 when dispatchJob throws BootFailureError', async () => {
+		vi.mocked(processGitHubWebhook).mockRejectedValue(
+			new BootFailureError('plan resolution failed', {
+				phase: 'plan-resolution',
+				cause: new Error('ENOENT: alerting.eta'),
+			}),
+		);
+
+		process.env.JOB_ID = 'job-boot-fail-1';
+		process.env.JOB_TYPE = 'github';
+		process.env.JOB_DATA = JSON.stringify({
+			type: 'github',
+			source: 'github',
+			payload: {},
+			eventType: 'push',
+			repoFullName: 'org/repo',
+			receivedAt: '2024-01-01T00:00:00Z',
+		});
+
+		await expect(main()).rejects.toThrow('process.exit(2)');
+		expect(flush).toHaveBeenCalled();
 	});
 });

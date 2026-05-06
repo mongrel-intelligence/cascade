@@ -5,6 +5,7 @@ import { createFileLogger } from '../../utils/fileLogger.js';
 import { setWatchdogCleanup } from '../../utils/lifecycle.js';
 import { logger } from '../../utils/logging.js';
 import { createAgentLogger } from '../utils/logging.js';
+import { BootFailureError } from './bootFailureError.js';
 import { cleanupAgentResources } from './cleanup.js';
 import type { RunTrackingInput } from './runTracking.js';
 import { tryCreateRun } from './runTracking.js';
@@ -135,6 +136,57 @@ export interface FinalizeRunOutcome {
 	metadata?: Record<string, unknown>;
 }
 
+async function handleAgentPipelineError(params: {
+	err: unknown;
+	options: AgentPipelineOptions;
+	fileLogger: FileLogger;
+	runId: string | undefined;
+	startTime: number;
+}): Promise<AgentResult> {
+	const { err, options, fileLogger, runId, startTime } = params;
+	const isBootFailure = err instanceof BootFailureError;
+	logger.error(isBootFailure ? 'Agent boot failed' : 'Agent execution failed', {
+		identifier: options.loggerIdentifier,
+		error: String(err),
+		...(isBootFailure ? { phase: err.phase } : {}),
+	});
+	captureException(err, {
+		tags: {
+			// Spec 018: distinguish boot-time failures from in-execution
+			// crashes via a stable Sentry tag so operators can grep both.
+			source: isBootFailure ? 'worker_boot_failure' : 'agent_execution',
+			agent: options.loggerIdentifier,
+			...(isBootFailure ? { boot_phase: err.phase } : {}),
+		},
+		extra: { runId, durationMs: Date.now() - startTime },
+	});
+
+	let logBuffer: Buffer | undefined;
+	try {
+		fileLogger.close();
+		logBuffer = await fileLogger.getZippedBuffer();
+	} catch {
+		// Ignore log buffer errors
+	}
+
+	const durationMs = Date.now() - startTime;
+	await options.finalizeRun(runId, fileLogger, {
+		status: 'failed',
+		durationMs,
+		success: false,
+		error: String(err),
+	});
+
+	// Spec 018: BootFailureError must escape so the worker process exits
+	// with code 2 (not 1, not 0). The run row is already marked failed
+	// above; the existing in-execution-crash path continues to convert
+	// to {success: false} so existing semantics (no exit, just a failed
+	// agent result) are preserved for non-boot failures.
+	if (isBootFailure) throw err;
+
+	return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
+}
+
 /**
  * Shared agent execution scaffold used by both the llmist lifecycle and
  * the Claude Code backend adapter.
@@ -230,32 +282,7 @@ export async function executeAgentPipeline(options: AgentPipelineOptions): Promi
 			durationMs,
 		};
 	} catch (err) {
-		logger.error('Agent execution failed', {
-			identifier: options.loggerIdentifier,
-			error: String(err),
-		});
-		captureException(err, {
-			tags: { source: 'agent_execution', agent: options.loggerIdentifier },
-			extra: { runId, durationMs: Date.now() - startTime },
-		});
-
-		let logBuffer: Buffer | undefined;
-		try {
-			fileLogger.close();
-			logBuffer = await fileLogger.getZippedBuffer();
-		} catch {
-			// Ignore log buffer errors
-		}
-
-		const durationMs = Date.now() - startTime;
-		await options.finalizeRun(runId, fileLogger, {
-			status: 'failed',
-			durationMs,
-			success: false,
-			error: String(err),
-		});
-
-		return { success: false, output: '', error: String(err), logBuffer, runId, durationMs };
+		return handleAgentPipelineError({ err, options, fileLogger, runId, startTime });
 	} finally {
 		cleanupAgentResources(repoDir, fileLogger, options.skipRepoDeletion ?? false);
 	}

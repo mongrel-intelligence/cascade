@@ -105,6 +105,20 @@ export async function updateRunJobId(runId: string, jobId: string): Promise<void
 	await db.update(agentRuns).set({ jobId }).where(eq(agentRuns.id, runId));
 }
 
+/**
+ * Spec 018: deferred-fill for plan-resolution fields (model, maxIterations).
+ * The run row is created upfront so boot-time failures are visible; these two
+ * fields are written later, after `resolvePartialExecutionPlan` succeeds.
+ */
+export async function updateRunPlanResolution(
+	runId: string,
+	model: string | undefined,
+	maxIterations: number | undefined,
+): Promise<void> {
+	const db = getDb();
+	await db.update(agentRuns).set({ model, maxIterations }).where(eq(agentRuns.id, runId));
+}
+
 export async function getRunJobId(runId: string): Promise<string | null> {
 	const db = getDb();
 	const [row] = await db

@@ -45,7 +45,14 @@ export interface ExitDetails {
  * Empty / undefined fields are omitted.
  */
 export function formatCrashReason(exitCode: number, details?: ExitDetails): string {
-	const parts: string[] = [`Worker crashed with exit code ${exitCode}`];
+	// Spec 018: exit code 2 is reserved for worker boot-time failures (template
+	// load, plan resolution, context-pipeline assembly) — distinguishable from
+	// a generic in-execution crash so operators can triage faster.
+	const lead =
+		exitCode === 2
+			? `Worker boot failed (exit code ${exitCode})`
+			: `Worker crashed with exit code ${exitCode}`;
+	const parts: string[] = [lead];
 	if (details?.oomKilled === true) parts.push('OOMKilled=true');
 	else if (details?.oomKilled === false) parts.push('OOMKilled=false');
 	if (details?.exitReason) parts.push(`reason="${details.exitReason}"`);

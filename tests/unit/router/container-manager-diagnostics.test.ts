@@ -132,6 +132,24 @@ describe('formatCrashReason', () => {
 		expect(formatCrashReason(137, { oomKilled: true })).toMatch(/OOMKilled=(true|false)/);
 		expect(formatCrashReason(137, { oomKilled: false })).toMatch(/OOMKilled=(true|false)/);
 	});
+
+	// --- Spec 018 / plan 2: boot-fail exit code 2 ---
+	it('labels exit code 2 as a boot failure (spec 018)', () => {
+		expect(formatCrashReason(2)).toBe('Worker boot failed (exit code 2)');
+	});
+
+	it('boot-fail label includes the exitReason when provided', () => {
+		expect(formatCrashReason(2, { exitReason: 'plan-resolution' })).toBe(
+			'Worker boot failed (exit code 2) · reason="plan-resolution"',
+		);
+	});
+
+	it('boot-fail label is grep-distinguishable from generic crash', () => {
+		const bootFail = formatCrashReason(2);
+		const crash = formatCrashReason(1);
+		expect(bootFail).toMatch(/Worker boot failed/);
+		expect(crash).not.toMatch(/Worker boot failed/);
+	});
 });
 
 // ---------------------------------------------------------------------------

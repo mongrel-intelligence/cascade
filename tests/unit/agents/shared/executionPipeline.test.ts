@@ -43,8 +43,11 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	createRun: vi.fn(),
 	completeRun: vi.fn(),
 	storeRunLogs: vi.fn(),
+	updateRunJobId: vi.fn(),
+	updateRunPlanResolution: vi.fn(),
 }));
 
+import { BootFailureError } from '../../../../src/agents/shared/bootFailureError.js';
 import {
 	createLogWriter,
 	executeAgentPipeline,
@@ -86,6 +89,7 @@ function setupMocks() {
 }
 
 beforeEach(() => {
+	vi.clearAllMocks();
 	process.env.CASCADE_LOCAL_MODE = '';
 });
 
@@ -119,6 +123,47 @@ describe('executeAgentPipeline', () => {
 
 		expect(result.success).toBe(false);
 		expect(result.error).toContain('Execute failed');
+	});
+
+	it('propagates BootFailureError instead of converting it to a runtime result', async () => {
+		setupMocks();
+		const mockFinalizeRun = vi.fn();
+		const error = new BootFailureError('plan resolution failed', {
+			phase: 'plan-resolution',
+			cause: new Error('ENOENT: alerting.eta'),
+		});
+
+		await expect(
+			executeAgentPipeline({
+				loggerIdentifier: 'test-run',
+				setupRepoDir: vi.fn().mockResolvedValue(process.cwd()),
+				finalizeRun: mockFinalizeRun,
+				execute: async () => {
+					throw error;
+				},
+			}),
+		).rejects.toThrow(BootFailureError);
+
+		expect(mockFinalizeRun).toHaveBeenCalledWith(
+			undefined,
+			expect.anything(),
+			expect.objectContaining({
+				status: 'failed',
+				success: false,
+				error: expect.stringContaining('ENOENT: alerting.eta'),
+			}),
+		);
+		expect(mockCaptureException).toHaveBeenCalledWith(error, {
+			tags: {
+				source: 'worker_boot_failure',
+				agent: 'test-run',
+				boot_phase: 'plan-resolution',
+			},
+			extra: {
+				runId: undefined,
+				durationMs: expect.any(Number),
+			},
+		});
 	});
 
 	it('returns error result when setupRepoDir throws', async () => {

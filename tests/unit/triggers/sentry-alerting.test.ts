@@ -222,6 +222,28 @@ describe('SentryIssueAlertTrigger', () => {
 			const result = await trigger.handle(ctx);
 			expect(result?.agentInput?.alertIssueUrl).toBe(issueUrl);
 		});
+
+		// --- Spec 018 / plan 2: synthesized stable workItemId for sentry runs ---
+
+		it('synthesizes a stable workItemId from alertIssueId (spec 018)', async () => {
+			const result = await trigger.handle(makeSentryIssueAlertCtx());
+			expect(result?.agentInput?.workItemId).toBe('sentry:issue:issue-42');
+		});
+
+		it('produces the same workItemId for two dispatches against the same issue', async () => {
+			const a = await trigger.handle(makeSentryIssueAlertCtx());
+			const b = await trigger.handle(makeSentryIssueAlertCtx());
+			expect(a?.agentInput?.workItemId).toBe(b?.agentInput?.workItemId);
+			expect(a?.agentInput?.workItemId).toBe('sentry:issue:issue-42');
+		});
+
+		it('produces different workItemIds for different issues', async () => {
+			const a = await trigger.handle(makeSentryIssueAlertCtx());
+			const b = await trigger.handle(
+				makeSentryIssueAlertCtx({ eventOverrides: { issue_id: 'issue-7777' } }),
+			);
+			expect(a?.agentInput?.workItemId).not.toBe(b?.agentInput?.workItemId);
+		});
 	});
 });
 
@@ -355,6 +377,25 @@ describe('SentryMetricAlertTrigger', () => {
 		it('sets alertIssueUrl to undefined when web_url is absent', async () => {
 			const result = await trigger.handle(makeSentryMetricAlertCtx({ action: 'critical' }));
 			expect(result?.agentInput?.alertIssueUrl).toBeUndefined();
+		});
+
+		// --- Spec 018 / plan 2: synthesized stable workItemId for metric alerts ---
+
+		it('synthesizes a stable workItemId from orgSlug + alertTitle (spec 018)', async () => {
+			const result = await trigger.handle(
+				makeSentryMetricAlertCtx({ descriptionTitle: 'Error Rate High' }),
+			);
+			expect(result?.agentInput?.workItemId).toBe('sentry:metric:my-org:Error Rate High');
+		});
+
+		it('produces the same workItemId for two dispatches with the same title', async () => {
+			const a = await trigger.handle(
+				makeSentryMetricAlertCtx({ descriptionTitle: 'Error Rate High' }),
+			);
+			const b = await trigger.handle(
+				makeSentryMetricAlertCtx({ descriptionTitle: 'Error Rate High' }),
+			);
+			expect(a?.agentInput?.workItemId).toBe(b?.agentInput?.workItemId);
 		});
 	});
 });

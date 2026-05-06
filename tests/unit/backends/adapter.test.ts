@@ -93,10 +93,14 @@ vi.mock('../../../src/agents/shared/promptContext.js', () => ({
 const mockCreateRun = vi.fn();
 const mockCompleteRun = vi.fn();
 const mockStoreRunLogs = vi.fn();
+const mockUpdateRunJobId = vi.fn();
+const mockUpdateRunPlanResolution = vi.fn();
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	createRun: (...args: unknown[]) => mockCreateRun(...args),
 	completeRun: (...args: unknown[]) => mockCompleteRun(...args),
 	storeRunLogs: (...args: unknown[]) => mockStoreRunLogs(...args),
+	updateRunJobId: (...args: unknown[]) => mockUpdateRunJobId(...args),
+	updateRunPlanResolution: (...args: unknown[]) => mockUpdateRunPlanResolution(...args),
 }));
 
 import { type AgentProfile, getAgentProfile } from '../../../src/agents/definitions/profiles.js';
@@ -236,11 +240,14 @@ function setupMocks() {
 }
 
 beforeEach(() => {
+	vi.clearAllMocks();
 	process.env.CASCADE_LOCAL_MODE = '';
 	// Default runs repository mocks
 	mockCreateRun.mockResolvedValue('run-uuid-123');
 	mockCompleteRun.mockResolvedValue(undefined);
 	mockStoreRunLogs.mockResolvedValue(undefined);
+	mockUpdateRunJobId.mockResolvedValue(undefined);
+	mockUpdateRunPlanResolution.mockResolvedValue(undefined);
 });
 
 describe('executeWithEngine', () => {
@@ -255,6 +262,81 @@ describe('executeWithEngine', () => {
 		expect(result.output).toBe('Done');
 		expect(result.prUrl).toBe('https://github.com/o/r/pull/1');
 		expect(engine.execute).toHaveBeenCalled();
+	});
+
+	it('creates the run row before plan resolution and fills plan fields after resolution', async () => {
+		setupMocks();
+		const engine = makeMockBackend();
+		const input = makeInput();
+
+		await executeWithEngine(engine, 'implementation', input);
+
+		expect(mockCreateRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				projectId: 'test',
+				workItemId: 'card123',
+				agentType: 'implementation',
+				engine: 'test-engine',
+				model: undefined,
+				maxIterations: undefined,
+			}),
+		);
+		expect(mockCreateRun.mock.invocationCallOrder[0]).toBeLessThan(
+			mockResolveModelConfig.mock.invocationCallOrder[0],
+		);
+		expect(mockUpdateRunPlanResolution).toHaveBeenCalledWith('run-uuid-123', 'test-model', 50);
+		expect(mockUpdateRunPlanResolution.mock.invocationCallOrder[0]).toBeGreaterThan(
+			mockResolveModelConfig.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('treats plan-resolution failures as boot failures with the run row finalized', async () => {
+		setupMocks();
+		const engine = makeMockBackend();
+		const cause = new Error('ENOENT: alerting.eta');
+		mockResolveModelConfig.mockRejectedValue(cause);
+
+		await expect(executeWithEngine(engine, 'alerting', makeInput())).rejects.toMatchObject({
+			name: 'BootFailureError',
+			phase: 'plan-resolution',
+			message: expect.stringContaining('ENOENT: alerting.eta'),
+		});
+
+		expect(mockCompleteRun).toHaveBeenCalledWith(
+			'run-uuid-123',
+			expect.objectContaining({
+				status: 'failed',
+				success: false,
+				error: expect.stringContaining('ENOENT: alerting.eta'),
+			}),
+		);
+		expect(mockSentryModule.captureException).toHaveBeenCalledWith(
+			expect.objectContaining({ name: 'BootFailureError', phase: 'plan-resolution' }),
+			expect.objectContaining({
+				tags: expect.objectContaining({ source: 'worker_boot_failure' }),
+				extra: expect.objectContaining({ runId: 'run-uuid-123' }),
+			}),
+		);
+	});
+
+	it('treats agent definition lookup failures as boot failures', async () => {
+		setupMocks();
+		const engine = makeMockBackend();
+		mockGetAgentProfile.mockRejectedValue(new Error('unknown agent type: alerting'));
+
+		await expect(executeWithEngine(engine, 'alerting', makeInput())).rejects.toMatchObject({
+			name: 'BootFailureError',
+			phase: 'definition-lookup',
+			message: expect.stringContaining('unknown agent type: alerting'),
+		});
+		expect(mockCompleteRun).toHaveBeenCalledWith(
+			'run-uuid-123',
+			expect.objectContaining({
+				status: 'failed',
+				success: false,
+				error: expect.stringContaining('unknown agent type: alerting'),
+			}),
+		);
 	});
 
 	it('loads and unloads CASCADE env', async () => {
@@ -678,16 +760,18 @@ describe('executeWithEngine', () => {
 		expect(backendInput.runId).toBe('test-run-id');
 	});
 
-	it('forwards undefined runId to backendInput when createRun fails', async () => {
+	it('treats createRun failure as a boot failure instead of running without a runId', async () => {
 		setupMocks();
 		mockCreateRun.mockRejectedValue(new Error('DB unavailable'));
 		const engine = makeMockBackend();
 		const input = makeInput();
 
-		await executeWithEngine(engine, 'implementation', input);
-
-		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
-		expect(backendInput.runId).toBeUndefined();
+		await expect(executeWithEngine(engine, 'implementation', input)).rejects.toMatchObject({
+			name: 'BootFailureError',
+			phase: 'run-record',
+			message: expect.stringContaining('DB unavailable'),
+		});
+		expect(engine.execute).not.toHaveBeenCalled();
 	});
 
 	it('returns durationMs when engine returns error', async () => {

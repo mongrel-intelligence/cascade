@@ -4,14 +4,14 @@ slug: alerting-agent-and-worker-boot-visibility
 plan: 1
 plan_slug: alerting-prompt
 level: plan
-parent_spec: docs/specs/018-alerting-agent-and-worker-boot-visibility.md
+parent_spec: docs/specs/018-alerting-agent-and-worker-boot-visibility.md.done
 depends_on: []
 status: done
 ---
 
 # 018/1: Alerting agent prompt template
 
-> Part 1 of 2 in the 018-alerting-agent-and-worker-boot-visibility plan. See [parent spec](../../specs/018-alerting-agent-and-worker-boot-visibility.md).
+> Part 1 of 2 in the 018-alerting-agent-and-worker-boot-visibility plan. See [parent spec](../../specs/018-alerting-agent-and-worker-boot-visibility.md.done).
 
 ## Summary
 

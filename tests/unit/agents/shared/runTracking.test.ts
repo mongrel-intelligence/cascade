@@ -5,6 +5,7 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	completeRun: vi.fn(),
 	storeRunLogs: vi.fn(),
 	updateRunJobId: vi.fn(),
+	updateRunPlanResolution: vi.fn(),
 }));
 
 vi.mock('../../../../src/utils/logging.js', () => ({
@@ -25,18 +26,21 @@ vi.mock('node:fs', () => ({
 }));
 
 import fs from 'node:fs';
+import { BootFailureError } from '../../../../src/agents/shared/bootFailureError.js';
 import {
 	finalizeEngineRun,
 	type RunTrackingInput,
 	tryCompleteRun,
 	tryCreateRun,
 	tryStoreRunLogs,
+	tryUpdateRunPlanResolution,
 } from '../../../../src/agents/shared/runTracking.js';
 import {
 	completeRun,
 	createRun,
 	storeRunLogs,
 	updateRunJobId,
+	updateRunPlanResolution,
 } from '../../../../src/db/repositories/runsRepository.js';
 import { logger } from '../../../../src/utils/logging.js';
 
@@ -44,6 +48,7 @@ const mockCreateRun = vi.mocked(createRun);
 const mockCompleteRun = vi.mocked(completeRun);
 const mockStoreRunLogs = vi.mocked(storeRunLogs);
 const mockUpdateRunJobId = vi.mocked(updateRunJobId);
+const mockUpdateRunPlanResolution = vi.mocked(updateRunPlanResolution);
 const mockExistsSync = vi.mocked(fs.existsSync);
 const mockReadFileSync = vi.mocked(fs.readFileSync);
 
@@ -67,9 +72,9 @@ const baseInput: RunTrackingInput = {
 
 describe('tryCreateRun', () => {
 	beforeEach(() => {
+		vi.clearAllMocks();
 		mockCreateRun.mockResolvedValue('run-abc');
 		mockUpdateRunJobId.mockResolvedValue(undefined);
-		mockUpdateRunJobId.mockClear();
 	});
 
 	afterEach(() => {
@@ -125,14 +130,41 @@ describe('tryCreateRun', () => {
 		);
 	});
 
-	it('returns undefined and logs a warning when createRun throws', async () => {
+	it('throws a BootFailureError when createRun throws', async () => {
 		mockCreateRun.mockRejectedValue(new Error('DB error'));
 
-		const runId = await tryCreateRun(baseInput);
-		expect(runId).toBeUndefined();
+		await expect(tryCreateRun(baseInput)).rejects.toMatchObject({
+			name: 'BootFailureError',
+			phase: 'run-record',
+			message: expect.stringContaining('DB error'),
+		});
+		await expect(tryCreateRun(baseInput)).rejects.toThrow(BootFailureError);
+	});
+});
+
+describe('tryUpdateRunPlanResolution', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockUpdateRunPlanResolution.mockResolvedValue(undefined);
+	});
+
+	it('updates deferred plan-resolution fields when a run ID exists', async () => {
+		await tryUpdateRunPlanResolution('run-abc', 'test-model', 50);
+		expect(mockUpdateRunPlanResolution).toHaveBeenCalledWith('run-abc', 'test-model', 50);
+	});
+
+	it('does nothing when runId is undefined', async () => {
+		await tryUpdateRunPlanResolution(undefined, 'test-model', 50);
+		expect(mockUpdateRunPlanResolution).not.toHaveBeenCalled();
+	});
+
+	it('logs a warning but does not throw when the update fails', async () => {
+		mockUpdateRunPlanResolution.mockRejectedValue(new Error('network error'));
+
+		await expect(tryUpdateRunPlanResolution('run-abc', 'test-model', 50)).resolves.not.toThrow();
 		expect(logger.warn).toHaveBeenCalledWith(
-			'Failed to create run record',
-			expect.objectContaining({ error: 'Error: DB error' }),
+			'Failed to update run plan resolution',
+			expect.objectContaining({ runId: 'run-abc', error: 'Error: network error' }),
 		);
 	});
 });

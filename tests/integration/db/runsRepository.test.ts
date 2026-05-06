@@ -23,6 +23,7 @@ import {
 	storeLlmCall,
 	storeLlmCallsBulk,
 	storeRunLogs,
+	updateRunPlanResolution,
 } from '../../../src/db/repositories/runsRepository.js';
 import { truncateAll } from '../helpers/db.js';
 import { seedOrg, seedProject } from '../helpers/seed.js';
@@ -68,6 +69,24 @@ describe('runsRepository (integration)', () => {
 			expect(run?.model).toBe('claude-opus-4-5');
 			expect(run?.maxIterations).toBe(20);
 			expect(run?.status).toBe('running');
+		});
+
+		it('fills deferred plan-resolution fields after early run creation', async () => {
+			const id = await createRun({
+				projectId: 'test-project',
+				agentType: 'alerting',
+				engine: 'claude-code',
+			});
+
+			let run = await getRunById(id);
+			expect(run?.model).toBeNull();
+			expect(run?.maxIterations).toBeNull();
+
+			await updateRunPlanResolution(id, 'claude-sonnet-4-5', 35);
+
+			run = await getRunById(id);
+			expect(run?.model).toBe('claude-sonnet-4-5');
+			expect(run?.maxIterations).toBe(35);
 		});
 	});
 

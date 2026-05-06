@@ -4,7 +4,7 @@ slug: alerting-agent-and-worker-boot-visibility
 level: spec
 title: Alerting agent prompt + worker boot-failure visibility
 created: 2026-05-06
-status: draft
+status: done
 ---
 
 # 018: Alerting agent prompt + worker boot-failure visibility

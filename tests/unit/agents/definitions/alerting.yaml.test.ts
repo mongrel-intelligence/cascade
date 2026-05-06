@@ -13,29 +13,35 @@ import { loadBuiltinDefinition } from '../../../../src/agents/definitions/loader
  * against future drift.
  */
 describe('alerting agent capability invariants', () => {
-	it('has fs:read but not fs:write in required or optional capabilities', async () => {
+	async function loadAlertingDefinition() {
 		const def = await loadBuiltinDefinition('alerting');
 		expect(def).not.toBeNull();
-		const required = def!.capabilities?.required ?? [];
-		const optional = def!.capabilities?.optional ?? [];
+		if (!def) throw new Error('alerting definition not found');
+		return def;
+	}
+
+	it('has fs:read but not fs:write in required or optional capabilities', async () => {
+		const def = await loadAlertingDefinition();
+		const required = def.capabilities?.required ?? [];
+		const optional = def.capabilities?.optional ?? [];
 		const all = [...required, ...optional];
 		expect(all).toContain('fs:read');
 		expect(all).not.toContain('fs:write');
 	});
 
 	it('declares no scm:* capabilities (no PR creation, no commit, no review)', async () => {
-		const def = await loadBuiltinDefinition('alerting');
-		const required = def!.capabilities?.required ?? [];
-		const optional = def!.capabilities?.optional ?? [];
+		const def = await loadAlertingDefinition();
+		const required = def.capabilities?.required ?? [];
+		const optional = def.capabilities?.optional ?? [];
 		const all = [...required, ...optional];
 		const scmCaps = all.filter((c) => c.startsWith('scm:'));
 		expect(scmCaps).toEqual([]);
 	});
 
 	it('resolved gadget allowlist excludes source-edit and SCM-write gadgets', async () => {
-		const def = await loadBuiltinDefinition('alerting');
-		const required = def!.capabilities?.required ?? [];
-		const optional = def!.capabilities?.optional ?? [];
+		const def = await loadAlertingDefinition();
+		const required = def.capabilities?.required ?? [];
+		const optional = def.capabilities?.optional ?? [];
 		const allCaps = [...required, ...optional];
 
 		const resolvedGadgets = new Set<string>();
@@ -56,8 +62,8 @@ describe('alerting agent capability invariants', () => {
 	});
 
 	it('declares the alerting:read capability so investigation tools are reachable', async () => {
-		const def = await loadBuiltinDefinition('alerting');
-		const required = def!.capabilities?.required ?? [];
+		const def = await loadAlertingDefinition();
+		const required = def.capabilities?.required ?? [];
 		expect(required).toContain('alerting:read');
 	});
 });

@@ -75,6 +75,10 @@ export class SentryIssueAlertTrigger implements TriggerHandler {
 			agentType: 'alerting',
 			agentInput: {
 				triggerEvent: 'alerting:issue-alert',
+				// Synthesized stable identifier — gives the dashboard work-item view
+				// a queryable handle and groups multiple investigations of the same
+				// Sentry issue. Spec 018, AC #12.
+				workItemId: `sentry:issue:${issueId}`,
 				alertIssueId: issueId,
 				alertOrgId: sentryConfig.organizationSlug,
 				alertTitle,
