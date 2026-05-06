@@ -6,7 +6,7 @@ plan_slug: boot-failure-visibility
 level: plan
 parent_spec: docs/specs/018-alerting-agent-and-worker-boot-visibility.md
 depends_on: [1-alerting-prompt.md]
-status: pending
+status: wip
 ---
 
 # 018/2: Worker boot-failure visibility
