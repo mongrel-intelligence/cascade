@@ -75,6 +75,8 @@ export class SentryMetricAlertTrigger implements TriggerHandler {
 			orgId: sentryConfig.organizationSlug,
 		});
 
+		const workItemId = `sentry:metric:${sentryConfig.organizationSlug}:${alertTitle}`;
+
 		return {
 			agentType: 'alerting',
 			agentInput: {
@@ -83,11 +85,12 @@ export class SentryMetricAlertTrigger implements TriggerHandler {
 				// rationale. For metric alerts there's no per-firing event id, so
 				// the identifier groups by org + alert title (best effort: an alert
 				// rule rename will produce a new group, which is acceptable).
-				workItemId: `sentry:metric:${sentryConfig.organizationSlug}:${alertTitle}`,
+				workItemId,
 				alertOrgId: sentryConfig.organizationSlug,
 				alertTitle,
 				alertIssueUrl: innerPayload.data?.web_url,
 			},
+			workItemId,
 		};
 	}
 }

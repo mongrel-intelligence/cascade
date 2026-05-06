@@ -228,13 +228,16 @@ describe('SentryIssueAlertTrigger', () => {
 		it('synthesizes a stable workItemId from alertIssueId (spec 018)', async () => {
 			const result = await trigger.handle(makeSentryIssueAlertCtx());
 			expect(result?.agentInput?.workItemId).toBe('sentry:issue:issue-42');
+			expect(result?.workItemId).toBe('sentry:issue:issue-42');
 		});
 
 		it('produces the same workItemId for two dispatches against the same issue', async () => {
 			const a = await trigger.handle(makeSentryIssueAlertCtx());
 			const b = await trigger.handle(makeSentryIssueAlertCtx());
 			expect(a?.agentInput?.workItemId).toBe(b?.agentInput?.workItemId);
+			expect(a?.workItemId).toBe(b?.workItemId);
 			expect(a?.agentInput?.workItemId).toBe('sentry:issue:issue-42');
+			expect(a?.workItemId).toBe(a?.agentInput?.workItemId);
 		});
 
 		it('produces different workItemIds for different issues', async () => {
@@ -386,6 +389,7 @@ describe('SentryMetricAlertTrigger', () => {
 				makeSentryMetricAlertCtx({ descriptionTitle: 'Error Rate High' }),
 			);
 			expect(result?.agentInput?.workItemId).toBe('sentry:metric:my-org:Error Rate High');
+			expect(result?.workItemId).toBe('sentry:metric:my-org:Error Rate High');
 		});
 
 		it('produces the same workItemId for two dispatches with the same title', async () => {
@@ -396,6 +400,8 @@ describe('SentryMetricAlertTrigger', () => {
 				makeSentryMetricAlertCtx({ descriptionTitle: 'Error Rate High' }),
 			);
 			expect(a?.agentInput?.workItemId).toBe(b?.agentInput?.workItemId);
+			expect(a?.workItemId).toBe(b?.workItemId);
+			expect(a?.workItemId).toBe(a?.agentInput?.workItemId);
 		});
 	});
 });

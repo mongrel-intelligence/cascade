@@ -71,6 +71,8 @@ export class SentryIssueAlertTrigger implements TriggerHandler {
 			orgId: sentryConfig.organizationSlug,
 		});
 
+		const workItemId = `sentry:issue:${issueId}`;
+
 		return {
 			agentType: 'alerting',
 			agentInput: {
@@ -78,12 +80,13 @@ export class SentryIssueAlertTrigger implements TriggerHandler {
 				// Synthesized stable identifier — gives the dashboard work-item view
 				// a queryable handle and groups multiple investigations of the same
 				// Sentry issue. Spec 018, AC #12.
-				workItemId: `sentry:issue:${issueId}`,
+				workItemId,
 				alertIssueId: issueId,
 				alertOrgId: sentryConfig.organizationSlug,
 				alertTitle,
 				alertIssueUrl: issueUrl,
 			},
+			workItemId,
 		};
 	}
 }
