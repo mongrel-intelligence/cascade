@@ -1,0 +1,205 @@
+---
+id: 018
+slug: alerting-agent-and-worker-boot-visibility
+level: spec
+title: Alerting agent prompt + worker boot-failure visibility
+created: 2026-05-06
+status: draft
+---
+
+# 018: Alerting agent prompt + worker boot-failure visibility
+
+## Problem & Motivation
+
+On 2026-05-06 the cascade project received its first prod-traffic Sentry alert webhook intended to drive an `alerting`-type agent run. The first attempt failed silently because the router worker spawn was missing the credential bag for sentry-source jobs (separately fixed in PR #1259/#1260). After the credential fix shipped and a second test alert was sent, the worker booted, decrypted credentials, processed the sentry job header — and then died at agent boot with `ENOENT: no such file or directory, open '.../alerting.eta'`. The dashboard runs surface showed nothing for either attempt; the `agent_runs` row was never created; the only operator-visible signal was a Sentry exception captured from inside the worker.
+
+Two distinct gaps surfaced in the same incident, with a clear causal chain between them. The alerting agent had been designed end-to-end except for the system prompt template — definition YAML, capabilities, triggers, context pipeline, and inline task prompt all exist; only the prompt that gives the agent its persona, philosophy, and process never got written. That is the **feature gap (A)**. Independently, the worker's agent execution pipeline catches and silently converts boot-time exceptions into a clean `{success: false}` result, while the run-record creation step happens AFTER the steps that can fail (prompt load, model resolution, context pipeline). Boot-time failures therefore produce no run row, the worker exits 0, BullMQ marks the job done, and the dashboard runs UI is blind to the failure. That is the **observability gap (B)**.
+
+Gaps A and B reinforce each other: B is what made A so painful to diagnose. A future agent type added without its prompt template — or any boot-time regression in any existing agent — will fail in exactly the same invisible shape unless B is fixed. This spec consolidates both fixes under one motivation. They are independent enough to ship as separate plans and PRs but related enough that solving them together — with shared "no silent boot fail in any agent" policy — is cheaper than two separate spec rounds. This continues the lineage of spec **017** (router-side silent-failure hardening, done 2026-04-29), applying the same "silent fail no longer permitted" discipline to the worker side.
+
+---
+
+## Goals
+
+### Goal block A — Alerting agent
+
+A1. When a Sentry issue alert fires for a configured project, the alerting agent investigates the alert end-to-end: parses the pre-loaded event data (stacktrace, breadcrumbs, tags), reads the relevant source files to confirm the root cause, and either creates a bug investigation work item in the project's backlog (when a backlog list is configured) or comments on the triggering work item with its findings (when one is associated). Investigation output is concise, actionable, and names the failing function/file/line.
+
+A2. The alerting agent is a strict investigator-and-reporter, not a fixer. It does not edit source files, push commits, or open PRs. Its mission ends at "filed a bug to be fixed" or "commented investigation findings."
+
+A3. The alerting agent works against any Sentry-issued alert payload (issue alert and metric alert) without per-payload-shape branching at the prompt level. The shape differences are absorbed by the existing context pipeline; the prompt itself reasons about whatever investigation context was pre-loaded.
+
+A4. The agent's prompt is engine-agnostic — the same template renders correctly for `claude-code`, `codex`, and `opencode` engines. It relies on shared partials for environment and process preamble.
+
+A5. The agent has clear completion criteria — an explicit definition of "investigation done" so that runs terminate predictably rather than meandering through unrelated code paths.
+
+### Goal block B — Worker boot-failure visibility
+
+B1. Any failure that occurs in the worker between job pickup and the start of agent execution (template load, model resolution, context pipeline assembly, definition lookup, identifier resolution) produces a visible run row in the dashboard runs surface with a status that distinguishes "boot failed" from "agent ran and chose not to act" and from "agent ran and crashed mid-execution."
+
+B2. The worker's exit code communicates failure shape to the router: boot-time failures exit with a distinguishable non-zero code so that BullMQ's failure machinery and the existing post-failure compensation (lock release, recently-dispatched dedup mark) fire as designed. Agent-no-op runs continue to exit 0 — semantics for those runs are unchanged.
+
+B3. Boot-time failures escalate to Sentry under a stable tag (consistent with the spec-017 tag-naming convention) so operators triaging out-of-band have an unambiguous signal apart from the dashboard run row.
+
+B4. Sentry-driven runs (which have no PM-side work item id today) carry a synthesized stable identifier so the dashboard work-item view can group and find them. Multiple investigations of the same Sentry issue group together naturally.
+
+B5. A regression net prevents future agent types from being registered without a corresponding prompt template — adding an agent definition without writing its prompt produces a CI failure with a precise file path to the missing template.
+
+---
+
+## Non-goals
+
+- A full LLM-judged eval harness for the alerting agent's investigation quality. Unit + integration coverage of prompt rendering, context-pipeline wiring, gadget allowlist, and an end-to-end fixture is sufficient for v1. An eval harness is deferred to a separate spec only if alerting goes prod-multi-tenant and ground-truth investigation summaries become worth authoring.
+- Closing the loop back to Sentry by posting an investigation comment on the Sentry issue itself. The agent reports into the project's PM tool only in v1; Sentry remains read-only from the agent's perspective.
+- Support for non-Sentry alerting providers (Datadog, PagerDuty, Grafana, etc.). The alerting integration abstraction is in place for future providers, but only Sentry is in scope here.
+- Behavioural change to existing successful-but-no-op runs across other agent types — they continue to exit 0 and continue to record `agent_runs.status = completed`. The new exit code is reserved for boot-time failures only.
+- Backfilling run rows or PM-side work items for the small handful of silently-failed historical alerting runs. Operators can investigate manually if they want; future runs after this spec ships will be visible end-to-end.
+- Reworking the agent execution pipeline beyond moving run-record creation earlier and adding the boot-fail catch site. The success path's shape is unchanged.
+- Tightening unrelated WARN-vs-ERROR call sites in the worker. Only the boot-time silent-fail path is in scope.
+
+---
+
+## Constraints
+
+- **Single run row per job invariant**: every dispatched job that reaches the worker corresponds to exactly one row in the runs table. No "boot phase" row plus "execution phase" row pattern. Plan-resolution fields (model, max iterations) that aren't known until plan resolution must accept a deferred-fill semantics in the run row.
+- **Backward compatibility for the success path**: agent runs that succeed must look identical in the runs surface and in observability data after this spec ships. Operators reviewing run history for unrelated agent types should see no change.
+- **Engine-agnostic prompt**: the alerting prompt renders with the existing Eta template engine and consumes data from the existing context pipeline. It must not embed engine-specific tool-call shapes or assumptions about backend behaviour.
+- **Sentry tag naming alignment**: any new Sentry tags introduced for boot-fail visibility follow the lower_snake_case convention established by spec 017's `wedged_lock_canary`, spec 015's `pipeline_capacity_gate_no_pm_provider`, and similar.
+- **Prompt examples must not leak eval answers**: per the cross-project rule, any few-shot examples or illustrative cases in the alerting prompt must use a domain that does NOT appear in cascade's eval fixtures or test fixtures. The honesty test: "if a stranger swapped these examples for completely unrelated ones, would the integration tests still pass?" Answer must be yes.
+- **Independent shippable units**: the alerting block (A) and visibility block (B) ship as separate plans and separate PRs. Either can be deployed without the other; sequencing is operator-determined. (Operationally A benefits from B shipping first, but neither is a hard prerequisite.)
+
+---
+
+## Requirements
+
+### Alerting agent (A)
+
+A.1. The alerting agent renders a system prompt for every dispatch of `agentType: 'alerting'` from the existing trigger handlers, without that dispatch path needing modification.
+
+A.2. The prompt directs the agent through a three-phase process: parse the pre-loaded event data → confirm root cause by reading source → summarise and report via PM tool. Phase boundaries are visible enough in the prompt that operators reading a run transcript can identify which phase the agent is in.
+
+A.3. The prompt includes an explicit guardrail forbidding source edits, commits, PRs, or any write outside the PM-tool reporting surface. The guardrail is reinforced enough to survive the same model on a different day.
+
+A.4. When a Sentry alert's trigger context provides both a link to the originating Sentry issue and an associated existing work item, the prompt directs the agent to comment on the existing work item rather than create a new backlog entry. When only a backlog list is available, the agent creates a backlog entry instead.
+
+A.5. The prompt's investigation depth is governed by soft guidance ("stop when you can name the failing function and the trigger condition") rather than a hard cap on files read. The existing per-run cost and iteration caps in the agent runtime remain the actual ceiling.
+
+A.6. The prompt's outputs (work item title, work item description, comment text) follow a predictable structure defined in the prompt, so that operators reviewing many investigation outputs can scan them quickly.
+
+A.7. Unit tests verify the prompt renders without errors against representative trigger contexts. Integration tests verify the agent can be dispatched, the context pipeline runs, the gadget allowlist resolves correctly, and a fixture-driven run completes.
+
+### Worker boot-failure visibility (B)
+
+B.1. The run row for a job is created at the point where the worker has parsed the job header successfully and has determined the agent type, BEFORE any operation that can fail in a way that would otherwise prevent the row from being written. The fields known only after plan resolution accept a deferred-fill semantics.
+
+B.2. Any exception thrown in the boot-phase code path (template load, model resolution, context pipeline construction, definition lookup, identifier construction) is caught at a single dedicated boot-phase catch site that updates the existing run row to a failed status, records a structured error message, captures to Sentry under a stable tag, and exits the worker with the boot-fail exit code.
+
+B.3. The boot-fail exit code is distinct from the worker's existing exit codes (0 for success-or-noop, 1 for in-execution crash). The router's exit-code interpreter recognises the new code and stamps run records (where appropriate) and crash-reason logs with a distinguishable label.
+
+B.4. Sentry-driven runs whose payload has no associated PM work item carry a synthesized stable identifier in the runs row. The identifier is derived deterministically from the alert payload such that multiple invocations against the same Sentry issue produce the same identifier and group together in the dashboard.
+
+B.5. A CI guard asserts that for every agent type registered (via YAML definition or any future registration mechanism), the corresponding prompt template file exists. Adding a new agent definition without the matching prompt produces a precise CI failure naming the missing template.
+
+B.6. After this spec ships, an operator running `cascade runs list --project <id> --agent-type <type>` for any agent type that experienced a boot failure sees a row with a failed status and the structured error message, regardless of whether the agent ever reached its execution phase.
+
+B.7. The pre-existing silent swallows in the run-row creation path and the agent-execution catch handler are tightened: failures that previously logged WARN and returned no row, or that silently logged ERROR and returned a "no-op success" result, now follow the boot-fail discipline above instead.
+
+---
+
+## Research Notes
+
+- **Spec 017 (router-side silent-failure hardening, done 2026-04-29)** is the direct precedent for this work. Its tag-naming convention, Sentry-capture pattern, and conformance-test extension model are reused here on the worker side. The "silent WARN converted to Sentry-tagged error" policy from 017 transfers directly.
+- **Spec 015 (router job dispatch failure recovery, done)** established the failed-event compensation flow — every dispatch failure flows through `worker.on('failed')` to release locks and dedup marks. The new boot-fail exit code from this spec plugs into that existing compensation path; no new compensation logic is needed.
+- **The cross-project CLAUDE.md prompt-leak rule** ("Prompt examples must NOT leak the eval answers") is load-bearing for goal A. Any illustrative example in the alerting prompt must come from a domain disjoint from any test fixture the alerting agent will be evaluated against.
+- **No academic prior art is cited.** Both fixes are well-understood engineering hygiene applied to existing infrastructure: the alerting agent prompt follows the cascade codebase's established prompt-engineering pattern (persona + philosophy + phased process + completion criteria, shared via partials); the boot-failure visibility fix is "create the row before the things that can fail, and surface failures loudly" — standard observability discipline.
+- **Industry convention on idempotency and exit-code semantics**: a separate exit code for boot-vs-runtime failure is consistent with how systemd, Docker entrypoints, and process supervisors typically distinguish "couldn't start" from "started and crashed." It enables correctness of restart-vs-back-off policies downstream.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|------|--------|----------|--------|
+| _(none)_ | _(none)_ | _(none)_ | The alerting agent uses the existing prompt-engine, gadget framework, and integration abstraction. The boot-visibility fix uses existing run-record infrastructure, Sentry capture, and conformance-test pattern. No new tools are adopted. |
+
+---
+
+## Strategic decisions
+
+1. **One bundled spec over two.** Both gaps surfaced in the same incident, gap B is what made gap A so painful, and the spec's narrative arc reads as one ("we shipped a feature blind, then we hardened the visibility so the next blind ship is loud"). Decomposition into two downstream plans preserves per-PR independence; bundling at the spec level keeps the motivation coherent and avoids stitching the same context into two separate spec rounds. Alternative considered: split into specs 018 + 019; rejected at the user-interview step.
+
+2. **Investigator-and-filer over investigator-and-fixer for the alerting agent.** The agent investigates, names the root cause, and files a bug for someone else to fix. It does not edit code or open PRs. Reason: blast radius. An automated agent that can fix bugs without human review is a risk an alerting trigger does not justify; the implementation agent already exists for that workload. Alternative considered: combined investigate-and-fix mode; rejected as scope creep with an unfavourable risk profile.
+
+3. **Comment-on-existing over create-new when both are possible.** When the alerting trigger context has both a backlog list and an associated existing work item, the agent prefers commenting on the existing item. Reason: lower write blast radius, easier to undo, prevents duplicate "investigate this" backlog rows accumulating across alert recurrences. Alternative considered: always create a new backlog entry; rejected for the duplication-pressure reason.
+
+4. **Soft investigation-depth guidance over a hard file-read cap.** The prompt directs the agent to stop when it can name the failing function and the trigger condition. Hard caps misbehave when the bug requires deep tracing through multiple files. The existing per-run cost and iteration ceilings are the actual ceiling. Alternative considered: explicit "read at most N source files" cap; rejected because it forces giving up on legitimate deep investigations.
+
+5. **Engine-agnostic prompt prose.** The alerting prompt is written without engine-specific tool-call shapes or backend assumptions, mirroring how the existing prompts (`review.eta`, `backlog-manager.eta`, etc.) work today. Reuses the shared `partials/environment` preamble. Alternative considered: claude-code-specific prompt for v1 with multi-engine ports later; rejected because the engine abstraction already handles this and forking would create future drift.
+
+6. **Single run row per job preserved; deferred-fill for plan-resolution fields.** Boot-failure visibility is achieved by reordering when the row is created, not by introducing a "boot phase" row separate from the "execution phase" row. Reason: every consumer of the runs surface (dashboard list view, work-item-page lookup, retry path, debug-analysis path) assumes one row per job. Splitting that contract is a much larger blast radius than letting plan-resolution fields be nullable temporarily. Alternative considered: separate boot-phase row with its own status taxonomy; rejected as too invasive for the actual fix shape.
+
+7. **Distinct boot-fail exit code over reusing exit 1.** The worker exits with a distinct code for boot-time failures, leaving exit 0 (agent succeeded or chose not to act) and exit 1 (agent ran and crashed) intact. Reason: BullMQ's failure compensation, the router's crash-reason interpreter, and operator log-grep patterns all benefit from being able to distinguish "couldn't start" from "started and crashed" without parsing log strings. Alternative considered: always exit non-zero on any agent failure; rejected because it shifts the meaning of existing successful-but-no-op runs across all agent types — out of scope for this spec.
+
+8. **Synthesized stable identifier for sentry runs over leaving NULL.** Sentry-driven runs have no PM-side work item id; without a synthesized identifier they would be invisible in the dashboard work-item view, reproducing the spec-017 anti-pattern for a brand-new agent type. The identifier is deterministic from the alert payload so multiple investigations of the same Sentry issue group naturally. Alternative considered: leave NULL and accept invisibility; rejected because we just spec'd 017 to fix that exact pattern for other agent types.
+
+9. **Conformance-test extension over runtime guard for the prompt-template invariant.** A CI test asserts every registered agent type has a corresponding prompt template, mirroring spec 009's PM-manifest conformance harness pattern. Reason: catches "register an agent without writing the prompt" before it ships, instead of relying on a runtime check that fires only when traffic reaches the new agent type (which is exactly what produced the 2026-05-06 incident). Alternative considered: runtime startup guard that scans agent types vs. templates; rejected because the failure mode the user wants to prevent is "ships to prod and waits for traffic", not "starts up and crashes" — CI is the right gate.
+
+10. **Two downstream plans, sequenced operator-side.** This spec produces two `/plan` files: one for the alerting agent prompt, one for boot-failure visibility. They can be merged in either order; A benefits from B existing first (so future iteration on the alerting prompt is observable), but neither is a hard prerequisite. Alternative considered: one combined plan; rejected because the review profile and reviewer audience for prompt-engineering vs. observability-hardening are different.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+### Alerting agent (A)
+
+1. A Sentry issue alert fired against a configured project produces a visible alerting agent run that progresses through investigation phases and terminates with either a new bug investigation work item in the configured backlog or a comment on the triggering work item, containing the root cause summary, affected file/function, and a link to the alert.
+
+2. A Sentry metric alert fired against a configured project triggers the alerting agent (subject to the per-project trigger configuration) and produces an investigation comparable in shape to the issue-alert path, adapted to the metric-alert payload's lack of stacktrace.
+
+3. The alerting agent does not edit source files, commit, push, or open PRs during any run. A run that attempted any of those actions is a regression.
+
+4. The alerting agent's prompt template renders successfully for every supported engine (`claude-code`, `codex`, `opencode`) — no engine-specific syntax errors, no rendering failures.
+
+5. The alerting agent's outputs (work item title, work item description, comment text) follow a predictable structure across runs, scannable at a glance by an operator triaging multiple investigations.
+
+6. Adding a new alerting trigger (e.g. a hypothetical `alerting:rate-anomaly`) without modifying the alerting prompt does not break existing runs — the prompt reasons about whatever pre-loaded context it receives without per-event-type branching.
+
+### Worker boot-failure visibility (B)
+
+7. A worker that fails to load its prompt template (e.g. missing file) produces a visible failed run row in the dashboard runs surface within seconds of webhook arrival, queryable via `cascade runs list` filters by project and agent type, with a structured error message naming the failure cause.
+
+8. A worker that fails during model resolution, context pipeline assembly, or any other boot-phase step likewise produces a visible failed run row with a structured error message naming the failure cause.
+
+9. The new boot-fail exit code is distinct from the existing 0 and 1 codes, and the router's crash-reason interpretation surfaces a distinguishable label for boot-fail runs in its diagnostic logs.
+
+10. Existing success-path runs and existing in-execution-failure runs (exit 1) look identical in the runs surface and in observability data before and after this spec ships. No regression in the success-or-noop path.
+
+11. A boot failure escalates to Sentry under a stable tag (lower_snake_case, aligned with spec 017 conventions). The dashboard runs surface and the Sentry capture both reference the same run id for cross-referencing.
+
+12. A Sentry-driven alerting run, regardless of whether it has a PM-side work item id from the trigger context, is discoverable via the dashboard work-item view by querying the synthesized stable identifier. Multiple investigations of the same Sentry issue surface as a group.
+
+13. Adding a new agent type registration to the codebase without a corresponding prompt template produces a CI failure that names the missing template path, blocking merge until the template is added.
+
+14. After this spec is fully deployed, the 24-hour rate of "worker exits 0 with no run row created" events on cascade-router drops to zero under normal operation. Any non-zero rate represents a real regression worth investigating.
+
+---
+
+## Documentation Impact (high-level)
+
+- **`README.md`** — update the alerting-related section (or add one) to mention that the alerting agent investigates Sentry alerts and reports findings to the project's PM tool, as part of the documented agent inventory.
+- **`CHANGELOG.md`** — entry for both the alerting-agent feature and the boot-failure visibility hardening, in the appropriate release block when the changes ship.
+
+(The boot-fail invariant from goal block B is intentionally not added to `CLAUDE.md`. The conformance test introduced by plan 2 enforces the rule at CI time, and the spec + plan + commit history communicate the rationale to anyone reading code in the affected area. Per the cross-project rubric, default-no for `CLAUDE.md` additions unless the rule is genuinely homeless.)
+
+---
+
+## Out of Scope
+
+- An LLM-judged eval harness for alerting agent investigation quality. Deferred to a future spec only if alerting goes prod-multi-tenant.
+- Closing the loop back to Sentry by posting investigation comments on Sentry issues themselves.
+- Support for non-Sentry alerting providers (Datadog, PagerDuty, Grafana, etc.) — abstraction is in place but only Sentry is in scope.
+- Backfilling run rows or PM-side work items for the historical silently-failed alerting runs from 2026-05-06.
+- Behavioural change to existing successful-but-no-op runs across other agent types.
+- Reworking unrelated silent-fail call sites in the worker beyond the boot-phase path.
+- A combined investigate-and-fix mode for the alerting agent.
+- Multi-tenant tuning of the alerting agent prompt for distinct project profiles.

@@ -1,0 +1,184 @@
+---
+id: 018
+slug: alerting-agent-and-worker-boot-visibility
+plan: 1
+plan_slug: alerting-prompt
+level: plan
+parent_spec: docs/specs/018-alerting-agent-and-worker-boot-visibility.md
+depends_on: []
+status: pending
+---
+
+# 018/1: Alerting agent prompt template
+
+> Part 1 of 2 in the 018-alerting-agent-and-worker-boot-visibility plan. See [parent spec](../../specs/018-alerting-agent-and-worker-boot-visibility.md).
+
+## Summary
+
+Author the system prompt template that the alerting agent's worker tries to load at boot. Every other piece of the alerting agent — YAML definition (`src/agents/definitions/alerting.yaml`), capabilities (`src/agents/capabilities/registry.ts:194-200`), trigger handlers (`src/triggers/sentry/alerting-{issue,metric}.ts`), context pipeline step (`src/agents/definitions/contextSteps.ts:564-606`), Sentry integration (`src/sentry/alerting-integration.ts`) — is already in place. The missing file is `src/agents/prompts/templates/alerting.eta`. After this plan ships, a Sentry alert webhook produces a fully-functional alerting agent run end-to-end.
+
+This plan delivers the alerting agent's persona, philosophy, three-phase process (parse pre-loaded event → confirm root cause via source reads → report via PM tool), explicit INVESTIGATE-AND-FILE-ONLY guardrail, soft investigation-depth guidance, and predictable output structure. The prompt is engine-agnostic, reuses `partials/environment` for the shared preamble, and avoids few-shot examples that would leak into the integration-test domain.
+
+What this plan does NOT deliver: any change to the run-record creation order, any new exit codes, any CI guard against future agent types missing their templates, any synthesized identifier for sentry runs. Those are plan 2's scope.
+
+**Components delivered:**
+- `src/agents/prompts/templates/alerting.eta` — the system prompt itself
+- `tests/unit/agents/prompts.test.ts` — extended with alerting-specific render tests
+- `tests/integration/agents/alerting-end-to-end.test.ts` — fixture-driven end-to-end test
+- `README.md` — alerting agent inventory entry
+- `CHANGELOG.md` — entry for this plan
+
+**Deferred to later plans in this spec:**
+- Worker boot-failure catch site, run-record reordering, new exit code, conformance test, synthesized sentry-run identifier — all in plan 2.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (Sentry issue alert produces a visible alerting agent run that progresses through investigation phases and terminates with PM-tool output) — **full**
+- Spec AC #2 (Sentry metric alert produces a comparable investigation adapted to lack of stacktrace) — **full**
+- Spec AC #3 (alerting agent does not edit source, commit, push, or open PRs) — **full**
+- Spec AC #4 (prompt renders for all three engines without errors) — **full**
+- Spec AC #5 (predictable output structure for work item title / description / comment text) — **full**
+- Spec AC #6 (alerting agent reasons about whatever pre-loaded context it receives, no per-event-type branching in the prompt) — **full**
+
+---
+
+## Depends On
+
+- _(none — first plan in this spec)_
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Prompt-render unit tests
+
+**Tests first** (`tests/unit/agents/prompts.test.ts`, extending the existing file):
+
+- `getSystemPrompt('alerting') renders without throwing for an issue-alert trigger context` — unit — input: trigger context with `alertTitle`, `alertIssueUrl`, `alertIssueId`, `alertOrgId`, `triggerEvent: 'alerting:issue-alert'`, plus the standard `PromptContext` env shape; expected: returns a non-empty string. Expected red: `Error: ENOENT: no such file or directory, open '.../templates/alerting.eta'` (because the template doesn't exist yet).
+- `getSystemPrompt('alerting') renders without throwing for a metric-alert trigger context` — unit — input: same shape but `triggerEvent: 'alerting:metric-alert'` and no `alertIssueId`; expected: returns a non-empty string. Expected red: same ENOENT.
+- `rendered alerting prompt contains the three phase markers` — unit — assert presence of three section headers (Phase 1, Phase 2, Phase 3 — exact strings TBD by template author but stable). Expected red: `AssertionError: expected '...' to include 'Phase 1'` once the template exists but lacks the markers — the test must read the markers from a single source of truth (the spec or a shared constant), not from a snapshot of the template.
+- `rendered alerting prompt contains the INVESTIGATE-AND-FILE-ONLY guardrail` — unit — assert presence of the guardrail clause referenced in spec strategic-decision #2. Expected red: `AssertionError: expected '...' to match /INVESTIGATE-AND-FILE-ONLY/i`.
+- `rendered alerting prompt includes the shared environment preamble` — unit — assert that a known string from `partials/environment.eta` (e.g. `Available Runtimes`) appears in the rendered output. Expected red: `AssertionError: ... to include 'Available Runtimes'`.
+- `rendered alerting prompt prefers comment-on-existing when both backlogListId and existing workItemId are provided` — unit — render twice with different `it` shapes; assert the (workItemId-set, backlogListId-set) render contains "comment" instructions and NOT "create a new backlog" instructions. Expected red: `AssertionError: expected '...' to include 'comment'`.
+- `rendered alerting prompt directs creating a backlog work item when only backlogListId is provided` — unit — render with `workItemId: undefined, backlogListId: 'list-id'`; assert the render contains "create" instructions. Expected red: `AssertionError: expected '...' to include 'create'`.
+- `rendered alerting prompt does not contain engine-specific tool-call syntax` — unit — assert the rendered output does NOT contain a banned-pattern list (e.g. `function_calls`, `<function_call>`, `<|im_start|>`, `<thinking>` anchored to engine internals — the precise banned list is finalized when authoring the template). Expected red: `AssertionError: expected '...' not to match /function_calls/`.
+
+**Implementation** (`src/agents/prompts/templates/alerting.eta`):
+
+The author writes a template (~80-150 lines) following the structural pattern of `review.eta` and `backlog-manager.eta`. Required content:
+
+- Persona block: identity as 🚨 Alert Investigator (mirrors the YAML's `identity.label`).
+- `<%~ include("partials/environment") %>` for the shared preamble.
+- Philosophy block: "investigation, not repair" — explicit prose paralleling `review.eta`'s "REVIEW ONLY" guardrail. Single paragraph, reinforced enough to survive the same model on a different day.
+- Three-phase process block (Phase 1 / Phase 2 / Phase 3) with clear markers and the actions per phase.
+- Soft depth guidance ("stop when you can name the failing function and the trigger condition") rather than a hard file-read cap.
+- Decision rule: if `it.workItemId` is set, comment on it; else if `it.backlogListId` is set, create a backlog work item. (Mirrors the YAML's existing taskPrompt logic but elaborates it into the system prompt.)
+- Output structure templates: a 1-line title shape and a 4-bullet description shape (root cause / affected file:line / failing function / link to alert), reproducible across runs.
+- Completion criteria: an explicit "you are done when …" clause.
+
+The template MUST NOT include any few-shot example whose domain overlaps with cascade's own test fixtures or eval fixtures, per the cross-project rule "prompt examples must not leak the eval answers". If examples are included at all, they reference clearly-invented domains (e.g. a fake `WeatherFetcher` API throwing a `RateLimitError`) — never cascade's own classes.
+
+The template MUST NOT contain engine-specific tool-call syntax. Any agent capabilities are described in plain prose ("you can read files via the gadget surface", not "call function_calls(`{name: ReadFile, ...}`)"); the engine wrapping handles the actual tool-use shape.
+
+### 2. End-to-end integration test
+
+**Tests first** (`tests/integration/agents/alerting-end-to-end.test.ts` — new file):
+
+- `alerting agent dispatched against a fixture issue-alert payload completes successfully` — integration — setup: a fixture Sentry issue-alert payload, a fixture project config with `alerting:read` capability + Sentry credentials, a stubbed PM provider (Trello adapter via `createFakePMProvider`); expected: the run completes without throwing, a CreateWorkItem or CommentOnWorkItem call was made on the stubbed PM provider. Expected red: `Error: ENOENT ... alerting.eta` until the template is authored.
+- `alerting agent does not invoke any source-edit gadget during a fixture run` — integration — same fixture; spy/intercept all gadget invocations; assert no calls to gadgets that write files (e.g. WriteFile, CommitChanges, OpenPullRequest are never invoked). Expected red: same ENOENT initially; once template renders, this catches any prompt that drifts into "fix the bug" mode.
+- `alerting agent metric-alert variant produces a comparable investigation` — integration — same shape but with a metric-alert payload (no stacktrace); expected: run completes and the PM-tool call shape is the same kind. Expected red: same ENOENT.
+
+**Implementation** — no new product code beyond the template itself. The integration tests drive the existing dispatch path against fixtures.
+
+Fixture files needed:
+- `tests/fixtures/sentry-issue-alert.json` — representative issue-alert payload (can borrow from `tests/fixtures/linear-issue-with-screenshot.json`'s pattern of saving a real captured payload with secrets scrubbed, per the spec-016 precedent)
+- `tests/fixtures/sentry-metric-alert.json` — representative metric-alert payload
+
+### 3. Documentation
+
+**`README.md`**: locate the agent inventory section (or create one if absent — the README has been the established home for documented agents per spec 014's pattern); add an entry for the alerting agent describing what it does (investigates Sentry alerts, reports findings to the project's PM tool) and what it does NOT do (no source edits, no PRs).
+
+**`CHANGELOG.md`**: add an entry under the `## [Unreleased]` block (or whatever the active changelog convention is in this repo): `- Added: alerting agent investigates Sentry alerts and creates bug-investigation work items or comments on existing ones (#NNNN)`.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/agents/prompts.test.ts`: 8 new tests covering render-success, phase markers, guardrail, environment preamble, comment-vs-create routing, engine-agnostic prose
+
+### Integration tests
+- [ ] `tests/integration/agents/alerting-end-to-end.test.ts`: 3 tests covering issue-alert flow, metric-alert flow, and the "no source edits" guardrail behaviorally
+
+### Acceptance tests
+- [ ] Per-plan AC checklist (below) verified against the integration test outputs and a manual prompt review
+
+---
+
+## Manual Verification (for `[manual]`-tagged ACs only)
+
+n/a — all per-plan ACs auto-tested.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. The alerting prompt template renders without errors against a representative issue-alert trigger context.
+2. The alerting prompt template renders without errors against a representative metric-alert trigger context.
+3. The rendered prompt contains the three phase markers (Phase 1 / Phase 2 / Phase 3) in order.
+4. The rendered prompt contains the INVESTIGATE-AND-FILE-ONLY guardrail clause.
+5. The rendered prompt includes the shared `partials/environment` preamble.
+6. The rendered prompt directs commenting on the existing work item when both `workItemId` and `backlogListId` are provided in the context.
+7. The rendered prompt directs creating a backlog work item when only `backlogListId` is provided.
+8. The rendered prompt does not contain engine-specific tool-call syntax patterns.
+9. An end-to-end integration test against a fixture issue-alert payload produces either a CreateWorkItem call or a CommentOnWorkItem call on the stubbed PM provider, and the run completes without throwing.
+10. The end-to-end integration test asserts no source-edit gadget was invoked at any point in the fixture run.
+11. All new/modified code has corresponding tests.
+12. `npm run lint` passes.
+13. `npm run typecheck` passes.
+14. `npm test` passes.
+15. `README.md` and `CHANGELOG.md` are updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `README.md` | Add alerting agent entry to the agent inventory section, describing investigation-and-file role and the no-source-edits guarantee. |
+| `CHANGELOG.md` | Entry: `Added: alerting agent investigates Sentry alerts and reports findings to the project's PM tool`. |
+
+---
+
+## Out of Scope (this plan)
+
+- Worker boot-failure catch site and run-record reordering — plan 2.
+- The new boot-fail exit code (exit 2) and the router-side crash-reason recognition of it — plan 2.
+- The CI conformance test that asserts every registered agent type has a prompt template — plan 2. (Note: until plan 2 lands, the alerting agent's template existing is verified only by the unit/integration tests in this plan, not by a generic guard.)
+- Synthesized stable identifier for sentry-driven runs (e.g. `sentry:issue:<alertIssueId>`) — plan 2.
+- LLM-judged eval harness for investigation quality — out of scope for the spec entirely.
+- Closing the loop back to Sentry by posting an investigation comment on the Sentry issue itself — out of scope for the spec entirely.
+- Support for non-Sentry alerting providers — out of scope for the spec entirely.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
+- [ ] AC #11
+- [ ] AC #12
+- [ ] AC #13
+- [ ] AC #14
+- [ ] AC #15

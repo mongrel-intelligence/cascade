@@ -1,0 +1,256 @@
+---
+id: 018
+slug: alerting-agent-and-worker-boot-visibility
+plan: 2
+plan_slug: boot-failure-visibility
+level: plan
+parent_spec: docs/specs/018-alerting-agent-and-worker-boot-visibility.md
+depends_on: [1-alerting-prompt.md]
+status: pending
+---
+
+# 018/2: Worker boot-failure visibility
+
+> Part 2 of 2 in the 018-alerting-agent-and-worker-boot-visibility plan. See [parent spec](../../specs/018-alerting-agent-and-worker-boot-visibility.md).
+
+## Summary
+
+Make worker boot-time failures (template load, model resolution, context pipeline assembly, definition lookup, identifier construction) visible in the dashboard runs surface, and prevent the same silent-fail pattern from recurring for any future agent type. The 2026-05-06 incident exposed that boot-time failures produce no run row, the worker exits 0, BullMQ marks the job done, and the dashboard runs UI is blind to the failure — only Sentry sees it. This plan closes that gap.
+
+This plan delivers: (a) reordering of run-record creation so the row exists BEFORE any boot-phase step that can fail; (b) a dedicated boot-fail catch site that updates the row with status=failed and a structured error message before the worker exits; (c) a distinct boot-fail exit code (exit 2) that BullMQ's failure compensation and the router's crash-reason interpreter recognise; (d) Sentry capture under a stable tag for boot failures; (e) synthesized stable identifiers for sentry-driven runs that lack a PM-side work item id; (f) a CI conformance test that fails when any registered agent type lacks its prompt template.
+
+What this plan does NOT deliver: the alerting agent's prompt template (plan 1), any new agent capabilities or gadgets, behavioural changes to existing successful or in-execution-crashed runs, backfill for historical silently-failed runs.
+
+**Components delivered:**
+- `src/backends/adapter.ts` — reorder `tryCreateRun` to before `resolvePartialExecutionPlan`; add deferred-fill for plan-resolution fields; wrap boot-phase in a typed try/catch.
+- `src/agents/shared/runTracking.ts` — replace silent swallow in `tryCreateRun` with explicit failure surfacing + a new `updateRunPlanResolution(runId, model, maxIterations)` helper for the deferred-fill path.
+- `src/agents/shared/executionPipeline.ts` — distinguish `BootFailureError` from runtime errors in the catch handler; mark the run row failed and re-throw the typed error so the outer worker catch sees it.
+- `src/agents/shared/bootFailureError.ts` (new) — `BootFailureError` class for the typed boundary.
+- `src/worker-entry.ts` — outer catch distinguishes `BootFailureError` → exit 2; existing exit 1 path preserved for runtime failures.
+- `src/router/active-workers.ts` — `formatCrashReason` learns the exit-2 branch ("Worker boot failed: <structured reason>").
+- `src/triggers/sentry/alerting-issue.ts` and `src/triggers/sentry/alerting-metric.ts` — synthesize `workItemId: 'sentry:issue:<alertIssueId>'` (or equivalent for metric alerts) when no PM-side work item is associated.
+- `tests/unit/agents/prompts/template-conformance.test.ts` (new) — CI guard that asserts every YAML-registered agent type has a corresponding `.eta` template.
+- Per-component unit and integration tests as detailed below.
+- `CHANGELOG.md` — entry for this plan.
+
+**Deferred to later plans in this spec:**
+- _(none — this is the final plan)_
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #7 (template ENOENT produces a visible failed run row queryable via `cascade runs list`) — **full**
+- Spec AC #8 (model resolution / context pipeline failures produce visible failed run rows) — **full**
+- Spec AC #9 (distinct boot-fail exit code, distinguishable from 0 and 1) — **full**
+- Spec AC #10 (existing success-path runs and in-execution-failure runs unchanged) — **full**
+- Spec AC #11 (Sentry capture under stable tag, dashboard run id cross-referenced) — **full**
+- Spec AC #12 (sentry-driven runs receive synthesized identifier so they group in dashboard) — **full**
+- Spec AC #13 (CI guard fails when an agent type lacks its prompt template) — **full**
+- Spec AC #14 (24h rate of "worker exits 0 with no run row" drops to zero post-deploy) — **full** `[manual]` (verified post-deploy in cascade-router log volume — see Manual Verification below)
+
+---
+
+## Depends On
+
+- Plan 1 (`1-alerting-prompt.md`) — provides `src/agents/prompts/templates/alerting.eta`. Without it, the conformance test added in this plan would fail at CI time for the alerting agent type, blocking merge. Plan 1 must land first.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. `BootFailureError` typed boundary
+
+**Tests first** (`tests/unit/agents/shared/bootFailureError.test.ts` — new file):
+
+- `BootFailureError preserves original error message and adds structured fields` — unit — input: `new BootFailureError('template load failed', { phase: 'template-load', cause: new Error('ENOENT') })`; expected: `instanceof BootFailureError` is true, `phase` is `'template-load'`, `cause` is the original Error, `message` includes both. Expected red: `Error: BootFailureError is not a constructor` (class doesn't exist yet).
+- `BootFailureError is distinguishable from generic Error in catch blocks` — unit — throw a `BootFailureError`, catch as `Error`, verify `instanceof BootFailureError` is true. Expected red: same constructor error.
+
+**Implementation** (`src/agents/shared/bootFailureError.ts`):
+
+```
+class BootFailureError extends Error {
+  phase: 'template-load' | 'model-resolution' | 'context-pipeline' | 'definition-lookup' | 'identifier-resolution';
+  cause?: unknown;
+  // constructor sets fields and chains message
+}
+```
+
+The implementation just needs to be a typed Error subclass. No magic.
+
+### 2. Run-record creation reorder
+
+**Tests first** (`tests/unit/backends/adapter-run-record-ordering.test.ts` — new file, or extend an existing `tests/unit/backends/adapter.test.ts` if it exists):
+
+- `tryCreateRun is called before resolvePartialExecutionPlan` — unit — mock both functions, drive `executeAgent` through a happy path, assert call order via vi.mock spy timestamps. Expected red: `AssertionError: expected tryCreateRun called before resolvePartialExecutionPlan, but tryCreateRun called after`.
+- `tryCreateRun is called with null-or-placeholder model and maxIterations when called early` — unit — assert the early-call shape accepts `null`/`undefined` for those fields without throwing. Expected red: `TypeError: Cannot read property '...' of null` from the existing strict signature.
+- `updateRunPlanResolution is called after resolvePartialExecutionPlan succeeds, with the resolved model and maxIterations` — unit — drive a happy path, assert `updateRunPlanResolution(runId, model, maxIterations)` was invoked with the resolved values. Expected red: `Error: updateRunPlanResolution is not a function`.
+
+**Implementation**:
+
+`src/agents/shared/runTracking.ts`:
+- Loosen `tryCreateRun` signature so `model` and `maxIterations` may be `null`/`undefined` at insertion time (the underlying `agent_runs` columns are already nullable per the spec's "single run row per job invariant" constraint — verify in `src/db/schema.ts` and in the existing migrations; if not nullable, add a small migration in this plan's migration step below).
+- Add new exported function `updateRunPlanResolution(runId: string, model: string, maxIterations: number): Promise<void>` that issues an UPDATE on `agent_runs` for those two fields.
+- Replace the existing silent swallow in `tryCreateRun` (`logger.warn` + return undefined) with a thrown `BootFailureError({ phase: 'identifier-resolution', cause: err })`. Document the new contract: callers MUST be inside the boot-phase try/catch.
+
+`src/backends/adapter.ts`:
+- Move the `tryCreateRun` call from after `resolvePartialExecutionPlan` (lines ~83-95) to before it.
+- After `resolvePartialExecutionPlan` returns, call `updateRunPlanResolution(runId, partialInput.model, partialInput.maxIterations)`.
+- Wrap the entire boot-phase block (including `resolvePartialExecutionPlan`, gadget allowlist resolution, context pipeline construction, definition lookup) in a try/catch that:
+  - On catch: derives a `BootFailureError` (re-wrapping non-`BootFailureError` causes), updates the existing run row to `status='failed'` with a structured error message, captures to Sentry under tag `worker_boot_failure`, then re-throws the typed error.
+
+If the schema is NOT nullable for `model` / `max_iterations`, add a migration `src/db/migrations/NNNN_relax_agent_runs_for_deferred_fill.sql` that drops the NOT NULL constraint, with the appropriate journal entry.
+
+### 3. `executeAgentPipeline` catch handler distinguishes boot from runtime
+
+**Tests first** (extending `tests/unit/agents/shared/executionPipeline.test.ts` if it exists, else new):
+
+- `executeAgentPipeline catch handler propagates BootFailureError unchanged` — unit — drive a path where the inner execute throws `BootFailureError`, assert the handler re-throws (does not convert to `{success: false}`). Expected red: `AssertionError: expected promise to reject with BootFailureError, but resolved with {success: false}`.
+- `executeAgentPipeline catch handler still converts non-BootFailureError into {success: false}` — unit — drive a path where the inner execute throws a generic `Error`, assert the existing behavior is preserved. Expected red: green from day one (regression sentinel for the existing path).
+
+**Implementation** (`src/agents/shared/executionPipeline.ts`, the catch at lines 232-258):
+- Add an early-branch: `if (err instanceof BootFailureError) { logger.error('Boot phase failed', ...); throw err; }`.
+- Existing converted-to-`{success: false}` branch stays for runtime errors only.
+
+### 4. Worker-entry exit code 2
+
+**Tests first** (`tests/unit/worker-entry-boot-failure.test.ts` — new file):
+
+- `worker exits with code 2 when dispatchJob throws BootFailureError` — unit — mock `dispatchJob` to throw `BootFailureError`, drive the entry function, assert `process.exit` was called with `2`. Expected red: `AssertionError: expected process.exit called with 2, but called with 1`.
+- `worker exits with code 1 when dispatchJob throws a non-BootFailureError` — unit — mock `dispatchJob` to throw a generic `Error`, drive the entry, assert `process.exit(1)`. Expected red: green from day one (regression sentinel).
+- `worker exits with code 0 on successful dispatchJob` — unit — happy path. Expected red: green from day one (regression sentinel).
+
+**Implementation** (`src/worker-entry.ts`, the outer try/catch around lines 480-497):
+- Replace the single catch with branched handling: `instanceof BootFailureError` → `logger.error('[Worker] Boot failed', ...); captureException(err, { tags: { source: 'worker_boot_failure' } }); process.exit(2)`. Other errors keep the existing `[Worker] Job failed` + exit 1 path.
+
+### 5. Router-side crash-reason interpreter
+
+**Tests first** (extending `tests/unit/router/container-manager-diagnostics.test.ts` per the precedent established by spec 015):
+
+- `formatCrashReason labels exit code 2 as "Worker boot failed"` — unit — input: `{ exitCode: 2, oomKilled: false, reason: null }`; expected: returned string contains `Boot failed`. Expected red: `AssertionError: expected '... exit code 2 ...' to include 'Boot failed'` (today exit code 2 falls into the generic branch).
+- `formatCrashReason still labels exit code 1 as crash reason` — regression sentinel. Expected red: green from day one.
+- `formatCrashReason for boot-fail also surfaces the run-record error message when the run id is known` — unit — input includes a run id with a stamped error in the test DB; assert the formatted string includes the structured error from the run row. Expected red: `AssertionError: ... not to be empty` if the integration isn't wired.
+
+**Implementation** (`src/router/active-workers.ts`):
+- Extend `formatCrashReason` to recognise exit code 2 and return a "Worker boot failed: <reason>" formatted string. Look up the run row by jobId (the existing diagnostics path already correlates jobs to runs in the same area).
+
+### 6. Synthesized identifier for sentry-driven runs
+
+**Tests first** (extending `tests/unit/triggers/sentry-alerting.test.ts`):
+
+- `SentryIssueAlertTrigger.handle synthesizes workItemId when no PM workItem is associated` — unit — input: a fixture issue-alert payload with `alertIssueId: '117972276'`; expected: returned `agentInput.workItemId` equals `sentry:issue:117972276`. Expected red: `AssertionError: expected '...' to equal 'sentry:issue:117972276'` (today the field isn't set).
+- `SentryIssueAlertTrigger.handle preserves an explicitly-provided workItemId from upstream PM linking when present` — unit — input: a payload where the trigger context already resolved a PM-side workItemId; expected: that value is preserved, NOT overwritten by the synthesized id. Expected red: depends on shape — likely `AssertionError: expected '<pm-side-id>' to equal '<pm-side-id>'` if the synthesized fallback is too eager.
+- `SentryMetricAlertTrigger.handle synthesizes workItemId from a stable derivation of the metric-alert identity` — unit — same shape but for metric alerts. Expected red: same as above.
+- `Two invocations against the same Sentry issue produce the same synthesized workItemId` — unit — call `handle` twice with the same `alertIssueId`, assert the workItemIds match. Expected red: depends — but the determinism is the spec contract (AC #12).
+
+**Implementation** (`src/triggers/sentry/alerting-issue.ts` and `alerting-metric.ts`):
+- After computing `agentInput`, if no upstream-resolved workItemId exists, set `workItemId = 'sentry:issue:' + alertIssueId` for issue alerts. For metric alerts, derive from a stable field (e.g. `alertOrgId + ':metric:' + alertTitle` if no issue-id-equivalent exists — final shape decided when authoring; the spec contract is "deterministic from the alert payload").
+- Plumb the synthesized workItemId through to the run row via the existing dispatch path. The run-record creation in adapter.ts will pick it up from `input.workItemId` per the existing code.
+
+### 7. CI conformance test for agent-type → prompt-template
+
+**Tests first** (`tests/unit/agents/prompts/template-conformance.test.ts` — new file, modeled on `tests/unit/integrations/pm-conformance.test.ts`):
+
+- `every registered agent type has a corresponding prompt template` — unit — load every YAML definition from `src/agents/definitions/*.yaml`, derive each `agentType`, assert `fs.existsSync('src/agents/prompts/templates/' + agentType + '.eta')` for each. Expected red: BEFORE plan 1 lands, `AssertionError: missing template for agent type 'alerting'`. AFTER plan 1, green.
+
+**Implementation** — the test itself is the deliverable. No production code change.
+
+This test is the regression net for AC #13 — it fails CI when a future agent definition is added without its template, with a precise file path naming the missing template.
+
+### 8. Documentation
+
+**`CHANGELOG.md`**: add entry: `- Changed: worker boot-time failures (template load, model resolution, context pipeline) now produce a visible failed run row in the dashboard, exit with a distinct boot-fail code (2), and capture to Sentry under tag 'worker_boot_failure'. Sentry-driven runs without a PM-side work item id receive a synthesized stable identifier (sentry:issue:<id>). Adding an agent type without its prompt template now fails CI.`
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/agents/shared/bootFailureError.test.ts`: 2 tests for the typed boundary
+- [ ] `tests/unit/backends/adapter-run-record-ordering.test.ts` (or extension): 3 tests for the reorder + deferred-fill
+- [ ] `tests/unit/agents/shared/executionPipeline.test.ts` (extension): 2 tests for the boot-vs-runtime branch
+- [ ] `tests/unit/worker-entry-boot-failure.test.ts`: 3 tests for the exit codes
+- [ ] `tests/unit/router/container-manager-diagnostics.test.ts` (extension): 3 tests for `formatCrashReason` exit-2 branch
+- [ ] `tests/unit/triggers/sentry-alerting.test.ts` (extension): 4 tests for the synthesized identifier
+- [ ] `tests/unit/agents/prompts/template-conformance.test.ts`: 1 test asserting all agent types have templates
+
+### Integration tests
+- [ ] `tests/integration/worker-boot-failure-end-to-end.test.ts` (new): drive a full job dispatch with an artificially-removed prompt template, assert (a) a run row exists with `status='failed'` and a structured error message, (b) the worker container exited with code 2, (c) Sentry was called with the `worker_boot_failure` tag.
+
+### Acceptance tests
+- [ ] Per-plan AC checklist (below) verified against the test outputs and `cascade runs list` post-deploy.
+
+---
+
+## Manual Verification (for `[manual]`-tagged ACs only)
+
+- **AC**: Per-plan AC #11 (post-deploy 24h rate of "worker exits 0 with no run row created" drops to zero) — inherited from spec AC #14.
+- **Why manual**: Production observability check — counts an emergent property of cascade-router log volume across 24 hours of real traffic. No automated test reproduces 24h of varied production traffic.
+- **Verification protocol**:
+  1. After plan 1 and plan 2 are both deployed to prod, wait at least 24 hours of normal cascade-router operation.
+  2. Run a Loki query against cascade-router for the period: `{container="/cascade-router"} |~ "Job completed successfully" | label_format job_id="..."` correlated with the runs database `agent_runs` table for the same `job_id` values.
+  3. The expected outcome is **zero** `Job completed successfully` log lines whose corresponding `job_id` has no `agent_runs` row. A non-zero count under normal traffic indicates a regression worth investigating.
+  4. Capture the count and a short note in the spec or PR comment confirming the observation.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. A simulated boot failure (forced ENOENT on the alerting prompt template at integration-test time) produces a run row in `agent_runs` with `status='failed'` and a structured error message naming the missing template.
+2. A simulated boot failure for any boot-phase step (template load, model resolution, context pipeline construction) is captured to Sentry under tag `worker_boot_failure`.
+3. The worker exits with code 2 when boot fails, with code 0 on successful or no-op runs, and with code 1 on in-execution crashes — semantics for codes 0 and 1 are unchanged from prior behaviour.
+4. The router's `formatCrashReason` returns a string containing `Boot failed` when interpreting an exit-2 worker; it surfaces the run row's structured error message when the run id is known.
+5. A Sentry-driven run with no upstream-resolved PM workItemId has its `agent_runs.work_item_id` set to a deterministic value derived from the alert payload (`sentry:issue:<alertIssueId>` for issue alerts; equivalent stable derivation for metric alerts).
+6. Two dispatches against the same Sentry issue produce the same synthesized workItemId, and the dashboard work-item view groups them.
+7. The CI conformance test fails when any agent type registered via YAML definition lacks a corresponding `.eta` prompt template, with a failure message naming the missing template path.
+8. Existing successful-run, no-op, and in-execution-crash paths across all other agent types behave identically before and after this plan ships (regression-sentinel tests pass).
+9. Per-plan AC #11 (post-deploy observation): see Manual Verification above.
+10. All new/modified code has corresponding tests.
+11. `npm run lint` passes.
+12. `npm run typecheck` passes.
+13. `npm test` passes.
+14. `npm run test:integration` passes.
+15. `CHANGELOG.md` is updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | Entry: `Changed: worker boot-time failures now produce visible failed runs (exit code 2, Sentry tag 'worker_boot_failure'); CI fails on missing prompt template for any registered agent type; sentry-driven runs receive synthesized stable workItemId.` |
+
+`CLAUDE.md` is intentionally not edited — see the spec's Documentation Impact section for the rubric reasoning. The CI conformance test plus this plan's commit message and the spec carry the rationale.
+
+---
+
+## Out of Scope (this plan)
+
+- Authoring the alerting agent prompt template — plan 1.
+- LLM-judged eval harness for alerting agent investigation quality — out of scope for the spec entirely.
+- Closing the loop back to Sentry by posting an investigation comment on the Sentry issue itself — out of scope for the spec entirely.
+- Support for non-Sentry alerting providers — out of scope for the spec entirely.
+- Backfilling run rows or PM-side work items for the historical silently-failed alerting runs from 2026-05-06 — out of scope for the spec entirely.
+- Behavioural change to existing successful-but-no-op runs across other agent types (still exit 0) — out of scope for the spec entirely.
+- Reworking unrelated silent-fail call sites in the worker (only the boot-phase path is in scope) — out of scope for the spec entirely.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
+- [ ] AC #11
+- [ ] AC #12
+- [ ] AC #13
+- [ ] AC #14
+- [ ] AC #15
