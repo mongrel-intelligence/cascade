@@ -201,6 +201,12 @@ export const moveWorkItemDef: ToolDefinition = {
 			describe: 'Destination — Trello list ID or JIRA status name',
 			required: true,
 		},
+		expectedSourceState: {
+			type: 'string',
+			describe:
+				'Optional pre-move guard. If set, the move only proceeds when the work item\'s current status matches this value (case-insensitive). Use this whenever the move depends on a prior pipeline-state assumption (e.g. "BACKLOG" before moving to TODO) to defend against parallel-agent races. If the work item is already in the destination state, the move is skipped as a no-op.',
+			required: false,
+		},
 	},
 	examples: [
 		{
@@ -209,6 +215,15 @@ export const moveWorkItemDef: ToolDefinition = {
 				destination: 'list456',
 			},
 			comment: 'Move a Trello card to a different list',
+		},
+		{
+			params: {
+				workItemId: 'MNG-538',
+				destination: 'TODO_LIST_ID',
+				expectedSourceState: 'Backlog',
+			},
+			comment:
+				'Backlog-manager moving a freshly-picked item to TODO — guarded so a parallel run that already moved it cannot duplicate the move.',
 		},
 	],
 };

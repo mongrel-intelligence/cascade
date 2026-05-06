@@ -43,6 +43,14 @@ export interface PromptContext {
 
 	// PM list/column IDs
 	backlogListId?: string;
+	/**
+	 * Value to pass as `expectedSourceState` to the MoveWorkItem gadget
+	 * when moving an item out of BACKLOG. Per-provider:
+	 *   - Trello: backlog list ID (matches `WorkItem.status: card.idList`)
+	 *   - JIRA:   "Backlog" status name
+	 *   - Linear: "Backlog" workflow-state name
+	 */
+	backlogSourceLabel?: string;
 	todoListId?: string;
 	inProgressListId?: string;
 	inReviewListId?: string;
@@ -313,6 +321,12 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
 		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
 		{ name: 'backlogListId', group: 'PM Lists', description: 'Backlog list/column ID' },
+		{
+			name: 'backlogSourceLabel',
+			group: 'PM Lists',
+			description:
+				'Value to pass as MoveWorkItem `expectedSourceState` for items in BACKLOG (provider-correct: Trello list ID, JIRA/Linear status name).',
+		},
 		{ name: 'todoListId', group: 'PM Lists', description: 'TODO list/column ID' },
 		{ name: 'inProgressListId', group: 'PM Lists', description: 'In Progress list/column ID' },
 		{ name: 'inReviewListId', group: 'PM Lists', description: 'In Review list/column ID' },

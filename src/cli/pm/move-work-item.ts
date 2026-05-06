@@ -6,5 +6,6 @@ export default createCLICommand(moveWorkItemDef, async (params) => {
 	return moveWorkItem({
 		workItemId: params.workItemId as string,
 		destination: params.destination as string,
+		expectedSourceState: params.expectedSourceState as string | undefined,
 	});
 });

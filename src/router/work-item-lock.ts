@@ -21,6 +21,26 @@ export const MAX_SAME_TYPE_PER_WORK_ITEM = 1;
 
 const TTL_MS = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Agent types that act on the project's whole backlog rather than a single
+ * work item. Two parallel runs MUST serialize at the project level, even
+ * when their nominal `workItemId` differs (e.g. backlog-manager auto-chained
+ * from MNG-536's PR merge AND from MNG-537's splitting completion both scan
+ * the same backlog and can pick the same item — live incident 2026-05-06,
+ * MNG-538 produced PRs #287 and #288).
+ *
+ * For these agents the lock key collapses workItemId to a sentinel, and
+ * the DB count omits workItemId so all rows for the agent type in the
+ * project are counted together.
+ */
+const PROJECT_SINGLETON_AGENTS = new Set<string>(['backlog-manager']);
+
+const SINGLETON_WORK_ITEM_KEY = '*';
+
+function isProjectSingletonAgent(agentType: string): boolean {
+	return PROJECT_SINGLETON_AGENTS.has(agentType);
+}
+
 interface EnqueuedEntry {
 	timestamp: number;
 	count: number;
@@ -28,8 +48,12 @@ interface EnqueuedEntry {
 
 const enqueuedMap = new Map<string, EnqueuedEntry>();
 
+function effectiveWorkItemId(workItemId: string, agentType: string): string {
+	return isProjectSingletonAgent(agentType) ? SINGLETON_WORK_ITEM_KEY : workItemId;
+}
+
 function makeKey(projectId: string, workItemId: string, agentType: string): string {
-	return `${projectId}:${workItemId}:${agentType}`;
+	return `${projectId}:${effectiveWorkItemId(workItemId, agentType)}:${agentType}`;
 }
 
 /**
@@ -78,15 +102,21 @@ export async function isWorkItemLocked(
 		};
 	}
 
-	// DB check — same-type only, ignore runs older than 2× worker timeout
+	// DB check — same-type only, ignore runs older than 2× worker timeout.
+	// For project-singleton agents, omit workItemId so all rows for the
+	// agent type within the project count toward the limit.
 	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
-	const dbSameType = await countActiveRuns({ projectId, workItemId, agentType, maxAgeMs });
+	const dbQuery = isProjectSingletonAgent(agentType)
+		? { projectId, agentType, maxAgeMs }
+		: { projectId, workItemId, agentType, maxAgeMs };
+	const dbSameType = await countActiveRuns(dbQuery);
 
 	const effectiveSameType = Math.max(dbSameType, inMemorySameType);
 	if (effectiveSameType >= MAX_SAME_TYPE_PER_WORK_ITEM) {
+		const scope = isProjectSingletonAgent(agentType) ? 'project-singleton' : 'same-type';
 		return {
 			locked: true,
-			reason: `same-type: ${dbSameType} running, ${inMemorySameType} enqueued (max ${MAX_SAME_TYPE_PER_WORK_ITEM} per type)`,
+			reason: `${scope}: ${dbSameType} running, ${inMemorySameType} enqueued (max ${MAX_SAME_TYPE_PER_WORK_ITEM} per type)`,
 		};
 	}
 

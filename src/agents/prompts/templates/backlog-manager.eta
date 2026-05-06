@@ -59,7 +59,7 @@ When the active pipeline has capacity:
    - <%= it.workItemNounPluralCap || 'Cards' %> that don't reference incomplete work
 <% if ((it.maxInFlightItems ?? 1) > 1) { %>   - **Conflict Awareness**: When selecting multiple <%= it.workItemNounPlural || 'cards' %>, review in-flight work descriptions to minimize file-level conflicts between simultaneously active <%= it.workItemNounPlural || 'cards' %>. Prefer <%= it.workItemNounPlural || 'cards' %> that touch different areas of the codebase.
 <% } %>5. **Post a comment** on each selected <%= it.workItemNoun || 'card' %> explaining the selection
-6. **Move the selected <%= it.workItemNoun || 'card' %>(s)** using `MoveWorkItem` with the TODO list ID as destination
+6. **Move the selected <%= it.workItemNoun || 'card' %>(s)** using `MoveWorkItem` with the TODO list ID as destination AND `expectedSourceState: <%= it.backlogSourceLabel || 'Backlog' %>`. The `expectedSourceState` guard is **mandatory** — it aborts the move if a parallel run already moved the <%= it.workItemNoun || 'card' %> out of BACKLOG, preventing duplicate downstream implementation runs.
 
 ## Comment Format
 

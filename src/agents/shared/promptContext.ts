@@ -9,6 +9,16 @@ function getListIds(project: ProjectConfig) {
 	const linearConfig = getLinearConfig(project);
 
 	return {
+		// Value the agent should pass as `expectedSourceState` when moving an
+		// item out of BACKLOG. Aligned with what `WorkItem.status` returns
+		// per provider:
+		//   - Trello: `WorkItem.status` is the list ID → pass list ID.
+		//   - JIRA:   `WorkItem.status` is the status name → pass status name.
+		//   - Linear: `WorkItem.status` is the workflow-state name → pass the
+		//             state name. Linear teams default to literal "Backlog";
+		//             customized teams can still pass it via the prompt path
+		//             since the gadget guard is case-insensitive.
+		backlogSourceLabel: trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog ?? 'Backlog',
 		backlogListId:
 			trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog ?? linearConfig?.teamId,
 		todoListId:

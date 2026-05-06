@@ -160,4 +160,67 @@ describe('work-item-lock', () => {
 		// No total cap — 'debug' same-type is 0, so unlocked
 		expect(result.locked).toBe(false);
 	});
+
+	// ── Project-singleton agents (backlog-manager) ──────────────────────────
+	// Backlog-manager scans the whole project backlog and selects the next
+	// item to move to TODO. Two parallel runs (e.g. one chained from
+	// MNG-536's PR merge, one from MNG-537's splitting auto-chain) both
+	// scan the same backlog and both can pick the same item — producing
+	// duplicate downstream implementation runs (live incident 2026-05-06,
+	// MNG-538: PRs #287 and #288). Per-(projectId, workItemId, agentType)
+	// locking did NOT serialize them because workItemId differed (MNG-536
+	// vs MNG-537). The fix collapses workItemId for project-singleton
+	// agents so the lock is per-(projectId, agentType).
+	describe('project-singleton agents (backlog-manager)', () => {
+		it('blocks a second backlog-manager on a different workItemId in the same project', async () => {
+			markWorkItemEnqueued('proj1', 'MNG-536', 'backlog-manager');
+			const result = await isWorkItemLocked('proj1', 'MNG-537', 'backlog-manager');
+			expect(result.locked).toBe(true);
+			expect(result.reason).toMatch(/singleton|same-type/i);
+		});
+
+		it('does NOT block backlog-manager across different projects', async () => {
+			markWorkItemEnqueued('proj1', 'MNG-536', 'backlog-manager');
+			const result = await isWorkItemLocked('proj2', 'MNG-536', 'backlog-manager');
+			expect(result.locked).toBe(false);
+		});
+
+		it('clearWorkItemEnqueued releases backlog-manager regardless of workItemId', async () => {
+			markWorkItemEnqueued('proj1', 'MNG-536', 'backlog-manager');
+			// Cleared with the same workItemId it was marked with — normal cleanup path.
+			clearWorkItemEnqueued('proj1', 'MNG-536', 'backlog-manager');
+			const result = await isWorkItemLocked('proj1', 'MNG-537', 'backlog-manager');
+			expect(result.locked).toBe(false);
+		});
+
+		it('does NOT block other agent types on the same project', async () => {
+			markWorkItemEnqueued('proj1', 'MNG-536', 'backlog-manager');
+			const result = await isWorkItemLocked('proj1', 'MNG-538', 'implementation');
+			expect(result.locked).toBe(false);
+		});
+
+		it('DB query for backlog-manager omits workItemId so all project rows are counted', async () => {
+			vi.mocked(countActiveRuns).mockResolvedValueOnce(1);
+			const result = await isWorkItemLocked('proj1', 'MNG-537', 'backlog-manager');
+			expect(result.locked).toBe(true);
+			const maxAgeMs = 2 * 30 * 60 * 1000;
+			expect(countActiveRuns).toHaveBeenCalledWith({
+				projectId: 'proj1',
+				agentType: 'backlog-manager',
+				maxAgeMs,
+			});
+		});
+
+		it('regular per-work-item agents still pass workItemId in the DB query', async () => {
+			vi.mocked(countActiveRuns).mockResolvedValueOnce(0);
+			await isWorkItemLocked('proj1', 'card1', 'implementation');
+			const maxAgeMs = 2 * 30 * 60 * 1000;
+			expect(countActiveRuns).toHaveBeenCalledWith({
+				projectId: 'proj1',
+				workItemId: 'card1',
+				agentType: 'implementation',
+				maxAgeMs,
+			});
+		});
+	});
 });
