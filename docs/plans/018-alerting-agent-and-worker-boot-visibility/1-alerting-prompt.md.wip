@@ -6,7 +6,7 @@ plan_slug: alerting-prompt
 level: plan
 parent_spec: docs/specs/018-alerting-agent-and-worker-boot-visibility.md
 depends_on: []
-status: pending
+status: wip
 ---
 
 # 018/1: Alerting agent prompt template
