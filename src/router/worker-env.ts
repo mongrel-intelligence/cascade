@@ -42,6 +42,9 @@ export async function extractProjectIdFromJob(data: CascadeJob): Promise<string 
 		const project = await findProjectByRepo(jobData.repoFullName);
 		return project?.id ?? null;
 	}
+	if (jobData.type === 'sentry') {
+		return jobData.projectId ?? null;
+	}
 	if (jobData.type === 'manual-run' || jobData.type === 'debug-analysis') {
 		return jobData.projectId ?? null;
 	}

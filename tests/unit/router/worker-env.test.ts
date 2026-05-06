@@ -84,6 +84,23 @@ describe('extractProjectIdFromJob', () => {
 		expect(await extractProjectIdFromJob(job)).toBe('proj-jira');
 	});
 
+	it('returns projectId for sentry jobs', async () => {
+		// Regression: prior to this branch, sentry jobs hit the `return null`
+		// fall-through, so the worker-env builder skipped credential loading
+		// entirely. The first real sentry-bound agent run in prod (cascade
+		// project, 2026-05-06) crashed on boot with "CREDENTIAL_MASTER_KEY is
+		// not set" because no CASCADE_CREDENTIAL_KEYS reached the worker.
+		const job = {
+			type: 'sentry',
+			source: 'sentry',
+			projectId: 'proj-sentry',
+			eventType: 'event_alert',
+			payload: {},
+			receivedAt: '2026-05-06T12:48:09Z',
+		} as unknown as CascadeJob;
+		expect(await extractProjectIdFromJob(job)).toBe('proj-sentry');
+	});
+
 	it('returns projectId resolved from repo for github jobs', async () => {
 		const job = { type: 'github', repoFullName: 'owner/repo' } as CascadeJob;
 		mockFindProjectByRepo.mockResolvedValue({ id: 'proj-gh' } as never);
