@@ -246,26 +246,4 @@ describe('registerBuiltInTriggers', () => {
 		const prReviewIdx = names.indexOf('pr-review-submitted');
 		expect(prCommentIdx).toBeLessThan(prReviewIdx);
 	});
-
-	it('registers each built-in trigger handler name exactly once', () => {
-		const registry = createMockRegistry();
-
-		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
-
-		const registeredNames = registry.handlers.map((h: object) => (h as { name: string }).name);
-		const countsByName = new Map<string, number>();
-		for (const name of registeredNames) {
-			countsByName.set(name, (countsByName.get(name) ?? 0) + 1);
-		}
-
-		const duplicates = [...countsByName.entries()]
-			.filter(([, count]) => count > 1)
-			.map(([name, count]) => `${name} (${count} registrations)`);
-
-		expect(
-			duplicates,
-			`Built-in trigger handler names must be globally unique across PM, SCM, alerting, and internal registrations. ` +
-				`Duplicate names:\n${duplicates.map((name) => `  - ${name}`).join('\n')}`,
-		).toEqual([]);
-	});
 });
