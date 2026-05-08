@@ -174,7 +174,10 @@ vi.mock('../../../../src/triggers/github/review-dispatch-dedup.js', () => ({
 	buildReviewDispatchKey: (...args: unknown[]) => mockBuildReviewDispatchKey(...args),
 }));
 
-import { linkPRToWorkItem } from '../../../../src/db/repositories/prWorkItemsRepository.js';
+import {
+	createWorkItem,
+	linkPRToWorkItem,
+} from '../../../../src/db/repositories/prWorkItemsRepository.js';
 import { runAgentExecutionPipeline } from '../../../../src/triggers/shared/agent-execution.js';
 
 // ---------------------------------------------------------------------------
@@ -251,6 +254,173 @@ function setupSplittingDefaults(providerOverrides: Record<string, unknown> = {})
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe('runAgentExecutionPipeline facade characterization', () => {
+	function setupPipelineDefaults() {
+		vi.clearAllMocks();
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+		mockGetSessionState.mockReturnValue({});
+		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
+		mockGithubClient.getCheckSuiteStatus.mockResolvedValue({ allPassing: false });
+	}
+
+	function lifecycleInstance() {
+		return MockPMLifecycleManager.mock.results[0]?.value as {
+			prepareForAgent: ReturnType<typeof vi.fn>;
+			handleSuccess: ReturnType<typeof vi.fn>;
+			handleFailure: ReturnType<typeof vi.fn>;
+			cleanupProcessing: ReturnType<typeof vi.fn>;
+		};
+	}
+
+	beforeEach(() => {
+		setupPipelineDefaults();
+	});
+
+	it('returns before constructing lifecycle or running the agent when agentType is missing', async () => {
+		await runAgentExecutionPipeline(
+			{ agentType: null, agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'No agent type in trigger result, skipping execution pipeline',
+		);
+		expect(mockCreatePMProvider).not.toHaveBeenCalled();
+		expect(mockValidateIntegrations).not.toHaveBeenCalled();
+		expect(mockRunAgent).not.toHaveBeenCalled();
+	});
+
+	it('notifies PM and invokes onFailure when integration validation fails after PM validation is usable', async () => {
+		mockValidateIntegrations.mockResolvedValueOnce({
+			valid: false,
+			errors: [{ category: 'scm', message: 'GitHub token missing' }],
+		});
+		const onFailure = vi.fn().mockResolvedValue(undefined);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+			{ onFailure },
+		);
+
+		const lifecycle = lifecycleInstance();
+		expect(mockRunAgent).not.toHaveBeenCalled();
+		expect(lifecycle.handleFailure).toHaveBeenCalledWith('card-1', 'validation error');
+		expect(onFailure).toHaveBeenCalledWith(
+			expect.objectContaining({ agentType: 'implementation', workItemId: 'card-1' }),
+			{ success: false, output: '', error: 'validation error' },
+		);
+	});
+
+	it('does not attempt PM failure notification when PM validation itself failed', async () => {
+		mockValidateIntegrations.mockResolvedValueOnce({
+			valid: false,
+			errors: [{ category: 'pm', message: 'Trello missing' }],
+		});
+		const onFailure = vi.fn().mockResolvedValue(undefined);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+			{ onFailure },
+		);
+
+		const lifecycle = lifecycleInstance();
+		expect(mockRunAgent).not.toHaveBeenCalled();
+		expect(lifecycle.handleFailure).not.toHaveBeenCalled();
+		expect(onFailure).toHaveBeenCalledWith(
+			expect.objectContaining({ agentType: 'implementation', workItemId: 'card-1' }),
+			{ success: false, output: '', error: 'validation error' },
+		);
+	});
+
+	it('continues to run the agent when work-item persistence fails before execution', async () => {
+		vi.mocked(createWorkItem).mockRejectedValueOnce(new Error('db unavailable'));
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockRunAgent).toHaveBeenCalledWith(
+			'implementation',
+			expect.objectContaining({ workItemId: 'card-1' }),
+		);
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Failed to persist work-item row for PM-triggered run',
+			expect.objectContaining({ projectId: 'project-1', workItemId: 'card-1' }),
+		);
+	});
+
+	it('orders onSuccess after agent execution and successful post-run lifecycle handling', async () => {
+		const onSuccess = vi.fn().mockResolvedValue(undefined);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+			{ onSuccess },
+		);
+
+		const lifecycle = lifecycleInstance();
+		expect(mockRunAgent.mock.invocationCallOrder[0]).toBeLessThan(
+			lifecycle.handleSuccess.mock.invocationCallOrder[0],
+		);
+		expect(lifecycle.handleSuccess.mock.invocationCallOrder[0]).toBeLessThan(
+			onSuccess.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('orders onFailure after agent execution and failed post-run lifecycle handling', async () => {
+		mockRunAgent.mockResolvedValueOnce({ success: false, output: '', error: 'agent failed' });
+		const onFailure = vi.fn().mockResolvedValue(undefined);
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+			{ onFailure },
+		);
+
+		const lifecycle = lifecycleInstance();
+		expect(mockRunAgent.mock.invocationCallOrder[0]).toBeLessThan(
+			lifecycle.handleFailure.mock.invocationCallOrder[0],
+		);
+		expect(lifecycle.handleFailure.mock.invocationCallOrder[0]).toBeLessThan(
+			onFailure.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('honors lifecycle skip flags without skipping the agent run', async () => {
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+			{
+				skipPrepareForAgent: true,
+				skipHandleFailure: true,
+				handleSuccessOnlyForAgentType: 'implementation',
+			},
+		);
+
+		const lifecycle = lifecycleInstance();
+		expect(mockRunAgent).toHaveBeenCalledWith('review', expect.anything());
+		expect(lifecycle.prepareForAgent).not.toHaveBeenCalled();
+		expect(lifecycle.cleanupProcessing).not.toHaveBeenCalled();
+		expect(lifecycle.handleSuccess).not.toHaveBeenCalled();
+		expect(lifecycle.handleFailure).not.toHaveBeenCalled();
+	});
+});
 
 describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () => {
 	it('chains to backlog-manager when splitting succeeds with auto label and trigger enabled', async () => {
