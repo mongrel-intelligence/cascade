@@ -1,8 +1,6 @@
 import { getAgentProfile } from '../../agents/definitions/profiles.js';
 import type { LifecycleHooks } from '../../agents/definitions/schema.js';
 import { runAgent } from '../../agents/registry.js';
-import { createWorkItem, linkPRToWorkItem } from '../../db/repositories/prWorkItemsRepository.js';
-import { updateRunPRNumber } from '../../db/repositories/runsRepository.js';
 import { getPMProvider } from '../../pm/context.js';
 import {
 	createPMProvider,
@@ -22,6 +20,12 @@ import { parseRepoFullName } from '../../utils/repo.js';
 import type { TriggerResult } from '../types.js';
 import type { AgentExecutionConfig, AgentExecutionContext } from './agent-execution-types.js';
 import { handleAgentResultArtifacts } from './agent-result-handler.js';
+import {
+	linkPRPostExecution,
+	persistPreRunWorkItems,
+	prepareAgentWorkItem,
+	resolveWorkItemId,
+} from './agent-work-items.js';
 import { isPipelineAtCapacity } from './backlog-check.js';
 import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
@@ -133,64 +137,6 @@ async function notifyValidationFailure(
 	// Call onFailure callback (for GitHub PR updates)
 	if (executionConfig.onFailure) {
 		await executionConfig.onFailure(result, { success: false, output: '', error: errorMessage });
-	}
-}
-
-/**
- * Link a PR to a work item and backfill the run's prNumber after agent execution.
- * Extracted to reduce cognitive complexity in the main pipeline function.
- */
-async function linkPRPostExecution(
-	agentResult: AgentResult & { prUrl: string },
-	project: ProjectConfig & { repo: string },
-	result: TriggerResult,
-	workItemId: string | undefined,
-): Promise<void> {
-	const prNumber = extractPRNumber(agentResult.prUrl);
-	if (!prNumber) return;
-
-	// Fetch PR title from GitHub API (best-effort, resolves the prTitle gap)
-	let prTitle: string | undefined;
-	try {
-		const { githubClient } = await import('../../github/client.js');
-		const { parseRepoFullName } = await import('../../utils/repo.js');
-		const { owner, repo } = parseRepoFullName(project.repo);
-		const pr = await githubClient.getPR(owner, repo, prNumber);
-		prTitle = pr.title;
-	} catch (err) {
-		logger.warn('Failed to fetch PR title from GitHub', {
-			projectId: project.id,
-			prNumber,
-			error: String(err),
-		});
-	}
-
-	try {
-		await linkPRToWorkItem(project.id, project.repo, prNumber, workItemId ?? null, {
-			prUrl: agentResult.prUrl,
-			prTitle,
-			workItemUrl: result.workItemUrl,
-			workItemTitle: result.workItemTitle,
-		});
-	} catch (err) {
-		logger.warn('Failed to link PR to work item post-execution', {
-			projectId: project.id,
-			prNumber,
-			workItemId,
-			error: String(err),
-		});
-	}
-
-	if (agentResult.runId) {
-		try {
-			await updateRunPRNumber(agentResult.runId, prNumber);
-		} catch (err) {
-			logger.warn('Failed to backfill prNumber on run', {
-				runId: agentResult.runId,
-				prNumber,
-				error: String(err),
-			});
-		}
 	}
 }
 
@@ -367,24 +313,6 @@ async function postAgentSummaryToPM(
 }
 
 /**
- * Resolve a work item ID: prefer the one from TriggerResult, fall back to DB lookup by PR number.
- */
-async function resolveWorkItemId(
-	workItemId: string | undefined,
-	projectId: string,
-	prNumber: number | undefined,
-): Promise<string | undefined> {
-	if (workItemId) return workItemId;
-	if (!prNumber || !projectId) return undefined;
-	try {
-		const { lookupWorkItemForPR } = await import('../../db/repositories/prWorkItemsRepository.js');
-		return (await lookupWorkItemForPR(projectId, prNumber)) ?? undefined;
-	} catch {
-		return undefined; // best-effort
-	}
-}
-
-/**
  * Shared agent execution pipeline.
  *
  * Handles the common steps across all webhook handlers:
@@ -456,7 +384,7 @@ export async function runAgentExecutionPipeline(
 	// caught up — preferring the live value avoids carrying a stale `undefined`
 	// into runAgent (and therefore agent_runs.work_item_id) and into the
 	// post-execution linkPRToWorkItem write.
-	const workItemId = await resolveWorkItemId(result.workItemId, project.id, result.prNumber);
+	const { workItemId, agentInput } = await prepareAgentWorkItem(result, project.id);
 
 	// Patch agentInput.workItemId whenever it diverges from the resolved value.
 	// Two cases this catches:
@@ -471,11 +399,6 @@ export async function runAgentExecutionPipeline(
 	//      catches this at write-time; this runtime patch is the safety net.
 	// tryCreateRun (src/agents/shared/runTracking.ts) reads workItemId from
 	// agentInput when persisting agent_runs.work_item_id.
-	const agentInput =
-		workItemId && (result.agentInput.workItemId as string | undefined) !== workItemId
-			? { ...result.agentInput, workItemId }
-			: result.agentInput;
-
 	const executionContext: AgentExecutionContext = {
 		result,
 		project,
@@ -500,44 +423,7 @@ export async function runAgentExecutionPipeline(
 		remainingBudgetUsd = budgetResult.remainingBudgetUsd;
 	}
 
-	// Insert a work-item-only row so PM-triggered runs show up in the dashboard
-	// even before a PR is created. This is idempotent — if a row already exists
-	// it is updated with the latest display fields.
-	if (executionContext.workItemId) {
-		try {
-			await createWorkItem(executionContext.project.id, executionContext.workItemId, {
-				workItemUrl: executionContext.result.workItemUrl,
-				workItemTitle: executionContext.result.workItemTitle,
-			});
-		} catch (err) {
-			logger.warn('Failed to persist work-item row for PM-triggered run', {
-				projectId: executionContext.project.id,
-				workItemId: executionContext.workItemId,
-				error: String(err),
-			});
-		}
-	}
-
-	// Ensure a pr_work_items entry exists for PR-triggered runs (SCM webhooks).
-	// This covers cases where no workItemId exists (orphan PRs) — linkPRToWorkItem
-	// handles upsert, promotion, and orphan creation.
-	if (result.prNumber && project.repo) {
-		try {
-			await linkPRToWorkItem(project.id, project.repo, result.prNumber, workItemId ?? null, {
-				workItemUrl: result.workItemUrl,
-				workItemTitle: result.workItemTitle,
-				prUrl: result.prUrl,
-				prTitle: result.prTitle,
-			});
-		} catch (err) {
-			logger.warn('Failed to ensure pr_work_items entry for PR-triggered run', {
-				projectId: project.id,
-				prNumber: result.prNumber,
-				workItemId,
-				error: String(err),
-			});
-		}
-	}
+	await persistPreRunWorkItems(result, project, workItemId);
 
 	if (executionContext.workItemId && !skipPrepareForAgent) {
 		await executionContext.lifecycle.prepareForAgent(
