@@ -73,21 +73,37 @@ describe('trigger result builders', () => {
 		});
 	});
 
-	it('builds GitHub PR dispatch results without a workItemId when none is linked', () => {
+	it('mirrors prNumber into agentInput from options even when not present in agentInput', () => {
 		const result = buildGitHubPRDispatchResult({
 			agentType: 'review',
 			triggerEvent: TRIGGER_EVENTS.SCM.CHECK_SUITE_SUCCESS,
 			prNumber: 42,
 			agentInput: {
-				prNumber: 42,
+				repoFullName: 'acme/repo',
 			},
 		});
 
 		expect(result.agentInput).toEqual({
 			prNumber: 42,
+			repoFullName: 'acme/repo',
 			triggerEvent: 'scm:check-suite-success',
 		});
 		expect(result.workItemId).toBeUndefined();
+	});
+
+	it('mirrors prNumber into agentInput with the option value winning over a stale agentInput.prNumber', () => {
+		const result = buildGitHubPRDispatchResult({
+			agentType: 'review',
+			triggerEvent: TRIGGER_EVENTS.SCM.PR_REVIEW_SUBMITTED,
+			prNumber: 42,
+			agentInput: {
+				prNumber: 99, // stale value — should be overridden
+				repoFullName: 'acme/repo',
+			},
+		});
+
+		expect(result.agentInput?.prNumber).toBe(42);
+		expect(result.prNumber).toBe(42);
 	});
 
 	it('builds structured skip results with the existing skip payload shape', () => {

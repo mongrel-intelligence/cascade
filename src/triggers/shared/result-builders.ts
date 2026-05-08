@@ -47,11 +47,13 @@ function buildAgentInput(
 	agentInput: AgentInput | undefined,
 	triggerEvent: CanonicalTriggerEvent,
 	workItemId: string | undefined,
+	prNumber?: number,
 ): AgentInput {
 	return {
 		...agentInput,
 		triggerEvent,
 		...(workItemId ? { workItemId } : {}),
+		...(prNumber !== undefined ? { prNumber } : {}),
 	};
 }
 
@@ -95,7 +97,7 @@ export function buildGitHubPRDispatchResult(options: GitHubPRDispatchOptions): T
 
 	return {
 		agentType,
-		agentInput: buildAgentInput(agentInput, triggerEvent, workItemId),
+		agentInput: buildAgentInput(agentInput, triggerEvent, workItemId, prNumber),
 		prNumber,
 		prUrl,
 		prTitle,
