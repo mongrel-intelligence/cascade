@@ -18,6 +18,7 @@ const conflictAttempts = new Map<number, number>();
 const MAX_ATTEMPTS = 2;
 const MERGEABLE_RETRY_COUNT = 2;
 const MERGEABLE_RETRY_DELAY_MS = 2000;
+const MERGEABILITY_RECHECK_DELAY_MS = 45_000;
 
 // Export for cleanup when conflicts are resolved
 export function resetConflictAttempts(prNumber: number): void {
@@ -103,15 +104,22 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 			}
 		}
 
-		// If still null after retries, skip — we can't determine mergeability
+		// If still null after retries, schedule a deferred re-check ~45s later
 		if (prDetails.mergeable === null) {
-			logger.info('mergeable still null after retries, skipping conflict detection trigger', {
+			const coalesceKey = `${ctx.project.id}:pr-conflict-recheck:${prNumber}`;
+			logger.info('mergeable still null after retries, scheduling deferred re-check', {
 				prNumber,
+				coalesceKey,
+				delayMs: MERGEABILITY_RECHECK_DELAY_MS,
 			});
-			return skip(
-				this.name,
-				`mergeable still null after ${MERGEABLE_RETRY_COUNT} retries for PR #${prNumber} — cannot determine mergeability`,
-			);
+			return {
+				agentType: null,
+				agentInput: {},
+				deferredRecheck: {
+					delayMs: MERGEABILITY_RECHECK_DELAY_MS,
+					coalesceKey,
+				},
+			};
 		}
 
 		// Only fire if PR is unmergeable (has conflicts)

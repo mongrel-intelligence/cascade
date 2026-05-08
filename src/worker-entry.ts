@@ -76,6 +76,7 @@ export interface GitHubJobData {
 	ackCommentId?: number;
 	ackMessage?: string;
 	triggerResult?: TriggerResult;
+	mergeabilityRecheckAttempt?: number;
 }
 
 export interface JiraJobData {
@@ -326,6 +327,7 @@ export async function dispatchJob(
 				jobData.ackCommentId,
 				jobData.ackMessage,
 				jobData.triggerResult,
+				!!jobData.mergeabilityRecheckAttempt,
 			);
 			break;
 		case 'jira': {

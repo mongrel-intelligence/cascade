@@ -1,0 +1,121 @@
+---
+id: 020
+slug: github-mergeability-deferred-recheck
+level: spec
+title: GitHub Async Mergeability — Durable Deferred Re-check
+created: 2026-05-08
+status: done
+---
+
+# 020: GitHub Async Mergeability — Durable Deferred Re-check
+
+## Problem & Motivation
+
+GitHub computes pull request mergeability asynchronously. When a `pull_request.opened`, `reopened`, or `synchronize` webhook fires, the `mergeable` field on the PR object is frequently `null` — GitHub has started the background merge-commit computation but not yet finished. The computation typically resolves in 10–30 seconds; for freshly-opened PRs it can take longer. Critically, **GitHub does not send a follow-up webhook when mergeability resolves** — there is no `mergeable_resolved` event or a re-fire of `pull_request.opened`.
+
+`PRConflictDetectedTrigger` currently handles this with a synchronous retry loop: 2 retries × 2 s = 4 s total. When the budget exhausts while `mergeable` is still `null`, the trigger returns a structured skip and the router discards the event. Because no follow-up webhook ever arrives, the `resolve-conflicts` agent never fires. The PR sits in a conflicting state indefinitely, requiring manual intervention.
+
+This was observed live on ucho/PR #329 (2026-05-07): the implementation bot opened the PR already conflicting against the base branch, the trigger fired immediately, GitHub had not yet resolved mergeability, the 4 s budget exhausted, and `resolve-conflicts` was never dispatched.
+
+---
+
+## Goals
+
+- The `resolve-conflicts` agent fires whenever a cascade-bot PR is genuinely conflicting, even when GitHub's mergeability computation takes 10–60 s.
+- Multiple rapid webhooks for the same PR (e.g. `opened` quickly followed by `synchronize`) coalesce to a single deferred re-check job, not N separate jobs.
+- Silent skip-forever is replaced by observable failure: if mergeability is still `null` after the deferred re-check, the event is captured in Sentry and logged at WARN — not silently discarded.
+- The deferred re-check mechanism is generic enough for other trigger handlers to use in the future if they encounter similar async-state problems.
+
+---
+
+## Non-goals
+
+- Fixing mergeability handling for human-authored PRs (the trigger already gates on cascade-bot persona).
+- Polling GitHub continuously until mergeability resolves. One deferred re-check is sufficient; GitHub resolves within 60 s in all observed cases.
+- Changing how `resolve-conflicts` runs or how the agent itself works.
+- Supporting multiple recursive re-checks from the worker side (workers do not enqueue).
+
+---
+
+## Constraints
+
+- Router HTTP handlers must respond within 10 s (GitHub's webhook delivery timeout). The synchronous polling budget must stay ≤ 6 s total to leave margin.
+- Workers do not enqueue BullMQ jobs. The deferred re-check must be scheduled at router time, not worker time.
+- The `TriggerResult` interface is shared across all trigger handlers and all adapter types. Additions must be opt-in and backward-compatible.
+- The existing `scheduleCoalescedJob` infrastructure is the designated mechanism for delayed dedup jobs — no new queue helpers.
+
+---
+
+## User stories / Requirements
+
+1. As an operator, when a cascade bot opens or pushes to a PR that is conflicting, I expect `resolve-conflicts` to fire — even if the conflict isn't detectable within 4 s of the webhook.
+2. As an operator, when the deferred re-check fires and the PR is no longer conflicting (e.g. someone merged base in the meantime), no agent is dispatched — the normal "mergeable=true → skip" path runs.
+3. As an operator, when the deferred re-check fires and mergeability is still `null` (pathological GitHub latency), I see a WARN log and a Sentry capture so I can investigate — not a silent discard.
+4. As a developer adding a new trigger handler, I can return `deferredRecheck` from `TriggerResult` to defer event processing without adding custom infrastructure.
+
+---
+
+## Research Notes
+
+- [GitHub REST docs — pull request mergeable](https://docs.github.com/en/rest/pulls/pulls): "The value of the `mergeable` attribute can be `true`, `false`, or `null`. If the value is `null`, then GitHub has started a background job to compute the mergeability. After giving the job time to complete, resubmit the request."
+- [octokit.net issue #1710](https://github.com/octokit/octokit.net/issues/1710) and [PyGithub issue #256](https://github.com/PyGithub/PyGithub/issues/256): consistent community reports that `null` is common on first request; retry after ~5 s works in most cases.
+- [Gitea issue #19755](https://github.com/go-gitea/gitea/issues/19755): "Web hook does not wait for completion of 'mergeable' check" — same root cause, same class of failure.
+- Industry tools (Atlantis, automerge-action) use 5–10 s intervals × 5–10 retries for synchronous polling. This is consistent with "almost always resolved within 60 s."
+- Cascade already has `scheduleCoalescedJob` (BullMQ delayed job with per-key dedup, backed by Redis). This is the canonical mechanism for deferred processing.
+- The GitHub webhook worker handler already re-dispatches via the trigger registry when a GitHub job has no embedded trigger result. This is the hook for fresh re-evaluation at deferred job fire time.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|------|--------|----------|--------|
+| BullMQ delayed jobs (already in use) | Schedule deferred re-check with dedup | Use (existing) | Already the designated delayed-job mechanism; `scheduleCoalescedJob` provides dedup semantics |
+
+No new OSS dependencies required.
+
+---
+
+## Strategic decisions
+
+1. **Durable deferred re-check over larger synchronous budget** — chosen over increasing the in-handler poll loop. Synchronous polling at 30 s would risk exceeding GitHub's 10 s webhook delivery timeout. The deferred path has no ceiling on wait time.
+
+2. **Single deferred re-check, not recursive multi-attempt** — GitHub virtually never takes >60 s. Recursive re-checks would require threading attempt counts through the worker layer, which would violate the "workers do not enqueue" architectural invariant. One deferred re-check + graceful Sentry capture on second failure is sufficient.
+
+3. **`TriggerResult.deferredRecheck` as a generic field** — the field lives on `TriggerResult`, not in GitHub-specific types. The router's `processRouterWebhook` handles it generically so any trigger handler in any adapter can use it in the future without touching shared infrastructure again.
+
+4. **Keep current synchronous budget (2 × 2 s)** — fast resolves (<10 s) are still handled inline; the deferred path activates only for the slow tail. Reducing the synchronous budget would increase deferred-path frequency for no benefit.
+
+5. **Workers do not enqueue** — the deferred re-check job is scheduled at router time. If the re-check trigger still returns `deferredRecheck` (mergeability still null after 45 s), `processGitHubWebhook` sees `agentType: null` and exits. Sentry capture + WARN log in the trigger signals permanent failure.
+
+6. **`buildJob` omits `triggerResult` for deferred re-checks** — when `result.deferredRecheck` is set, `GitHubRouterAdapter.buildJob` produces a bare `GitHubJob` without an embedded `triggerResult`. This ensures the worker calls `dispatchTrigger → registry.dispatch` fresh, getting current mergeability state.
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. When a cascade-bot PR is opened or force-pushed and GitHub resolves `mergeable=false` within ~60 s, the `resolve-conflicts` agent fires — even if mergeability was `null` at webhook receipt time.
+2. Multiple rapid `pull_request` webhooks for the same PR (opened + synchronize within the deferred window) coalesce to a single re-check job; the `resolve-conflicts` agent fires at most once per conflict episode.
+3. When mergeability is still `null` after the deferred re-check fires, a WARN-level log is emitted and a Sentry event is captured with tag `mergeability_recheck_exhausted`; no agent is dispatched.
+4. When the deferred re-check fires and `mergeable=true` (conflict resolved before the re-check), no agent is dispatched.
+5. When the deferred re-check fires and `mergeable=false`, the `resolve-conflicts` agent runs identically to the synchronous path — same `agentInput` shape, same PR comment, same work-item linking.
+6. The router HTTP handler returns within 10 s for all `pull_request` events, including those that trigger a deferred re-check.
+7. The existing synchronous fast path (mergeable resolves within 4 s) is unchanged.
+8. A new trigger handler can use `TriggerResult.deferredRecheck` to schedule a deferred bare-job re-dispatch without modifying shared router or worker infrastructure.
+
+---
+
+## Documentation Impact (high-level)
+
+- `CLAUDE.md` — add a note to the "Agent triggers" section documenting `TriggerResult.deferredRecheck` semantics, analogous to the existing "Post-completion review dispatch" note. Explains the bare-job/re-dispatch pattern so future handlers know it exists.
+- `CHANGELOG.md` — entry for the silent-skip-forever fix.
+
+---
+
+## Out of Scope
+
+- Fixing mergeability handling for human-authored PRs.
+- GitHub mergeability state for non-PR webhook types (check_suite, etc. — they don't gate on `mergeable`).
+- Adding a second or third deferred re-check (one is sufficient; see strategic decision 2).
+- Any change to how `resolve-conflicts` agent runs after dispatch.
+- Deferred re-check mechanism for non-GitHub trigger adapters (future — the generic `TriggerResult` field makes it possible, but no other trigger currently needs it).

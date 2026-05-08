@@ -16,7 +16,7 @@ import type { PMIntegration, PMWebhookEvent } from '../../pm/integration.js';
 import type { ProjectPMConfig } from '../../pm/lifecycle.js';
 import type { PMProvider } from '../../pm/types.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
-import type { AgentExecutionConfig } from '../shared/agent-execution.js';
+import type { AgentExecutionConfig } from '../shared/agent-execution-types.js';
 import { deleteProgressCommentOnSuccess, updateInitialCommentWithError } from './ack-comments.js';
 
 export class GitHubWebhookIntegration implements PMIntegration {

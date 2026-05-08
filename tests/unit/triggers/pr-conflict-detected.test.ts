@@ -340,7 +340,7 @@ describe('PRConflictDetectedTrigger', () => {
 			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 		});
 
-		it('returns null when mergeable is null after retries', async () => {
+		it('returns deferredRecheck (not skipReason) when mergeable is null after retries', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -364,10 +364,65 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
+			expect(result?.deferredRecheck).toBeDefined();
+			expect(result?.skipReason).toBeUndefined();
 			expect(result?.agentType).toBeNull();
-			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
 			// Should have retried 2 times + initial call = 3 calls
 			expect(githubClient.getPR).toHaveBeenCalledTimes(3);
+		});
+
+		it('deferredRecheck coalesceKey includes projectId and prNumber', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				mergeable: null,
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeSynchronizePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.deferredRecheck?.coalesceKey).toBe('test:pr-conflict-recheck:42');
+		});
+
+		it('deferredRecheck delayMs is 45000', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123',
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				mergeable: null,
+				user: { login: 'cascade-impl' },
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeSynchronizePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.deferredRecheck?.delayMs).toBe(45_000);
 		});
 
 		it('retries when mergeable is initially null, then succeeds when it becomes false', async () => {

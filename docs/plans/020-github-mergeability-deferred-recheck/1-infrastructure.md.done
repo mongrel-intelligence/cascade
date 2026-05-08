@@ -1,0 +1,255 @@
+---
+id: 020
+slug: github-mergeability-deferred-recheck
+plan: 1
+plan_slug: infrastructure
+level: plan
+parent_spec: docs/specs/020-github-mergeability-deferred-recheck.md
+depends_on: []
+status: done
+---
+
+# 020/1: Deferred Re-check Infrastructure
+
+> Part 1 of 2 in the 020-github-mergeability-deferred-recheck plan. See [parent spec](../../specs/020-github-mergeability-deferred-recheck.md).
+
+## Summary
+
+Adds the generic `deferredRecheck` field to `TriggerResult` and wires a new branch in `processRouterWebhook` that schedules a bare (no embedded `triggerResult`) BullMQ delayed job when any trigger returns that field. Also adds `mergeabilityRecheckAttempt?: number` to `GitHubJob` and updates `GitHubRouterAdapter.buildJob` to populate it (and omit `triggerResult`) when the result carries `deferredRecheck`.
+
+This plan ships infrastructure only — no trigger returns `deferredRecheck` yet (plan 2 wires the conflict trigger). The mechanism is fully exercisable by unit tests using a mock adapter.
+
+**Components delivered:**
+- `src/types/index.ts` — `TriggerResult.deferredRecheck` optional field
+- `src/router/webhook-processor.ts` — new deferred re-check branch after the `skipReason` check
+- `src/router/queue.ts` — `GitHubJob.mergeabilityRecheckAttempt` optional field
+- `src/router/adapters/github.ts` — `buildJob` omits `triggerResult` and sets `mergeabilityRecheckAttempt: 1` when `deferredRecheck` is present
+- `CLAUDE.md` — note documenting the `deferredRecheck` pattern (analogous to the "Post-completion review dispatch" note)
+
+**Deferred to plan 2:**
+- `PRConflictDetectedTrigger` returning `deferredRecheck`
+- Worker-side Sentry capture on re-check exhaustion
+- `processGitHubWebhook` `isRecheckJob` parameter
+- CHANGELOG entry
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #2 (multiple webhooks coalesce) — **full** (router uses `scheduleCoalescedJob` with caller-supplied coalesceKey)
+- Spec AC #6 (router returns within 10s) — **full** (deferred re-check branch is non-blocking: `scheduleCoalescedJob` is a fast Redis enqueue)
+- Spec AC #7 (synchronous fast path unchanged) — **full** (no change to existing retry logic in any trigger)
+- Spec AC #8 (generic `deferredRecheck` field usable by any trigger) — **full** (`TriggerResult.deferredRecheck` type + router branch exist independent of trigger identity)
+- Spec AC #1 (agent fires after deferred re-check) — **partial** (router schedules the bare job; plan 2 wires the trigger)
+- Spec AC #3 (WARN + Sentry on exhaustion) — **partial** (`mergeabilityRecheckAttempt` field set in the job; plan 2 adds the worker-side detection)
+
+---
+
+## Depends On
+
+None. This plan is the foundation.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. `TriggerResult.deferredRecheck` type addition
+
+**Tests first** (`tests/unit/router/deferred-recheck.test.ts` — new file):
+
+- `TriggerResult accepts deferredRecheck field` — unit — construct a `TriggerResult` object with `agentType: null, agentInput: {}, deferredRecheck: { delayMs: 45000, coalesceKey: 'test:key' }` — TypeScript compilation must not error. Expected red: TypeScript compile error `Property 'deferredRecheck' does not exist on type 'TriggerResult'`.
+
+**Implementation** (`src/types/index.ts`):
+- Add to `TriggerResult`:
+  ```
+  deferredRecheck?: {
+    delayMs: number;
+    coalesceKey: string;
+  };
+  ```
+- JSDoc: "When set and `agentType` is `null`, the router schedules a bare delayed job (no embedded trigger result) keyed by `coalesceKey`. The worker re-dispatches via the trigger registry when the job fires, obtaining fresh state. Any trigger handler can use this field; the router branch in `processRouterWebhook` is adapter-agnostic."
+
+---
+
+### 2. `GitHubJob.mergeabilityRecheckAttempt` field
+
+**Tests first** (`tests/unit/router/deferred-recheck.test.ts`):
+
+- `GitHubJob accepts mergeabilityRecheckAttempt field` — unit — TypeScript: assign `mergeabilityRecheckAttempt: 1` on a `GitHubJob` object. Expected red: TypeScript compile error `Property 'mergeabilityRecheckAttempt' does not exist on type 'GitHubJob'`.
+
+**Implementation** (`src/router/queue.ts`):
+- Add to `GitHubJob`: `mergeabilityRecheckAttempt?: number;`
+- JSDoc: "Set to 1 when this job is a deferred mergeability re-check (router side). The worker uses `!!job.mergeabilityRecheckAttempt` to detect re-check jobs and emit Sentry capture when the trigger still cannot determine mergeability."
+
+---
+
+### 3. `GitHubRouterAdapter.buildJob` — deferred re-check behavior
+
+**Tests first** (`tests/unit/router/deferred-recheck.test.ts`):
+
+- `buildJob: omits triggerResult when result.deferredRecheck is set` — unit — call `adapter.buildJob(event, payload, project, resultWithDeferredRecheck, undefined)` → `job.triggerResult` is `undefined`. Expected red: `expected undefined, got [object Object]`.
+- `buildJob: sets mergeabilityRecheckAttempt: 1 when result.deferredRecheck is set` — unit — same call → `job.mergeabilityRecheckAttempt === 1`. Expected red: `expected 1, got undefined`.
+- `buildJob: includes triggerResult normally when deferredRecheck is absent` — unit — call with normal `TriggerResult` (no `deferredRecheck`) → `job.triggerResult` equals the result object. Expected red: n/a (regression pin — stays green; verify it passes before changing `buildJob`).
+- `buildJob: does not set mergeabilityRecheckAttempt when deferredRecheck is absent` — unit — normal result → `job.mergeabilityRecheckAttempt` is `undefined`. Expected red: n/a (regression pin).
+
+**Implementation** (`src/router/adapters/github.ts`):
+
+Modify `buildJob`:
+```
+buildJob(event, payload, _project, result, ackResult): CascadeJob {
+  const isDeferredRecheck = !!result.deferredRecheck;
+  const job: GitHubJob = {
+    type: 'github',
+    source: 'github',
+    payload,
+    eventType: event.eventType,
+    repoFullName: (event as GitHubParsedEvent).repoFullName,
+    receivedAt: new Date().toISOString(),
+    triggerResult: isDeferredRecheck ? undefined : result,
+    ackCommentId: ackResult?.commentId as number | undefined,
+    ackMessage: ackResult?.message,
+    ...(isDeferredRecheck ? { mergeabilityRecheckAttempt: 1 } : {}),
+  };
+  return job;
+}
+```
+
+---
+
+### 4. `processRouterWebhook` — deferred re-check branch
+
+**Tests first** (`tests/unit/router/deferred-recheck.test.ts`):
+
+The test file must mock `scheduleCoalescedJob` from `../../../../src/router/queue.js` and the adapter. Use the existing mock shape from `tests/unit/router/` as reference.
+
+- `processRouterWebhook: calls scheduleCoalescedJob when trigger returns deferredRecheck` — unit — adapter's `dispatchWithCredentials` returns `{ agentType: null, agentInput: {}, deferredRecheck: { delayMs: 45000, coalesceKey: 'proj:pr-conflict-recheck:42' } }` → `scheduleCoalescedJob` called once with `(job, 'proj:pr-conflict-recheck:42', 45000)`. Expected red: `expect(scheduleCoalescedJob).toHaveBeenCalled()` → `AssertionError: expected 0 calls, got 0`.
+- `processRouterWebhook: scheduled job has no triggerResult` — unit — same setup → inspect first arg to `scheduleCoalescedJob` (the job) → `job.triggerResult === undefined`. Expected red: `expected undefined, got [object Object]`.
+- `processRouterWebhook: scheduled job has mergeabilityRecheckAttempt: 1` — unit — same setup → `job.mergeabilityRecheckAttempt === 1`. Expected red: `expected 1, got undefined`.
+- `processRouterWebhook: returns decisionReason containing coalesceKey` — unit — same setup → return value has `decisionReason` matching `'Deferred re-check scheduled'`. Expected red: `expected string to include 'Deferred re-check scheduled', got 'No trigger matched'`.
+- `processRouterWebhook: does NOT call isWorkItemLocked when deferredRecheck` — unit — verify `isWorkItemLocked` mock not called. Expected red: `isWorkItemLocked called unexpectedly`.
+- `processRouterWebhook: does NOT advance to coalesceKey path when deferredRecheck` — unit — result has both `deferredRecheck` and `coalesceKey` set; only `scheduleCoalescedJob` is called once (deferred-recheck branch, not the PM-coalesce branch). Expected red: `scheduleCoalescedJob called twice`.
+- `processRouterWebhook: Sentry-captures but still returns shouldProcess:true when scheduleCoalescedJob throws` — unit — mock `scheduleCoalescedJob` to throw → return value is `{ shouldProcess: true }` AND `captureException` called with tag `deferred_recheck_schedule_failure`. Expected red: `captureException not called`.
+- `processRouterWebhook: deferred re-check branch skipped when agentType is non-null` — unit — result has `agentType: 'resolve-conflicts'` AND `deferredRecheck` set → normal job dispatch path runs, NOT the deferred-recheck branch. Expected red: `scheduleCoalescedJob called unexpectedly`.
+
+**Implementation** (`src/router/webhook-processor.ts`):
+
+Add after the `skipReason` block (before the `coalesceKey` block):
+
+```typescript
+// Step 7c: Deferred re-check — trigger asked the router to retry this event
+// after a delay. Schedules a bare job (no embedded triggerResult) so the worker
+// re-dispatches fresh via the trigger registry. Used for GitHub async state that
+// resolves after the webhook delivery window (e.g. PR mergeability).
+if (result.deferredRecheck && result.agentType === null) {
+  const job = adapter.buildJob(event, payload, project, result, undefined);
+  try {
+    await scheduleCoalescedJob(
+      job,
+      result.deferredRecheck.coalesceKey,
+      result.deferredRecheck.delayMs,
+    );
+    logger.info(`${adapter.type} deferred re-check scheduled`, {
+      coalesceKey: result.deferredRecheck.coalesceKey,
+      delayMs: result.deferredRecheck.delayMs,
+      projectId: project.id,
+    });
+  } catch (err) {
+    captureException(err instanceof Error ? err : new Error(String(err)), {
+      tags: { source: 'deferred_recheck_schedule_failure' },
+      extra: { coalesceKey: result.deferredRecheck.coalesceKey, projectId: project.id },
+    });
+    logger.error(`Failed to schedule deferred re-check for ${adapter.type} event`, {
+      error: String(err),
+      coalesceKey: result.deferredRecheck.coalesceKey,
+    });
+  }
+  return {
+    shouldProcess: true,
+    projectId: project.id,
+    decisionReason: `Deferred re-check scheduled: ${result.deferredRecheck.coalesceKey}`,
+  };
+}
+```
+
+---
+
+### 5. CLAUDE.md documentation
+
+**Implementation** (`CLAUDE.md`):
+
+In the "Agent triggers" section, after the "Post-completion review dispatch" paragraph, add:
+
+```
+**Deferred re-check** — any trigger handler can return `TriggerResult.deferredRecheck: { delayMs, coalesceKey }` (with `agentType: null`) to schedule a bare delayed job that re-dispatches via the trigger registry when it fires. The router uses `scheduleCoalescedJob` for dedup. The worker detects re-check jobs via `GitHubJob.mergeabilityRecheckAttempt` and Sentry-captures under tag `mergeability_recheck_exhausted` when the trigger still cannot resolve state. Workers do not re-queue — a second `deferredRecheck` return in the worker handler exits gracefully.
+```
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/router/deferred-recheck.test.ts` (new): 9 tests covering type fields, `buildJob` behavior, `processRouterWebhook` branch, and error handling
+
+### Integration tests
+- [ ] None required for this plan — the mechanism is fully exercisable via unit tests with mock adapters
+
+### Acceptance tests
+- [ ] AC #2, #6, #7, #8 verified by unit tests above
+
+---
+
+## Manual Verification
+
+*n/a — all ACs auto-tested.*
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `TriggerResult` accepts `deferredRecheck?: { delayMs: number; coalesceKey: string }` without TypeScript errors.
+2. `GitHubJob` accepts `mergeabilityRecheckAttempt?: number` without TypeScript errors.
+3. `GitHubRouterAdapter.buildJob` omits `triggerResult` and sets `mergeabilityRecheckAttempt: 1` when `result.deferredRecheck` is set; includes `triggerResult` normally otherwise.
+4. `processRouterWebhook` calls `scheduleCoalescedJob` with the job, `coalesceKey`, and `delayMs` from `result.deferredRecheck` when the trigger returns that field with `agentType: null`.
+5. The scheduled job has no `triggerResult` (so the worker re-dispatches fresh).
+6. When `scheduleCoalescedJob` throws, `processRouterWebhook` Sentry-captures under tag `deferred_recheck_schedule_failure` and returns `shouldProcess: true` — webhook delivery is not 500'd.
+7. The deferred re-check branch is skipped when `result.agentType` is non-null (structural guard).
+8. All new/modified code has corresponding unit tests.
+9. `npm test` passes (unit suite).
+10. `npm run typecheck` passes.
+11. `npm run lint` passes.
+12. CLAUDE.md updated with the `deferredRecheck` pattern note.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CLAUDE.md` | Add "Deferred re-check" paragraph to "Agent triggers" section |
+
+---
+
+## Out of Scope (this plan)
+
+- `PRConflictDetectedTrigger` returning `deferredRecheck` — deferred to plan 2
+- `processGitHubWebhook` `isRecheckJob` parameter — deferred to plan 2
+- Worker-side Sentry capture on re-check exhaustion — deferred to plan 2
+- `CHANGELOG.md` entry — deferred to plan 2
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [x] AC #1
+- [x] AC #2
+- [x] AC #3
+- [x] AC #4
+- [x] AC #5
+- [x] AC #6
+- [x] AC #7
+- [x] AC #8
+- [x] AC #9
+- [x] AC #10
+- [x] AC #11
+- [x] AC #12

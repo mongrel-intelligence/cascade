@@ -373,6 +373,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		result: TriggerResult,
 		ackResult?: AckResult,
 	): CascadeJob {
+		const isDeferredRecheck = !!result.deferredRecheck;
 		const job: GitHubJob = {
 			type: 'github',
 			source: 'github',
@@ -380,9 +381,10 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			eventType: event.eventType,
 			repoFullName: (event as GitHubParsedEvent).repoFullName,
 			receivedAt: new Date().toISOString(),
-			triggerResult: result,
+			triggerResult: isDeferredRecheck ? undefined : result,
 			ackCommentId: ackResult?.commentId as number | undefined,
 			ackMessage: ackResult?.message,
+			...(isDeferredRecheck ? { mergeabilityRecheckAttempt: 1 } : {}),
 		};
 		return job;
 	}

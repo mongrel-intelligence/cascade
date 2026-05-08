@@ -1,0 +1,252 @@
+---
+id: 020
+slug: github-mergeability-deferred-recheck
+plan: 2
+plan_slug: trigger-wiring
+level: plan
+parent_spec: docs/specs/020-github-mergeability-deferred-recheck.md
+depends_on: [1-infrastructure.md]
+status: done
+---
+
+# 020/2: Conflict Trigger Wiring + Worker Re-check Detection
+
+> Part 2 of 2 in the 020-github-mergeability-deferred-recheck plan. See [parent spec](../../specs/020-github-mergeability-deferred-recheck.md).
+
+## Summary
+
+Wires `PRConflictDetectedTrigger` to return `deferredRecheck` instead of a structured skip when `mergeable === null` exhausts the synchronous retry budget. Adds `isRecheckJob` awareness to `processGitHubWebhook` so that when a deferred re-check job fires and the trigger **still** cannot determine mergeability, a WARN log and Sentry capture are emitted rather than silently discarding the event.
+
+**Components delivered:**
+- `src/triggers/github/pr-conflict-detected.ts` — return `deferredRecheck` on null-after-retries path
+- `src/triggers/github/webhook-handler.ts` — add `isRecheckJob?: boolean` parameter; emit WARN + Sentry when re-check trigger returns `deferredRecheck`
+- `src/worker-entry.ts` — pass `!!job.mergeabilityRecheckAttempt` as `isRecheckJob`
+- `tests/unit/triggers/pr-conflict-detected.test.ts` — update existing null-retry test; add deferredRecheck shape tests
+- `tests/unit/triggers/github-webhook-handler-recheck.test.ts` — new file for re-check exhaustion path
+- `CHANGELOG.md` — entry for the fix
+
+**Deferred:** nothing — this plan completes spec 020.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (agent fires after deferred re-check) — **partial** (trigger now returns `deferredRecheck`; plan 1 provides the router scheduling)
+- Spec AC #3 (WARN + Sentry on exhaustion) — **partial** (worker reads `mergeabilityRecheckAttempt` from plan 1; this plan adds the detection + emission)
+- Spec AC #4 (no agent when `mergeable=true` after re-check) — **full** (trigger's existing `mergeable !== false` skip path is unchanged and runs normally on re-check job)
+- Spec AC #5 (identical `agentInput` shape when re-check fires with conflicts) — **full** (same `TriggerResult` return path runs for the re-check dispatch)
+
+---
+
+## Depends On
+
+- Plan 1 (infrastructure) — provides `TriggerResult.deferredRecheck`, `GitHubJob.mergeabilityRecheckAttempt`, and the router branch that schedules the bare job.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. `PRConflictDetectedTrigger` — return `deferredRecheck` on null timeout
+
+**Tests first** (`tests/unit/triggers/pr-conflict-detected.test.ts` — modify existing):
+
+- `returns deferredRecheck (not skipReason) when mergeable is null after retries` — unit — update the EXISTING test `'returns null when mergeable is null after retries'`: change assertion from `expect(result?.skipReason?.handler).toBe('pr-conflict-detected')` to:
+  - `expect(result?.deferredRecheck).toBeDefined()`
+  - `expect(result?.skipReason).toBeUndefined()`
+  - `expect(result?.agentType).toBeNull()`
+  Expected red: `expected { delayMs: ..., coalesceKey: ... }, got undefined` (before trigger is updated).
+
+- `deferredRecheck coalesceKey includes projectId and prNumber` — unit — same setup (mergeable: null × 3 calls) → `result.deferredRecheck?.coalesceKey` equals `'test:pr-conflict-recheck:42'` (project id `'test'`, PR `#42`). Expected red: `expected 'test:pr-conflict-recheck:42', got undefined`.
+
+- `deferredRecheck delayMs is 45000` — unit — same setup → `result.deferredRecheck?.delayMs === 45000`. Expected red: `expected 45000, got undefined`.
+
+- `getPR called 3 times total (1 initial + 2 retries) before deferredRecheck` — unit — same null-every-call setup → `expect(githubClient.getPR).toHaveBeenCalledTimes(3)`. Expected red: this was already asserted in the existing test — verify it still passes after the behavior change. If the existing assertion count changes, update it here.
+
+- `retries: when first call null, second call false → dispatches resolve-conflicts (unchanged)` — unit — regression pin on the existing successful-retry test. Expected red: n/a (must stay green after trigger change).
+
+**Implementation** (`src/triggers/github/pr-conflict-detected.ts`):
+
+1. Add constant: `const MERGEABILITY_RECHECK_DELAY_MS = 45_000;`
+
+2. Replace the terminal null check:
+   ```typescript
+   // BEFORE:
+   if (prDetails.mergeable === null) {
+     logger.info('mergeable still null after retries, skipping ...', { prNumber });
+     return skip(this.name, `mergeable still null after ... PR #${prNumber}`);
+   }
+
+   // AFTER:
+   if (prDetails.mergeable === null) {
+     const coalesceKey = `${ctx.project.id}:pr-conflict-recheck:${prNumber}`;
+     logger.info('mergeable still null after retries, scheduling deferred re-check', {
+       prNumber,
+       coalesceKey,
+       delayMs: MERGEABILITY_RECHECK_DELAY_MS,
+     });
+     return {
+       agentType: null,
+       agentInput: {},
+       deferredRecheck: {
+         delayMs: MERGEABILITY_RECHECK_DELAY_MS,
+         coalesceKey,
+       },
+     };
+   }
+   ```
+
+---
+
+### 2. `processGitHubWebhook` — re-check exhaustion detection
+
+**Tests first** (`tests/unit/triggers/github-webhook-handler-recheck.test.ts` — new file):
+
+Mock `processGitHubWebhook`'s dependencies: `registry.dispatch`, `captureException` from `src/sentry.js`.
+
+- `emits WARN and Sentry capture when isRecheckJob=true and trigger returns deferredRecheck` — unit — mock `registry.dispatch` to return `{ agentType: null, agentInput: {}, deferredRecheck: { delayMs: 45000, coalesceKey: 'x' } }` → call `processGitHubWebhook(payload, eventType, registry, undefined, undefined, undefined, true)` → `captureException` called with error containing `'mergeability_recheck_exhausted'` in message AND options `{ tags: { source: 'mergeability_recheck_exhausted' } }`. Expected red: `captureException not called`.
+
+- `does NOT capture Sentry when isRecheckJob=false and trigger returns deferredRecheck` — unit — same dispatch mock, `isRecheckJob = false` → `captureException` NOT called. Expected red: n/a (regression pin).
+
+- `does NOT capture Sentry when isRecheckJob=true but trigger returns non-deferredRecheck result` — unit — trigger returns `{ agentType: 'resolve-conflicts', agentInput: {...} }`, `isRecheckJob = true` → `captureException` NOT called under `mergeability_recheck_exhausted` tag; agent runs normally. Expected red: n/a (regression pin).
+
+- `does NOT capture Sentry when triggerResult is pre-resolved (isRecheckJob=true but triggerResult passed)` — unit — `triggerResult` arg is pre-populated (no re-dispatch), `isRecheckJob = true` → `captureException` NOT called (the Sentry path only fires when re-dispatch happens AND returns `deferredRecheck`). Expected red: n/a (regression pin).
+
+**Implementation** (`src/triggers/github/webhook-handler.ts`):
+
+1. Add `captureException` import from `../../sentry.js`.
+
+2. Update signature:
+   ```typescript
+   export async function processGitHubWebhook(
+     payload: unknown,
+     eventType: string,
+     registry: TriggerRegistry,
+     ackCommentId?: number,
+     ackMessage?: string,
+     triggerResult?: TriggerResult,
+     isRecheckJob?: boolean,
+   ): Promise<void>
+   ```
+
+3. After the re-dispatch call (the `else` branch where `result = await dispatchTrigger(...)`), add:
+   ```typescript
+   if (result?.deferredRecheck && isRecheckJob) {
+     logger.warn('Mergeability still null after deferred re-check — giving up', { eventType });
+     captureException(
+       new Error('mergeability_recheck_exhausted: still null after deferred re-check'),
+       {
+         tags: { source: 'mergeability_recheck_exhausted' },
+         extra: { eventType },
+       },
+     );
+     return;
+   }
+   ```
+
+---
+
+### 3. `worker-entry.ts` — pass `isRecheckJob` to `processGitHubWebhook`
+
+**Tests first** (`tests/unit/triggers/github-webhook-handler-recheck.test.ts`):
+
+- `worker passes isRecheckJob=true when job.mergeabilityRecheckAttempt is set` — integration-ish — directly invoke the `github` case logic from `worker-entry.ts` with a job that has `mergeabilityRecheckAttempt: 1` → the mock `processGitHubWebhook` is called with 7th arg `true`. Expected red: `expected processGitHubWebhook called with isRecheckJob=true, got isRecheckJob=undefined`.
+
+  NOTE: Testing `worker-entry.ts` directly is awkward (it's the process entry point). If extracting the `case 'github'` into a tested helper is too invasive, this test can be written as: mock `processGitHubWebhook` and confirm its call signature when called with a `GitHubJob` that has `mergeabilityRecheckAttempt: 1`. Use the same mocking pattern that existing worker-entry tests use.
+
+**Implementation** (`src/worker-entry.ts`):
+
+In the `case 'github':` block, add the 7th argument:
+```typescript
+await processGitHubWebhook(
+  jobData.payload,
+  jobData.eventType,
+  triggerRegistry,
+  jobData.ackCommentId,
+  jobData.ackMessage,
+  jobData.triggerResult,
+  !!jobData.mergeabilityRecheckAttempt,   // NEW
+);
+```
+
+---
+
+### 4. CHANGELOG entry
+
+**Implementation** (`CHANGELOG.md`):
+
+Add entry under the appropriate version heading:
+
+```
+- Fix: `resolve-conflicts` agent no longer silently skips when GitHub's async mergeability
+  computation hasn't resolved by the time the `pull_request` webhook is processed.
+  A durable BullMQ delayed re-check fires ~45s later to re-evaluate with fresh state.
+  Multiple rapid webhooks for the same PR coalesce to a single re-check job.
+```
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/triggers/pr-conflict-detected.test.ts` (modified): update 1 existing test; add 3 new tests for `deferredRecheck` shape
+- [ ] `tests/unit/triggers/github-webhook-handler-recheck.test.ts` (new): 4 tests for re-check exhaustion detection
+
+### Integration tests
+- [ ] None required — the observable behavior (agent fires after deferred re-check) is verified by unit tests at each boundary
+
+### Acceptance tests
+- [ ] AC #1 end-to-end: trigger returns `deferredRecheck` (plan 2) → router schedules job (plan 1) → worker re-dispatches → trigger gets `mergeable=false` → `resolve-conflicts` agent fires. Covered by the combination of plan-1 router tests and plan-2 trigger tests.
+
+---
+
+## Manual Verification
+
+*n/a — all ACs auto-tested.*
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. `PRConflictDetectedTrigger.handle()` returns `{ agentType: null, deferredRecheck: { delayMs: 45000, coalesceKey: '${projectId}:pr-conflict-recheck:${prNumber}' } }` when `mergeable` is still `null` after the synchronous retry loop.
+2. `PRConflictDetectedTrigger.handle()` does NOT set `skipReason` on the null-timeout path — the router deferred-recheck branch fires instead of the skip branch.
+3. When a deferred re-check job fires and `processGitHubWebhook` re-dispatches to get `deferredRecheck` again (mergeability still null), `captureException` is called with tag `source: 'mergeability_recheck_exhausted'` and `processGitHubWebhook` returns without running an agent.
+4. When a deferred re-check job fires and `processGitHubWebhook` re-dispatches to get `agentType: 'resolve-conflicts'` (mergeability resolved to `false`), the agent runs normally with the same `agentInput` shape as the synchronous path.
+5. When a deferred re-check job fires and `processGitHubWebhook` re-dispatches to get `mergeable=true` (conflict resolved), no agent runs and no Sentry capture fires.
+6. `worker-entry.ts` passes `isRecheckJob=true` to `processGitHubWebhook` when the job has `mergeabilityRecheckAttempt > 0`.
+7. All new/modified code has corresponding unit tests.
+8. `npm test` passes (unit suite).
+9. `npm run typecheck` passes.
+10. `npm run lint` passes.
+11. `CHANGELOG.md` updated with the fix entry.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | Add entry for the silent-skip-forever fix |
+
+---
+
+## Out of Scope (this plan)
+
+- Generic deferred re-check infrastructure (`TriggerResult.deferredRecheck`, router branch) — delivered by plan 1
+- Additional trigger handlers using `deferredRecheck` — out of scope for spec 020
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [x] AC #1
+- [x] AC #2
+- [x] AC #3
+- [x] AC #4
+- [x] AC #5
+- [x] AC #6
+- [x] AC #7
+- [x] AC #8
+- [x] AC #9
+- [x] AC #10
+- [x] AC #11

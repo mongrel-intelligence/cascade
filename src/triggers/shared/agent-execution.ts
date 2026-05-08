@@ -20,6 +20,7 @@ import { logger } from '../../utils/logging.js';
 import { extractPRNumber } from '../../utils/prUrl.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import type { TriggerResult } from '../types.js';
+import type { AgentExecutionConfig, AgentExecutionContext } from './agent-execution-types.js';
 import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import { isPipelineAtCapacity } from './backlog-check.js';
 import { checkBudgetExceeded } from './budget.js';
@@ -31,47 +32,7 @@ import {
 	validateIntegrations,
 } from './integration-validation.js';
 
-/**
- * Configuration for source-specific behavior in the agent execution pipeline.
- */
-export interface AgentExecutionConfig {
-	/**
-	 * Whether to skip calling lifecycle.prepareForAgent before running the agent.
-	 * GitHub handlers skip this step; Trello and JIRA handlers call it.
-	 */
-	skipPrepareForAgent?: boolean;
-
-	/**
-	 * Whether to skip calling lifecycle.handleFailure on agent failure.
-	 * GitHub handlers only call handleSuccess for the 'implementation' agent type,
-	 * so they skip handleFailure entirely.
-	 */
-	skipHandleFailure?: boolean;
-
-	/**
-	 * Whether to only call lifecycle.handleSuccess for a specific agent type.
-	 * If set, handleSuccess is only called when agentType matches this value.
-	 * GitHub uses this to only call handleSuccess for 'implementation'.
-	 */
-	handleSuccessOnlyForAgentType?: string;
-
-	/**
-	 * Optional callback invoked when the agent succeeds (after pipeline completes).
-	 * Used by GitHub to delete the progress comment for non-implementation agents.
-	 */
-	onSuccess?: (result: TriggerResult, agentResult: AgentResult) => Promise<void>;
-
-	/**
-	 * Optional callback invoked when the agent fails (after pipeline completes).
-	 * Used by GitHub to update the PR comment with an error message.
-	 */
-	onFailure?: (result: TriggerResult, agentResult: AgentResult) => Promise<void>;
-
-	/**
-	 * Log label used in log messages (e.g. 'GitHub', 'JIRA', 'Trello').
-	 */
-	logLabel?: string;
-}
+export type { AgentExecutionConfig } from './agent-execution-types.js';
 
 /**
  * Check the budget before running an agent.
@@ -515,9 +476,26 @@ export async function runAgentExecutionPipeline(
 			? { ...result.agentInput, workItemId }
 			: result.agentInput;
 
+	const executionContext: AgentExecutionContext = {
+		result,
+		project,
+		config,
+		executionConfig,
+		agentType,
+		logLabel,
+		lifecycle,
+		lifecycleHooks,
+		workItemId,
+		agentInput,
+	};
+
 	let remainingBudgetUsd: number | undefined;
-	if (workItemId) {
-		const budgetResult = await checkPreRunBudget(workItemId, project, lifecycle);
+	if (executionContext.workItemId) {
+		const budgetResult = await checkPreRunBudget(
+			executionContext.workItemId,
+			executionContext.project,
+			executionContext.lifecycle,
+		);
 		if (budgetResult.abort) return;
 		remainingBudgetUsd = budgetResult.remainingBudgetUsd;
 	}
@@ -525,16 +503,16 @@ export async function runAgentExecutionPipeline(
 	// Insert a work-item-only row so PM-triggered runs show up in the dashboard
 	// even before a PR is created. This is idempotent — if a row already exists
 	// it is updated with the latest display fields.
-	if (workItemId) {
+	if (executionContext.workItemId) {
 		try {
-			await createWorkItem(project.id, workItemId, {
-				workItemUrl: result.workItemUrl,
-				workItemTitle: result.workItemTitle,
+			await createWorkItem(executionContext.project.id, executionContext.workItemId, {
+				workItemUrl: executionContext.result.workItemUrl,
+				workItemTitle: executionContext.result.workItemTitle,
 			});
 		} catch (err) {
 			logger.warn('Failed to persist work-item row for PM-triggered run', {
-				projectId: project.id,
-				workItemId,
+				projectId: executionContext.project.id,
+				workItemId: executionContext.workItemId,
 				error: String(err),
 			});
 		}
@@ -561,15 +539,18 @@ export async function runAgentExecutionPipeline(
 		}
 	}
 
-	if (workItemId && !skipPrepareForAgent) {
-		await lifecycle.prepareForAgent(workItemId, lifecycleHooks);
+	if (executionContext.workItemId && !skipPrepareForAgent) {
+		await executionContext.lifecycle.prepareForAgent(
+			executionContext.workItemId,
+			executionContext.lifecycleHooks,
+		);
 	}
 
-	const agentResult = await runAgent(agentType, {
-		...agentInput,
+	const agentResult = await runAgent(executionContext.agentType, {
+		...executionContext.agentInput,
 		remainingBudgetUsd,
-		project,
-		config,
+		project: executionContext.project,
+		config: executionContext.config,
 	});
 
 	// Link PR to work item post-execution (single code path for all backends)

@@ -183,6 +183,34 @@ describe('dispatchJob routing', () => {
 			456,
 			'Starting implementation...',
 			triggerResult,
+			false,
+		);
+	});
+
+	it('passes isRecheckJob=true when job has mergeabilityRecheckAttempt set', async () => {
+		const mockRegistry = {};
+		const jobPayload = { action: 'synchronize', pull_request: {} };
+
+		const jobData: GitHubJobData = {
+			type: 'github',
+			source: 'github',
+			payload: jobPayload,
+			eventType: 'pull_request',
+			repoFullName: 'org/repo',
+			receivedAt: '2024-01-01T00:00:00Z',
+			mergeabilityRecheckAttempt: 1,
+		};
+
+		await dispatchJob('job-recheck', jobData, mockRegistry as never);
+
+		expect(processGitHubWebhook).toHaveBeenCalledWith(
+			jobPayload,
+			'pull_request',
+			mockRegistry,
+			undefined,
+			undefined,
+			undefined,
+			true,
 		);
 	});
 

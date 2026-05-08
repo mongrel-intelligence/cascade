@@ -160,6 +160,17 @@ export interface TriggerResult {
 		/** Human-readable explanation. Used verbatim in webhook log decisionReason. */
 		message: string;
 	};
+	/**
+	 * When set and `agentType` is `null`, the router schedules a bare delayed
+	 * job (no embedded trigger result) keyed by `coalesceKey`. The worker
+	 * re-dispatches via the trigger registry when the job fires, obtaining fresh
+	 * state. Any trigger handler can use this field; the router branch in
+	 * `processRouterWebhook` is adapter-agnostic.
+	 */
+	deferredRecheck?: {
+		delayMs: number;
+		coalesceKey: string;
+	};
 }
 
 export interface TriggerHandler {

@@ -15,6 +15,7 @@ import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
+import { captureException } from '../../sentry.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import { logger, startWatchdog } from '../../utils/index.js';
 import type { TriggerRegistry } from '../registry.js';
@@ -199,6 +200,7 @@ export async function processGitHubWebhook(
 	ackCommentId?: number,
 	ackMessage?: string,
 	triggerResult?: TriggerResult,
+	isRecheckJob?: boolean,
 ): Promise<void> {
 	logger.info('Processing GitHub webhook', { eventType, hasTriggerResult: !!triggerResult });
 
@@ -226,6 +228,17 @@ export async function processGitHubWebhook(
 		result = triggerResult;
 	} else {
 		result = await dispatchTrigger(registry, payload, project);
+		if (result?.deferredRecheck && isRecheckJob) {
+			logger.warn('Mergeability still null after deferred re-check — giving up', { eventType });
+			captureException(
+				new Error('mergeability_recheck_exhausted: still null after deferred re-check'),
+				{
+					tags: { source: 'mergeability_recheck_exhausted' },
+					extra: { eventType },
+				},
+			);
+			return;
+		}
 	}
 
 	if (!result) {

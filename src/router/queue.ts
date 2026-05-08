@@ -42,6 +42,13 @@ export interface GitHubJob {
 	ackCommentId?: number;
 	ackMessage?: string;
 	triggerResult?: TriggerResult;
+	/**
+	 * Set to 1 when this job is a deferred mergeability re-check (router side).
+	 * The worker uses `!!job.mergeabilityRecheckAttempt` to detect re-check
+	 * jobs and emit Sentry capture when the trigger still cannot determine
+	 * mergeability.
+	 */
+	mergeabilityRecheckAttempt?: number;
 }
 
 export interface JiraJob {

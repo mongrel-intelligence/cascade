@@ -19,8 +19,8 @@ import type { PMIntegration } from '../../pm/integration.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { injectLlmApiKeys } from '../../utils/llmEnv.js';
 import type { TriggerResult } from '../types.js';
-import type { AgentExecutionConfig } from './agent-execution.js';
 import { runAgentExecutionPipeline } from './agent-execution.js';
+import type { AgentExecutionConfig } from './agent-execution-types.js';
 
 /**
  * Run the agent execution pipeline inside the full credential scope.

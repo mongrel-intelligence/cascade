@@ -174,6 +174,40 @@ export async function processRouterWebhook(
 		};
 	}
 
+	// Step 7c: Deferred re-check — trigger asked the router to retry this event
+	// after a delay. Schedules a bare job (no embedded triggerResult) so the worker
+	// re-dispatches fresh via the trigger registry. Used for GitHub async state that
+	// resolves after the webhook delivery window (e.g. PR mergeability).
+	if (result.deferredRecheck && result.agentType === null) {
+		const job = adapter.buildJob(event, payload, project, result, undefined);
+		try {
+			await scheduleCoalescedJob(
+				job,
+				result.deferredRecheck.coalesceKey,
+				result.deferredRecheck.delayMs,
+			);
+			logger.info(`${adapter.type} deferred re-check scheduled`, {
+				coalesceKey: result.deferredRecheck.coalesceKey,
+				delayMs: result.deferredRecheck.delayMs,
+				projectId: project.id,
+			});
+		} catch (err) {
+			captureException(err instanceof Error ? err : new Error(String(err)), {
+				tags: { source: 'deferred_recheck_schedule_failure' },
+				extra: { coalesceKey: result.deferredRecheck.coalesceKey, projectId: project.id },
+			});
+			logger.error(`Failed to schedule deferred re-check for ${adapter.type} event`, {
+				error: String(err),
+				coalesceKey: result.deferredRecheck.coalesceKey,
+			});
+		}
+		return {
+			shouldProcess: true,
+			projectId: project.id,
+			decisionReason: `Deferred re-check scheduled: ${result.deferredRecheck.coalesceKey}`,
+		};
+	}
+
 	logger.info(`${adapter.type} trigger matched`, {
 		agentType: result.agentType || '(no agent)',
 		workItemId: event.workItemId,
