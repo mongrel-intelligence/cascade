@@ -12,7 +12,7 @@
  */
 
 import type { IntegrationModule } from '../integrations/types.js';
-import type { AgentExecutionConfig } from '../triggers/shared/agent-execution.js';
+import type { AgentExecutionConfig } from '../triggers/shared/agent-execution-types.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import type { ProjectPMConfig } from './lifecycle.js';
 import type { PMProvider } from './types.js';
