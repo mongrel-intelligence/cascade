@@ -77,6 +77,8 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 | `trigger-resolution.ts` | `resolveTriggerResult()` — pre-resolved or dispatch | Sentry (GitHub and PM use inline logic) |
 | `credential-scope.ts` | `withPMScope()` — `withPMCredentials` + `withPMProvider` | GitHub, Sentry |
 | `pm-ack.ts` | `postPMAckComment()` — posts ack to Trello/JIRA | GitHub worker handler |
+| `events.ts` | `TRIGGER_EVENTS` — typed catalog of canonical trigger event names | Trigger handlers and tests |
+| `result-builders.ts` | Builders for dispatch, skip, no-agent, and deferred re-check `TriggerResult` shapes | Trigger handlers and tests |
 | `agent-execution.ts` | `runAgentExecutionPipeline()` — full agent lifecycle | All handlers (via `webhook-execution.ts`) |
 | `webhook-execution.ts` | `runAgentWithCredentials()` — LLM keys + credentials + pipeline | GitHub, PM |
 
