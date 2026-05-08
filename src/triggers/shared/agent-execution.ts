@@ -18,8 +18,13 @@ import { logger } from '../../utils/logging.js';
 import { extractPRNumber } from '../../utils/prUrl.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import type { TriggerResult } from '../types.js';
+import {
+	checkPreRunBudget,
+	prepareAgentExecutionLifecycle,
+	runPostAgentExecutionLifecycle,
+	validateAgentExecutionLifecycle,
+} from './agent-execution-lifecycle.js';
 import type { AgentExecutionConfig, AgentExecutionContext } from './agent-execution-types.js';
-import { handleAgentResultArtifacts } from './agent-result-handler.js';
 import {
 	linkPRPostExecution,
 	persistPreRunWorkItems,
@@ -27,118 +32,10 @@ import {
 	resolveWorkItemId,
 } from './agent-work-items.js';
 import { isPipelineAtCapacity } from './backlog-check.js';
-import { checkBudgetExceeded } from './budget.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
 import { shouldTriggerDebug } from './debug-trigger.js';
-import {
-	formatValidationErrors,
-	type ValidationResult,
-	validateIntegrations,
-} from './integration-validation.js';
 
 export type { AgentExecutionConfig } from './agent-execution-types.js';
-
-/**
- * Check the budget before running an agent.
- * Returns the remaining budget if not exceeded, or null to signal the caller
- * should abort (budget exceeded and lifecycle notified).
- */
-async function checkPreRunBudget(
-	workItemId: string,
-	project: ProjectConfig,
-	lifecycle: PMLifecycleManager,
-): Promise<{ remainingBudgetUsd: number | undefined; abort: boolean }> {
-	const budgetCheck = await checkBudgetExceeded(workItemId, project);
-	if (budgetCheck?.exceeded) {
-		logger.warn('Budget exceeded, agent not started', {
-			workItemId,
-			currentCost: budgetCheck.currentCost,
-			budget: budgetCheck.budget,
-		});
-		await lifecycle.handleBudgetExceeded(workItemId, budgetCheck.currentCost, budgetCheck.budget);
-		return { remainingBudgetUsd: undefined, abort: true };
-	}
-	return { remainingBudgetUsd: budgetCheck?.remaining, abort: false };
-}
-
-/**
- * Run post-agent lifecycle steps: artifact handling, budget warning, cleanup, success/failure.
- */
-async function runPostAgentLifecycle(
-	workItemId: string,
-	agentType: string,
-	agentResult: AgentResult,
-	project: ProjectConfig,
-	lifecycle: PMLifecycleManager,
-	lifecycleHooks: LifecycleHooks,
-	executionConfig: AgentExecutionConfig,
-): Promise<void> {
-	const {
-		skipPrepareForAgent = false,
-		skipHandleFailure = false,
-		handleSuccessOnlyForAgentType,
-	} = executionConfig;
-
-	await handleAgentResultArtifacts(workItemId, agentType, agentResult, project);
-
-	const postBudgetCheck = await checkBudgetExceeded(workItemId, project);
-	if (postBudgetCheck?.exceeded) {
-		await lifecycle.handleBudgetWarning(
-			workItemId,
-			postBudgetCheck.currentCost,
-			postBudgetCheck.budget,
-		);
-	}
-
-	if (!skipPrepareForAgent) {
-		await lifecycle.cleanupProcessing(workItemId);
-	}
-
-	const shouldCallHandleSuccess =
-		agentResult.success &&
-		(!handleSuccessOnlyForAgentType || agentType === handleSuccessOnlyForAgentType);
-
-	if (shouldCallHandleSuccess) {
-		await lifecycle.handleSuccess(
-			workItemId,
-			lifecycleHooks,
-			agentResult.prUrl,
-			agentResult.progressCommentId,
-		);
-	} else if (!agentResult.success && !skipHandleFailure) {
-		await lifecycle.handleFailure(workItemId, agentResult.error);
-	}
-}
-
-/**
- * Notify PM and GitHub when integration validation fails before the agent runs.
- */
-async function notifyValidationFailure(
-	result: TriggerResult,
-	validation: ValidationResult,
-	lifecycle: PMLifecycleManager,
-	executionConfig: AgentExecutionConfig,
-	agentType: string,
-	projectId: string,
-): Promise<void> {
-	const errorMessage = formatValidationErrors(validation);
-	logger.error('Integration validation failed', {
-		agentType,
-		projectId,
-		errors: validation.errors,
-	});
-
-	// Only notify via PM if PM validation passed (otherwise PM isn't configured)
-	const pmFailed = validation.errors.some((e) => e.category === 'pm');
-	if (result.workItemId && !pmFailed) {
-		await lifecycle.handleFailure(result.workItemId, errorMessage);
-	}
-
-	// Call onFailure callback (for GitHub PR updates)
-	if (executionConfig.onFailure) {
-		await executionConfig.onFailure(result, { success: false, output: '', error: errorMessage });
-	}
-}
 
 /**
  * Dispatch a review agent after a successful implementation run, if the PR's
@@ -362,21 +259,18 @@ export async function runAgentExecutionPipeline(
 		});
 	}
 
-	// Pre-flight integration validation
-	const validation = await validateIntegrations(project.id, agentType, project);
-	if (!validation.valid) {
-		await notifyValidationFailure(
-			result,
-			validation,
-			lifecycle,
-			executionConfig,
-			agentType,
-			project.id,
-		);
+	const canExecute = await validateAgentExecutionLifecycle({
+		result,
+		project,
+		agentType,
+		lifecycle,
+		executionConfig,
+	});
+	if (!canExecute) {
 		return;
 	}
 
-	const { skipPrepareForAgent = false, onSuccess, onFailure, logLabel = 'Agent' } = executionConfig;
+	const { onSuccess, onFailure, logLabel = 'Agent' } = executionConfig;
 
 	// Re-resolve workItemId at run time. The trigger handler (e.g. PROpenedTrigger)
 	// captures workItemId synchronously at webhook arrival, before any other
@@ -424,13 +318,7 @@ export async function runAgentExecutionPipeline(
 	}
 
 	await persistPreRunWorkItems(result, project, workItemId);
-
-	if (executionContext.workItemId && !skipPrepareForAgent) {
-		await executionContext.lifecycle.prepareForAgent(
-			executionContext.workItemId,
-			executionContext.lifecycleHooks,
-		);
-	}
+	await prepareAgentExecutionLifecycle(executionContext);
 
 	const agentResult = await runAgent(executionContext.agentType, {
 		...executionContext.agentInput,
@@ -453,7 +341,7 @@ export async function runAgentExecutionPipeline(
 	await postAgentSummaryToPM(agentType, agentResult, workItemId, project.id, result.prNumber);
 
 	if (workItemId) {
-		await runPostAgentLifecycle(
+		await runPostAgentExecutionLifecycle(
 			workItemId,
 			agentType,
 			agentResult,
