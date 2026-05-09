@@ -10,8 +10,8 @@ import type {
 	FrictionSeverity,
 } from '../../../friction/types.js';
 import type { ProjectConfig } from '../../../types/index.js';
+import { FRICTION_SIDECAR_ENV_VAR, getFrictionSidecarPath } from '../../sessionState.js';
 
-const FRICTION_SIDECAR_ENV_VAR = 'CASCADE_FRICTION_SIDECAR_PATH';
 const DEFAULT_FRICTION_SIDECAR_PATH = '.cascade/friction-reports.jsonl';
 
 const CATEGORIES = [
@@ -119,6 +119,12 @@ function requireEnum<T extends string>(value: string, allowed: readonly T[], nam
 	throw new Error(`${name} must be one of: ${allowed.join(', ')}`);
 }
 
+function parseOptionalInt(value: string | undefined): number | undefined {
+	if (!value) return undefined;
+	const parsed = Number.parseInt(value, 10);
+	return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
 function buildReport(params: ReportFrictionParams, project: ProjectConfig): FrictionReport {
 	return {
 		reportId: randomUUID(),
@@ -153,6 +159,9 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 				url: process.env.CASCADE_WORK_ITEM_URL,
 			},
 			pr: {
+				number: parseOptionalInt(process.env.CASCADE_PR_NUMBER),
+				title: process.env.CASCADE_PR_TITLE,
+				url: process.env.CASCADE_PR_URL,
 				branch: process.env.CASCADE_PR_BRANCH,
 				headSha: process.env.CASCADE_INITIAL_HEAD_SHA,
 			},
@@ -163,7 +172,10 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 export async function reportFriction(params: ReportFrictionParams): Promise<ReportFrictionResult> {
 	const project = params.project ?? projectFromEnv();
 	const sidecarPath =
-		params.sidecarPath ?? process.env[FRICTION_SIDECAR_ENV_VAR] ?? DEFAULT_FRICTION_SIDECAR_PATH;
+		params.sidecarPath ??
+		process.env[FRICTION_SIDECAR_ENV_VAR] ??
+		getFrictionSidecarPath() ??
+		DEFAULT_FRICTION_SIDECAR_PATH;
 	const report = buildReport(params, project);
 
 	await appendQueuedFrictionReport(sidecarPath, report, report.createdAt);

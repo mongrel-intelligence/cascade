@@ -48,10 +48,31 @@ function injectTrelloConfig(projectSecrets: Record<string, string>, project: Pro
 	projectSecrets.CASCADE_TRELLO_LABELS = JSON.stringify(trelloConfig.labels);
 }
 
+function injectAgentInputContext(projectSecrets: Record<string, string>, input: AgentInput): void {
+	const stringFields: Array<[keyof AgentInput, string]> = [
+		['workItemId', 'CASCADE_WORK_ITEM_ID'],
+		['workItemUrl', 'CASCADE_WORK_ITEM_URL'],
+		['workItemTitle', 'CASCADE_WORK_ITEM_TITLE'],
+		['prUrl', 'CASCADE_PR_URL'],
+		['prTitle', 'CASCADE_PR_TITLE'],
+	];
+
+	for (const [field, envVar] of stringFields) {
+		const value = input[field];
+		if (typeof value === 'string' && value) {
+			projectSecrets[envVar] = value;
+		}
+	}
+
+	if (typeof input.prNumber === 'number') {
+		projectSecrets.CASCADE_PR_NUMBER = String(input.prNumber);
+	}
+}
+
 export async function augmentProjectSecrets(
 	project: ProjectConfig,
 	agentType: string,
-	_input: AgentInput,
+	input: AgentInput,
 ): Promise<Record<string, string>> {
 	const projectSecrets = await getAllProjectCredentials(project.id);
 
@@ -103,6 +124,7 @@ export async function augmentProjectSecrets(
 
 	// Inject agent type so Finish command can validate without flags
 	projectSecrets.CASCADE_AGENT_TYPE = agentType;
+	injectAgentInputContext(projectSecrets, input);
 
 	// Inject PM type so cascade-tools uses the correct provider
 	projectSecrets.CASCADE_PM_TYPE = project.pm?.type ?? 'trello';

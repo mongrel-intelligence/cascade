@@ -49,6 +49,7 @@ export async function buildExecutionPlan(
 		prSidecarPath?: string;
 		pushedChangesSidecarPath?: string;
 		pmWriteSidecarPath?: string;
+		frictionSidecarPath?: string;
 		nativeToolRuntimeCleanup?: () => void;
 	}
 > {
@@ -152,8 +153,13 @@ export async function buildExecutionPlan(
 		isGitHubAck,
 	);
 
-	const { reviewSidecarPath, prSidecarPath, pushedChangesSidecarPath, pmWriteSidecarPath } =
-		createCompletionArtifacts(profile, agentType, needsNativeToolRuntime, input, projectSecrets);
+	const {
+		reviewSidecarPath,
+		prSidecarPath,
+		pushedChangesSidecarPath,
+		pmWriteSidecarPath,
+		frictionSidecarPath,
+	} = createCompletionArtifacts(profile, agentType, needsNativeToolRuntime, input, projectSecrets);
 
 	const completionRequirements = {
 		requiresPR: profile.finishHooks.requiresPR,
@@ -206,6 +212,7 @@ export async function buildExecutionPlan(
 		prSidecarPath,
 		pushedChangesSidecarPath,
 		pmWriteSidecarPath,
+		frictionSidecarPath,
 		nativeToolRuntimeCleanup: nativeToolRuntime?.cleanup,
 	};
 }
@@ -256,14 +263,7 @@ export function injectRunLinkSecrets(
 	workItemId: string | undefined,
 	runId: string | undefined,
 ): void {
-	if (!project.runLinksEnabled) return;
-
-	const dashboardUrl = getDashboardUrl();
-	if (!dashboardUrl) return;
-
 	partialInput.projectSecrets ??= {};
-	partialInput.projectSecrets.CASCADE_RUN_LINKS_ENABLED = 'true';
-	partialInput.projectSecrets.CASCADE_DASHBOARD_URL = dashboardUrl;
 	partialInput.projectSecrets.CASCADE_ENGINE_LABEL = engineId;
 	partialInput.projectSecrets.CASCADE_MODEL = partialInput.model ?? '';
 	partialInput.projectSecrets.CASCADE_PROJECT_ID = project.id;
@@ -273,4 +273,12 @@ export function injectRunLinkSecrets(
 	if (runId) {
 		partialInput.projectSecrets.CASCADE_RUN_ID = runId;
 	}
+
+	if (!project.runLinksEnabled) return;
+
+	const dashboardUrl = getDashboardUrl();
+	if (!dashboardUrl) return;
+
+	partialInput.projectSecrets.CASCADE_RUN_LINKS_ENABLED = 'true';
+	partialInput.projectSecrets.CASCADE_DASHBOARD_URL = dashboardUrl;
 }

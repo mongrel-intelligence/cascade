@@ -60,6 +60,7 @@ import { CredentialScopedCommand, resolveJiraBaseUrl } from '../../../src/cli/ba
 import { withGitHubToken } from '../../../src/github/client.js';
 import { withJiraCredentials } from '../../../src/jira/client.js';
 import { withLinearCredentials } from '../../../src/linear/client.js';
+import { getPMProvider } from '../../../src/pm/context.js';
 import { withTrelloCredentials } from '../../../src/trello/client.js';
 
 class TestCommand extends CredentialScopedCommand {
@@ -69,6 +70,16 @@ class TestCommand extends CredentialScopedCommand {
 
 	async execute(): Promise<void> {
 		this.executeCalled = true;
+	}
+}
+
+class InspectPMProviderCommand extends CredentialScopedCommand {
+	static override id = 'inspect-pm-provider';
+	static override description = 'Inspect PM provider';
+	providerConfig: unknown;
+
+	async execute(): Promise<void> {
+		this.providerConfig = (getPMProvider() as unknown as { config?: unknown }).config;
 	}
 }
 
@@ -85,6 +96,9 @@ describe('CredentialScopedCommand', () => {
 		delete process.env.CASCADE_LINEAR_TEAM_ID;
 		delete process.env.CASCADE_LINEAR_PROJECT_ID;
 		delete process.env.CASCADE_LINEAR_STATUSES;
+		delete process.env.CASCADE_TRELLO_BOARD_ID;
+		delete process.env.CASCADE_TRELLO_LISTS;
+		delete process.env.CASCADE_TRELLO_LABELS;
 		// Clear JIRA vars so resolvePmType() falls back to 'trello' when not
 		// explicitly testing JIRA behaviour (env may be set on CI/dev machines).
 		delete process.env.JIRA_EMAIL;
@@ -230,5 +244,24 @@ describe('CredentialScopedCommand', () => {
 		const cmd = new TestCommand([], {} as never);
 		await expect(cmd.run()).resolves.not.toThrow();
 		expect(withLinearCredentials).toHaveBeenCalled();
+	});
+
+	it('synthesises Trello board/list/label config from env vars for scoped PM commands', async () => {
+		process.env.CASCADE_PM_TYPE = 'trello';
+		process.env.CASCADE_TRELLO_BOARD_ID = 'board-123';
+		process.env.CASCADE_TRELLO_LISTS = JSON.stringify({
+			todo: 'list-todo',
+			friction: 'list-friction',
+		});
+		process.env.CASCADE_TRELLO_LABELS = JSON.stringify({ auto: 'label-auto' });
+
+		const cmd = new InspectPMProviderCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.providerConfig).toEqual({
+			boardId: 'board-123',
+			lists: { todo: 'list-todo', friction: 'list-friction' },
+			labels: { auto: 'label-auto' },
+		});
 	});
 });

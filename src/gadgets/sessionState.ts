@@ -8,6 +8,8 @@ export const PR_SIDECAR_ENV_VAR = 'CASCADE_PR_SIDECAR_PATH';
 export const PUSHED_CHANGES_SIDECAR_ENV_VAR = 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH';
 /** Env var holding the temp file path for PM write evidence (written by cascade-tools pm add-checklist). */
 export const PM_WRITE_SIDECAR_ENV_VAR = 'CASCADE_PM_WRITE_SIDECAR_PATH';
+/** Env var holding the JSONL outbox for incidental friction reports. */
+export const FRICTION_SIDECAR_ENV_VAR = 'CASCADE_FRICTION_SIDECAR_PATH';
 
 export type SessionHooks = FinishHookFlags;
 
@@ -19,6 +21,7 @@ export interface InitSessionStateOptions {
 	hooks?: SessionHooks;
 	workItemUrl?: string;
 	workItemTitle?: string;
+	frictionSidecarPath?: string;
 	initialHeadSha?: string;
 	/**
 	 * The PR HEAD branch name. Threaded into Finish validation so that
@@ -37,6 +40,7 @@ interface SessionStateData {
 	workItemId: string | null;
 	workItemUrl: string | null;
 	workItemTitle: string | null;
+	frictionSidecarPath: string | null;
 	initialHeadSha: string | null;
 	hooks: SessionHooks;
 	readOnlyFs: boolean;
@@ -71,6 +75,7 @@ export class SessionState {
 		workItemId: null,
 		workItemUrl: null,
 		workItemTitle: null,
+		frictionSidecarPath: null,
 		initialHeadSha: null,
 		hooks: {},
 		readOnlyFs: false,
@@ -94,6 +99,7 @@ export class SessionState {
 			hooks,
 			workItemUrl,
 			workItemTitle,
+			frictionSidecarPath,
 			initialHeadSha,
 		} = options;
 		this.state = {
@@ -104,6 +110,7 @@ export class SessionState {
 			workItemId: workItemId ?? null,
 			workItemUrl: workItemUrl ?? null,
 			workItemTitle: workItemTitle ?? null,
+			frictionSidecarPath: frictionSidecarPath ?? null,
 			initialHeadSha: initialHeadSha ?? null,
 			hooks: hooks ?? {},
 			readOnlyFs: false,
@@ -140,6 +147,10 @@ export class SessionState {
 
 	getWorkItemTitle(): string | null {
 		return this.state.workItemTitle;
+	}
+
+	getFrictionSidecarPath(): string | null {
+		return this.state.frictionSidecarPath;
 	}
 
 	recordPRCreation(prUrl: string): void {
@@ -258,6 +269,10 @@ export function getWorkItemUrl(): string | null {
 
 export function getWorkItemTitle(): string | null {
 	return _defaultInstance.getWorkItemTitle();
+}
+
+export function getFrictionSidecarPath(): string | null {
+	return _defaultInstance.getFrictionSidecarPath();
 }
 
 export function recordPRCreation(prUrl: string): void {

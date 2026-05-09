@@ -110,7 +110,16 @@ function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
 			},
 		} as ProjectConfig;
 	}
-	return { pm: { type: 'trello' } } as ProjectConfig;
+	const trelloLists = process.env.CASCADE_TRELLO_LISTS;
+	const trelloLabels = process.env.CASCADE_TRELLO_LABELS;
+	return {
+		pm: { type: 'trello' },
+		trello: {
+			boardId: process.env.CASCADE_TRELLO_BOARD_ID ?? '',
+			lists: trelloLists ? JSON.parse(trelloLists) : {},
+			labels: trelloLabels ? JSON.parse(trelloLabels) : {},
+		},
+	} as ProjectConfig;
 }
 
 export abstract class CredentialScopedCommand extends Command {

@@ -55,6 +55,8 @@ export interface CreateBuilderOptions {
 	workItemUrl?: string;
 	/** Work item display title for PR ↔ work item enrichment. Passed to session state. */
 	workItemTitle?: string;
+	/** JSONL outbox path for incidental friction reports. Passed to session state. */
+	frictionSidecarPath?: string;
 	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
 	hooks?: SessionHooks;
 }
@@ -99,6 +101,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			hooks: options.hooks,
 			workItemUrl: options.workItemUrl,
 			workItemTitle: options.workItemTitle,
+			frictionSidecarPath: options.frictionSidecarPath,
 			initialHeadSha,
 		});
 

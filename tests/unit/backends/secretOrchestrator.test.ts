@@ -295,7 +295,7 @@ describe('buildExecutionPlan', () => {
 });
 
 describe('injectRunLinkSecrets', () => {
-	it('does nothing when runLinksEnabled is false', () => {
+	it('injects runtime context but no dashboard link flags when runLinksEnabled is false', () => {
 		mockGetDashboardUrl.mockReturnValue('https://dashboard.example.com');
 		const project = makeProject({ runLinksEnabled: false });
 		const partialInput: { projectSecrets?: Record<string, string>; model?: string } = {
@@ -304,10 +304,18 @@ describe('injectRunLinkSecrets', () => {
 
 		injectRunLinkSecrets(partialInput, project, 'claude-code', 'card123', 'run-id-1');
 
-		expect(partialInput.projectSecrets).toBeUndefined();
+		expect(partialInput.projectSecrets).toEqual({
+			CASCADE_ENGINE_LABEL: 'claude-code',
+			CASCADE_MODEL: 'test-model',
+			CASCADE_PROJECT_ID: 'test-project',
+			CASCADE_WORK_ITEM_ID: 'card123',
+			CASCADE_RUN_ID: 'run-id-1',
+		});
+		expect(partialInput.projectSecrets?.CASCADE_RUN_LINKS_ENABLED).toBeUndefined();
+		expect(partialInput.projectSecrets?.CASCADE_DASHBOARD_URL).toBeUndefined();
 	});
 
-	it('does nothing when dashboardUrl is absent', () => {
+	it('injects runtime context when dashboardUrl is absent', () => {
 		mockGetDashboardUrl.mockReturnValue(undefined);
 		const project = makeProject({ runLinksEnabled: true });
 		const partialInput: { projectSecrets?: Record<string, string>; model?: string } = {
@@ -316,7 +324,14 @@ describe('injectRunLinkSecrets', () => {
 
 		injectRunLinkSecrets(partialInput, project, 'claude-code', 'card123', 'run-id-1');
 
-		expect(partialInput.projectSecrets).toBeUndefined();
+		expect(partialInput.projectSecrets).toEqual({
+			CASCADE_ENGINE_LABEL: 'claude-code',
+			CASCADE_MODEL: 'test-model',
+			CASCADE_PROJECT_ID: 'test-project',
+			CASCADE_WORK_ITEM_ID: 'card123',
+			CASCADE_RUN_ID: 'run-id-1',
+		});
+		expect(partialInput.projectSecrets?.CASCADE_RUN_LINKS_ENABLED).toBeUndefined();
 	});
 
 	it('injects all run link secrets when enabled', () => {

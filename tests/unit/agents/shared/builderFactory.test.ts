@@ -174,6 +174,7 @@ describe('createConfiguredBuilder', () => {
 			hooks: undefined,
 			workItemUrl: undefined,
 			workItemTitle: undefined,
+			frictionSidecarPath: undefined,
 			initialHeadSha: 'abc123headsha',
 		});
 	});
@@ -199,6 +200,7 @@ describe('createConfiguredBuilder', () => {
 			hooks: undefined,
 			workItemUrl: undefined,
 			workItemTitle: undefined,
+			frictionSidecarPath: undefined,
 			initialHeadSha: 'abc123headsha',
 		});
 	});
@@ -220,8 +222,21 @@ describe('createConfiguredBuilder', () => {
 			hooks: undefined,
 			workItemUrl: 'https://trello.com/c/abc123',
 			workItemTitle: 'My Feature Card',
+			frictionSidecarPath: undefined,
 			initialHeadSha: 'abc123headsha',
 		});
+	});
+
+	it('passes frictionSidecarPath to initSessionState', async () => {
+		const options = createBaseOptions({
+			frictionSidecarPath: '/tmp/friction.jsonl',
+		});
+		await createConfiguredBuilder(options);
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				frictionSidecarPath: '/tmp/friction.jsonl',
+			}),
+		);
 	});
 
 	it('passes undefined initialHeadSha when git rev-parse fails', async () => {
@@ -238,6 +253,7 @@ describe('createConfiguredBuilder', () => {
 			hooks: undefined,
 			workItemUrl: undefined,
 			workItemTitle: undefined,
+			frictionSidecarPath: undefined,
 			initialHeadSha: undefined,
 		});
 	});

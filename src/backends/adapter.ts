@@ -11,7 +11,11 @@ import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import { buildProgressMonitorConfig, isGitHubAckComment } from './progressLifecycle.js';
 import { injectRunLinkSecrets, resolvePartialExecutionPlan } from './secretOrchestrator.js';
-import { cleanupTempFile, hydrateNativeToolSidecars } from './sidecarManager.js';
+import {
+	cleanupTempFile,
+	drainFrictionSidecarReports,
+	hydrateNativeToolSidecars,
+} from './sidecarManager.js';
 import type { AgentEngine, AgentExecutionPlan } from './types.js';
 
 /**
@@ -117,7 +121,8 @@ export async function executeWithEngine(
 			// Plan resolution succeeded — fill in the deferred run-row fields.
 			await tryUpdateRunPlanResolution(runId, partialInput.model, partialInput.maxIterations);
 
-			const { reviewSidecarPath, prSidecarPath, nativeToolRuntimeCleanup } = partialInput;
+			const { reviewSidecarPath, prSidecarPath, frictionSidecarPath, nativeToolRuntimeCleanup } =
+				partialInput;
 			const { pushedChangesSidecarPath, pmWriteSidecarPath } = partialInput;
 
 			// Seed session state so GitHub progress updates target the existing ack comment
@@ -189,10 +194,18 @@ export async function executeWithEngine(
 				});
 			} finally {
 				monitor?.stop();
+				await drainFrictionSidecarReports({
+					sidecarPath: frictionSidecarPath,
+					project: input.project,
+					agentType,
+					runId,
+					engineId: engine.definition.id,
+				});
 				cleanupTempFile(prSidecarPath);
 				cleanupTempFile(reviewSidecarPath);
 				cleanupTempFile(pushedChangesSidecarPath);
 				cleanupTempFile(pmWriteSidecarPath);
+				cleanupTempFile(frictionSidecarPath);
 				nativeToolRuntimeCleanup?.();
 			}
 

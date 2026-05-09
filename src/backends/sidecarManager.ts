@@ -3,8 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { getAgentProfile } from '../agents/definitions/profiles.js';
+import { materializeFrictionReport } from '../friction/materialize.js';
+import {
+	appendFiledFrictionReport,
+	rewriteFrictionSidecarWithPending,
+} from '../friction/sidecar.js';
 import {
 	clearInitialComment,
+	FRICTION_SIDECAR_ENV_VAR,
 	PM_WRITE_SIDECAR_ENV_VAR,
 	PR_SIDECAR_ENV_VAR,
 	PUSHED_CHANGES_SIDECAR_ENV_VAR,
@@ -12,7 +18,9 @@ import {
 	recordPRCreation,
 	recordReviewSubmission,
 } from '../gadgets/sessionState.js';
-import type { AgentInput } from '../types/index.js';
+import { pmRegistry } from '../pm/registry.js';
+import { captureException } from '../sentry.js';
+import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { readCompletionEvidence } from './completion.js';
 import type { AgentEngineResult } from './types.js';
@@ -32,7 +40,14 @@ export function createCompletionArtifacts(
 	pushedChangesSidecarPath: string | undefined;
 	reviewSidecarPath: string | undefined;
 	pmWriteSidecarPath: string | undefined;
+	frictionSidecarPath: string | undefined;
 } {
+	const frictionSidecarPath = join(
+		tmpdir(),
+		`cascade-friction-sidecar-${process.pid}-${Date.now()}.jsonl`,
+	);
+	projectSecrets[FRICTION_SIDECAR_ENV_VAR] = frictionSidecarPath;
+
 	const reviewSidecarPath = profile.finishHooks.requiresReview
 		? join(tmpdir(), `cascade-review-sidecar-${process.pid}-${Date.now()}.json`)
 		: undefined;
@@ -79,6 +94,7 @@ export function createCompletionArtifacts(
 		pushedChangesSidecarPath,
 		reviewSidecarPath,
 		pmWriteSidecarPath,
+		frictionSidecarPath,
 	};
 }
 
@@ -242,6 +258,133 @@ export async function hydrateNativeToolSidecars(
 
 	if (reviewSidecarPath) {
 		await hydrateReviewSidecar(reviewSidecarPath);
+	}
+}
+
+export interface DrainFrictionSidecarOptions {
+	sidecarPath?: string;
+	project: ProjectConfig;
+	agentType: string;
+	runId?: string;
+	engineId?: string;
+}
+
+async function withProjectPMCredentials<T>(
+	project: ProjectConfig,
+	fn: () => Promise<T>,
+): Promise<T> {
+	const integration = pmRegistry.getOrNull(project.pm?.type ?? 'trello');
+	if (!integration) return fn();
+	return integration.withCredentials(project.id, fn);
+}
+
+/**
+ * Best-effort drain of queued friction reports from the JSONL sidecar.
+ *
+ * This deliberately never throws. Friction reporting is incidental telemetry:
+ * a failed materialization should be visible in logs/Sentry, but must not flip
+ * the primary agent run from success to failure or mask the original error.
+ */
+export async function drainFrictionSidecarReports({
+	sidecarPath,
+	project,
+	agentType,
+	runId,
+	engineId,
+}: DrainFrictionSidecarOptions): Promise<void> {
+	if (!sidecarPath) return;
+
+	let pending: Awaited<ReturnType<typeof rewriteFrictionSidecarWithPending>>;
+	try {
+		pending = await rewriteFrictionSidecarWithPending(sidecarPath);
+	} catch (err) {
+		logger.warn('Failed to read friction sidecar before drain', {
+			sidecarPath,
+			projectId: project.id,
+			agentType,
+			runId,
+			engine: engineId,
+			error: String(err),
+		});
+		captureException(err instanceof Error ? err : new Error(String(err)), {
+			tags: {
+				source: 'friction_sidecar_drain_failed',
+				phase: 'read',
+				agentType,
+			},
+			extra: { sidecarPath, projectId: project.id, runId, engine: engineId },
+		});
+		return;
+	}
+
+	if (pending.length === 0) return;
+
+	logger.info('Draining pending friction sidecar reports', {
+		sidecarPath,
+		projectId: project.id,
+		agentType,
+		runId,
+		engine: engineId,
+		pendingCount: pending.length,
+	});
+
+	for (const event of pending) {
+		try {
+			const result = await withProjectPMCredentials(project, () =>
+				materializeFrictionReport({ project, report: event.report }),
+			);
+			if (result.status === 'filed') {
+				await appendFiledFrictionReport(sidecarPath, {
+					reportId: event.reportId,
+					workItemId: result.workItemId,
+					workItemUrl: result.workItemUrl,
+				});
+				logger.info('Drained friction sidecar report', {
+					sidecarPath,
+					projectId: project.id,
+					agentType,
+					runId,
+					engine: engineId,
+					reportId: event.reportId,
+					workItemId: result.workItemId,
+				});
+			} else {
+				logger.warn('Skipped friction sidecar report during drain', {
+					sidecarPath,
+					projectId: project.id,
+					agentType,
+					runId,
+					engine: engineId,
+					reportId: event.reportId,
+					reason: result.reason,
+					message: result.message,
+				});
+			}
+		} catch (err) {
+			logger.warn('Failed to drain friction sidecar report', {
+				sidecarPath,
+				projectId: project.id,
+				agentType,
+				runId,
+				engine: engineId,
+				reportId: event.reportId,
+				error: String(err),
+			});
+			captureException(err instanceof Error ? err : new Error(String(err)), {
+				tags: {
+					source: 'friction_sidecar_drain_failed',
+					phase: 'materialize',
+					agentType,
+				},
+				extra: {
+					sidecarPath,
+					projectId: project.id,
+					runId,
+					engine: engineId,
+					reportId: event.reportId,
+				},
+			});
+		}
 	}
 }
 
