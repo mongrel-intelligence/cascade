@@ -50,3 +50,6 @@ test-results/
 
 # CASCADE context files (temporary pre-fetched data)
 .cascade/context/
+
+# CASCADE friction report sidecar (runtime artifact — must not be committed or staged)
+.cascade/friction-reports.jsonl
