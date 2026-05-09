@@ -1,12 +1,12 @@
 # Integration Layer
 
-CASCADE uses a unified integration abstraction so that infrastructure code (router, worker, webhook handlers) never branches on provider type. Every PM, SCM, and alerting provider is a class implementing `IntegrationModule`, registered into a singleton `IntegrationRegistry` at bootstrap.
+CASCADE uses a unified integration layer so infrastructure code (router, worker, webhook handlers) looks up integrations through registries instead of branching on provider type. PM providers use the newer `PMProviderManifest` registry; SCM (GitHub) and alerting (Sentry) still use the legacy `IntegrationModule` path and mirror into the same cross-category `IntegrationRegistry`.
 
 ## IntegrationModule
 
 `src/integrations/types.ts`
 
-The base contract for all integrations:
+The base contract for SCM and alerting integrations, and the compatibility surface that PM manifests mirror into:
 
 ```typescript
 interface IntegrationModule {
@@ -26,7 +26,7 @@ interface IntegrationModule {
 
 ### Credential scoping
 
-`withCredentials()` uses `AsyncLocalStorage` to set provider-specific env vars for the duration of a callback, then restores the original values. This provides per-request credential isolation without global state mutation.
+`withCredentials()` uses `AsyncLocalStorage` to set provider-specific credentials for the duration of a callback. This provides per-request credential isolation without global state mutation.
 
 ### Integration checking
 
@@ -50,7 +50,11 @@ const integrationRegistry: IntegrationRegistry;  // singleton
 
 ## Category Interfaces
 
-### PMIntegration
+### PMProviderManifest and PMIntegration
+
+`src/integrations/pm/manifest.ts` — the manifest is the single PM-provider contract. Trello, JIRA, and Linear each declare identity, credential roles, webhook route/signature verification, router adapter, trigger handlers, platform ack client, config schema, discovery capabilities, wizard spec, and lifecycle fixture in one provider-owned object.
+
+The PM barrel (`src/integrations/pm/index.ts`) imports each provider once, then mirrors each manifest's `pmIntegration` into `integrationRegistry`. New PM providers add one provider folder plus one import in that barrel; shared router, worker, dashboard, CLI, and config files are guarded against provider-specific edits by conformance tests.
 
 `src/pm/integration.ts` — extends `IntegrationModule` with PM-specific methods:
 
@@ -72,16 +76,14 @@ const integrationRegistry: IntegrationRegistry;  // singleton
 
 ## Bootstrap
 
-`src/integrations/bootstrap.ts`
+`src/integrations/entrypoint.ts`
 
-Single, idempotent registration point for all five built-in integrations. Safe to import from router, worker, and dashboard — it does not pull in the agent execution pipeline or template files.
+Single registration entrypoint for all runtime surfaces. Router, worker, CLI bootstrap, dashboard, and tests import it for side effects.
 
 ```
-TrelloIntegration         → integrationRegistry + pmRegistry
-JiraIntegration           → integrationRegistry + pmRegistry
-LinearIntegration         → integrationRegistry + pmRegistry
-GitHubSCMIntegration      → integrationRegistry
-SentryAlertingIntegration → integrationRegistry
+PM barrel                 → pmProviderRegistry + integrationRegistry
+GitHub register.ts        → integrationRegistry + trigger handlers
+Sentry register.ts        → integrationRegistry + trigger handlers
 ```
 
 ## Credential Roles
@@ -100,26 +102,29 @@ Each provider declares its credential roles — the mapping from logical role na
 
 ## Provider Implementations
 
-### Trello (`src/pm/trello/`, `src/trello/`)
+### Trello (`src/integrations/pm/trello/`, `src/pm/trello/`, `src/trello/`)
 
-- `TrelloIntegration` implements `PMIntegration`
+- `trelloManifest` declares the PM provider contract and registers with `pmProviderRegistry`
+- `TrelloIntegration` implements the mirrored `PMIntegration`
 - `TrelloPMProvider` implements `PMProvider` (card CRUD, comments, labels, checklists)
 - `trelloClient` — Octokit-style client with AsyncLocalStorage credential scoping
 - Media extraction from markdown in card descriptions/comments
 - Status = list ID (cards grouped by lists)
 
-### JIRA (`src/pm/jira/`, `src/jira/`)
+### JIRA (`src/integrations/pm/jira/`, `src/pm/jira/`, `src/jira/`)
 
-- `JiraIntegration` implements `PMIntegration`
+- `jiraManifest` declares the PM provider contract and registers with `pmProviderRegistry`
+- `JiraIntegration` implements the mirrored `PMIntegration`
 - `JiraPMProvider` implements `PMProvider` (issue CRUD, transitions, comments)
 - `jiraClient` — wraps `jira.js` Version3Client with AsyncLocalStorage scoping
 - ADF (Atlassian Document Format) ↔ markdown conversion (`src/pm/jira/adf.ts`)
 - Status transitions via JIRA transition ID lookup
 - Issue key extraction via regex: `[A-Z][A-Z0-9]+-\d+`
 
-### Linear (`src/pm/linear/`, `src/linear/`)
+### Linear (`src/integrations/pm/linear/`, `src/pm/linear/`, `src/linear/`)
 
-- `LinearIntegration` implements `PMIntegration`
+- `linearManifest` declares the PM provider contract and registers with `pmProviderRegistry`
+- `LinearIntegration` implements the mirrored `PMIntegration`
 - `LinearPMProvider` implements `PMProvider` (issue CRUD, comments, labels, state transitions)
 - `linearClient` — GraphQL/REST client with AsyncLocalStorage credential scoping
 - Status transitions via Linear state ID lookup

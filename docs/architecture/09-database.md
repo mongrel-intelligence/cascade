@@ -134,7 +134,7 @@ erDiagram
 | `agent_run_logs` | Cascade log + engine log per run | One-to-one with `agent_runs` |
 | `agent_run_llm_calls` | LLM request/response pairs with token/cost tracking | — |
 | `prompt_partials` | Org-scoped prompt template customizations | UNIQUE(`org_id`, `name`) |
-| `pr_work_items` | Maps PRs to work items for run-link display | — |
+| `pr_work_items` | Maps PRs and external alert sources to PM work items for run-link display and alert idempotency | Partial unique indexes on `(project_id, pr_number)`, `(project_id, work_item_id)`, and `(project_id, external_source, external_id)` when those values are present |
 | `webhook_logs` | Raw webhook payloads for debugging | — |
 | `users` | Dashboard users (email, bcrypt hash, role) | Org-scoped |
 | `sessions` | Session tokens for cookie auth (30-day expiry) | — |

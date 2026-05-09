@@ -284,11 +284,13 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"teamId":"TEAM_UUID","statuses":{"todo":"STATE_UUID","inProgress":"STATE_UUID","done":"STATE_UUID"},"labels":{"readyToProcess":"LABEL_UUID","processing":"LABEL_UUID"}}'
 ```
 
+If you enable the alerting agent, configure the optional `alerts` PM slot as well. For Trello this is `lists.alerts`; for Jira and Linear this is `statuses.alerts`. Sentry alerts materialize into that list/status before the alerting agent runs.
+
 ---
 
 ## 9. Set Up Webhooks
 
-Cascade needs to receive webhooks from GitHub (and optionally your PM tool) to trigger agents.
+Cascade needs to receive webhooks from GitHub, your PM tool, and optionally Sentry to trigger agents.
 
 Your Cascade instance must be reachable from the internet. For local development, use a tunnel like [ngrok](https://ngrok.com/) or [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/).
 
@@ -305,7 +307,15 @@ node bin/cascade.js webhooks create my-project \
   --callback-url https://your-tunnel.ngrok.io
 ```
 
-This creates webhooks on GitHub (and Trello if configured) pointing to your Router. For Linear, create the webhook manually in your Linear workspace settings, pointing to `https://your-router-host/linear/webhook`.
+This creates webhooks on GitHub, Trello, and Jira when those integrations are configured, reusing existing hooks when the canonical callback URL already exists. Linear and Sentry are informational/manual setup paths: the dashboard and API show the correct callback URL and whether a signing secret is stored, but you create the webhook in the provider UI.
+
+| Provider | Setup behavior | Callback URL |
+|----------|----------------|--------------|
+| GitHub | Programmatic create/list/delete | `https://your-router-host/github/webhook` |
+| Trello | Programmatic create/list/delete | `https://your-router-host/trello/webhook` |
+| Jira | Programmatic create/list/delete plus label ensure | `https://your-router-host/jira/webhook` |
+| Linear | Manual setup with optional `LINEAR_WEBHOOK_SECRET` | `https://your-router-host/linear/webhook` |
+| Sentry | Manual setup with optional Sentry webhook secret | `https://your-router-host/sentry/webhook/my-project` |
 
 ---
 
@@ -334,6 +344,10 @@ node bin/cascade.js projects trigger-set my-project \
 # Enable respond-to-review when the reviewer requests changes
 node bin/cascade.js projects trigger-set my-project \
   --agent respond-to-review --event scm:pr-review-submitted --enable
+
+# Enable alerting investigations for Sentry issue alerts
+node bin/cascade.js projects trigger-set my-project \
+  --agent alerting --event alerting:issue-alert --enable
 
 # See all available triggers for an agent
 node bin/cascade.js projects trigger-discover --agent implementation

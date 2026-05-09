@@ -59,6 +59,10 @@ interface TriggerResult {
   prTitle?: string;
   waitForChecks?: boolean;         // Poll CI before starting
   onBlocked?: () => void;          // Cleanup if job can't be enqueued
+  deferredRecheck?: {
+    delayMs: number;
+    coalesceKey: string;
+  };                               // Schedule a bare delayed re-dispatch
 }
 ```
 
@@ -135,7 +139,11 @@ function registerBuiltInTriggers(registry: TriggerRegistry): void {
 Triggers use category-prefixed events: `{category}:{event-name}`
 - `pm:status-changed`, `pm:label-added`
 - `scm:check-suite-success`, `scm:pr-review-submitted`, `scm:review-requested`
-- `alerting:issue-created`, `alerting:metric-alert`
+- `alerting:issue-alert`, `alerting:metric-alert`
+
+### Deferred re-checks
+
+Handlers that cannot make a final decision yet can return `deferredRecheck: { delayMs, coalesceKey }` with `agentType: null`. The router schedules a coalesced delayed BullMQ job and exits without spawning an agent. GitHub mergeability checks use this path; the worker recognizes re-check jobs via `mergeabilityRecheckAttempt` and captures a Sentry diagnostic if the second pass still cannot resolve state.
 
 ### Config resolution
 
@@ -189,3 +197,4 @@ This includes:
 - Agent execution via `runAgent()` (see [05-engine-backends](./05-engine-backends.md))
 - Post-run lifecycle (move card to "In Review", link PR, sync checklists)
 - Debug analysis triggering on failure
+- Deterministic review dispatch after a successful implementation run with a PR, using the same dedup key as the `scm:check-suite-success` trigger

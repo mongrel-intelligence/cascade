@@ -100,7 +100,7 @@ sequenceDiagram
 
 **YAML-based agent definitions** — Agents are defined declaratively in YAML files specifying identity, capabilities, triggers, prompts, and lifecycle hooks. Definitions resolve via three tiers: in-memory cache, database, then YAML files on disk.
 
-**AsyncLocalStorage credential scoping** — Provider clients (GitHub, Trello, JIRA) use Node.js `AsyncLocalStorage` to scope credentials per-request, preventing cross-request credential leakage.
+**AsyncLocalStorage credential scoping** — Provider clients (GitHub, Trello, JIRA, Linear, and PM dispatch scopes) use Node.js `AsyncLocalStorage` to scope credentials and active PM provider context per request, preventing cross-request credential leakage.
 
 ## Directory Map
 

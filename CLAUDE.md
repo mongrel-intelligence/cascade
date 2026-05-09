@@ -107,7 +107,7 @@ cascade projects credentials-set <id> --key GITHUB_TOKEN_REVIEWER --value ghp_..
 ## Agent triggers
 
 Trigger format is category-prefixed: `{category}:{event}`
-(e.g. `pm:status-changed`, `scm:check-suite-success`, `alerting:issue-created`).
+(e.g. `pm:status-changed`, `scm:check-suite-success`, `alerting:issue-alert`).
 
 Configs live in the `agent_trigger_configs` table. Manage via:
 

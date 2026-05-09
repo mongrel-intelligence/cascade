@@ -118,7 +118,7 @@ flowchart TD
 4. **Self-check** — Adapter's `isSelfAuthored()` detects bot's own actions (loop prevention)
 5. **Reaction** — Fire-and-forget emoji reaction on the source event
 6. **Resolve config** — Look up project by platform identifier (board ID, repo, etc.)
-7. **Dispatch triggers** — Within credential scope, call `TriggerRegistry.dispatch()` to find matching agent
+7. **Dispatch triggers** — Within credential scope, call `TriggerRegistry.dispatch()` to find a matching agent. PM router adapters also wrap dispatch in `withPMScopeForDispatch(fullProject, dispatch)` so shared PM gates can resolve the active provider.
 8. **Concurrency** — Check work-item lock (`work-item-lock.ts`) and agent-type concurrency (`agent-type-lock.ts`)
 9. **Ack comment** — Post an acknowledgment comment to the work item or PR
 10. **Build job** — Package trigger result + payload + ack info into a `CascadeJob`
@@ -130,10 +130,11 @@ flowchart TD
 | Mechanism | File | Purpose |
 |-----------|------|---------|
 | Action dedup | `action-dedup.ts` | Prevent processing same webhook delivery twice |
-| Work-item lock | `work-item-lock.ts` | Prevent concurrent agents on the same card/issue |
+| Work-item lock | `work-item-lock.ts` | Prevent duplicate same-agent runs on the same card/issue |
 | Agent-type lock | `agent-type-lock.ts` | Configurable `max_concurrency` per agent type per project |
+| Lock-state classifier | `lock-state-classifier.ts` | Explains blocked webhooks as queued, awaiting worker slot, or wedged lock |
 
-All locks are in-memory with TTL expiry. They are conservative (enqueue-time only) — the worker performs its own verification before executing.
+All locks are in-memory with TTL expiry. Work-item locks are scoped by `(projectId, workItemId, agentType)`: duplicate runs of the same agent are blocked, but different agent types can run concurrently on the same work item. When a lock rejects a webhook, logs distinguish `Awaiting worker slot` from `Work item locked (no active dispatch)`; the latter is a wedged-lock canary and captures to Sentry.
 
 ## Signature Verification
 

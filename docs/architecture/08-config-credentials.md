@@ -51,14 +51,18 @@ interface ProjectConfig {
   agentEngineSettings?: Record<string, EngineSettings>;
   runLinksEnabled: boolean;
   maxInFlightItems?: number;        // hard cap on TODO+IN_PROGRESS+IN_REVIEW; default 1
-  // ... PM config (trello/jira), agent models, snapshot settings
+  // ... PM config (trello/jira/linear), agent models, snapshot settings
 }
 ```
 
 `maxInFlightItems` is enforced at two points: (a) the `backlog-manager` chain
 gates (won't auto-pull from BACKLOG when at capacity) and (b) the PM
 `status-changed` triggers (won't fire `implementation` when a card is moved
-into TODO past the cap). See `src/triggers/shared/pipeline-capacity-gate.ts`.
+into TODO past the cap). PM router adapters must dispatch inside
+`withPMScopeForDispatch(fullProject, dispatch)` so this gate can resolve the
+active PM provider; if that scope is missing the gate fails closed and captures
+Sentry under `pipeline_capacity_gate_no_pm_provider`. See
+`src/triggers/shared/pipeline-capacity-gate.ts`.
 
 ## Credential Resolution
 

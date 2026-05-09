@@ -15,9 +15,18 @@ SCM: {
 PM: {
   trello
   jira
+  linear
   style: {
     shadow: true
     fill: Orange
+  }
+}
+
+ALERTING: {
+  sentry
+  style: {
+    shadow: true
+    fill: Red
   }
 }
 
@@ -68,8 +77,9 @@ client.cli <-> CASCADE.api
 
 SCM -> CASCADE.router: webhook triggers
 PM -> CASCADE.router: webhook triggers
+ALERTING -> CASCADE.router: webhook triggers
 
 CASCADE.worker manager -> PM: updates, comments
+CASCADE.worker manager -> ALERTING: issue + event reads
 CASCADE.worker manager -> SCM: PRs, reviews, comments
 SCM -> CASCADE.worker manager: repo + PR contents
-

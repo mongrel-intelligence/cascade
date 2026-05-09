@@ -95,7 +95,7 @@ The router passes job data to workers via Docker container env vars:
 | Variable | Purpose |
 |----------|---------|
 | `JOB_ID` | Unique job identifier |
-| `JOB_TYPE` | `trello`, `github`, `jira`, `linear`, `sentry`, `manual-run`, `retry-run`, `debug-analysis` |
+| `JOB_TYPE` | `trello`, `github`, `jira`, `linear`, `sentry`, `manual-run`, `retry-run`, `debug-analysis`; GitHub jobs may also carry `mergeabilityRecheckAttempt` for deferred re-checks |
 | `JOB_DATA` | JSON-encoded job payload |
 | `CASCADE_CREDENTIAL_KEYS` | Comma-separated list of credential env var names |
 | Individual credential vars | Pre-loaded project credentials (e.g., `GITHUB_TOKEN_IMPLEMENTER`) |
@@ -132,7 +132,7 @@ The security scrub in step 8 prevents agent engines (which execute arbitrary LLM
 ### Dispatch flow
 
 `dispatchJob()` switches on the job type:
-- **Webhook jobs** (`trello`, `github`, `jira`, `sentry`) — call the provider-specific webhook processor, which re-runs trigger dispatch and executes the matched agent
+- **Webhook jobs** (`trello`, `github`, `jira`, `linear`, `sentry`) — call the provider-specific webhook processor, which re-runs trigger dispatch and executes the matched agent
 - **Dashboard jobs** (`manual-run`, `retry-run`, `debug-analysis`) — call `processDashboardJob()`, which loads project config and invokes the appropriate runner
 
 ## Dashboard

@@ -4,6 +4,8 @@
 
 This document is the canonical guide for **adding a new gadget** (a `cascade-tools <cat> <name>` command) and keeping its agent-facing surface truthful, runnable, and self-correctable.
 
+Current command namespaces are category-based: `pm` for work items and checklists, `scm` for GitHub PR operations, `alerting` for Sentry issue/event reads, and `session` for run completion. Keep examples aligned with the concrete command files under `src/cli/<namespace>/`.
+
 ---
 
 ## Architecture in one picture

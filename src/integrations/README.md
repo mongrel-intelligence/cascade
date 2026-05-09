@@ -250,7 +250,7 @@ Different PM providers have different native concepts of "checklist". The `PMPro
 | **Linear** | Inline markdown in description | `### {Checklist Name}` heading + `- [ ]` / `- [x]` lines in the issue's description |
 | **JIRA** | Inline markdown in description (via ADF round-trip) | `### {Checklist Name}` heading + `- [ ]` / `- [x]` lines in the issue's description |
 
-**Why inline markdown for Linear and JIRA?** Both providers support markdown checkboxes natively in their description editors but lack a dedicated lightweight checklist primitive — sub-issues and subtasks are full work items, which clutters boards when used for things like acceptance criteria or implementation steps. Inline markdown matches Trello's lightweight semantics without creating orphan issues. See [spec 008](../../docs/specs/008-inline-checklists.md) for full rationale.
+**Why inline markdown for Linear and JIRA?** Both providers support markdown checkboxes natively in their description editors but lack a dedicated lightweight checklist primitive — sub-issues and subtasks are full work items, which clutters boards when used for things like acceptance criteria or implementation steps. Inline markdown matches Trello's lightweight semantics without creating orphan issues. See [spec 008](../../docs/specs/008-inline-checklists.md.done) for full rationale.
 
 The shared engine that parses, appends, toggles, and removes inline checklist items lives at `src/pm/_shared/inline-checklist.ts` and is consumed by both the Linear and JIRA adapters.
 
@@ -306,13 +306,13 @@ Spec 016/3 captured a fixture and pinned the rule for Linear specifically. The f
 - **Regression net.** The captured fixture lives at `tests/fixtures/linear-issue-with-screenshot.json`. The unit test at `tests/unit/pm/linear/extraction-coverage.test.ts` loads the fixture and asserts every inline image is extracted — fails LOUDLY with a clear message if Linear ever changes payload shape in a way that loses inline images.
 - **No new GraphQL surface to query.** As of spec 016/3 the Linear API exposes inline-pasted images only via the `description` and `Comment.body` markdown fields. There is no `descriptionData` rich-text JSON tree that would expose them differently, and no `attachments(includeInline: true)` filter. Future Linear API drift would surface as a fixture-test failure.
 
-See [spec 016](../../docs/specs/016-pm-image-delivery-reliability.md) for the full rationale and the live incident this contract closed.
+See [spec 016](../../docs/specs/016-pm-image-delivery-reliability.md.done) for the full rationale and the live incident this contract closed.
 
 ---
 
 ## Alerting work-item materializer
 
-**Spec [019](../../docs/specs/019-sentry-alert-pm-materialization.md)** added a generic materializer that converts an external alert event into a real PM work item so the alerting agent runs against a native PM card/issue with full lifecycle support (budget tracking, status transitions, label writes). See the spec for full rationale; this section covers the contracts new providers must respect.
+**Spec [019](../../docs/specs/019-sentry-alert-pm-materialization.md.done)** added a generic materializer that converts an external alert event into a real PM work item so the alerting agent runs against a native PM card/issue with full lifecycle support (budget tracking, status transitions, label writes). See the spec for full rationale; this section covers the contracts new providers must respect.
 
 ### `materializeAlertWorkItem` contract
 
@@ -330,13 +330,13 @@ Located at `src/integrations/alerting/_shared/materialize.ts`. Callable from any
 
 The function throws `AlertSlotMissingError` (from `src/integrations/alerting/_shared/types.ts`) when the project's PM config doesn't have the `alerts` slot configured. Callers catch this and return `null` — no dispatch, operator must configure the slot.
 
-### Storage contract — `work_items` idempotency
+### Storage contract — `pr_work_items` idempotency
 
-Each materialization writes a row to the `work_items` table (or updates the existing one) using the `(projectId, externalSource, externalId)` partial UNIQUE index:
+Each materialization writes a row to the `pr_work_items` table (or updates the existing one) using the `(projectId, externalSource, externalId)` partial UNIQUE index:
 
 ```sql
-CREATE UNIQUE INDEX work_items_external_uniq
-  ON work_items (project_id, external_source, external_id)
+CREATE UNIQUE INDEX uq_pr_work_items_project_external
+  ON pr_work_items (project_id, external_source, external_id)
   WHERE external_source IS NOT NULL;
 ```
 

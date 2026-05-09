@@ -66,6 +66,8 @@ npx vitest run tests/unit/triggers/trello/status-changed.test.ts
 TEST_DATABASE_URL=... npx vitest run --project integration tests/integration/<file>.test.ts
 ```
 
+Documentation drift guards live in `tests/unit/architecture-docs.test.ts` and run under `unit-core`. They check architecture deep-dive structure, active Markdown relative links (including links to archived `.md.done` specs), canonical trigger names such as `alerting:issue-alert`, current `cascade-tools` namespaces, and `CLAUDE.md`/`AGENTS.md` synchronization.
+
 ---
 
 ## Factory Catalog
