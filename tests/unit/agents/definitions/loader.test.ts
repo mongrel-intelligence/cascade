@@ -304,6 +304,7 @@ describe('YAML agent definitions loader', () => {
 			expect(allCaps.includes('fs:write')).toBe(true);
 			expect(allCaps.includes('scm:pr')).toBe(true);
 			expect(allCaps.includes('pm:checklist')).toBe(true);
+			expect(allCaps.includes('pm:friction')).toBe(true);
 			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
@@ -386,6 +387,24 @@ describe('YAML agent definitions loader', () => {
 				const def = loadBuiltinDefinition(agentType);
 				expect(Array.isArray(def.capabilities.required)).toBe(true);
 				expect(Array.isArray(def.capabilities.optional)).toBe(true);
+			}
+		});
+
+		it('requires pm:friction when PM is required and makes it optional when PM is optional', () => {
+			for (const agentType of ALL_AGENT_TYPES) {
+				const def = loadBuiltinDefinition(agentType);
+				const integrations = deriveIntegrations(
+					def.capabilities.required,
+					def.capabilities.optional,
+				);
+
+				if (integrations.required.includes('pm')) {
+					expect(def.capabilities.required, agentType).toContain('pm:friction');
+					expect(def.capabilities.optional, agentType).not.toContain('pm:friction');
+				} else if (integrations.optional.includes('pm')) {
+					expect(def.capabilities.required, agentType).not.toContain('pm:friction');
+					expect(def.capabilities.optional, agentType).toContain('pm:friction');
+				}
 			}
 		});
 

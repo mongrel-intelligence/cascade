@@ -18,6 +18,7 @@ capabilities:
     - session:ctrl
     - pm:read
     - pm:write
+    - pm:friction
   optional: []
 
 # Supported triggers for this agent

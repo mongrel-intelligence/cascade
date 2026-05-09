@@ -90,6 +90,11 @@ describe('deriveRequiredIntegrations', () => {
 		expect(deriveRequiredIntegrations(caps)).toEqual(['pm']);
 	});
 
+	it('returns pm for pm:friction capability', () => {
+		const caps: Capability[] = ['pm:friction'];
+		expect(deriveRequiredIntegrations(caps)).toEqual(['pm']);
+	});
+
 	it('returns scm for scm:pr capability', () => {
 		const caps: Capability[] = ['scm:pr'];
 		expect(deriveRequiredIntegrations(caps)).toEqual(['scm']);
@@ -150,11 +155,12 @@ describe('resolveEffectiveCapabilities', () => {
 
 	it('includes optional capabilities when their integration is available', () => {
 		const required: Capability[] = ['fs:read', 'scm:pr'];
-		const optional: Capability[] = ['pm:read', 'pm:write'];
+		const optional: Capability[] = ['pm:read', 'pm:write', 'pm:friction'];
 		const hasIntegration = (cat: IntegrationCategory) => cat === 'pm';
 		const result = resolveEffectiveCapabilities(required, optional, hasIntegration);
 		expect(result).toContain('pm:read');
 		expect(result).toContain('pm:write');
+		expect(result).toContain('pm:friction');
 	});
 
 	it('excludes optional capabilities when their integration is not available', () => {
@@ -205,11 +211,12 @@ describe('generateUnavailableCapabilitiesNote', () => {
 	});
 
 	it('generates note for unavailable PM capabilities', () => {
-		const unavailable: Capability[] = ['pm:read', 'pm:write'];
+		const unavailable: Capability[] = ['pm:read', 'pm:friction'];
 		const note = generateUnavailableCapabilitiesNote(unavailable);
 		expect(note).toContain('PM integration');
 		expect(note).toContain('not configured');
 		expect(note).toContain('ReadWorkItem');
+		expect(note).toContain('ReportFriction');
 	});
 
 	it('generates note for multiple unavailable integrations', () => {
@@ -235,6 +242,11 @@ describe('getGadgetNamesFromCapabilities', () => {
 		const names = getGadgetNamesFromCapabilities(caps);
 		const readFileCount = names.filter((n) => n === 'ReadFile').length;
 		expect(readFileCount).toBe(1);
+	});
+
+	it('keeps ReportFriction scoped to pm:friction', () => {
+		expect(getGadgetNamesFromCapabilities(['pm:write'])).not.toContain('ReportFriction');
+		expect(getGadgetNamesFromCapabilities(['pm:friction'])).toEqual(['ReportFriction']);
 	});
 });
 
@@ -285,6 +297,20 @@ describe('filterToolManifests', () => {
 		expect(filtered).toHaveLength(2);
 		expect(filtered.map((m) => m.name)).toContain('ReadFile');
 		expect(filtered.map((m) => m.name)).toContain('WriteFile');
+	});
+
+	it('filters ReportFriction by pm:friction instead of pm:write', () => {
+		const manifests: ToolManifest[] = [
+			{ name: 'UpdateWorkItem', description: 'Update', inputSchema: {} },
+			{ name: 'ReportFriction', description: 'Report friction', inputSchema: {} },
+		];
+
+		expect(filterToolManifests(manifests, ['pm:write']).map((m) => m.name)).toEqual([
+			'UpdateWorkItem',
+		]);
+		expect(filterToolManifests(manifests, ['pm:friction']).map((m) => m.name)).toEqual([
+			'ReportFriction',
+		]);
 	});
 
 	it('logs warning for missing expected tools', () => {

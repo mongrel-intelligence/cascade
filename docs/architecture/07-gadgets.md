@@ -54,7 +54,7 @@ All file gadgets validate paths against allowed directories (working directory +
 
 Todos are stored in `.claude/todos.json` within the repo working directory.
 
-### PM (`pm:read`, `pm:write`, `pm:checklist`)
+### PM (`pm:read`, `pm:write`, `pm:checklist`, `pm:friction`)
 
 | Gadget | Capability | Purpose |
 |--------|-----------|---------|
@@ -62,12 +62,12 @@ Todos are stored in `.claude/todos.json` within the repo working directory.
 | `ListWorkItems` | `pm:read` | List work items with filters |
 | `UpdateWorkItem` | `pm:write` | Update work item fields |
 | `CreateWorkItem` | `pm:write` | Create new work item |
-| `ReportFriction` | `pm:write` | Queue and file incidental friction reports |
 | `MoveWorkItem` | `pm:write` | Move work item to a status/list |
 | `PostComment` | `pm:write` | Post comment on work item |
 | `AddChecklist` | `pm:write` | Add checklist to work item |
 | `PMUpdateChecklistItem` | `pm:checklist` | Update checklist item status |
 | `PMDeleteChecklistItem` | `pm:checklist` | Delete checklist item |
+| `ReportFriction` | `pm:friction` | Queue and file incidental friction reports |
 
 PM gadgets use the active `PMProvider` from `AsyncLocalStorage` context, making them provider-agnostic.
 

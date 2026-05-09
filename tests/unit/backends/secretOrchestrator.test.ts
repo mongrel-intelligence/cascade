@@ -31,7 +31,13 @@ vi.mock('../../../src/agents/definitions/profiles.js', () => ({
 		fetchContext: vi.fn().mockResolvedValue({}),
 		finishHooks: {},
 		filterTools: vi.fn().mockReturnValue([]),
+		capabilities: { required: ['fs:read'], optional: [] },
 	}),
+}));
+
+vi.mock('../../../src/agents/capabilities/resolver.js', () => ({
+	createIntegrationChecker: vi.fn().mockResolvedValue(() => true),
+	resolveEffectiveCapabilities: vi.fn((required, optional) => [...required, ...optional]),
 }));
 
 vi.mock('../../../src/agents/definitions/toolManifests.js', () => ({
@@ -57,6 +63,11 @@ vi.mock('../../../src/backends/sidecarManager.js', () => ({
 	createCompletionArtifacts: vi.fn().mockReturnValue({}),
 }));
 
+import {
+	createIntegrationChecker,
+	resolveEffectiveCapabilities,
+} from '../../../src/agents/capabilities/resolver.js';
+import { getAgentProfile } from '../../../src/agents/definitions/profiles.js';
 import { buildPromptContext } from '../../../src/agents/shared/promptContext.js';
 import {
 	buildExecutionPlan,
@@ -70,6 +81,9 @@ import { getDashboardUrl } from '../../../src/utils/runLink.js';
 const mockGetDashboardUrl = vi.mocked(getDashboardUrl);
 const mockGetSentryIntegrationConfig = vi.mocked(getSentryIntegrationConfig);
 const mockBuildPromptContext = vi.mocked(buildPromptContext);
+const mockCreateIntegrationChecker = vi.mocked(createIntegrationChecker);
+const mockResolveEffectiveCapabilities = vi.mocked(resolveEffectiveCapabilities);
+const mockGetAgentProfile = vi.mocked(getAgentProfile);
 
 function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
 	return {
@@ -202,6 +216,81 @@ describe('buildExecutionPlan', () => {
 			undefined,
 			undefined,
 		);
+	});
+
+	it('filters native tool manifests and capabilities through effective capabilities', async () => {
+		const checker = vi.fn().mockReturnValue(false);
+		mockCreateIntegrationChecker.mockResolvedValueOnce(checker);
+		mockResolveEffectiveCapabilities.mockReturnValueOnce(['fs:read']);
+		const filterTools = vi.fn().mockReturnValue([{ name: 'ReadFile' }]);
+		mockGetAgentProfile.mockReturnValueOnce({
+			fetchContext: vi.fn().mockResolvedValue([]),
+			finishHooks: {},
+			lifecycleHooks: {},
+			filterTools,
+			allCapabilities: ['fs:read', 'pm:friction'],
+			needsGitHubToken: false,
+			buildTaskPrompt: () => 'task',
+			capabilities: { required: ['fs:read'], optional: ['pm:friction'] },
+			getLlmistGadgets: vi.fn(),
+		});
+
+		const plan = await buildExecutionPlan(
+			'review',
+			makeInput(makeProject(), 'manual'),
+			'/repo',
+			noopLogWriter,
+			noopAgentLogger,
+			undefined,
+			false,
+			'claude-code',
+			engine,
+		);
+
+		expect(mockResolveEffectiveCapabilities).toHaveBeenCalledWith(
+			['fs:read'],
+			['pm:friction'],
+			checker,
+		);
+		expect(filterTools).toHaveBeenCalledWith(expect.any(Array), checker);
+		expect(plan.nativeToolCapabilities).toEqual(['fs:read']);
+		expect(plan.availableTools).toEqual([{ name: 'ReadFile' }]);
+	});
+
+	it('appends friction guidance only when pm:friction is effective', async () => {
+		mockResolveEffectiveCapabilities.mockReturnValueOnce(['fs:read', 'pm:friction']);
+
+		const withFriction = await buildExecutionPlan(
+			'implementation',
+			makeInput(makeProject(), 'manual'),
+			'/repo',
+			noopLogWriter,
+			noopAgentLogger,
+			undefined,
+			false,
+			'claude-code',
+			engine,
+		);
+
+		expect(withFriction.systemPrompt).toContain('Friction Reporting');
+		expect(withFriction.systemPrompt).toContain('incidental papercuts');
+		expect(withFriction.systemPrompt).toContain('Keep working after reporting friction unless');
+
+		mockResolveEffectiveCapabilities.mockReturnValueOnce(['fs:read']);
+
+		const withoutFriction = await buildExecutionPlan(
+			'review',
+			makeInput(makeProject(), 'manual'),
+			'/repo',
+			noopLogWriter,
+			noopAgentLogger,
+			undefined,
+			false,
+			'claude-code',
+			engine,
+		);
+
+		expect(withoutFriction.systemPrompt).not.toContain('Friction Reporting');
 	});
 });
 

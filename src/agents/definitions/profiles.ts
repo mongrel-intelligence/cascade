@@ -41,7 +41,7 @@ export type { AgentCapabilities } from './schema.js';
 
 export interface AgentProfile {
 	/** Filter the full set of tool manifests down to what this agent needs */
-	filterTools(allTools: ToolManifest[]): ToolManifest[];
+	filterTools(allTools: ToolManifest[], integrationChecker?: IntegrationChecker): ToolManifest[];
 	/** Engine-neutral capabilities used to derive native tools inside each engine */
 	allCapabilities: Capability[];
 	/** Whether this profile needs the GitHub client for context fetching */
@@ -166,9 +166,6 @@ function resolveContextPipeline(
 function buildProfileFromDefinition(def: AgentDefinition, agentType: string): AgentProfile {
 	const allCapabilities = getAllCapabilities(def.capabilities);
 
-	// Derive tool names from capabilities for filtering
-	const gadgetNames = getGadgetNamesFromCapabilities(allCapabilities);
-
 	// Get gadget options from strategies
 	const gadgetOptions = def.strategies.gadgetOptions;
 
@@ -195,9 +192,17 @@ function buildProfileFromDefinition(def: AgentDefinition, agentType: string): Ag
 	const lifecycle = resolveLifecycleHooks(def);
 
 	const profile: AgentProfile = {
-		filterTools: (allTools: ToolManifest[]) => {
+		filterTools: (allTools: ToolManifest[], integrationChecker?: IntegrationChecker) => {
+			const effectiveCaps = integrationChecker
+				? resolveEffectiveCapabilities(
+						def.capabilities.required,
+						def.capabilities.optional,
+						integrationChecker,
+					)
+				: allCapabilities;
+
 			// Filter tools by the gadget names derived from capabilities
-			const nameSet = new Set(gadgetNames);
+			const nameSet = new Set(getGadgetNamesFromCapabilities(effectiveCaps));
 			return allTools.filter((t) => nameSet.has(t.name));
 		},
 		allCapabilities,

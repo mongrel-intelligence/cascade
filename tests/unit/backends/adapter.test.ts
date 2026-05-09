@@ -497,6 +497,7 @@ describe('executeWithEngine', () => {
 			makeMockProfile({
 				filterTools,
 				allCapabilities: ['fs:read', 'shell:exec'],
+				capabilities: { required: ['fs:read', 'shell:exec'], optional: [] },
 				finishHooks: {},
 			}),
 		);

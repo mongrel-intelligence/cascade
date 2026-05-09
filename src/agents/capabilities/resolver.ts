@@ -104,7 +104,6 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	// pm:write
 	UpdateWorkItem,
 	CreateWorkItem,
-	ReportFriction,
 	MoveWorkItem,
 	PostComment,
 	AddChecklist,
@@ -112,6 +111,9 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	// pm:checklist
 	PMUpdateChecklistItem,
 	PMDeleteChecklistItem,
+
+	// pm:friction
+	ReportFriction,
 
 	// scm:read
 	GetPRDetails,

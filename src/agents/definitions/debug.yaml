@@ -18,6 +18,7 @@ capabilities:
     - pm:read
     - pm:write
     - pm:checklist
+    - pm:friction
   optional: []
 
 # Debug agent is triggered manually or via internal attachment upload detection.

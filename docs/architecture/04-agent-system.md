@@ -135,7 +135,7 @@ const CAPABILITIES = [
   // Built-in (always available)
   'fs:read', 'fs:write', 'shell:exec', 'session:ctrl',
   // PM integration
-  'pm:read', 'pm:write', 'pm:checklist',
+  'pm:read', 'pm:write', 'pm:checklist', 'pm:friction',
   // SCM integration
   'scm:read', 'scm:ci-logs', 'scm:comment', 'scm:review', 'scm:pr',
   // Alerting integration
