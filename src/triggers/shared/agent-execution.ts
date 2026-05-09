@@ -25,11 +25,11 @@ import {
 	validateAgentExecutionLifecycle,
 } from './agent-execution-lifecycle.js';
 import type { AgentExecutionConfig, AgentExecutionContext } from './agent-execution-types.js';
+import { postAgentSummaryToPM } from './agent-pm-summary.js';
 import {
 	linkPRPostExecution,
 	persistPreRunWorkItems,
 	prepareAgentWorkItem,
-	resolveWorkItemId,
 } from './agent-work-items.js';
 import { isPipelineAtCapacity } from './backlog-check.js';
 import { triggerDebugAnalysis } from './debug-runner.js';
@@ -124,88 +124,6 @@ async function tryDispatchPostCompletionReview(
 			workItemId,
 			error: String(err),
 		});
-	}
-}
-
-/**
- * Post an agent summary to the PM work item after a successful agent run.
- * Cross-source concern: fires for all trigger types (GitHub, Trello, JIRA).
- *
- * Handles two cases:
- * - review agent: structured session state (reviewBody/reviewEvent/reviewUrl)
- * - output-based agents (respond-to-ci, respond-to-review, resolve-conflicts): AgentResult.output
- */
-async function postAgentSummaryToPM(
-	agentType: string,
-	agentResult: AgentResult,
-	workItemId: string | undefined,
-	projectId: string,
-	prNumber: number | undefined,
-): Promise<void> {
-	const { PM_SUMMARY_AGENT_TYPES, isOutputBasedAgent, postReviewToPM, postAgentOutputToPM } =
-		await import('./agent-pm-poster.js');
-	if (!agentResult.success || !PM_SUMMARY_AGENT_TYPES.has(agentType)) return;
-
-	if (isOutputBasedAgent(agentType)) {
-		// Output-based agents (respond-to-ci, respond-to-review, resolve-conflicts)
-		// Resolve workItemId: prefer TriggerResult, fall back to DB lookup
-		const resolvedWorkItemId = await resolveWorkItemId(workItemId, projectId, prNumber);
-		if (!resolvedWorkItemId) {
-			logger.warn('Agent PM posting skipped: no workItemId found', {
-				agentType,
-				projectId,
-				prNumber,
-			});
-			return;
-		}
-
-		logger.info('Posting agent output summary to PM work item', {
-			agentType,
-			workItemId: resolvedWorkItemId,
-			hasProgressCommentId: !!agentResult.progressCommentId,
-		});
-
-		await postAgentOutputToPM(
-			resolvedWorkItemId,
-			agentType,
-			agentResult.output,
-			agentResult.progressCommentId,
-		);
-	} else {
-		// Review agent: use structured session state
-		const { getSessionState } = await import('../../gadgets/sessionState.js');
-		const sessionState = getSessionState();
-		if (!sessionState.reviewBody) {
-			logger.warn('Review PM posting skipped: no reviewBody in session state');
-			return;
-		}
-
-		// Resolve workItemId only after confirming we have a review to post
-		const resolvedWorkItemId = await resolveWorkItemId(workItemId, projectId, prNumber);
-		if (!resolvedWorkItemId) {
-			logger.warn('Agent PM posting skipped: no workItemId found', {
-				agentType,
-				projectId,
-				prNumber,
-			});
-			return;
-		}
-
-		logger.info('Posting review summary to PM work item', {
-			workItemId: resolvedWorkItemId,
-			hasProgressCommentId: !!agentResult.progressCommentId,
-			event: sessionState.reviewEvent,
-		});
-
-		await postReviewToPM(
-			resolvedWorkItemId,
-			{
-				reviewBody: sessionState.reviewBody,
-				reviewEvent: sessionState.reviewEvent,
-				reviewUrl: sessionState.reviewUrl,
-			},
-			agentResult.progressCommentId,
-		);
 	}
 }
 
