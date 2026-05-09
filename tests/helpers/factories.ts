@@ -1,4 +1,5 @@
 import type { TRPCContext, TRPCUser } from '../../src/api/trpc.js';
+import type { CheckSuiteStatus } from '../../src/github/client.js';
 import type { TrelloCard } from '../../src/trello/client.js';
 import type { TrelloWebhookPayload } from '../../src/triggers/trello/types.js';
 import type { ProjectConfig, TriggerContext } from '../../src/types/index.js';
@@ -215,6 +216,71 @@ export function createTrelloTriggerContext(overrides?: Partial<TriggerContext>):
 	} as TriggerContext;
 }
 
+export type PMStatusFixtureKind = 'create' | 'move';
+
+export interface PMStatusFixture {
+	projectId: string;
+	kind: PMStatusFixtureKind;
+	agentType: string;
+	workItemId: string;
+	workItemUrl: string;
+	workItemTitle: string;
+	providerStatusId: string;
+	providerStatusName: string;
+	previousStatusId?: string;
+	previousStatusName?: string;
+}
+
+/**
+ * Provider-neutral PM status-change fixture.
+ *
+ * Captures the contract-level data shared by Trello/JIRA/Linear without
+ * coupling conformance tests to each provider's webhook payload shape.
+ */
+export function createPMStatusFixture(overrides?: Partial<PMStatusFixture>): PMStatusFixture {
+	return {
+		projectId: 'project-1',
+		kind: 'move',
+		agentType: 'implementation',
+		workItemId: 'work-item-123',
+		workItemUrl: 'https://pm.example.test/work-item-123',
+		workItemTitle: 'Implement contract coverage',
+		providerStatusId: 'todo-list-id',
+		providerStatusName: 'Todo',
+		previousStatusId: 'planning-list-id',
+		previousStatusName: 'Planning',
+		...overrides,
+	};
+}
+
+export interface PMLabelAddedFixture {
+	agentType: string;
+	workItemId: string;
+	workItemUrl: string;
+	workItemTitle: string;
+	labelId: string;
+	labelName: string;
+	containerId: string;
+}
+
+/**
+ * Provider-neutral PM label-added fixture for ready-to-process style triggers.
+ */
+export function createPMLabelAddedFixture(
+	overrides?: Partial<PMLabelAddedFixture>,
+): PMLabelAddedFixture {
+	return {
+		agentType: 'splitting',
+		workItemId: 'work-item-456',
+		workItemUrl: 'https://pm.example.test/work-item-456',
+		workItemTitle: 'Split contract coverage',
+		labelId: 'ready-label-id',
+		labelName: 'Ready to process',
+		containerId: 'splitting-list-id',
+		...overrides,
+	};
+}
+
 // ---------------------------------------------------------------------------
 // GitHub payload factories
 // ---------------------------------------------------------------------------
@@ -290,6 +356,25 @@ export function createCheckSuitePayload(overrides?: Partial<CheckSuitePayload>):
 		},
 		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
 		sender: { login: 'github-actions' },
+		...overrides,
+	};
+}
+
+/**
+ * Creates aggregate check-suite state as returned by `githubClient.getCheckSuiteStatus()`.
+ */
+export function createCheckSuiteStatus(
+	checkRuns: CheckSuiteStatus['checkRuns'] = [
+		{ name: 'ci', status: 'completed', conclusion: 'success' },
+	],
+	overrides?: Partial<CheckSuiteStatus>,
+): CheckSuiteStatus {
+	return {
+		totalCount: checkRuns.length,
+		checkRuns,
+		allPassing: checkRuns.every(
+			(checkRun) => checkRun.status === 'completed' && checkRun.conclusion === 'success',
+		),
 		...overrides,
 	};
 }

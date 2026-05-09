@@ -25,6 +25,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { ALL_TRIGGER_EVENTS } from '../../../src/triggers/shared/events.js';
 
 const TRIGGERS_ROOT = join(__dirname, '..', '..', '..', 'src', 'triggers');
 
@@ -64,6 +65,13 @@ interface HandlerScan {
 	file: string;
 	gatingEvents: Set<string>;
 	emittedEvents: Set<string>;
+}
+
+interface RawTriggerLiteralOccurrence {
+	file: string;
+	lineNumber: number;
+	literal: string;
+	line: string;
 }
 
 function listHandlerFiles(dir: string): string[] {
@@ -130,6 +138,70 @@ function scanHandler(file: string): HandlerScan {
 	return { file, gatingEvents, emittedEvents };
 }
 
+const RAW_TRIGGER_LITERAL_EXEMPTIONS = new Set<string>([
+	// Existing handlers still pass literal event IDs into trigger-enabled gates
+	// or inline legacy AgentInput objects. Keep exemptions exact and line-scoped:
+	// new handlers or newly-added raw event literals must use TRIGGER_EVENTS
+	// unless a new entry is added here with a reason.
+	"src/triggers/trello/status-changed.ts :: 'pm:status-changed',",
+	"src/triggers/github/pr-review-submitted.ts :: 'scm:pr-review-submitted',",
+	"src/triggers/github/pr-review-submitted.ts :: triggerEvent: 'scm:pr-review-submitted',",
+	"src/triggers/github/pr-merged.ts :: if (await checkTriggerEnabled(ctx.project.id, 'backlog-manager', 'scm:pr-merged', this.name)) {",
+	"src/triggers/github/pr-merged.ts :: agentInput: { triggerEvent: 'scm:pr-merged', workItemId: workItemId },",
+	"src/triggers/github/check-suite-success.ts :: 'scm:check-suite-success',",
+	"src/triggers/github/check-suite-failure.ts :: 'scm:check-suite-failure',",
+	"src/triggers/github/pr-conflict-detected.ts :: 'scm:pr-conflict-detected',",
+	"src/triggers/github/review-requested.ts :: 'scm:review-requested',",
+	"src/triggers/github/review-requested.ts :: triggerEvent: 'scm:review-requested',",
+	"src/triggers/github/pr-comment-mention.ts :: 'scm:pr-comment-mention',",
+	"src/triggers/github/pr-comment-mention.ts :: triggerEvent: 'scm:pr-comment-mention',",
+	"src/triggers/github/pr-opened.ts :: 'scm:pr-opened',",
+	"src/triggers/github/pr-opened.ts :: triggerEvent: 'scm:pr-opened',",
+	"src/triggers/github/respond-to-ci-dispatch.ts :: 'scm:check-suite-failure',",
+	"src/triggers/trello/comment-mention.ts :: 'pm:comment-mention',",
+	"src/triggers/trello/comment-mention.ts :: triggerEvent: 'pm:comment-mention',",
+	"src/triggers/trello/label-added.ts :: if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {",
+	"src/triggers/config-resolver.ts :: /** Trigger event identifier (e.g., 'pm:status-changed') */",
+	"src/triggers/jira/status-changed.ts :: 'pm:status-changed',",
+	"src/triggers/jira/comment-mention.ts :: 'pm:comment-mention',",
+	"src/triggers/jira/comment-mention.ts :: triggerEvent: 'pm:comment-mention',",
+	"src/triggers/shared/splitting-auto-chain.ts :: 'internal:auto-chain',",
+	"src/triggers/shared/splitting-auto-chain.ts :: agentInput: { triggerEvent: 'internal:auto-chain', workItemId },",
+	"src/triggers/shared/post-completion-review.ts :: triggerEvent: 'scm:check-suite-success',",
+	"src/triggers/jira/label-added.ts :: if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {",
+	"src/triggers/linear/comment-mention.ts :: 'pm:comment-mention',",
+	"src/triggers/linear/comment-mention.ts :: triggerEvent: 'pm:comment-mention',",
+	"src/triggers/linear/label-added.ts :: if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {",
+	"src/triggers/linear/status-changed.ts :: 'pm:status-changed',",
+	"src/triggers/sentry/alerting-metric.ts :: 'alerting:metric-alert',",
+	"src/triggers/sentry/alerting-metric.ts :: triggerEvent: 'alerting:metric-alert',",
+	"src/triggers/sentry/alerting-issue.ts :: 'alerting:issue-alert',",
+	"src/triggers/sentry/alerting-issue.ts :: triggerEvent: 'alerting:issue-alert',",
+]);
+
+function findRawTriggerLiteralOccurrences(files: string[]): RawTriggerLiteralOccurrence[] {
+	const escapedEvents = ALL_TRIGGER_EVENTS.map((event) =>
+		event.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+	).join('|');
+	const rawLiteralPattern = new RegExp(`['"](${escapedEvents})['"]`, 'g');
+
+	return files
+		.filter((file) => !file.endsWith('/shared/events.ts'))
+		.flatMap((file) => {
+			const relPath = file.replace(`${TRIGGERS_ROOT}/`, 'src/triggers/');
+			const lines = readFileSync(file, 'utf-8').split('\n');
+			return lines.flatMap((line, index) => {
+				const matches = [...line.matchAll(rawLiteralPattern)];
+				return matches.map((match) => ({
+					file: relPath,
+					lineNumber: index + 1,
+					literal: match[1],
+					line: line.trim(),
+				}));
+			});
+		});
+}
+
 describe('trigger-event-string consistency (static guard)', () => {
 	const allFiles = listHandlerFiles(TRIGGERS_ROOT).filter(
 		(f) => !f.endsWith('/trigger-check.ts') && !EXEMPT_FILES.has(f),
@@ -175,4 +247,22 @@ describe('trigger-event-string consistency (static guard)', () => {
 			}
 		});
 	}
+
+	it('forbids new raw trigger-event literals outside the event catalog', () => {
+		const occurrences = findRawTriggerLiteralOccurrences(allFiles);
+		const unexpected = occurrences.filter(
+			(occurrence) =>
+				!RAW_TRIGGER_LITERAL_EXEMPTIONS.has(`${occurrence.file} :: ${occurrence.line}`),
+		);
+
+		expect(
+			unexpected.map(
+				(occurrence) =>
+					`${occurrence.file}:${occurrence.lineNumber} raw ${occurrence.literal} in: ${occurrence.line}`,
+			),
+			`New trigger handlers must reference TRIGGER_EVENTS from src/triggers/shared/events.ts ` +
+				`instead of adding raw event strings. If a literal is unavoidable, add a narrow ` +
+				`RAW_TRIGGER_LITERAL_EXEMPTIONS entry with a reason. Unexpected raw literals:`,
+		).toEqual([]);
+	});
 });
