@@ -159,3 +159,19 @@ Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_
 ## Reference: `createPRReviewDef`
 
 `src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, a `fileInputAlternatives` entry for `--comments-file`, and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
+
+## Reference: `ReportFriction`
+
+`ReportFriction` is the PM-scoped reference for a non-blocking sidecar/outbox command. Its definition lives in `src/gadgets/pm/definitions.ts`; the implementation lives in `src/gadgets/pm/core/reportFriction.ts`.
+
+Agents invoke it through:
+
+```bash
+cascade-tools pm report-friction \
+  --summary "Missing setup hint" \
+  --category tooling \
+  --severity medium \
+  --details-file -
+```
+
+`--details-file -` reads Markdown details from stdin. The command writes a queued event to `CASCADE_FRICTION_SIDECAR_PATH` before attempting PM materialization, then returns `filed`, `queued_for_retry`, or `queued_slot_missing`. This is why the feature can report friction without granting broad PM write access and without failing the main run when PM filing is unavailable.

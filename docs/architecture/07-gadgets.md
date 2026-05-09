@@ -71,6 +71,19 @@ Todos are stored in `.claude/todos.json` within the repo working directory.
 
 PM gadgets use the active `PMProvider` from `AsyncLocalStorage` context, making them provider-agnostic.
 
+`ReportFriction` is intentionally narrower than general PM write access. It lets agents file incidental papercuts in tooling, environment, permissions, dependencies, tests, PM data, or SCM data without exposing `CreateWorkItem` / `MoveWorkItem` directly. The CLI form is:
+
+```bash
+cascade-tools pm report-friction \
+  --summary "Typecheck requires undocumented Redis env var" \
+  --category environment \
+  --severity medium \
+  --whileDoing "Running pre-PR verification" \
+  --details-file -
+```
+
+`--details-file -` reads Markdown details from stdin; use it for multi-line reproduction notes or shell output. The command always appends a queued event to the friction sidecar before it tries to create the PM work item, so a failed immediate write can be retried by the backend drain.
+
 ### SCM (`scm:read`, `scm:ci-logs`, `scm:comment`, `scm:review`, `scm:pr`)
 
 | Gadget | Capability | Purpose |
