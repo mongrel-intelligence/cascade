@@ -189,12 +189,20 @@ export async function runAgentExecutionPipeline(
 	if (agentType === 'implementation' && agentResult.success && agentResult.prUrl && project.repo) {
 		const reviewResult = await buildPostCompletionReviewDispatch(agentResult, project, workItemId);
 		if (reviewResult) {
-			await runAgentExecutionPipeline(reviewResult, project, config, {
-				...executionConfig,
-				skipPrepareForAgent: true,
-				skipHandleFailure: true,
-				logLabel: 'review (post-completion)',
-			});
+			try {
+				await runAgentExecutionPipeline(reviewResult, project, config, {
+					...executionConfig,
+					skipPrepareForAgent: true,
+					skipHandleFailure: true,
+					logLabel: 'review (post-completion)',
+				});
+			} catch (err) {
+				logger.warn('Post-completion review pipeline failed (non-fatal)', {
+					prUrl: agentResult.prUrl,
+					workItemId,
+					error: String(err),
+				});
+			}
 		}
 	}
 

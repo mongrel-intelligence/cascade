@@ -1095,4 +1095,39 @@ describe('post-completion review dispatch (via runAgentExecutionPipeline)', () =
 			expect.objectContaining({ error: expect.any(String) }),
 		);
 	});
+
+	it('does not break the implementation pipeline when the nested review pipeline throws', async () => {
+		// Arrange: implementation succeeds and green CI claims the dedup key;
+		// review pipeline then throws during its own execution.
+		mockRunAgent
+			.mockResolvedValueOnce({
+				success: true,
+				output: '',
+				runId: 'run-impl',
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+			})
+			.mockRejectedValueOnce(new Error('review pipeline exploded'));
+
+		// Pipeline should resolve (not reject) even though the nested review run threw.
+		await expect(
+			runAgentExecutionPipeline(
+				{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+				PROJECT,
+				CONFIG,
+			),
+		).resolves.toBeUndefined();
+
+		// Both the implementation and review agents were attempted.
+		expect(mockRunAgent).toHaveBeenCalledTimes(2);
+
+		// The failure is logged as a non-fatal warning, not rethrown.
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Post-completion review pipeline failed (non-fatal)',
+			expect.objectContaining({
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				workItemId: 'card-1',
+				error: 'Error: review pipeline exploded',
+			}),
+		);
+	});
 });
