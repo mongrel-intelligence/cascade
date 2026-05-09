@@ -95,8 +95,8 @@ The router passes job data to workers via Docker container env vars:
 | Variable | Purpose |
 |----------|---------|
 | `JOB_ID` | Unique job identifier |
-| `JOB_TYPE` | `trello`, `github`, `jira`, `linear`, `sentry`, `manual-run`, `retry-run`, `debug-analysis`; GitHub jobs may also carry `mergeabilityRecheckAttempt` for deferred re-checks |
-| `JOB_DATA` | JSON-encoded job payload |
+| `JOB_TYPE` | `trello`, `github`, `jira`, `linear`, `sentry`, `manual-run`, `retry-run`, `debug-analysis` |
+| `JOB_DATA` | JSON-encoded job payload; GitHub jobs include `mergeabilityRecheckAttempt` in this payload for deferred re-checks |
 | `CASCADE_CREDENTIAL_KEYS` | Comma-separated list of credential env var names |
 | Individual credential vars | Pre-loaded project credentials (e.g., `GITHUB_TOKEN_IMPLEMENTER`) |
 

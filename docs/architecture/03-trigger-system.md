@@ -57,7 +57,6 @@ interface TriggerResult {
   prNumber?: number;
   prUrl?: string;
   prTitle?: string;
-  waitForChecks?: boolean;         // Poll CI before starting
   onBlocked?: () => void;          // Cleanup if job can't be enqueued
   deferredRecheck?: {
     delayMs: number;
