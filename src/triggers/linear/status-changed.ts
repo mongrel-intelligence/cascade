@@ -17,26 +17,13 @@ import { getLinearConfig } from '../../pm/config.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
+import {
+	buildPMStatusDispatchResult,
+	resolvePMStatusAgentById,
+	shouldFirePMStatusEvent,
+} from '../shared/pm-status.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
-import { type LinearWebhookTriggerPayload, STATUS_TO_AGENT } from './types.js';
-
-function resolveAgentType(
-	newStateId: string,
-	configStatuses: Record<string, string>,
-): { agentType: string; cascadeStatus: string } | undefined {
-	for (const [cascadeStatus, linearStateId] of Object.entries(configStatuses)) {
-		if (linearStateId === newStateId) {
-			const agentType = STATUS_TO_AGENT[cascadeStatus];
-			if (agentType) return { agentType, cascadeStatus };
-		}
-	}
-	return undefined;
-}
-
-function shouldFireOnEvent(isCreate: boolean, parameters: Record<string, unknown>): boolean {
-	if (isCreate) return parameters.onCreate === true;
-	return parameters.onMove !== false; // default true
-}
+import type { LinearWebhookTriggerPayload } from './types.js';
 
 export class LinearStatusChangedTrigger implements TriggerHandler {
 	name = 'linear-status-changed';
@@ -85,7 +72,10 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const resolved = resolveAgentType(newStateId, linearConfig.statuses);
+		const resolved = resolvePMStatusAgentById({
+			statusId: newStateId,
+			configuredStatuses: linearConfig.statuses,
+		});
 		if (!resolved) {
 			logger.debug('Linear state transition does not map to any agent', {
 				issueIdentifier,
@@ -105,7 +95,7 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 		if (!enabled) return null;
 
 		const isCreate = payload.action === 'create';
-		if (!shouldFireOnEvent(isCreate, parameters)) {
+		if (!shouldFirePMStatusEvent(isCreate, parameters)) {
 			logger.debug('Linear status-changed event gated by trigger params', {
 				issueIdentifier,
 				agentType,
@@ -139,19 +129,15 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 		const workItemUrl = issueUrl;
 		const workItemTitle = issueTitle;
 
-		return {
+		return buildPMStatusDispatchResult({
+			projectId: ctx.project.id,
 			agentType,
-			agentInput: {
-				workItemId,
-				workItemUrl,
-				workItemTitle,
-				triggerEvent: 'pm:status-changed',
-				linearIssueId: issueId,
-			},
 			workItemId,
 			workItemUrl,
 			workItemTitle,
-			coalesceKey: `${ctx.project.id}:${workItemId}`,
-		};
+			agentInput: {
+				linearIssueId: issueId,
+			},
+		});
 	}
 }

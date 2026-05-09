@@ -17,12 +17,9 @@ import { getLinearConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { buildPMLabelDispatchResult, resolvePMLabelAgentByStatusId } from '../shared/pm-label.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
-import {
-	type LinearWebhookIssueLabelData,
-	type LinearWebhookTriggerPayload,
-	STATUS_TO_AGENT,
-} from './types.js';
+import type { LinearWebhookIssueLabelData, LinearWebhookTriggerPayload } from './types.js';
 
 export class LinearReadyToProcessLabelTrigger implements TriggerHandler {
 	name = 'linear-ready-to-process-label-added';
@@ -76,18 +73,11 @@ export class LinearReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Find which CASCADE status key maps to this Linear state ID
-		let agentType: string | undefined;
-		let matchedCascadeStatus: string | undefined;
-		for (const [cascadeStatus, linearStateId] of Object.entries(linearConfig.statuses)) {
-			if (linearStateId === issueStateId) {
-				agentType = STATUS_TO_AGENT[cascadeStatus];
-				matchedCascadeStatus = cascadeStatus;
-				break;
-			}
-		}
-
-		if (!agentType) {
+		const resolved = resolvePMLabelAgentByStatusId({
+			statusId: issueStateId,
+			configuredStatuses: linearConfig.statuses,
+		});
+		if (!resolved) {
 			logger.debug('Linear issue state does not map to any agent', {
 				issueIdentifier,
 				issueStateId,
@@ -95,6 +85,7 @@ export class LinearReadyToProcessLabelTrigger implements TriggerHandler {
 			});
 			return null;
 		}
+		const { agentType, cascadeStatus: matchedCascadeStatus } = resolved;
 
 		// Check per-agent ready-to-process toggle via DB-driven system
 		if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {
@@ -113,18 +104,14 @@ export class LinearReadyToProcessLabelTrigger implements TriggerHandler {
 		// Issue title is not included in IssueLabel webhook data
 		const workItemTitle: string | undefined = undefined;
 
-		return {
+		return buildPMLabelDispatchResult({
 			agentType,
-			agentInput: {
-				workItemId,
-				workItemUrl,
-				workItemTitle,
-				triggerEvent: 'pm:label-added',
-				linearIssueId: issueId,
-			},
 			workItemId,
 			workItemUrl,
 			workItemTitle,
-		};
+			agentInput: {
+				linearIssueId: issueId,
+			},
+		});
 	}
 }
