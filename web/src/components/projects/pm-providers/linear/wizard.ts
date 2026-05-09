@@ -48,6 +48,7 @@ export const LINEAR_STATUS_SLOTS = [
 	{ key: 'done', label: 'Done' },
 	{ key: 'merged', label: 'Merged' },
 	{ key: 'alerts', label: 'Alerts' },
+	{ key: 'friction', label: 'Friction' },
 ] as const;
 
 export const LINEAR_LABEL_SLOTS = [
