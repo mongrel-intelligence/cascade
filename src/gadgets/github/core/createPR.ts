@@ -33,6 +33,29 @@ export interface CreatePRResult {
 // see `[git-push] still running (Ns)` ticks during slow hooks. Setting
 // wallTimeoutMs + idleTimeoutMs to 0 disables them — see runCommand in utils/repo.ts.
 
+/**
+ * Cap on captured hook output bytes that flow back into the agent's tool-result
+ * channel. Prod 2026-05-09 (run d8e31665, cascade/fe82YUKV): a successful PR
+ * creation returned 97 KB of `pushOutput` (lefthook's pre-push test:fast suite —
+ * 159 files, 2981 tests captured into the gadget result). Codex's tool-result
+ * parser couldn't extract the JSON envelope buried under that volume and
+ * retried the call; the resulting concurrent invocations raced against the same
+ * sidecar path leaving prUrl missing. Truncate here at the gadget result
+ * boundary; the FULL hook output already streams through `runCommand`'s
+ * heartbeat into the worker's engine log file (LLMIST_LOG_FILE) for operator
+ * visibility — only the agent-visible result-stream copy is capped.
+ */
+const HOOK_OUTPUT_MAX_BYTES = 4 * 1024;
+
+function truncateHookOutput(raw: string | undefined, label: 'commit' | 'push'): string | undefined {
+	if (!raw || raw.length <= HOOK_OUTPUT_MAX_BYTES) return raw;
+	const halfBudget = Math.floor(HOOK_OUTPUT_MAX_BYTES / 2);
+	const head = raw.slice(0, halfBudget);
+	const tail = raw.slice(-halfBudget);
+	const omitted = raw.length - head.length - tail.length;
+	return `${head}\n\n--- [${omitted} bytes truncated from ${label} hook output; full output in worker engine log] ---\n\n${tail}`;
+}
+
 async function detectOwnerRepo(): Promise<{ owner: string; repo: string }> {
 	const result = await runCommand('git', ['remote', 'get-url', 'origin'], process.cwd());
 	if (result.exitCode !== 0) {
@@ -85,8 +108,15 @@ async function stageAndCommit(commitMessage: string): Promise<string> {
 	);
 	if (commitResult.exitCode !== 0) {
 		const output = [commitResult.stdout, commitResult.stderr].filter(Boolean).join('\n').trim();
+		// Truncate before embedding in the error message — a failing pre-commit
+		// hook can emit the same volume of test output as a success (97 KB in the
+		// cascade prod incident). `createCLICommand` serialises err.message into
+		// the JSON error envelope, so unbounded output here hits the same
+		// Codex parser/retry bloat path as the success case. Full output stays
+		// in the worker engine log (LLMIST_LOG_FILE) for operator visibility.
+		const truncated = truncateHookOutput(output, 'commit') ?? output;
 		throw new Error(
-			`COMMIT FAILED (pre-commit hooks may have failed)\n\n--- OUTPUT ---\n${output}`,
+			`COMMIT FAILED (pre-commit hooks may have failed)\n\n--- OUTPUT ---\n${truncated}`,
 		);
 	}
 	return [commitResult.stdout, commitResult.stderr].filter(Boolean).join('\n').trim();
@@ -106,8 +136,13 @@ async function pushBranch(branch: string): Promise<string> {
 	);
 	if (pushResult.exitCode !== 0) {
 		const output = [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();
+		// Truncate before embedding in the error message — same rationale as the
+		// commit failure path above: a failing pre-push hook can emit 97+ KB of
+		// test output, and err.message gets serialised into the JSON error
+		// envelope by createCLICommand. Full output stays in the engine log.
+		const truncated = truncateHookOutput(output, 'push') ?? output;
 		throw new Error(
-			`PUSH FAILED for branch '${branch}' (pre-push hooks may have failed)\n\n--- OUTPUT ---\n${output}`,
+			`PUSH FAILED for branch '${branch}' (pre-push hooks may have failed)\n\n--- OUTPUT ---\n${truncated}`,
 		);
 	}
 	return [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();
@@ -143,6 +178,9 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 	const runLinkFooter = buildRunLinkFooterFromEnv();
 	const prBody = runLinkFooter ? params.body + runLinkFooter : params.body;
 
+	const truncatedPushOutput = truncateHookOutput(pushOutput, 'push');
+	const truncatedCommitOutput = truncateHookOutput(commitOutput, 'commit');
+
 	try {
 		const pr = await githubClient.createPR(owner, repo, {
 			title: params.title,
@@ -157,8 +195,8 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 			prUrl: pr.htmlUrl,
 			repoFullName: `${owner}/${repo}`,
 			alreadyExisted: false,
-			pushOutput,
-			commitOutput,
+			pushOutput: truncatedPushOutput,
+			commitOutput: truncatedCommitOutput,
 		};
 	} catch (error) {
 		if (
@@ -174,8 +212,8 @@ export async function createPR(params: CreatePRParams): Promise<CreatePRResult> 
 					prUrl: existingPR.htmlUrl,
 					repoFullName: `${owner}/${repo}`,
 					alreadyExisted: true,
-					pushOutput,
-					commitOutput,
+					pushOutput: truncatedPushOutput,
+					commitOutput: truncatedCommitOutput,
 				};
 			}
 		}

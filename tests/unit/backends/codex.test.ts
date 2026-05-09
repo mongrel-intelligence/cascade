@@ -1218,6 +1218,80 @@ describe('Codex subscription auth', () => {
 			{ error: 'Error: DB write failed' },
 		);
 	});
+
+	// Prod regression 2026-05-09 (runs 8b000cd6 + d8e31665, both
+	// cascade/implementation/codex): codex's persistent bash session breaks
+	// with `ERROR codex_core::tools::router: error=write_stdin failed: stdin
+	// is closed for this session`. Once that signal fires, every subsequent
+	// command in the session inherits a corrupted stdout buffer (lint output
+	// from one command bleeding into the next, sidecar writes racing). We
+	// observed this leading to silent run failures with PR-creation evidence
+	// missing despite a real PR existing on GitHub. Fail loudly: when the
+	// signal appears in stderr, surface it as a run failure rather than
+	// continuing in a corrupted state.
+	describe('shell-state corruption (write_stdin closed)', () => {
+		it('marks the run as failed when stderr contains the persistent-shell stdin-closed signal', async () => {
+			mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({ type: 'turn.started' }),
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 5, output_tokens: 3 },
+						}),
+					],
+					stderr:
+						'2026-05-09T15:36:59.079680Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n',
+					onBeforeClose: () => {
+						writeFileSync(outputPath, 'PR created at https://github.com/o/r/pull/1', 'utf-8');
+					},
+					exitCode: 0, // <-- exit code 0 — codex itself doesn't fail; the shell-state signal is the only evidence
+				});
+			});
+
+			const engine = new CodexEngine();
+			const input = makeInput({ repoDir: workspaceDir });
+			const result = await engine.execute(input);
+
+			expect(result.success).toBe(false);
+			expect(result.error).toMatch(/codex shell-state corrupted/i);
+			expect(input.logWriter).toHaveBeenCalledWith(
+				'ERROR',
+				expect.stringContaining('shell-state corrupted'),
+				expect.objectContaining({
+					stderr: expect.stringContaining('write_stdin failed'),
+				}),
+			);
+		});
+
+		it('passes through cleanly when stderr is benign (no false positives)', async () => {
+			mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({ type: 'turn.started' }),
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 5, output_tokens: 3 },
+						}),
+					],
+					stderr: 'some benign warning that is not the shell-state signal\n',
+					onBeforeClose: () => {
+						writeFileSync(outputPath, 'Finished. https://github.com/o/r/pull/1', 'utf-8');
+					},
+					exitCode: 0,
+				});
+			});
+
+			const engine = new CodexEngine();
+			const input = makeInput({ repoDir: workspaceDir });
+			const result = await engine.execute(input);
+
+			expect(result.success).toBe(true);
+			expect(result.error).toBeUndefined();
+		});
+	});
 });
 
 describe('CodexEngine lifecycle hooks', () => {

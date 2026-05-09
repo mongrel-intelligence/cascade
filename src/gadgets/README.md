@@ -116,11 +116,30 @@ You do not call `emitCliError` directly. The shared factory routes every failure
 
 ---
 
+## Shared CLI helper layout
+
+`createCLICommand()` is intentionally the stable public facade for command files under `src/cli/**`. Its implementation delegates to focused helpers under `src/gadgets/shared/cli/`:
+
+| Helper | Responsibility |
+|---|---|
+| `commandNames.ts` | Kebab-case conversion and `cascade-tools <namespace> <command>` derivation shared with manifest generation |
+| `examples.ts` | Example lookup, shell quoting, oclif example rendering, and JSON expected-shape hints |
+| `flags.ts` | oclif flag construction plus candidate and boolean-flag metadata collection |
+| `booleanArgv.ts` | Natural boolean value forms such as `--flag true`, `--flag=false`, `yes/no`, and `1/0` |
+| `parseErrors.ts` | oclif parse-error classification and unknown-flag suggestions |
+| `params.ts` | File/stdin input, JSON parsing, direct parameter resolution, and git remote owner/repo resolution |
+| `errorSink.ts` | Routing error envelopes through the active oclif command instance |
+
+These modules are shared infrastructure. A new gadget should still add or refine `ToolDefinition` metadata rather than branching inside a helper.
+
+---
+
 ## The single-entrypoint invariant
 
 Adding a gadget requires **zero edits** to:
 
 - `src/gadgets/shared/cliCommandFactory.ts`
+- `src/gadgets/shared/cli/*.ts`
 - `src/gadgets/shared/manifestGenerator.ts`
 - `src/gadgets/shared/errorEnvelope.ts`
 - `src/backends/shared/nativeToolPrompts.ts`
@@ -133,7 +152,7 @@ If you find yourself opening one of those files, stop — the right fix is almos
 
 The factory intercepts oclif's `NonExistentFlagsError`, runs a Levenshtein match against every declared canonical flag name + alias, and surfaces the closest canonical name as `error.hint`. No gadget work required — just declare your flags truthfully.
 
-Two tuning constants live in the factory: `MAX_FLAG_SUGGESTION_DISTANCE` (default 2) and `MAX_FLAG_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one.
+Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_SUGGESTION_DISTANCE` (default 2) and `MAX_FLAG_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one.
 
 ---
 

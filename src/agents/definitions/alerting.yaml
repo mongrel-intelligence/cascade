@@ -42,6 +42,12 @@ triggers:
         options: [critical, warning]
         defaultValue: critical
     contextPipeline: [directoryListing, contextFiles]
+  - event: alerting:issue-lifecycle
+    label: Sentry Issue Created (Internal Integration)
+    description: "Trigger when a Sentry issue is created via the Internal Integration / Custom Webhook surface (Sentry-Hook-Resource: issue)"
+    defaultEnabled: true
+    providers: [sentry]
+    contextPipeline: [alertingIssue, directoryListing, contextFiles]
 
 strategies: {}
 

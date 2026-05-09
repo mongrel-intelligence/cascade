@@ -40,11 +40,16 @@ vi.mock('../../../src/integrations/alerting/_shared/format.js', () => ({
 		title: '[Sentry Metric] Error Rate High',
 		descriptionMarkdown: 'metric desc',
 	}),
+	formatSentryIssueLifecycleCardBody: vi.fn().mockReturnValue({
+		title: '[Sentry] wedged work-item lock',
+		descriptionMarkdown: 'issue lifecycle desc',
+	}),
 }));
 
 import { loadProjectConfigById } from '../../../src/config/provider.js';
 import {
 	formatSentryCardBody,
+	formatSentryIssueLifecycleCardBody,
 	formatSentryMetricCardBody,
 } from '../../../src/integrations/alerting/_shared/format.js';
 import { materializeAlertWorkItem } from '../../../src/integrations/alerting/_shared/materialize.js';
@@ -84,6 +89,10 @@ describe('processSentryWebhook', () => {
 		vi.mocked(formatSentryMetricCardBody).mockReturnValue({
 			title: '[Sentry Metric] Error Rate High',
 			descriptionMarkdown: 'metric desc',
+		});
+		vi.mocked(formatSentryIssueLifecycleCardBody).mockReturnValue({
+			title: '[Sentry] wedged work-item lock',
+			descriptionMarkdown: 'issue lifecycle desc',
 		});
 	});
 
@@ -387,6 +396,141 @@ describe('processSentryWebhook', () => {
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: { alertMetricKey: 'my-org:Error Rate High' },
+		} as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+		vi.mocked(materializeAlertWorkItem).mockRejectedValue(new Error('PM 503'));
+
+		await expect(
+			processSentryWebhook(payload, 'proj-sentry', mockRegistry as never),
+		).rejects.toThrow('PM 503');
+
+		expect(runAgentExecutionPipeline).not.toHaveBeenCalled();
+	});
+
+	// ── Issue-lifecycle PM card materialisation ──────────────────────────────
+	//
+	// Sentry-Hook-Resource: issue surface (Internal Integration default).
+	// The issue-lifecycle handler also passes `alertIssueId`, so the
+	// dispatcher discriminates on `agentInput.triggerEvent === 'alerting:issue-lifecycle'`
+	// to pick the lifecycle format helper + 'sentry-issue' AlertSource.
+
+	it('materialises a PM work item for issue-lifecycle when triggerEvent is alerting:issue-lifecycle', async () => {
+		const payload = { resource: 'issue', cascadeProjectId: 'proj-sentry' };
+		const triggerResult = {
+			agentType: 'alerting',
+			agentInput: {
+				triggerEvent: 'alerting:issue-lifecycle',
+				alertIssueId: '118723355',
+			},
+			lockKey: 'sentry-issue:118723355',
+		} as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+		vi.mocked(materializeAlertWorkItem).mockResolvedValue('issue-card-1');
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
+
+		expect(materializeAlertWorkItem).toHaveBeenCalledWith(
+			'sentry-issue',
+			'118723355',
+			mockProject,
+			expect.objectContaining({ title: '[Sentry] wedged work-item lock' }),
+		);
+		expect(formatSentryIssueLifecycleCardBody).toHaveBeenCalledWith(payload);
+		// Existing event_alert formatter is NOT invoked for the lifecycle branch.
+		expect(formatSentryCardBody).not.toHaveBeenCalled();
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
+			expect.objectContaining({
+				workItemId: 'issue-card-1',
+				agentInput: expect.objectContaining({ workItemId: 'issue-card-1' }),
+			}),
+			mockProject,
+			expect.any(Object),
+			expect.objectContaining({ logLabel: 'Sentry agent' }),
+		);
+	});
+
+	it('uses event_alert path (formatSentryCardBody + source=sentry) when triggerEvent is alerting:issue-alert', async () => {
+		// Regression net: the existing event_alert flow must keep using
+		// `formatSentryCardBody` and `'sentry'` AlertSource even though both
+		// surfaces pass `alertIssueId`.
+		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const triggerResult = {
+			agentType: 'alerting',
+			agentInput: {
+				triggerEvent: 'alerting:issue-alert',
+				alertIssueId: 'sentry-issue-42',
+			},
+		} as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+		vi.mocked(materializeAlertWorkItem).mockResolvedValue('card-new');
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
+
+		expect(materializeAlertWorkItem).toHaveBeenCalledWith(
+			'sentry',
+			'sentry-issue-42',
+			mockProject,
+			expect.objectContaining({ title: '[Sentry] Test' }),
+		);
+		expect(formatSentryCardBody).toHaveBeenCalledWith(payload);
+		expect(formatSentryIssueLifecycleCardBody).not.toHaveBeenCalled();
+	});
+
+	it('skips issue-lifecycle materialisation when workItemId is already set', async () => {
+		const payload = { resource: 'issue' };
+		const triggerResult = {
+			agentType: 'alerting',
+			workItemId: 'issue-card-already',
+			agentInput: {
+				triggerEvent: 'alerting:issue-lifecycle',
+				alertIssueId: '118723355',
+				workItemId: 'issue-card-already',
+			},
+		} as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
+
+		expect(materializeAlertWorkItem).not.toHaveBeenCalled();
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
+			triggerResult,
+			mockProject,
+			expect.any(Object),
+			expect.any(Object),
+		);
+	});
+
+	it('skips agent and warns when issue-lifecycle materialisation throws AlertSlotMissingError', async () => {
+		const payload = { resource: 'issue' };
+		const triggerResult = {
+			agentType: 'alerting',
+			agentInput: {
+				triggerEvent: 'alerting:issue-lifecycle',
+				alertIssueId: '118723355',
+			},
+		} as never;
+		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
+		vi.mocked(materializeAlertWorkItem).mockRejectedValue(
+			new AlertSlotMissingError('proj-sentry', 'trello'),
+		);
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
+
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('alerts slot no longer configured'),
+			expect.objectContaining({ reason: 'alerts_slot_missing' }),
+		);
+		expect(runAgentExecutionPipeline).not.toHaveBeenCalled();
+	});
+
+	it('re-throws transient PM errors for issue-lifecycle so BullMQ can retry', async () => {
+		const payload = { resource: 'issue' };
+		const triggerResult = {
+			agentType: 'alerting',
+			agentInput: {
+				triggerEvent: 'alerting:issue-lifecycle',
+				alertIssueId: '118723355',
+			},
 		} as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 		vi.mocked(materializeAlertWorkItem).mockRejectedValue(new Error('PM 503'));

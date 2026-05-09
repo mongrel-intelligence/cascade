@@ -340,6 +340,103 @@ describe('hydratePrSidecar', () => {
 		expect(result).toEqual({});
 		expect(mockRecordPRCreation).not.toHaveBeenCalled();
 	});
+
+	// Prod regression 2026-05-09 (run d8e31665): the WARN "PR sidecar missing
+	// required fields" surfaced no signal of WHY the file was bad. Operators
+	// hit Loki archaeology to figure out whether the file was empty, partial,
+	// or had a malformed prUrl. The hydration WARN now dumps the parsed keys
+	// + the actual prUrl/prNumber values + the file size so a single log line
+	// gives a precise cause-of-failure entry.
+	it('logs sidecar contents diagnostic when prUrl is missing (regression net)', async () => {
+		const { logger } = await import('../../../src/utils/logging.js');
+		const warnSpy = vi.mocked(logger.warn);
+		warnSpy.mockClear();
+
+		const sidecarPath = makeSidecarPath('pr-diagnostic');
+		writeFileSync(
+			sidecarPath,
+			JSON.stringify({
+				source: 'cascade-tools scm create-pr',
+				prNumber: 1290,
+				alreadyExisted: true,
+				repoFullName: 'mongrel-intelligence/cascade',
+				// note: prUrl deliberately absent (the d8e31665 failure shape)
+			}),
+		);
+
+		const result = await hydratePrSidecar(sidecarPath);
+
+		expect(result).toEqual({});
+		// The WARN now carries enough context to debug from a single log line.
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining('PR sidecar missing required fields'),
+			expect.objectContaining({
+				sidecarPath,
+				hasPrUrl: false,
+				// Explicit 'parsed' status confirms the file was valid JSON — operator
+				// knows prUrl was simply absent, not that the file was truncated or missing.
+				rawSidecarStatus: 'parsed',
+				rawSidecarKeys: expect.arrayContaining(['source', 'prNumber', 'repoFullName']),
+				rawSidecarPrUrl: null,
+				rawSidecarPrNumber: 1290,
+			}),
+		);
+	});
+
+	it('logs sidecar diagnostic when file is empty (truncated mid-write)', async () => {
+		const { logger } = await import('../../../src/utils/logging.js');
+		const warnSpy = vi.mocked(logger.warn);
+		warnSpy.mockClear();
+
+		const sidecarPath = makeSidecarPath('pr-empty');
+		writeFileSync(sidecarPath, ''); // empty file → JSON.parse throws → undefined
+
+		const result = await hydratePrSidecar(sidecarPath);
+
+		expect(result).toEqual({});
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining('PR sidecar missing required fields'),
+			expect.objectContaining({
+				sidecarPath,
+				hasPrUrl: false,
+				// 'empty' is distinguishable from 'malformed' — tells operator the file
+				// existed but had zero content (race/truncation), not a JSON syntax error.
+				rawSidecarStatus: 'empty',
+				rawSidecarKeys: null,
+				rawByteLength: 0,
+			}),
+		);
+	});
+
+	it('logs malformed status with parseError and rawPreview when JSON is truncated mid-write', async () => {
+		const { logger } = await import('../../../src/utils/logging.js');
+		const warnSpy = vi.mocked(logger.warn);
+		warnSpy.mockClear();
+
+		const sidecarPath = makeSidecarPath('pr-malformed');
+		// Simulate a partial write: the file has content but JSON is incomplete.
+		const truncatedJson = '{"prUrl": "https://github.com/o/r/pull/1", "prNum';
+		writeFileSync(sidecarPath, truncatedJson);
+
+		const result = await hydratePrSidecar(sidecarPath);
+
+		expect(result).toEqual({});
+		// 'malformed' is distinguishable from 'empty' (has rawByteLength > 0,
+		// parseError, rawPreview) and from 'parsed' (no rawSidecarKeys).
+		// Operators can read the rawPreview to see how far the write got.
+		expect(warnSpy).toHaveBeenCalledWith(
+			expect.stringContaining('PR sidecar missing required fields'),
+			expect.objectContaining({
+				sidecarPath,
+				hasPrUrl: false,
+				rawSidecarStatus: 'malformed',
+				rawSidecarKeys: null,
+				rawByteLength: truncatedJson.length,
+				parseError: expect.stringContaining('SyntaxError'),
+				rawPreview: expect.stringContaining('prUrl'),
+			}),
+		);
+	});
 });
 
 describe('hydrateNativeToolSidecars', () => {

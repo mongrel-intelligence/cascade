@@ -1,3 +1,4 @@
+import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import {
 	COMPLETION_ERROR_NO_PM_WRITE,
@@ -26,13 +27,31 @@ export function postProcessResult(
 		hasPMWrite?: boolean;
 	},
 ): void {
-	// Validate PR creation for agents that require it (e.g., implementation)
+	// Validate PR creation for agents that require it (e.g., implementation).
+	// Prod regression 2026-05-09 (run d8e31665): the no-authoritative-PR failure
+	// surfaced only as a per-run record + a one-line WARN. Operators reading
+	// `cascade runs list` saw "failed" with no idea whether this is a recurring
+	// regression. Sentry capture under a stable tag makes prod frequency loud
+	// and gives ops a single dashboard to monitor.
 	if (options?.requiresPR && result.success && !result.prEvidence?.authoritative) {
+		const prEvidenceSource = result.prEvidence?.source ?? null;
 		logger.warn(`${agentType} agent completed without authoritative PR evidence`, {
 			identifier,
 			engine: engine.definition.id,
 			prUrl: result.prUrl,
-			prEvidenceSource: result.prEvidence?.source ?? null,
+			prEvidenceSource,
+		});
+		captureException(new Error(COMPLETION_ERROR_NO_PR), {
+			tags: {
+				source: 'pr_sidecar_invalid',
+				engine: engine.definition.id,
+				agentType,
+			},
+			extra: {
+				identifier,
+				prUrl: result.prUrl,
+				prEvidenceSource,
+			},
 		});
 		result.success = false;
 		result.error = COMPLETION_ERROR_NO_PR;

@@ -28,7 +28,14 @@ import { withPMScopeForDispatch } from './_shared.js';
 // Processable resource types
 // ============================================================================
 
-const PROCESSABLE_RESOURCES = ['event_alert', 'metric_alert'] as const;
+// Three Sentry webhook surfaces, each with a distinct trigger handler:
+//   - 'event_alert'  → SentryIssueAlertTrigger (Sentry Alert Rule firings)
+//   - 'metric_alert' → SentryMetricAlertTrigger (metric-based alert rules)
+//   - 'issue'        → SentryIssueLifecycleTrigger (Internal Integration default
+//                       surface; new issue created/etc.). Captured live shape
+//                       verified against 2026-05-09 prod webhook id
+//                       fbdc6d87-b962-444c-8a2a-a9452a74ff71.
+const PROCESSABLE_RESOURCES = ['event_alert', 'metric_alert', 'issue'] as const;
 
 // ============================================================================
 // Extended parsed event

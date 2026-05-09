@@ -162,11 +162,17 @@ export interface TriggerResult {
 		message: string;
 	};
 	/**
-	 * When set and `agentType` is `null`, the router schedules a bare delayed
-	 * job (no embedded trigger result) keyed by `coalesceKey`. The worker
-	 * re-dispatches via the trigger registry when the job fires, obtaining fresh
-	 * state. Any trigger handler can use this field; the router branch in
-	 * `processRouterWebhook` is adapter-agnostic.
+	 * When set and `agentType` is `null`, the router schedules a coalesced bare
+	 * delayed job via `scheduleCoalescedJob`. The router scheduling is
+	 * adapter-agnostic, but **bare re-dispatch is currently GitHub-only**:
+	 * `GitHubRouterAdapter.buildJob()` omits `triggerResult` from the job so the
+	 * GitHub worker re-dispatches through the trigger registry for fresh provider
+	 * state. Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed
+	 * `triggerResult` in the job; their workers pass it to
+	 * `resolveTriggerResult()`, which returns the pre-resolved `agentType: null`
+	 * result without dispatching. Use this field only in GitHub handlers unless
+	 * the adapter and worker for your provider have been updated to support bare
+	 * re-dispatch.
 	 */
 	deferredRecheck?: {
 		delayMs: number;

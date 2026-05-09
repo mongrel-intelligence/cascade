@@ -18,6 +18,7 @@ export const TRIGGER_EVENTS = {
 	ALERTING: {
 		ISSUE_ALERT: 'alerting:issue-alert',
 		METRIC_ALERT: 'alerting:metric-alert',
+		ISSUE_LIFECYCLE: 'alerting:issue-lifecycle',
 	},
 	INTERNAL: {
 		AUTO_CHAIN: 'internal:auto-chain',

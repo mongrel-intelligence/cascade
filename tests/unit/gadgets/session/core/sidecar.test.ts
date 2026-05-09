@@ -196,4 +196,58 @@ describe('writePRSidecar', () => {
 			expect.stringContaining('Failed to write'),
 		);
 	});
+
+	// Prod regression 2026-05-09 (run d8e31665): the sidecar contract is
+	// authoritative evidence of PR creation. JSON.stringify silently omits keys
+	// whose value is `undefined`, so a half-baked call leaves an unusable file
+	// AND the worker reports it as "missing required fields" with no signal of
+	// what the caller actually passed. Validate inputs at the write boundary
+	// and refuse the write loudly so future failures are diagnosable.
+	it('refuses to write when prUrl is empty (logs ERROR with context)', () => {
+		expect(writePRSidecar(sidecarPath, '', 42, false, 'owner/repo')).toBe(false);
+		expect(existsSync(sidecarPath)).toBe(false);
+		expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+			expect.stringContaining('refusing to write'),
+			expect.objectContaining({ sidecarPath, prUrl: '', prNumber: 42 }),
+		);
+	});
+
+	it('refuses to write when prUrl is non-string (defensive, JS-runtime)', () => {
+		// Simulate a bug where the caller passes undefined despite the type.
+		expect(
+			writePRSidecar(sidecarPath, undefined as unknown as string, 42, false, 'owner/repo'),
+		).toBe(false);
+		expect(existsSync(sidecarPath)).toBe(false);
+		expect(vi.mocked(logger.error)).toHaveBeenCalled();
+	});
+
+	it('refuses to write when prNumber is not finite', () => {
+		expect(writePRSidecar(sidecarPath, 'https://x', NaN, false, 'o/r')).toBe(false);
+		expect(existsSync(sidecarPath)).toBe(false);
+		expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+			expect.stringContaining('prNumber'),
+			expect.any(Object),
+		);
+	});
+});
+
+describe('writeReviewSidecar — input validation (prod regression d8e31665)', () => {
+	let sidecarPath: string;
+
+	beforeEach(() => {
+		sidecarPath = join(tmpdir(), `cascade-test-review-validation-${Date.now()}.json`);
+	});
+
+	afterEach(() => {
+		rmSync(sidecarPath, { force: true });
+	});
+
+	it('refuses to write when reviewUrl is empty', () => {
+		expect(writeReviewSidecar(sidecarPath, '', 'APPROVE', 'lgtm')).toBe(false);
+		expect(existsSync(sidecarPath)).toBe(false);
+		expect(vi.mocked(logger.error)).toHaveBeenCalledWith(
+			expect.stringContaining('refusing to write'),
+			expect.any(Object),
+		);
+	});
 });

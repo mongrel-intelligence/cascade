@@ -4,6 +4,10 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ## Unreleased
 
+### Documentation
+
+- **Trigger architecture docs now describe the migrated trigger contracts.** Added guidance for canonical `TRIGGER_EVENTS`, shared PM/GitHub result builders, first-match dispatch, structured skip vs bare `null`, no-agent results, deferred bare-job re-checks, router outcome decision reasons, PM coalescing, capacity scope, dispatch failure compensation, and wedged-lock diagnostics. Migration note for future trigger contributors: new handlers should import event constants, use the shared builders, return structured skips for claimed-but-non-dispatched events, and reserve bare `null` for "continue to later handlers." See Trello card [qUbPtALY](https://trello.com/c/69fe2a950699baaf91688a5b).
+
 ### Fixed
 
 - **`resolve-conflicts` agent no longer silently skips when GitHub's async mergeability computation hasn't resolved by the time the `pull_request` webhook is processed** (spec 020). `PRConflictDetectedTrigger` previously exhausted a 2×2s synchronous retry budget and silently discarded the event when `mergeable === null` — because GitHub never sends a follow-up webhook once mergeability resolves, the `resolve-conflicts` agent never fired. The trigger now returns `TriggerResult.deferredRecheck`, which causes the router to schedule a bare BullMQ delayed re-check job ~45s later via `scheduleCoalescedJob` (deduped per PR). The worker re-dispatches via the trigger registry to get fresh mergeability state. Multiple rapid webhooks for the same PR coalesce to a single re-check job. If mergeability is still `null` after the re-check fires, a Sentry event is captured under tag `mergeability_recheck_exhausted` and a WARN log is emitted — not a silent discard. Observed live on ucho/PR #329 (2026-05-07). See [spec 020](docs/specs/020-github-mergeability-deferred-recheck.md).

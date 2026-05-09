@@ -27,6 +27,19 @@ import {
 const CODEX_AUTH_DIR = join(homedir(), '.codex');
 const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
 
+/**
+ * Codex's persistent-bash-session corruption signal. When this stderr message
+ * appears, codex's `tools::router` has lost its long-lived bash session, and
+ * every subsequent command in the run inherits a stale stdout buffer. Treat
+ * any presence of this signal as a fatal run-level error so ops retry
+ * against a fresh session instead of trusting potentially-corrupted state.
+ *
+ * Source: prod runs 8b000cd6 + d8e31665 (cascade/implementation/codex,
+ * 2026-05-09). Both runs continued executing after the signal and produced
+ * silent failures with missing sidecars and bled-over command output.
+ */
+const SHELL_CORRUPTED_RE = /codex_core::tools::router:\s*error=write_stdin failed: stdin is closed/;
+
 type JsonRecord = Record<string, unknown>;
 /**
  * Accumulator for a single Codex turn (bounded by turn.started → turn.completed).
@@ -570,6 +583,33 @@ export class CodexEngine extends NativeToolEngine {
 
 			if (stderrOutput) {
 				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
+			}
+
+			// Prod regression 2026-05-09 (runs 8b000cd6, d8e31665): codex's
+			// persistent bash session breaks with `ERROR
+			// codex_core::tools::router: error=write_stdin failed: stdin is
+			// closed for this session`. Once that signal fires, every
+			// subsequent command in the session inherits a corrupted stdout
+			// buffer (lint output from one command bleeding into the next,
+			// sidecar writes racing). We observed this leading to silent run
+			// failures with PR-creation evidence missing despite a real PR
+			// existing on GitHub. Codex itself exits cleanly (exit=0) — the
+			// stderr signal is the only evidence the session was corrupted.
+			// Surface it as a run failure so ops can retry against a fresh
+			// session rather than continuing in a corrupted state.
+			if (exitCode === 0 && SHELL_CORRUPTED_RE.test(stderrOutput)) {
+				input.logWriter('ERROR', 'Codex shell-state corrupted (write_stdin closed) — failing run', {
+					stderr: stderrOutput,
+					hint: 'codex_core::tools::router lost its persistent bash session; subsequent commands may have inherited stale state',
+				});
+				return buildEngineResult({
+					success: false,
+					output: finalOutput,
+					error: 'codex shell-state corrupted: write_stdin failed (stdin closed for session)',
+					cost,
+					prUrl,
+					prEvidence,
+				});
 			}
 
 			if (exitCode !== 0) {

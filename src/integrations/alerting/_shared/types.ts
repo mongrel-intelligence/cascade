@@ -17,8 +17,24 @@
  * propagate this so BullMQ retries the job.
  */
 
-/** All supported alert source identifiers. Extend this union as new sources are added. */
-export type AlertSource = 'sentry' | 'sentry-metric' | 'pagerduty' | 'datadog' | 'github-alert';
+/**
+ * All supported alert source identifiers. Extend this union as new sources are added.
+ *
+ * Sentry has three surfaces, each given a distinct literal so the
+ * `(project_id, external_source, external_id)` partial-unique index on
+ * `pr_work_items` doesn't collide across surfaces (e.g. the same Sentry issue
+ * arriving via both `event_alert` and `issue` materializes two cards):
+ *   - `'sentry'`        — event_alert (Sentry Alert Rule firings)
+ *   - `'sentry-metric'` — metric_alert (metric-based alert rules)
+ *   - `'sentry-issue'`  — issue lifecycle (Internal Integration default surface)
+ */
+export type AlertSource =
+	| 'sentry'
+	| 'sentry-metric'
+	| 'sentry-issue'
+	| 'pagerduty'
+	| 'datadog'
+	| 'github-alert';
 
 /** Formatted card content produced by a per-source format helper. */
 export interface AlertHints {

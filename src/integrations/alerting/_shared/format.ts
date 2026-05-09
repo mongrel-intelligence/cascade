@@ -9,6 +9,7 @@
 import type {
 	SentryAugmentedPayload,
 	SentryIssueAlertPayload,
+	SentryIssuePayload,
 	SentryMetricAlertPayload,
 	SentryStackFrame,
 } from '../../../sentry/types.js';
@@ -55,6 +56,38 @@ function findTopInAppFrame(frames?: SentryStackFrame[]): SentryStackFrame | unde
 		if (frames[i].in_app) return frames[i];
 	}
 	return frames[frames.length - 1];
+}
+
+/**
+ * Build the PM card title and description body from a Sentry issue-lifecycle
+ * webhook (Sentry-Hook-Resource: issue — the Internal Integration default
+ * surface). Distinct from `formatSentryCardBody` (event_alert), which pulls
+ * fields from `data.event.{...}` instead of `data.issue.{...}`.
+ */
+export function formatSentryIssueLifecycleCardBody(augmented: SentryAugmentedPayload): AlertHints {
+	const payload = augmented.payload as SentryIssuePayload;
+	const issue = payload.data?.issue;
+
+	const alertTitle = issue?.title?.trim() ? issue.title : 'Sentry Issue';
+	const issueUrl = issue?.web_url ?? issue?.permalink ?? '';
+	const lines: string[] = [];
+
+	if (issueUrl) lines.push(`**Sentry issue:** ${issueUrl}`);
+	if (issue?.firstSeen) lines.push(`**First seen:** ${issue.firstSeen}`);
+	if (issue?.level) lines.push(`**Level:** ${issue.level}`);
+	if (issue?.shortId) lines.push(`**Short ID:** ${issue.shortId}`);
+	if (issue?.culprit) lines.push(`**Culprit:** \`${issue.culprit}\``);
+
+	const md = issue?.metadata;
+	if (md?.filename || md?.function) {
+		const loc = [md.filename, md.function].filter(Boolean).join(':');
+		lines.push(`**Top frame:** \`${loc}\``);
+	}
+
+	return {
+		title: `[Sentry] ${alertTitle}`,
+		descriptionMarkdown: lines.join('\n'),
+	};
 }
 
 /** Build the PM card title and description body from a Sentry metric_alert payload. */

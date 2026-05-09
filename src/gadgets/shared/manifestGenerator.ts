@@ -13,6 +13,8 @@
  */
 
 import type { ToolManifest, ToolManifestParameter } from '../../agents/contracts/index.js';
+import { deriveCLICommand } from './cli/commandNames.js';
+import { findExampleForParam } from './cli/examples.js';
 import type { ParameterDefinition, ToolDefinition } from './toolDefinition.js';
 
 // ---------------------------------------------------------------------------
@@ -59,98 +61,6 @@ function buildManifestParam(
 	}
 
 	return entry;
-}
-
-/**
- * Find the first example whose `params` object has a defined value for `paramName`,
- * and return that value. Used by the manifest generator to surface one concrete
- * shape per parameter to agents + help text.
- */
-function findExampleForParam(
-	examples: readonly { params: Record<string, unknown> }[] | undefined,
-	paramName: string,
-): unknown {
-	if (!examples) return undefined;
-	for (const ex of examples) {
-		if (Object.hasOwn(ex.params, paramName) && ex.params[paramName] !== undefined) {
-			return ex.params[paramName];
-		}
-	}
-	return undefined;
-}
-
-/**
- * Convert a PascalCase or camelCase tool name to a kebab-case CLI command segment.
- *
- * Examples:
- * - 'PostComment' → 'post-comment'
- * - 'ReadWorkItem' → 'read-work-item'
- * - 'CreatePR' → 'create-pr'
- */
-function toKebabCase(name: string): string {
-	return name
-		.replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-		.replace(/([a-z\d])([A-Z])/g, '$1-$2')
-		.toLowerCase();
-}
-
-/**
- * Derive the CLI command prefix for a tool based on its category.
- *
- * The tool name prefix determines whether it's a PM, SCM, or session tool:
- * - PM tools: ReadWorkItem, PostComment, UpdateWorkItem, CreateWorkItem, ListWorkItems,
- *             AddChecklist, MoveWorkItem, PMUpdateChecklistItem, PMDeleteChecklistItem
- * - SCM tools: CreatePR, GetPR*, PostPRComment, UpdatePRComment, ReplyToReviewComment,
- *              CreatePRReview, GetCIRunLogs
- * - Session tools: Finish
- *
- * Falls back to 'cascade-tools pm' if the category cannot be determined.
- */
-function deriveCLICommand(toolName: string, cliCommandOverride?: string): string {
-	if (cliCommandOverride) return cliCommandOverride;
-
-	// Session tools
-	if (toolName === 'Finish') {
-		return `cascade-tools session ${toKebabCase(toolName)}`;
-	}
-
-	// SCM tools: PR-related, CI-related
-	const scmPrefixes = [
-		'createpr',
-		'getpr',
-		'postpr',
-		'updatepr',
-		'replytoreview',
-		'createprreview',
-		'getciru',
-	];
-	const lowerName = toolName.toLowerCase();
-	if (
-		scmPrefixes.some((p) => lowerName.startsWith(p)) ||
-		lowerName.includes('pr') ||
-		lowerName.includes('ci')
-	) {
-		// Verify it is truly an SCM tool
-		if (
-			toolName.startsWith('CreatePR') ||
-			toolName.startsWith('GetPR') ||
-			toolName.startsWith('PostPR') ||
-			toolName.startsWith('UpdatePR') ||
-			toolName.startsWith('ReplyTo') ||
-			toolName === 'GetCIRunLogs'
-		) {
-			return `cascade-tools scm ${toKebabCase(toolName)}`;
-		}
-	}
-
-	// PM tools: Strip "PM" prefix if present (e.g., PMUpdateChecklistItem → update-checklist-item)
-	// to avoid double "pm" prefix (cascade-tools pm pm-update-checklist-item)
-	let commandName = toolName;
-	if (toolName.startsWith('PM') && toolName.length > 2 && /[A-Z]/.test(toolName[2])) {
-		commandName = toolName.slice(2);
-	}
-
-	return `cascade-tools pm ${toKebabCase(commandName)}`;
 }
 
 // ---------------------------------------------------------------------------

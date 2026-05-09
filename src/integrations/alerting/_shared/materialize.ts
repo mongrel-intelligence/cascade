@@ -47,6 +47,57 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Verify an existing pr_work_items mapping points to a live PM card and
+ * re-apply placement (idempotent for Trello, repairs failed prior moves for
+ * JIRA/Linear). Lazy-heals (creates a fresh card + replaces mapping) when the
+ * card returns 404. Re-throws any other PM error so BullMQ retries.
+ */
+async function reuseOrLazyHealMapping(
+	project: ProjectConfig,
+	source: AlertSource,
+	externalId: string,
+	containerId: string,
+	hints: AlertHints,
+	provider: ReturnType<typeof pmRegistry.createProvider>,
+	existing: { id: string; workItemId: string },
+): Promise<string> {
+	try {
+		await provider.getWorkItem(existing.workItemId);
+	} catch (err) {
+		if (!is404Error(err)) throw err;
+		// Card deleted — create a replacement and CAS-swap the mapping row.
+		return createAndAttach(project, source, externalId, containerId, hints, provider, {
+			lazyHeal: { rowId: existing.id, oldWorkItemId: existing.workItemId },
+		});
+	}
+	// Re-apply placement so a prior failed moveWorkItem can be repaired on
+	// subsequent deliveries rather than staying permanently stuck.
+	const destination = getAlertsStatusDestination(project);
+	if (destination) {
+		await provider.moveWorkItem(existing.workItemId, destination);
+	}
+	return existing.workItemId;
+}
+
+/**
+ * Lost the claim race — poll the winner's mapping row for its work_item_id.
+ * Returns the id when the winner attaches one; returns null after the polling
+ * budget is exhausted (caller throws MaterializationRetryExhausted).
+ */
+async function pollForConcurrentWinner(
+	project: ProjectConfig,
+	source: AlertSource,
+	externalId: string,
+): Promise<string | null> {
+	for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+		await sleep(POLL_DELAY_MS);
+		const row = await findByExternal(project.id, source, externalId);
+		if (row?.workItemId) return row.workItemId;
+	}
+	return null;
+}
+
 export async function materializeAlertWorkItem(
 	source: AlertSource,
 	externalId: string,
@@ -60,36 +111,17 @@ export async function materializeAlertWorkItem(
 
 	const provider = pmRegistry.createProvider(project);
 
-	// Step 1: check for an existing mapping
+	// Step 1: existing mapping?
 	const existing = await findByExternal(project.id, source, externalId);
 	if (existing?.workItemId) {
-		// Verify the PM card is still alive
-		try {
-			await provider.getWorkItem(existing.workItemId);
-		} catch (err) {
-			if (!is404Error(err)) throw err;
-			// Lazy-heal: card was deleted — fall through to create path
-			return await createAndAttach(project, source, externalId, containerId, hints, provider, {
-				lazyHeal: { rowId: existing.id, oldWorkItemId: existing.workItemId },
-			});
-		}
-		// Card exists — re-apply placement to repair any prior moveWorkItem failure.
-		// For JIRA/Linear this moves the issue into the configured alerts status; for
-		// Trello it is idempotent (card was created directly in the list). If the move
-		// throws a transient error the caller retries the full materialisation; if it
-		// throws a 404 the outer catch above handles it. This ensures that a
-		// moveWorkItem failure during the initial createAndAttach call is always
-		// repaired on subsequent deliveries rather than permanently stuck.
-		const destination = getAlertsStatusDestination(project);
-		if (destination) {
-			await provider.moveWorkItem(existing.workItemId, destination);
-		}
-		return existing.workItemId;
+		return reuseOrLazyHealMapping(project, source, externalId, containerId, hints, provider, {
+			id: existing.id,
+			workItemId: existing.workItemId,
+		});
 	}
 
-	// Step 2: atomically claim the mapping row
+	// Step 2: atomically claim the mapping row.
 	const claim = await claimExternalMapping(project.id, source, externalId);
-
 	if (claim.ownedHere) {
 		try {
 			return await createAndAttach(project, source, externalId, containerId, hints, provider, {
@@ -97,9 +129,8 @@ export async function materializeAlertWorkItem(
 				rowId: claim.rowId,
 			});
 		} catch (err) {
-			// createAndAttach failed — the claim row may still have work_item_id=NULL.
-			// Delete it (guarded by isNull) so the next Sentry delivery can reclaim it
-			// instead of polling to MaterializationRetryExhausted.
+			// createAndAttach failed — clear the NULL-work_item_id row so the next
+			// Sentry delivery can reclaim it instead of polling to exhaustion.
 			await deleteExternalMappingClaim(claim.rowId).catch((deleteErr) => {
 				logger.warn('[alert-materializer] failed to clean up stale claim row', {
 					rowId: claim.rowId,
@@ -113,15 +144,11 @@ export async function materializeAlertWorkItem(
 		}
 	}
 
-	// Lost to a concurrent winner — poll for its work_item_id
+	// Step 3: lost the claim race — return the winner's already-attached id, or
+	// poll until they attach one.
 	if (claim.existing.workItemId) return claim.existing.workItemId;
-
-	for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
-		await sleep(POLL_DELAY_MS);
-		const row = await findByExternal(project.id, source, externalId);
-		if (row?.workItemId) return row.workItemId;
-	}
-
+	const polled = await pollForConcurrentWinner(project, source, externalId);
+	if (polled) return polled;
 	throw new MaterializationRetryExhausted(project.id, source, externalId);
 }
 

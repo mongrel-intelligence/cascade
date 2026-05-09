@@ -17,7 +17,7 @@ Webhook processing is split into two distinct tiers:
 | **Router** | `src/router/` | Receive, validate, acknowledge, enqueue |
 | **Worker** | `src/triggers/` | Resolve trigger, establish credentials, run agent |
 
-**Router side is fully unified** — all four providers (Trello, JIRA, GitHub, Sentry) share `processRouterWebhook()` + `RouterPlatformAdapter`. No provider-specific branching in the router.
+**Router side is fully unified** — Trello, JIRA, Linear, GitHub, and Sentry share `processRouterWebhook()` + `RouterPlatformAdapter`. No provider-specific branching in the router.
 
 **Worker side has intentional divergence** — see below.
 
@@ -30,7 +30,7 @@ Webhook processing is split into two distinct tiers:
 | Trigger dispatch | ✅ Registry | ✅ Registry or pre-resolved | ✅ Registry or pre-resolved |
 | Ack comment (PR) | ❌ N/A | ✅ Posts to PR | ❌ N/A |
 | Ack comment (PM) | ✅ Via PM lifecycle | ✅ For PM-focused agents | ❌ N/A |
-| CI check polling | ❌ N/A | ✅ `pollWaitForChecks()` | ❌ N/A |
+| Check-suite decision | ❌ N/A | ✅ Aggregate check-run state in trigger handlers | ❌ N/A |
 | PM credential scope | ✅ `integration.withCredentials` | ✅ `withPMCredentials` | ✅ `withPMCredentials` |
 | PM lifecycle ops | ✅ prepareForAgent / handleFailure | ✅ For PM-focused agents | ❌ Skipped |
 | Persona token mgmt | ❌ N/A | ✅ Implementer / reviewer | ❌ N/A |
@@ -51,7 +51,7 @@ Forcing GitHub or Sentry into this pipeline would require:
 
 ### GitHub-specific features (cannot be generalized)
 
-1. **CI check polling** (`pollWaitForChecks`) — GitHub is the only provider with CI. No other source polls build status before running an agent.
+1. **Check-suite aggregation** — GitHub is the only provider with CI. The check-suite triggers inspect aggregate check-run state for the PR head SHA and either dispatch `review`, dispatch `respond-to-ci`, or return a structured skip while checks are incomplete. Worker-side CI polling is intentionally not part of this path.
 2. **PR acknowledgment comments** — GitHub PRs get a comment like "👀 Reviewing…" immediately. No other source has this flow.
 3. **Dual-persona token management** — The implementer vs. reviewer persona selection is GitHub-specific. No Trello/JIRA/Sentry equivalent.
 4. **PM-focused agent routing** — When a PM-focused agent (e.g. `backlog-manager`) fires from a GitHub PR event, it posts the ack to Trello/JIRA instead of the PR, and uses PM-appropriate lifecycle config.
@@ -74,7 +74,7 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 | File | Purpose | Used By |
 |------|---------|---------|
 | `concurrency.ts` | `withAgentTypeConcurrency()` — wraps check→mark→execute→clear | GitHub, Sentry |
-| `trigger-resolution.ts` | `resolveTriggerResult()` — pre-resolved or dispatch | Sentry (GitHub and PM use inline logic) |
+| `trigger-resolution.ts` | `resolveTriggerResult()` — pre-resolved or dispatch | GitHub, PM, Sentry |
 | `credential-scope.ts` | `withPMScope()` — `withPMCredentials` + `withPMProvider` | GitHub, Sentry |
 | `pm-ack.ts` | `postPMAckComment()` — posts ack to Trello/JIRA | GitHub worker handler |
 | `events.ts` | `TRIGGER_EVENTS` — typed catalog of canonical trigger event names | Trigger handlers and tests |
@@ -92,9 +92,67 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 
 ---
 
+## Trigger Authoring Contracts
+
+### Canonical events
+
+Use `TRIGGER_EVENTS` from `src/triggers/shared/events.ts` for every new trigger event. The catalog is the source of truth for event IDs written into `agentInput.triggerEvent`, trigger configuration rows, and static consistency tests:
+
+| Category | Events |
+|----------|--------|
+| `PM` | `pm:status-changed`, `pm:label-added`, `pm:comment-mention` |
+| `SCM` | `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`, `scm:review-requested`, `scm:pr-opened`, `scm:pr-comment-mention`, `scm:pr-merged`, `scm:pr-ready-to-merge`, `scm:pr-conflict-detected` |
+| `ALERTING` | `alerting:issue-alert`, `alerting:metric-alert` |
+| `INTERNAL` | `internal:auto-chain` |
+
+Do not introduce raw event-string literals in new handlers. If a handler checks `checkTriggerEnabled(..., event, ...)`, the same event must be emitted as `agentInput.triggerEvent`; `tests/unit/triggers/trigger-event-consistency.test.ts` enforces that invariant because mismatches make enabled triggers silently fall back to YAML defaults.
+
+### Result builders
+
+Prefer the shared builders instead of hand-assembling `TriggerResult` objects:
+
+| Builder | Use |
+|---------|-----|
+| `buildPMDispatchResult` | Generic PM dispatch shape with `workItemId` and canonical trigger event |
+| `buildPMStatusDispatchResult` | PM status-transition dispatch plus PM coalescing key |
+| `buildPMLabelDispatchResult` | PM label-trigger dispatch |
+| `buildGitHubPRDispatchResult` | Generic GitHub PR dispatch shape with `prNumber`, PR metadata, and optional PM work-item metadata |
+| `buildReviewResult`, `buildRespondToCiResult`, `buildResolveConflictsResult` | GitHub-specific agent input shapes |
+| `buildNoAgentResult` | Matched trigger completed a side effect but should not spawn an agent |
+| `buildSkipResult` / `skip()` | Matched handler deliberately self-skipped and should stop registry dispatch with a structured reason |
+| `buildDeferredRecheckResult` | **GitHub-only** — Router schedules a bare delayed job; the GitHub worker re-dispatches through the registry for fresh provider state. Non-GitHub adapters embed `triggerResult` in the job, so their workers return the same `agentType: null` result without re-dispatching. See the **Deferred re-check** section below. |
+
+### `null` vs structured skip
+
+`TriggerRegistry.dispatch()` is first-match dispatch with one important distinction:
+
+- Return bare `null` only when this handler does not claim the event and the registry should continue to later handlers.
+- Return `buildSkipResult(handler, message)` when the handler did claim the event but chose not to run an agent, such as disabled config, loop-prevention gates, incomplete aggregate checks, or missing prerequisite state. The router logs a stable decision reason: `Trigger <handler> skipped: <message>`.
+
+This distinction prevents "No trigger matched for event" from hiding real handler decisions.
+
+### Deferred re-check
+
+`buildDeferredRecheckResult` is currently a **GitHub-only** contract for bare re-dispatch. The router always schedules the delayed job via `scheduleCoalescedJob` and exits without taking dispatch locks or posting an ack — that part is generic. What differs is what the worker does when the job fires:
+
+- **GitHub adapter** — `GitHubRouterAdapter.buildJob()` strips `triggerResult` from the job and sets `mergeabilityRecheckAttempt: 1`. The GitHub worker detects the bare job and re-dispatches through the registry to evaluate fresh provider state. If the re-check still cannot resolve state, the GitHub worker emits `mergeability_recheck_exhausted` and stops without re-queueing.
+- **Non-GitHub adapters (Trello, JIRA, Linear, Sentry)** — these adapters always embed `triggerResult` in the job regardless of `deferredRecheck`. When the job fires, `resolveTriggerResult()` receives the pre-resolved result and returns it directly, skipping registry dispatch. A non-GitHub handler returning `buildDeferredRecheckResult` would therefore schedule a job that re-uses the same `agentType: null` result instead of re-evaluating provider state.
+
+Use this builder only in GitHub handlers unless the adapter and worker for your provider have been updated to support bare re-dispatch.
+
+### Handler rules
+
+- `matches(ctx)` should be cheap, source-specific, and side-effect free.
+- `handle(ctx)` owns expensive lookups, trigger-config checks, and the final dispatch decision.
+- PM status and label handlers should use shared PM helpers so Trello, JIRA, and Linear stay behaviorally aligned.
+- GitHub PR agent dispatch should use the GitHub result builders so PR metadata, work-item metadata, `headSha`, and `triggerType` remain consistent.
+- Prefer structured skip over throwing for expected non-dispatch reasons. Throwing from router dispatch is treated as non-fatal by the router and loses handler-specific decision detail.
+
+---
+
 ## Flow Diagrams
 
-### PM webhook (Trello / JIRA)
+### PM webhook (Trello / JIRA / Linear)
 
 ```
 processPMWebhook(integration, payload, registry)
@@ -118,8 +176,8 @@ processPMWebhook(integration, payload, registry)
 processGitHubWebhook(payload, eventType, registry, ackCommentId, triggerResult)
   └─ integration.parseWebhookPayload(payload)       → event
   └─ integration.lookupProject(event.repo)          → project
-  └─ [inline] if triggerResult → use it, else dispatchTrigger(registry, payload, project)
-  └─ [optional] pollWaitForChecks(result, repo)     → checksOk
+  └─ resolveTriggerResult(registry, ctx, triggerResult)   → result
+  └─ check-suite handlers inspect aggregate check-run state before dispatch
   └─ maybePostAckComment(result, ...)               → PR or PM ack
   └─ runGitHubAgent(result, project, config)
        └─ withAgentTypeConcurrency(projectId, agentType)

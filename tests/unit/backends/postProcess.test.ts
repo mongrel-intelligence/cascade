@@ -8,8 +8,13 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/sentry.js', () => ({
+	captureException: vi.fn(),
+}));
+
 import { postProcessResult } from '../../../src/backends/postProcess.js';
 import type { AgentEngine, AgentEngineResult } from '../../../src/backends/types.js';
+import { captureException } from '../../../src/sentry.js';
 import type { AgentInput, ProjectConfig } from '../../../src/types/index.js';
 import { logger } from '../../../src/utils/logging.js';
 
@@ -120,6 +125,69 @@ describe('postProcessResult', () => {
 
 			expect(result.success).toBe(false);
 			expect(result.error).toBe('Agent completed but no authoritative PR creation was recorded');
+		});
+
+		// Prod regression 2026-05-09 (run d8e31665): the no-authoritative-PR
+		// failure surfaced only as a per-run record + a one-line WARN. Operators
+		// reading `cascade runs list` saw "failed" with no idea whether this is
+		// a recurring regression. Sentry capture under a stable tag makes prod
+		// frequency loud and gives ops a single dashboard to monitor.
+		it('emits a Sentry capture under tag pr_sidecar_invalid when authoritative PR evidence is missing', () => {
+			const captureSpy = vi.mocked(captureException);
+			captureSpy.mockClear();
+			const result = makeResult({
+				success: true,
+				prUrl: 'https://github.com/o/r/pull/1290',
+				prEvidence: { source: 'text', authoritative: false },
+			});
+			const engine = makeEngine('codex');
+			const input = makeInput();
+
+			postProcessResult(result, 'implementation', engine, input, 'impl-card-fe82YUKV', {
+				requiresPR: true,
+			});
+
+			expect(captureSpy).toHaveBeenCalledTimes(1);
+			expect(captureSpy).toHaveBeenCalledWith(
+				expect.any(Error),
+				expect.objectContaining({
+					tags: expect.objectContaining({
+						source: 'pr_sidecar_invalid',
+						engine: 'codex',
+						agentType: 'implementation',
+					}),
+					extra: expect.objectContaining({
+						identifier: 'impl-card-fe82YUKV',
+						prUrl: 'https://github.com/o/r/pull/1290',
+						prEvidenceSource: 'text',
+					}),
+				}),
+			);
+			// Error message matches the user-visible failure string for grep parity.
+			const arg = captureSpy.mock.calls[0]![0] as Error;
+			expect(arg.message).toBe('Agent completed but no authoritative PR creation was recorded');
+		});
+
+		it('does NOT Sentry-capture when authoritative PR evidence IS present', () => {
+			const captureSpy = vi.mocked(captureException);
+			captureSpy.mockClear();
+			const result = makeResult({
+				success: true,
+				prUrl: 'https://github.com/o/r/pull/1',
+				prEvidence: {
+					source: 'native-tool-sidecar',
+					authoritative: true,
+					command: 'cascade-tools scm create-pr',
+				},
+			});
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'implementation', engine, input, 'impl-id', {
+				requiresPR: true,
+			});
+
+			expect(captureSpy).not.toHaveBeenCalled();
 		});
 
 		it('passes through when requiresPR agent already failed', () => {

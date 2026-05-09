@@ -102,7 +102,8 @@ flowchart TD
     F -->|Not found| SKIP4[Skip: no project config]
     F -->|Found| G[7. Dispatch triggers with credentials]
     G -->|No match| SKIP5[Skip: no trigger matched]
-    G -->|Matched| H{8. Work-item / agent-type lock}
+    G -->|Structured skip / no-agent / deferred| OUTCOME[Handle non-dispatch outcome]
+    G -->|Agent dispatch| H{8. Work-item / agent-type lock}
     H -->|Locked| SKIP6[Skip: concurrency limit]
     H -->|Free| I[9. Post ack comment]
     I --> J[10. Build job]
@@ -118,12 +119,35 @@ flowchart TD
 4. **Self-check** — Adapter's `isSelfAuthored()` detects bot's own actions (loop prevention)
 5. **Reaction** — Fire-and-forget emoji reaction on the source event
 6. **Resolve config** — Look up project by platform identifier (board ID, repo, etc.)
-7. **Dispatch triggers** — Within credential scope, call `TriggerRegistry.dispatch()` to find a matching agent. PM router adapters also wrap dispatch in `withPMScopeForDispatch(fullProject, dispatch)` so shared PM gates can resolve the active provider.
+7. **Dispatch triggers** — Within credential scope, call `TriggerRegistry.dispatch()` to find a matching result. PM router adapters also wrap dispatch in `withPMScopeForDispatch(fullProject, dispatch)` so shared PM gates can resolve the active provider.
 8. **Concurrency** — Check work-item lock (`work-item-lock.ts`) and agent-type concurrency (`agent-type-lock.ts`)
 9. **Ack comment** — Post an acknowledgment comment to the work item or PR
 10. **Build job** — Package trigger result + payload + ack info into a `CascadeJob`
 11. **Pre-actions** — Optional fire-and-forget actions (e.g., GitHub eyes reaction)
 12. **Enqueue** — Add job to BullMQ Redis queue; mark work item and agent type as enqueued
+
+### Router outcomes
+
+`src/router/webhook-trigger-outcomes.ts` normalizes trigger results into stable router decisions:
+
+| Trigger result | Router behavior | Decision reason shape |
+|----------------|-----------------|-----------------------|
+| `null` from registry | No handler claimed the event | `No trigger matched for event` |
+| `agentType: null` + `skipReason` | Handler claimed the event but intentionally self-skipped | `Trigger <handler> skipped: <message>` |
+| `agentType: null` + `deferredRecheck` | Schedule a coalesced delayed bare job and exit | `Deferred re-check scheduled: <coalesceKey>` |
+| `agentType: null` without skip/defer | Side-effect-only trigger completed | `Trigger completed without agent (PM operation)` |
+| `agentType` + `coalesceKey` and coalescing enabled | Schedule a delayed coalesced dispatch | `Coalesced dispatch scheduled: <agent> agent for work item <id>` |
+| `agentType` without coalescing | Post ack, build job, enqueue now | `Job queued: <agent> agent for work item <id>` |
+| Immediate-dispatch or PM coalesced-dispatch Redis failure | Call `onBlocked` and leave a failure reason | `Failed to enqueue job to Redis` or `Failed to schedule coalesced job to Redis` |
+| Deferred re-check Redis failure | Capture Sentry under `deferred_recheck_schedule_failure`; skip `onBlocked`; treat as if scheduled | `Deferred re-check scheduled: <coalesceKey>` |
+
+Structured skip is intentionally different from bare `null`: it preserves the handler's reason in webhook logs instead of collapsing expected non-dispatch decisions into "no trigger matched."
+
+### Coalescing and deferred re-check
+
+PM status-change dispatches can include a `coalesceKey`, normally `${projectId}:${workItemId}`. When `PM_COALESCE_WINDOW_MS` is positive, the router schedules a delayed job via `scheduleCoalescedJob`; a newer dispatch with the same key supersedes the pending one and releases the superseded job's in-memory locks. PM ack comments are deferred to job fire time for coalesced jobs so superseded work does not leave orphan comments.
+
+Deferred re-check also uses `scheduleCoalescedJob` and exits without dispatch locks or an ack comment. The bare re-dispatch on job fire is currently **GitHub-only**: `GitHubRouterAdapter.buildJob()` strips `triggerResult` and sets `mergeabilityRecheckAttempt: 1`, so the GitHub worker re-dispatches through the trigger registry to evaluate fresh provider state. Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed `triggerResult` in the job regardless of `deferredRecheck`, so their workers return the pre-resolved `agentType: null` result directly without re-dispatching. If a deferred re-check schedule call fails, the router captures Sentry under `deferred_recheck_schedule_failure` and still returns `Deferred re-check scheduled` — it does not call `onBlocked`. GitHub mergeability uses this when `mergeable` is still `null` after the synchronous retry budget; if the re-check still cannot resolve state, the GitHub worker records `mergeability_recheck_exhausted` and stops rather than re-queueing indefinitely.
 
 ### Concurrency controls
 
@@ -135,6 +159,12 @@ flowchart TD
 | Lock-state classifier | `lock-state-classifier.ts` | Explains blocked webhooks as queued, awaiting worker slot, or wedged lock |
 
 All locks are in-memory with TTL expiry. Work-item locks are scoped by `(projectId, workItemId, agentType)`: duplicate runs of the same agent are blocked, but different agent types can run concurrently on the same work item. When a lock rejects a webhook, logs distinguish `Awaiting worker slot` from `Work item locked (no active dispatch)`; the latter is a wedged-lock canary and captures to Sentry.
+
+The work-item lock decision vocabulary is stable by design:
+
+- `Job queued: ...` means the router successfully registered a dispatch and enqueued or scheduled work.
+- `Awaiting worker slot: ...` means the same work item and agent type already have an active queued/waiting/running dispatch.
+- `Work item locked (no active dispatch): ...` means the lock-state classifier could not correlate the lock with queued or running work. This is a wedged-lock canary, not normal backpressure.
 
 ## Signature Verification
 

@@ -124,17 +124,27 @@ describe('SentryRouterAdapter', () => {
 			expect(mockLogger.warn).toHaveBeenCalled();
 		});
 
-		it('returns null for non-processable resource type "issue"', async () => {
+		it('accepts "issue" resource (Sentry-Hook-Resource: issue, Internal Integration surface)', async () => {
+			// Updated 2026-05-09: SentryIssueLifecycleTrigger now handles
+			// `issue` resource webhooks (Internal Integration default surface —
+			// fires on issue lifecycle events like `created`). Previously this
+			// resource was dropped at parse time which silently skipped the
+			// alerting agent for any project that wired Sentry the natural way.
 			const payload = {
 				resource: 'issue',
-				payload: { action: 'created', data: {} },
+				payload: { action: 'created', data: { issue: { id: '118723355' } } },
 				cascadeProjectId: 'p1',
 			};
 
 			const result = await adapter.parseWebhook(payload);
 
-			expect(result).toBeNull();
-			expect(mockLogger.debug).toHaveBeenCalled();
+			expect(result).not.toBeNull();
+			expect(result).toMatchObject({
+				projectIdentifier: 'p1',
+				eventType: 'issue',
+				cascadeProjectId: 'p1',
+				resource: 'issue',
+			});
 		});
 
 		it('returns null for non-processable resource type "error"', async () => {
@@ -171,14 +181,14 @@ describe('SentryRouterAdapter', () => {
 			expect(adapter.isProcessableEvent(event)).toBe(true);
 		});
 
-		it('returns false for "issue" resource', () => {
+		it('returns true for "issue" resource (lifecycle webhook surface)', () => {
 			const event = {
 				projectIdentifier: 'p1',
 				eventType: 'issue',
 				isCommentEvent: false,
 			};
 
-			expect(adapter.isProcessableEvent(event)).toBe(false);
+			expect(adapter.isProcessableEvent(event)).toBe(true);
 		});
 
 		it('returns false for unknown event type', () => {

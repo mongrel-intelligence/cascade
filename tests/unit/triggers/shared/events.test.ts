@@ -25,6 +25,7 @@ describe('TRIGGER_EVENTS', () => {
 			'scm:pr-conflict-detected',
 			'alerting:issue-alert',
 			'alerting:metric-alert',
+			'alerting:issue-lifecycle',
 			'internal:auto-chain',
 		]);
 	});

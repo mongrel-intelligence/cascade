@@ -108,6 +108,20 @@ Native-tool engines cannot invoke gadget classes directly (they run as subproces
 
 The `cascade-tools` binary uses a separate oclif config (`bin/cascade-tools.js`) that discovers all non-dashboard commands, while `cascade` discovers only dashboard commands.
 
+`createCLICommand()` is the stable facade used by command files under `src/cli/**`. Shared CLI behavior lives in focused helper modules under `src/gadgets/shared/cli/`:
+
+| Helper | Role |
+|--------|------|
+| `commandNames.ts` | Command namespace/name derivation shared by the CLI factory and manifest generator |
+| `examples.ts` | Tool example lookup, shell quoting, oclif example rendering, and JSON expected-shape hints |
+| `flags.ts` | oclif flag construction and flag metadata collection |
+| `booleanArgv.ts` | Boolean value-form normalization before oclif parsing |
+| `parseErrors.ts` | oclif parse-error classification and unknown-flag suggestions |
+| `params.ts` | File/stdin input, JSON parsing, direct parameter resolution, and git remote owner/repo resolution |
+| `errorSink.ts` | Error-envelope routing through the active command instance |
+
+New domain commands should not add branches in these helpers. They declare behavior through their `ToolDefinition` metadata (`cliAliases`, examples, file input alternatives, auto-resolution), and the shared generators consume it.
+
 ## Session State
 
 `src/gadgets/sessionState.ts`

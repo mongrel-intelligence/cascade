@@ -139,8 +139,10 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 24 built-in triggers (19 + 2 Sentry alerting + 3 Linear triggers)
-		expect(registry.register).toHaveBeenCalledTimes(24);
+		// Should have registered all 25 built-in triggers (19 + 3 Sentry alerting + 3 Linear triggers).
+		// Sentry triggers: SentryIssueAlertTrigger (event_alert), SentryMetricAlertTrigger
+		// (metric_alert), SentryIssueLifecycleTrigger (issue lifecycle webhook).
+		expect(registry.register).toHaveBeenCalledTimes(25);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {

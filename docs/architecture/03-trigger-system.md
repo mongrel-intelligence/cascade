@@ -21,6 +21,8 @@ class TriggerRegistry {
 2. Call `handle(ctx)` — if it returns a `TriggerResult`, return it
 3. If `handle()` returns `null`, continue to next handler
 
+That makes dispatch first-match-wins for non-null results. A handler should return bare `null` only when it does not claim the event and later handlers should still get a chance. If a handler claims the event but decides not to run an agent, it returns a structured `TriggerResult` with `agentType: null` instead.
+
 ## TriggerHandler
 
 `src/triggers/types.ts`
@@ -58,6 +60,12 @@ interface TriggerResult {
   prUrl?: string;
   prTitle?: string;
   onBlocked?: () => void;          // Cleanup if job can't be enqueued
+  skipReason?: {
+    handler: string;
+    message: string;
+  };
+  lockKey?: string;                 // Optional work-item lock override
+  coalesceKey?: string;             // Optional PM dispatch coalescing key
   deferredRecheck?: {
     delayMs: number;
     coalesceKey: string;
@@ -135,14 +143,38 @@ function registerBuiltInTriggers(registry: TriggerRegistry): void {
 
 ### Event format
 
-Triggers use category-prefixed events: `{category}:{event-name}`
-- `pm:status-changed`, `pm:label-added`
-- `scm:check-suite-success`, `scm:pr-review-submitted`, `scm:review-requested`
-- `alerting:issue-alert`, `alerting:metric-alert`
+Triggers use category-prefixed events from `src/triggers/shared/events.ts`. `TRIGGER_EVENTS` is the canonical catalog used by handlers, result builders, trigger configuration, and static tests:
+
+- PM: `pm:status-changed`, `pm:label-added`, `pm:comment-mention`
+- SCM: `scm:check-suite-success`, `scm:check-suite-failure`, `scm:pr-review-submitted`, `scm:review-requested`, `scm:pr-opened`, `scm:pr-comment-mention`, `scm:pr-merged`, `scm:pr-ready-to-merge`, `scm:pr-conflict-detected`
+- Alerting: `alerting:issue-alert`, `alerting:metric-alert`
+- Internal: `internal:auto-chain`
+
+New handlers should import `TRIGGER_EVENTS` instead of adding raw string literals. The static guard in `tests/unit/triggers/trigger-event-consistency.test.ts` fails when a handler gates on one event string and emits a different `agentInput.triggerEvent`.
+
+### Result builders
+
+Shared builders live in `src/triggers/shared/result-builders.ts`, `src/triggers/shared/pm-status.ts`, `src/triggers/shared/pm-label.ts`, and `src/triggers/github/result-builders.ts`.
+
+Use them for new handlers unless there is a concrete reason not to:
+
+- `buildPMDispatchResult`, `buildPMStatusDispatchResult`, and `buildPMLabelDispatchResult` attach canonical PM trigger events, work-item fields, and PM coalescing keys.
+- `buildGitHubPRDispatchResult` and the GitHub-specific wrappers attach PR metadata, optional linked PM work-item metadata, and normalized agent input for PR agents.
+- `buildNoAgentResult` represents a matched trigger whose side effect is complete without spawning an agent, such as PM status updates after a PR merge.
+- `buildSkipResult` or `skip()` represents a matched trigger that intentionally stops dispatch with a human-readable reason.
+- `buildDeferredRecheckResult` represents a delayed bare-job re-dispatch.
+
+### Structured skip vs bare `null`
+
+Bare `null` means "this handler did not handle the event; continue registry dispatch." Structured skip means "this handler did handle the event; stop dispatch and record why no agent was queued."
+
+The router preserves structured skips in webhook logs with `Trigger <handler> skipped: <message>`. Use structured skip for disabled trigger config, author-mode gates, self-loop gates, incomplete aggregate check-suite state, missing PR/work-item prerequisites, and similar expected non-dispatch outcomes.
 
 ### Deferred re-checks
 
 Handlers that cannot make a final decision yet can return `deferredRecheck: { delayMs, coalesceKey }` with `agentType: null`. The router schedules a coalesced delayed BullMQ job and exits without spawning an agent. GitHub mergeability checks use this path; the worker recognizes re-check jobs via `mergeabilityRecheckAttempt` and captures a Sentry diagnostic if the second pass still cannot resolve state.
+
+The bare re-dispatch on job fire is currently **GitHub-only**: `GitHubRouterAdapter.buildJob()` strips `triggerResult` and sets `mergeabilityRecheckAttempt: 1`, so the GitHub worker re-dispatches through the trigger registry to evaluate fresh provider state. Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed `triggerResult` in the job regardless of `deferredRecheck`; `resolveTriggerResult()` returns the pre-resolved result directly, skipping registry dispatch. A non-GitHub handler returning `buildDeferredRecheckResult` would therefore schedule a job that reuses the same `agentType: null` result rather than re-evaluating provider state. See `src/triggers/README.md` for the full authoring contract. Workers do not schedule another re-check after exhaustion.
 
 ### Config resolution
 

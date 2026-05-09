@@ -64,6 +64,18 @@ export function writeReviewSidecar(
 		return false;
 	}
 
+	// Spec 014/019 contract — same shape as writePRSidecar. Refuse to persist a
+	// half-baked sidecar so downstream gets either a complete record or a clear
+	// "no sidecar at all" signal, never a "missing required fields" mystery.
+	if (!reviewUrl || typeof reviewUrl !== 'string') {
+		logger.error('writeReviewSidecar: refusing to write — reviewUrl is missing or non-string', {
+			sidecarPath,
+			reviewUrl,
+			event,
+		});
+		return false;
+	}
+
 	try {
 		writeFileSync(
 			sidecarPath,
@@ -91,6 +103,32 @@ export function writePRSidecar(
 ): boolean {
 	if (!sidecarPath || sidecarPath === 'undefined') {
 		logger.warn('CASCADE_PR_SIDECAR_PATH not set — PR sidecar will not be written');
+		return false;
+	}
+
+	// Spec 014/019 contract — sidecar is authoritative evidence of PR creation.
+	// Without prUrl + prNumber, the file is unusable downstream and the caller's
+	// run will fail with "no authoritative PR creation was recorded" — but with
+	// no signal of WHY the file was bad. Validate at the write boundary so the
+	// failure mode produces a precise log entry. Prod regression 2026-05-09 (run
+	// d8e31665) had `hasPrUrl: false` on the hydration side with no clue that
+	// the writer was the source.
+	if (!prUrl || typeof prUrl !== 'string') {
+		logger.error('writePRSidecar: refusing to write — prUrl is missing or non-string', {
+			sidecarPath,
+			prUrl,
+			prNumber,
+			alreadyExisted,
+			repoFullName,
+		});
+		return false;
+	}
+	if (typeof prNumber !== 'number' || !Number.isFinite(prNumber)) {
+		logger.error('writePRSidecar: refusing to write — prNumber is missing or non-numeric', {
+			sidecarPath,
+			prUrl,
+			prNumber,
+		});
 		return false;
 	}
 

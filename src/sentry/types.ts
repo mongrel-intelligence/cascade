@@ -175,24 +175,49 @@ export interface SentryMetricAlertPayload {
 	_cascadeProjectId?: string;
 }
 
-/** Sentry issue lifecycle webhook payload (Sentry-Hook-Resource: issue) */
+/**
+ * Sentry issue lifecycle webhook payload (Sentry-Hook-Resource: issue).
+ *
+ * Sent by the Sentry "Internal Integration" surface (Custom Integrations →
+ * Webhook → Issue) when an issue's lifecycle changes. Distinct from
+ * `event_alert` (Sentry Alert Rule firings) — same Sentry issue can deliver
+ * via both surfaces if both are wired. Captured live shape verified against
+ * 2026-05-09 13:18:51 UTC prod webhook id `fbdc6d87-b962-444c-8a2a-a9452a74ff71`.
+ */
 export interface SentryIssuePayload {
 	action: 'created' | 'resolved' | 'assigned' | 'archived' | 'unresolved';
 	actor?: { id?: string; name?: string; type?: string };
+	installation?: { uuid?: string };
 	data: {
-		id?: string;
-		title?: string;
-		url?: string;
-		web_url?: string;
-		project_url?: string;
-		status?: string;
-		substatus?: string;
-		issueCategory?: string;
-		count?: number;
-		userCount?: number;
-		firstSeen?: string;
-		lastSeen?: string;
-		assignedTo?: unknown;
+		issue: {
+			id: string;
+			title: string;
+			culprit?: string;
+			shortId?: string;
+			level?: string;
+			issueType?: string;
+			permalink?: string;
+			web_url?: string;
+			url?: string;
+			project_url?: string;
+			project?: { id?: string; name?: string; slug?: string; platform?: string };
+			metadata?: {
+				type?: string;
+				value?: string;
+				filename?: string;
+				function?: string;
+			};
+			platform?: string;
+			priority?: string;
+			firstSeen?: string;
+			lastSeen?: string;
+			status?: string;
+			substatus?: string;
+			issueCategory?: string;
+			count?: string | number;
+			userCount?: number;
+			assignedTo?: unknown;
+		};
 	};
 	/** Injected by CASCADE router to identify the project (from URL path param) */
 	_cascadeProjectId?: string;

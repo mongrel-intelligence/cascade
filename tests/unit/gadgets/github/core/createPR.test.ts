@@ -599,6 +599,175 @@ describe('captured hook output preservation (spec 013)', () => {
 		expect(result.commitOutput).toBeDefined();
 		expect(result.commitOutput).toContain('Pre-commit hook ran: biome OK');
 	});
+
+	// Prod regression 2026-05-09 (run d8e31665, cascade/fe82YUKV): a successful
+	// `cascade-tools scm create-pr` returned 97 KB of `pushOutput` (lefthook's
+	// pre-push test:fast suite — 159 files, 2981 tests captured into the gadget
+	// result). Codex's tool-result parser couldn't extract the JSON envelope
+	// buried under that volume, retried the call, and the resulting concurrent
+	// invocations raced against the same sidecar path leaving prUrl missing.
+	// The full hook output stays in the worker's engine log (LLMIST_LOG_FILE)
+	// for operator visibility — only the agent-visible result-stream copy is
+	// truncated.
+	describe('hook-output truncation (prod regression d8e31665)', () => {
+		it('truncates a 97 KB pushOutput to ~4 KB with a clear marker', async () => {
+			const huge = 'A'.repeat(97 * 1024); // mimic the cascade prod payload
+			mockRunCommand.mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'push') return { stdout: huge, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'ls-remote')
+					return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
+			mockGithub.createPR.mockResolvedValue({
+				number: 1,
+				htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+			} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+			const result = await createPR({
+				title: 'Test',
+				body: 'Body',
+				head: 'feat',
+				base: 'main',
+				commit: false,
+				push: true,
+			});
+
+			// Result shape unchanged; pushOutput just smaller.
+			expect(result.prNumber).toBe(1);
+			expect(result.prUrl).toBe('https://github.com/test-owner/test-repo/pull/1');
+			expect(result.pushOutput).toBeDefined();
+			// Capped well under the original 97 KB.
+			expect(result.pushOutput!.length).toBeLessThan(10 * 1024);
+			// Marker tells operators where to find the full output.
+			expect(result.pushOutput).toMatch(/bytes truncated from push/i);
+			// Both ends of the output are preserved (head + tail) for context.
+			expect(result.pushOutput).toMatch(/^A+/);
+			expect(result.pushOutput).toMatch(/A+$/);
+		});
+
+		it('truncates an oversized commitOutput the same way', async () => {
+			const huge = 'C'.repeat(50 * 1024);
+			mockRunCommand.mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
+				if (args?.[0] === 'commit') return { stdout: huge, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'ls-remote')
+					return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
+			mockGithub.createPR.mockResolvedValue({
+				number: 1,
+				htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+			} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+			const result = await createPR({
+				title: 'Test',
+				body: 'Body',
+				head: 'feat',
+				base: 'main',
+				commit: true,
+				push: false,
+			});
+
+			expect(result.commitOutput).toBeDefined();
+			expect(result.commitOutput!.length).toBeLessThan(10 * 1024);
+			expect(result.commitOutput).toMatch(/bytes truncated from commit/i);
+		});
+
+		// Reviewer feedback (PR #1292): failing hooks embed the full captured
+		// output in err.message, which createCLICommand serialises into the JSON
+		// error envelope. A pre-push hook that fails after printing 97 KB of test
+		// output still hits the parser/retry bloat path unless the error message
+		// itself is truncated. Verify both commit and push failure paths.
+		it('truncates error message when pre-push hook fails with large output', async () => {
+			const huge = 'E'.repeat(50 * 1024); // 50 KB of hook failure output
+			mockRunCommand.mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'push') return { stdout: huge, stderr: 'hook failed', exitCode: 1 };
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
+
+			let thrownError: Error | undefined;
+			try {
+				await createPR({
+					title: 'Test',
+					body: 'Body',
+					head: 'feat',
+					base: 'main',
+					commit: false,
+					push: true,
+				});
+			} catch (e) {
+				thrownError = e as Error;
+			}
+			expect(thrownError).toBeDefined();
+			expect(thrownError?.message).toMatch(/PUSH FAILED/);
+			// Error message must be capped — same 4 KB limit as the success path.
+			expect((thrownError?.message ?? '').length).toBeLessThan(10 * 1024);
+			expect(thrownError?.message).toMatch(/bytes truncated from push/i);
+		});
+
+		it('truncates error message when pre-commit hook fails with large output', async () => {
+			const huge = 'F'.repeat(50 * 1024); // 50 KB of hook failure output
+			mockRunCommand.mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'status') return { stdout: 'M foo.ts\n', stderr: '', exitCode: 0 };
+				if (args?.[0] === 'commit')
+					return { stdout: huge, stderr: 'pre-commit hook failed', exitCode: 1 };
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
+
+			let thrownError: Error | undefined;
+			try {
+				await createPR({
+					title: 'Test',
+					body: 'Body',
+					head: 'feat',
+					base: 'main',
+					commit: true,
+					push: false,
+				});
+			} catch (e) {
+				thrownError = e as Error;
+			}
+			expect(thrownError).toBeDefined();
+			expect(thrownError?.message).toMatch(/COMMIT FAILED/);
+			expect((thrownError?.message ?? '').length).toBeLessThan(10 * 1024);
+			expect(thrownError?.message).toMatch(/bytes truncated from commit/i);
+		});
+
+		it('leaves small hook output untouched (no truncation marker)', async () => {
+			mockRunCommand.mockImplementation(async (_cmd, args) => {
+				if (args?.[0] === 'remote') return { stdout: HTTPS_URL, stderr: '', exitCode: 0 };
+				if (args?.[0] === 'push')
+					return {
+						stdout: 'Pre-push hook ran: typecheck OK\n',
+						stderr: 'To github.com...\n',
+						exitCode: 0,
+					};
+				if (args?.[0] === 'ls-remote')
+					return { stdout: 'abc\trefs/heads/feat', stderr: '', exitCode: 0 };
+				return { stdout: '', stderr: '', exitCode: 0 };
+			});
+			mockGithub.createPR.mockResolvedValue({
+				number: 1,
+				htmlUrl: 'https://github.com/test-owner/test-repo/pull/1',
+			} as Awaited<ReturnType<typeof mockGithub.createPR>>);
+
+			const result = await createPR({
+				title: 'Test',
+				body: 'Body',
+				head: 'feat',
+				base: 'main',
+				commit: false,
+				push: true,
+			});
+
+			expect(result.pushOutput).toContain('Pre-push hook ran: typecheck OK');
+			expect(result.pushOutput).not.toMatch(/bytes truncated/);
+		});
+	});
 });
 
 // ───────────────────────────────────────────────────────────────────────────
