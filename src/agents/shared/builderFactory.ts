@@ -57,6 +57,12 @@ export interface CreateBuilderOptions {
 	workItemTitle?: string;
 	/** JSONL outbox path for incidental friction reports. Passed to session state. */
 	frictionSidecarPath?: string;
+	/** PR number for the current execution. Passed to session state for in-process gadget fallback. */
+	prNumber?: number;
+	/** PR URL for the current execution. Passed to session state for in-process gadget fallback. */
+	prUrl?: string;
+	/** PR title for the current execution. Passed to session state for in-process gadget fallback. */
+	prTitle?: string;
 	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
 	hooks?: SessionHooks;
 }
@@ -102,6 +108,10 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			workItemUrl: options.workItemUrl,
 			workItemTitle: options.workItemTitle,
 			frictionSidecarPath: options.frictionSidecarPath,
+			runId: options.runId,
+			prNumber: options.prNumber,
+			prUrl: options.prUrl,
+			prTitle: options.prTitle,
 			initialHeadSha,
 		});
 

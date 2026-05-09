@@ -132,6 +132,13 @@ export const mockSessionStateModule = {
 	recordReviewSubmission: vi.fn(),
 	clearInitialComment: vi.fn(),
 	getFrictionSidecarPath: vi.fn(() => null),
+	getRunId: vi.fn(() => null),
+	getPrNumber: vi.fn(() => null),
+	getPrUrl: vi.fn(() => null),
+	getPrTitle: vi.fn(() => null),
+	getWorkItemId: vi.fn(() => null),
+	getWorkItemUrl: vi.fn(() => null),
+	getWorkItemTitle: vi.fn(() => null),
 };
 
 // ---------------------------------------------------------------------------

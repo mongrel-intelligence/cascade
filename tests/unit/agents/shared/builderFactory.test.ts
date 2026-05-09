@@ -239,6 +239,24 @@ describe('createConfiguredBuilder', () => {
 		);
 	});
 
+	it('passes runId and PR context fields to initSessionState for in-process gadget fallback', async () => {
+		const options = createBaseOptions({
+			runId: 'run-abc',
+			prNumber: 42,
+			prUrl: 'https://github.com/o/r/pull/42',
+			prTitle: 'fix: runtime metadata',
+		});
+		await createConfiguredBuilder(options);
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				runId: 'run-abc',
+				prNumber: 42,
+				prUrl: 'https://github.com/o/r/pull/42',
+				prTitle: 'fix: runtime metadata',
+			}),
+		);
+	});
+
 	it('passes undefined initialHeadSha when git rev-parse fails', async () => {
 		mockExecSync.mockImplementation(() => {
 			throw new Error('not a git repository');

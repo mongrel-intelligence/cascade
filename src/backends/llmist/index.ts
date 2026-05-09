@@ -113,6 +113,12 @@ export class LlmistEngine implements AgentEngine {
 			workItemUrl: agentInput.workItemUrl as string | undefined,
 			workItemTitle: agentInput.workItemTitle as string | undefined,
 			frictionSidecarPath: input.frictionSidecarPath,
+			// Pass PR metadata so in-process gadgets (e.g. ReportFriction) can read it
+			// from SessionState as a fallback when CASCADE_PR_* env vars are not exported
+			// into process.env (which is the case for all in-process LLMist gadgets).
+			prNumber: agentInput.prNumber,
+			prUrl: agentInput.prUrl as string | undefined,
+			prTitle: agentInput.prTitle as string | undefined,
 			// Pass resolved hook flags for finish validation (hook-driven instead of agent-type checks)
 			hooks: profile.finishHooks,
 			// Pass the progress monitor from the adapter so createObserverHooks can call

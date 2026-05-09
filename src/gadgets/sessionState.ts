@@ -23,6 +23,18 @@ export interface InitSessionStateOptions {
 	workItemTitle?: string;
 	frictionSidecarPath?: string;
 	initialHeadSha?: string;
+	/** Run ID for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_RUN_ID is not exported to process.env (e.g. LLMist runs). */
+	runId?: string;
+	/** PR number for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_PR_NUMBER is not exported to process.env (e.g. LLMist runs). */
+	prNumber?: number;
+	/** PR URL for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_PR_URL is not exported to process.env (e.g. LLMist runs). */
+	prUrl?: string;
+	/** PR title for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_PR_TITLE is not exported to process.env (e.g. LLMist runs). */
+	prTitle?: string;
 	/**
 	 * The PR HEAD branch name. Threaded into Finish validation so that
 	 * `hasUnpushedCommits` can use ls-remote SHA comparison instead of the
@@ -42,10 +54,13 @@ interface SessionStateData {
 	workItemTitle: string | null;
 	frictionSidecarPath: string | null;
 	initialHeadSha: string | null;
+	runId: string | null;
+	prNumber: number | null;
+	prUrl: string | null;
+	prTitle: string | null;
 	hooks: SessionHooks;
 	readOnlyFs: boolean;
 	prCreated: boolean;
-	prUrl: string | null;
 	reviewSubmitted: boolean;
 	reviewUrl: string | null;
 	reviewBody: string | null;
@@ -77,10 +92,13 @@ export class SessionState {
 		workItemTitle: null,
 		frictionSidecarPath: null,
 		initialHeadSha: null,
+		runId: null,
+		prNumber: null,
+		prUrl: null,
+		prTitle: null,
 		hooks: {},
 		readOnlyFs: false,
 		prCreated: false,
-		prUrl: null,
 		reviewSubmitted: false,
 		reviewUrl: null,
 		reviewBody: null,
@@ -101,6 +119,10 @@ export class SessionState {
 			workItemTitle,
 			frictionSidecarPath,
 			initialHeadSha,
+			runId,
+			prNumber,
+			prUrl,
+			prTitle,
 		} = options;
 		this.state = {
 			agentType,
@@ -112,10 +134,13 @@ export class SessionState {
 			workItemTitle: workItemTitle ?? null,
 			frictionSidecarPath: frictionSidecarPath ?? null,
 			initialHeadSha: initialHeadSha ?? null,
+			runId: runId ?? null,
+			prNumber: prNumber ?? null,
+			prUrl: prUrl ?? null,
+			prTitle: prTitle ?? null,
 			hooks: hooks ?? {},
 			readOnlyFs: false,
 			prCreated: false,
-			prUrl: null,
 			reviewSubmitted: false,
 			reviewUrl: null,
 			reviewBody: null,
@@ -151,6 +176,22 @@ export class SessionState {
 
 	getFrictionSidecarPath(): string | null {
 		return this.state.frictionSidecarPath;
+	}
+
+	getRunId(): string | null {
+		return this.state.runId;
+	}
+
+	getPrNumber(): number | null {
+		return this.state.prNumber;
+	}
+
+	getPrUrl(): string | null {
+		return this.state.prUrl;
+	}
+
+	getPrTitle(): string | null {
+		return this.state.prTitle;
 	}
 
 	recordPRCreation(prUrl: string): void {
@@ -273,6 +314,22 @@ export function getWorkItemTitle(): string | null {
 
 export function getFrictionSidecarPath(): string | null {
 	return _defaultInstance.getFrictionSidecarPath();
+}
+
+export function getRunId(): string | null {
+	return _defaultInstance.getRunId();
+}
+
+export function getPrNumber(): number | null {
+	return _defaultInstance.getPrNumber();
+}
+
+export function getPrUrl(): string | null {
+	return _defaultInstance.getPrUrl();
+}
+
+export function getPrTitle(): string | null {
+	return _defaultInstance.getPrTitle();
 }
 
 export function recordPRCreation(prUrl: string): void {

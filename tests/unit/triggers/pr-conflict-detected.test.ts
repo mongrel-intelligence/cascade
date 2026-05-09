@@ -176,11 +176,17 @@ describe('PRConflictDetectedTrigger', () => {
 					triggerType: 'conflict-resolution',
 					workItemId: 'abc123',
 					triggerEvent: 'scm:pr-conflict-detected',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'Test PR',
 				},
 				prNumber: 42,
 				prUrl: 'https://github.com/owner/repo/pull/42',
 				prTitle: 'Test PR',
 				workItemId: 'abc123',
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				onBlocked: undefined,
+				coalesceKey: undefined,
 			});
 		});
 

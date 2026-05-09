@@ -235,11 +235,17 @@ describe('CheckSuiteFailureTrigger', () => {
 					triggerType: 'check-failure',
 					workItemId: 'abc123',
 					triggerEvent: 'scm:check-suite-failure',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'Test PR',
 				},
 				prNumber: 42,
 				prUrl: 'https://github.com/owner/repo/pull/42',
 				prTitle: 'Test PR',
 				workItemId: 'abc123',
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				onBlocked: undefined,
+				coalesceKey: undefined,
 			});
 		});
 
@@ -553,11 +559,17 @@ describe('CheckSuiteFailureTrigger', () => {
 					triggerType: 'check-failure',
 					workItemId: 'abc123',
 					triggerEvent: 'scm:check-suite-failure',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'Test PR',
 				},
 				prNumber: 42,
 				prUrl: 'https://github.com/owner/repo/pull/42',
 				prTitle: 'Test PR',
 				workItemId: 'abc123',
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				onBlocked: undefined,
+				coalesceKey: undefined,
 			});
 		});
 

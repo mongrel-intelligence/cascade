@@ -153,7 +153,9 @@ describe('reportFriction', () => {
 		).rejects.toThrow('category must be one of');
 	});
 
-	it('uses SessionState friction sidecar path and env runtime metadata for in-process gadgets', async () => {
+	it('uses SessionState for run/work-item/PR metadata when env vars are absent (LLMist in-process path)', async () => {
+		// In LLMist (in-process gadgets), projectSecrets are NOT exported to process.env.
+		// All metadata must be sourced from SessionState; env vars are intentionally absent.
 		const path = sidecarPath();
 		const state = createSessionState();
 		state.init({
@@ -163,16 +165,16 @@ describe('reportFriction', () => {
 			workItemUrl: 'https://trello.com/c/card123',
 			workItemTitle: 'Runtime metadata',
 			frictionSidecarPath: path,
+			runId: 'run-123',
+			prNumber: 77,
+			prUrl: 'https://github.com/o/r/pull/77',
+			prTitle: 'fix: runtime metadata',
 		});
 		setDefaultSessionState(state);
-		process.env.CASCADE_RUN_ID = 'run-123';
+		// CASCADE_DASHBOARD_URL is a global infra config, available in process.env even for LLMist
 		process.env.CASCADE_DASHBOARD_URL = 'https://dashboard.example.com';
-		process.env.CASCADE_WORK_ITEM_ID = 'card-123';
-		process.env.CASCADE_WORK_ITEM_TITLE = 'Runtime metadata';
-		process.env.CASCADE_WORK_ITEM_URL = 'https://trello.com/c/card123';
-		process.env.CASCADE_PR_NUMBER = '77';
-		process.env.CASCADE_PR_TITLE = 'fix: runtime metadata';
-		process.env.CASCADE_PR_URL = 'https://github.com/o/r/pull/77';
+		// Confirm none of the per-run secrets are in env (simulating LLMist production environment)
+		// The beforeEach already deletes CASCADE_RUN_ID, CASCADE_WORK_ITEM_ID, etc.
 		mockMaterializeFrictionReport.mockResolvedValue({
 			status: 'filed',
 			reportId: 'ignored',
@@ -182,7 +184,7 @@ describe('reportFriction', () => {
 		await reportFriction({
 			project,
 			summary: 'Context attached',
-			details: 'The report should carry run/work item/PR metadata.',
+			details: 'The report should carry run/work item/PR metadata from SessionState.',
 			category: 'tooling',
 			severity: 'medium',
 		});

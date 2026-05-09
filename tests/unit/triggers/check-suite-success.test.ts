@@ -216,7 +216,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).toEqual(
 				expect.objectContaining({
 					agentType: 'review',
-					agentInput: {
+					agentInput: expect.objectContaining({
 						prNumber: 42,
 						prBranch: 'feature/test',
 						repoFullName: 'owner/repo',
@@ -224,7 +224,9 @@ describe('CheckSuiteSuccessTrigger', () => {
 						triggerType: 'ci-success',
 						workItemId: 'abc123',
 						triggerEvent: 'scm:check-suite-success',
-					},
+						prUrl: 'https://github.com/owner/repo/pull/42',
+						prTitle: 'Test PR',
+					}),
 					prNumber: 42,
 					workItemId: 'abc123',
 				}),

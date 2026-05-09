@@ -10,7 +10,17 @@ import type {
 	FrictionSeverity,
 } from '../../../friction/types.js';
 import type { ProjectConfig } from '../../../types/index.js';
-import { FRICTION_SIDECAR_ENV_VAR, getFrictionSidecarPath } from '../../sessionState.js';
+import {
+	FRICTION_SIDECAR_ENV_VAR,
+	getFrictionSidecarPath,
+	getPrNumber,
+	getPrTitle,
+	getPrUrl,
+	getRunId,
+	getWorkItemId,
+	getWorkItemTitle,
+	getWorkItemUrl,
+} from '../../sessionState.js';
 
 const DEFAULT_FRICTION_SIDECAR_PATH = '.cascade/friction-reports.jsonl';
 
@@ -126,6 +136,19 @@ function parseOptionalInt(value: string | undefined): number | undefined {
 }
 
 function buildReport(params: ReportFrictionParams, project: ProjectConfig): FrictionReport {
+	// For in-process gadgets (e.g. LLMist / ReportFriction called directly), projectSecrets
+	// are NOT exported to process.env — only subprocess engines (claude-code, opencode, codex)
+	// receive them as actual env vars. Fall back to SessionState for fields that are available
+	// there when the env var is absent.
+	const runId = process.env.CASCADE_RUN_ID ?? getRunId() ?? undefined;
+	const dashboardUrl = process.env.CASCADE_DASHBOARD_URL || undefined;
+	const workItemId = process.env.CASCADE_WORK_ITEM_ID ?? getWorkItemId() ?? undefined;
+	const workItemTitle = process.env.CASCADE_WORK_ITEM_TITLE ?? getWorkItemTitle() ?? undefined;
+	const workItemUrl = process.env.CASCADE_WORK_ITEM_URL ?? getWorkItemUrl() ?? undefined;
+	const prNumber = parseOptionalInt(process.env.CASCADE_PR_NUMBER) ?? getPrNumber() ?? undefined;
+	const prUrl = process.env.CASCADE_PR_URL ?? getPrUrl() ?? undefined;
+	const prTitle = process.env.CASCADE_PR_TITLE ?? getPrTitle() ?? undefined;
+
 	return {
 		reportId: randomUUID(),
 		summary: params.summary,
@@ -147,21 +170,18 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 				model: process.env.CASCADE_MODEL,
 			},
 			run: {
-				id: process.env.CASCADE_RUN_ID,
-				url:
-					process.env.CASCADE_DASHBOARD_URL && process.env.CASCADE_RUN_ID
-						? `${process.env.CASCADE_DASHBOARD_URL.replace(/\/$/, '')}/runs/${process.env.CASCADE_RUN_ID}`
-						: undefined,
+				id: runId,
+				url: dashboardUrl && runId ? `${dashboardUrl.replace(/\/$/, '')}/runs/${runId}` : undefined,
 			},
 			workItem: {
-				id: process.env.CASCADE_WORK_ITEM_ID,
-				title: process.env.CASCADE_WORK_ITEM_TITLE,
-				url: process.env.CASCADE_WORK_ITEM_URL,
+				id: workItemId,
+				title: workItemTitle,
+				url: workItemUrl,
 			},
 			pr: {
-				number: parseOptionalInt(process.env.CASCADE_PR_NUMBER),
-				title: process.env.CASCADE_PR_TITLE,
-				url: process.env.CASCADE_PR_URL,
+				number: prNumber,
+				title: prTitle,
+				url: prUrl,
 				branch: process.env.CASCADE_PR_BRANCH,
 				headSha: process.env.CASCADE_INITIAL_HEAD_SHA,
 			},
