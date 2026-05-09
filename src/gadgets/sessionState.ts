@@ -39,6 +39,12 @@ export interface InitSessionStateOptions {
 	/** PR title for the current agent execution. Used by in-process gadgets as a fallback
 	 * when CASCADE_PR_TITLE is not exported to process.env (e.g. LLMist runs). */
 	prTitle?: string;
+	/** Engine identifier for in-process gadgets (e.g. 'llmist'). Used as a fallback
+	 * when CASCADE_ENGINE_LABEL is not exported to process.env. */
+	engineLabel?: string;
+	/** Resolved AI model name for in-process gadgets (e.g. 'gpt-4o'). Used as a fallback
+	 * when CASCADE_MODEL is not exported to process.env. */
+	model?: string;
 	/**
 	 * The PR HEAD branch name. Threaded into Finish validation so that
 	 * `hasUnpushedCommits` can use ls-remote SHA comparison instead of the
@@ -63,6 +69,8 @@ interface SessionStateData {
 	prNumber: number | null;
 	prUrl: string | null;
 	prTitle: string | null;
+	engineLabel: string | null;
+	model: string | null;
 	hooks: SessionHooks;
 	readOnlyFs: boolean;
 	prCreated: boolean;
@@ -102,6 +110,8 @@ export class SessionState {
 		prNumber: null,
 		prUrl: null,
 		prTitle: null,
+		engineLabel: null,
+		model: null,
 		hooks: {},
 		readOnlyFs: false,
 		prCreated: false,
@@ -130,6 +140,8 @@ export class SessionState {
 			prNumber,
 			prUrl,
 			prTitle,
+			engineLabel,
+			model,
 		} = options;
 		this.state = {
 			agentType,
@@ -146,6 +158,8 @@ export class SessionState {
 			prNumber: prNumber ?? null,
 			prUrl: prUrl ?? null,
 			prTitle: prTitle ?? null,
+			engineLabel: engineLabel ?? null,
+			model: model ?? null,
 			hooks: hooks ?? {},
 			readOnlyFs: false,
 			prCreated: false,
@@ -204,6 +218,26 @@ export class SessionState {
 
 	getPrTitle(): string | null {
 		return this.state.prTitle;
+	}
+
+	getAgentType(): string | null {
+		return this.state.agentType;
+	}
+
+	getPrBranch(): string | null {
+		return this.state.prBranch;
+	}
+
+	getInitialHeadSha(): string | null {
+		return this.state.initialHeadSha;
+	}
+
+	getEngineLabel(): string | null {
+		return this.state.engineLabel;
+	}
+
+	getModel(): string | null {
+		return this.state.model;
 	}
 
 	recordPRCreation(prUrl: string): void {
@@ -346,6 +380,26 @@ export function getPrUrl(): string | null {
 
 export function getPrTitle(): string | null {
 	return _defaultInstance.getPrTitle();
+}
+
+export function getAgentType(): string | null {
+	return _defaultInstance.getAgentType();
+}
+
+export function getPrBranch(): string | null {
+	return _defaultInstance.getPrBranch();
+}
+
+export function getInitialHeadSha(): string | null {
+	return _defaultInstance.getInitialHeadSha();
+}
+
+export function getEngineLabel(): string | null {
+	return _defaultInstance.getEngineLabel();
+}
+
+export function getModel(): string | null {
+	return _defaultInstance.getModel();
 }
 
 export function recordPRCreation(prUrl: string): void {

@@ -49,6 +49,11 @@ beforeEach(() => {
 	delete process.env.CASCADE_PR_NUMBER;
 	delete process.env.CASCADE_PR_TITLE;
 	delete process.env.CASCADE_PR_URL;
+	delete process.env.CASCADE_PR_BRANCH;
+	delete process.env.CASCADE_INITIAL_HEAD_SHA;
+	delete process.env.CASCADE_AGENT_TYPE;
+	delete process.env.CASCADE_ENGINE_LABEL;
+	delete process.env.CASCADE_MODEL;
 	// Clear project env vars so projectFromEnv() would return 'unknown-project' when these are absent
 	delete process.env.CASCADE_PROJECT_ID;
 	delete process.env.CASCADE_PM_TYPE;
@@ -173,6 +178,10 @@ describe('reportFriction', () => {
 			prNumber: 77,
 			prUrl: 'https://github.com/o/r/pull/77',
 			prTitle: 'fix: runtime metadata',
+			prBranch: 'feature/runtime-metadata',
+			initialHeadSha: 'abc123sha',
+			engineLabel: 'llmist',
+			model: 'gpt-4o',
 		});
 		setDefaultSessionState(state);
 		// CASCADE_DASHBOARD_URL is a global infra config, available in process.env even for LLMist
@@ -195,6 +204,11 @@ describe('reportFriction', () => {
 
 		const event = JSON.parse(readFileSync(path, 'utf-8').trim().split('\n')[0]);
 		expect(event.report.context).toMatchObject({
+			agent: {
+				type: 'implementation',
+				engine: 'llmist',
+				model: 'gpt-4o',
+			},
 			run: {
 				id: 'run-123',
 				url: 'https://dashboard.example.com/runs/run-123',
@@ -208,6 +222,8 @@ describe('reportFriction', () => {
 				number: 77,
 				title: 'fix: runtime metadata',
 				url: 'https://github.com/o/r/pull/77',
+				branch: 'feature/runtime-metadata',
+				headSha: 'abc123sha',
 			},
 		});
 		rmSync(path, { force: true });

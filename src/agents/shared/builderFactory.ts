@@ -68,6 +68,9 @@ export interface CreateBuilderOptions {
 	 * can access project context without relying on process.env (projectSecrets are not exported
 	 * to env for in-process runs). */
 	project?: ProjectConfig;
+	/** Engine identifier (e.g. 'llmist'). Stored in session state so in-process gadgets
+	 * (e.g. ReportFriction) can read it without CASCADE_ENGINE_LABEL in process.env. */
+	engineLabel?: string;
 	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
 	hooks?: SessionHooks;
 }
@@ -118,6 +121,8 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			prNumber: options.prNumber,
 			prUrl: options.prUrl,
 			prTitle: options.prTitle,
+			engineLabel: options.engineLabel,
+			model: options.model,
 			initialHeadSha,
 		});
 

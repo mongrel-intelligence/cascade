@@ -12,7 +12,12 @@ import type {
 import type { ProjectConfig } from '../../../types/index.js';
 import {
 	FRICTION_SIDECAR_ENV_VAR,
+	getAgentType,
+	getEngineLabel,
 	getFrictionSidecarPath,
+	getInitialHeadSha,
+	getModel,
+	getPrBranch,
 	getPrNumber,
 	getProject,
 	getPrTitle,
@@ -149,6 +154,14 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 	const prNumber = parseOptionalInt(process.env.CASCADE_PR_NUMBER) ?? getPrNumber() ?? undefined;
 	const prUrl = process.env.CASCADE_PR_URL ?? getPrUrl() ?? undefined;
 	const prTitle = process.env.CASCADE_PR_TITLE ?? getPrTitle() ?? undefined;
+	// The following five values are injected as projectSecrets (CASCADE_*) for subprocess engines
+	// (claude-code, opencode, codex) but NOT exported to process.env for in-process LLMist gadgets.
+	// Fall back to SessionState values populated by createConfiguredBuilder when env is absent.
+	const agentTypeValue = process.env.CASCADE_AGENT_TYPE ?? getAgentType() ?? 'unknown';
+	const engineLabelValue = process.env.CASCADE_ENGINE_LABEL ?? getEngineLabel() ?? undefined;
+	const modelValue = process.env.CASCADE_MODEL ?? getModel() ?? undefined;
+	const prBranch = process.env.CASCADE_PR_BRANCH ?? getPrBranch() ?? undefined;
+	const headSha = process.env.CASCADE_INITIAL_HEAD_SHA ?? getInitialHeadSha() ?? undefined;
 
 	return {
 		reportId: randomUUID(),
@@ -166,9 +179,9 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 				pmType: project.pm?.type,
 			},
 			agent: {
-				type: process.env.CASCADE_AGENT_TYPE ?? 'unknown',
-				engine: process.env.CASCADE_ENGINE_LABEL,
-				model: process.env.CASCADE_MODEL,
+				type: agentTypeValue,
+				engine: engineLabelValue,
+				model: modelValue,
 			},
 			run: {
 				id: runId,
@@ -183,8 +196,8 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 				number: prNumber,
 				title: prTitle,
 				url: prUrl,
-				branch: process.env.CASCADE_PR_BRANCH,
-				headSha: process.env.CASCADE_INITIAL_HEAD_SHA,
+				branch: prBranch,
+				headSha,
 			},
 		},
 	};
