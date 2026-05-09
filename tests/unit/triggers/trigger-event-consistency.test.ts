@@ -28,6 +28,29 @@ import { describe, expect, it } from 'vitest';
 
 const TRIGGERS_ROOT = join(__dirname, '..', '..', '..', 'src', 'triggers');
 
+const BUILT_IN_TRIGGER_FILES = [
+	'github/check-suite-failure.ts',
+	'github/check-suite-success.ts',
+	'github/pr-comment-mention.ts',
+	'github/pr-conflict-detected.ts',
+	'github/pr-merged.ts',
+	'github/pr-opened.ts',
+	'github/pr-ready-to-merge.ts',
+	'github/pr-review-submitted.ts',
+	'github/review-requested.ts',
+	'jira/comment-mention.ts',
+	'jira/label-added.ts',
+	'jira/status-changed.ts',
+	'linear/comment-mention.ts',
+	'linear/label-added.ts',
+	'linear/status-changed.ts',
+	'sentry/alerting-issue.ts',
+	'sentry/alerting-metric.ts',
+	'trello/comment-mention.ts',
+	'trello/label-added.ts',
+	'trello/status-changed.ts',
+].map((path) => join(TRIGGERS_ROOT, path));
+
 // Handlers that legitimately gate on one event without emitting it as a
 // `triggerEvent`. Add an entry ONLY when there's a real reason — every
 // exemption silently weakens the guard.
@@ -99,6 +122,19 @@ describe('trigger-event-string consistency (static guard)', () => {
 
 	it('finds at least one trigger handler to scan (sanity)', () => {
 		expect(scans.length).toBeGreaterThan(10);
+	});
+
+	it('covers every current built-in trigger source file', () => {
+		const scannedFiles = new Set(allFiles);
+		const missingFiles = BUILT_IN_TRIGGER_FILES.filter((file) => !scannedFiles.has(file));
+
+		expect(
+			missingFiles.map((file) => file.replace(`${TRIGGERS_ROOT}/`, 'src/triggers/')),
+			`trigger-event-string consistency must scan every built-in trigger file registered by PM manifests, SCM, and alerting. ` +
+				`Missing files:\n${missingFiles
+					.map((file) => `  - ${file.replace(`${TRIGGERS_ROOT}/`, 'src/triggers/')}`)
+					.join('\n')}`,
+		).toEqual([]);
 	});
 
 	for (const scan of scans) {

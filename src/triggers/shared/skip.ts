@@ -1,4 +1,5 @@
 import type { TriggerResult } from '../../types/index.js';
+import { buildSkipResult } from './result-builders.js';
 
 /**
  * Build a structured self-skip result so the router's webhook log
@@ -13,9 +14,5 @@ import type { TriggerResult } from '../../types/index.js';
  * `import { skip } from '../shared/skip.js'` and one call.
  */
 export function skip(handler: string, message: string): TriggerResult {
-	return {
-		agentType: null,
-		agentInput: {},
-		skipReason: { handler, message },
-	};
+	return buildSkipResult(handler, message);
 }

@@ -1,6 +1,7 @@
 import type { z } from 'zod';
 import type { CascadeConfigSchema, ProjectConfigSchema } from '../config/schema.js';
 import type { PersonaIdentities } from '../github/personas.js';
+import type { CanonicalTriggerEvent } from '../triggers/shared/events.js';
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 export type CascadeConfig = z.infer<typeof CascadeConfigSchema>;
@@ -29,7 +30,7 @@ export interface AgentInput {
 		| 'manual';
 
 	/** YAML-format trigger event name for context pipeline resolution (e.g. 'scm:check-suite-success') */
-	triggerEvent?: string;
+	triggerEvent?: CanonicalTriggerEvent | (string & {});
 
 	// Debug agent fields
 	logDir?: string;
