@@ -51,9 +51,8 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 
 ## 🏗️ Architecture
 
-<p align="center">
-  <img src="docs/architecture.jpg" alt="CASCADE architecture diagram" />
-</p>
+> The architecture diagram source lives at [`docs/architecture.d2`](./docs/architecture.d2).
+> Render it locally with the [D2 CLI](https://d2lang.com/): `d2 docs/architecture.d2 docs/architecture.svg`.
 
 Cascade runs as three independent services:
 
