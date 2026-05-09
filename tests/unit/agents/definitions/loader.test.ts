@@ -465,11 +465,11 @@ describe('YAML agent definitions loader', () => {
 			expect(integrations.optional).toEqual([]);
 		});
 
-		it('debug agent requires pm only', () => {
+		it('debug agent has pm optional (no required integrations)', () => {
 			const def = loadBuiltinDefinition('debug');
 			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
-			expect(integrations.required).toEqual(['pm']);
-			expect(integrations.optional).toEqual([]);
+			expect(integrations.required).toEqual([]);
+			expect(integrations.optional).toEqual(['pm']);
 		});
 
 		it('all derived integration categories are valid', () => {
