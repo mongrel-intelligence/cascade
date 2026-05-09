@@ -54,6 +54,7 @@ vi.mock('../../../../src/gadgets/pm/index.js', () => ({
 	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
 	PostComment: mockClass('PostComment'),
 	ReadWorkItem: mockClass('ReadWorkItem'),
+	ReportFriction: mockClass('ReportFriction'),
 	UpdateWorkItem: mockClass('UpdateWorkItem'),
 }));
 vi.mock('../../../../src/gadgets/tmux.js', () => ({ Tmux: mockClass('Tmux') }));

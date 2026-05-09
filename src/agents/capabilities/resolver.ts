@@ -30,6 +30,7 @@ import {
 	PMUpdateChecklistItem,
 	PostComment,
 	ReadWorkItem,
+	ReportFriction,
 	UpdateWorkItem,
 } from '../../gadgets/pm/index.js';
 import { ReadFile } from '../../gadgets/ReadFile.js';
@@ -103,6 +104,7 @@ const GADGET_CONSTRUCTORS: Record<string, new () => any> = {
 	// pm:write
 	UpdateWorkItem,
 	CreateWorkItem,
+	ReportFriction,
 	MoveWorkItem,
 	PostComment,
 	AddChecklist,

@@ -62,6 +62,7 @@ Todos are stored in `.claude/todos.json` within the repo working directory.
 | `ListWorkItems` | `pm:read` | List work items with filters |
 | `UpdateWorkItem` | `pm:write` | Update work item fields |
 | `CreateWorkItem` | `pm:write` | Create new work item |
+| `ReportFriction` | `pm:write` | Queue and file incidental friction reports |
 | `MoveWorkItem` | `pm:write` | Move work item to a status/list |
 | `PostComment` | `pm:write` | Post comment on work item |
 | `AddChecklist` | `pm:write` | Add checklist to work item |
@@ -101,7 +102,7 @@ Native-tool engines cannot invoke gadget classes directly (they run as subproces
 
 | Category | Commands | Example |
 |----------|----------|---------|
-| PM | `cascade-tools pm read-work-item`, `list-work-items`, `update-work-item`, etc. | `cascade-tools pm read-work-item --workItemId abc123` |
+| PM | `cascade-tools pm read-work-item`, `list-work-items`, `update-work-item`, `report-friction`, etc. | `cascade-tools pm report-friction --summary "Missing setup hint" --details-file - --category tooling --severity medium` |
 | SCM | `cascade-tools scm get-pr-details`, `get-pr-diff`, `post-pr-comment`, etc. | `cascade-tools scm get-pr-details --prNumber 42` |
 | Alerting | `cascade-tools alerting get-alerting-issue`, `list-alerting-events`, etc. | `cascade-tools alerting get-alerting-issue --organizationId acme --issueId 12345` |
 | Session | `cascade-tools session finish` | `cascade-tools session finish --comment "Created PR and verified checks"` |

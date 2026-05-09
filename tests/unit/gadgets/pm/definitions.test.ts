@@ -8,6 +8,7 @@ import {
 	pmUpdateChecklistItemDef,
 	postCommentDef,
 	readWorkItemDef,
+	reportFrictionDef,
 	updateWorkItemDef,
 } from '../../../../src/gadgets/pm/definitions.js';
 import type { ToolDefinition } from '../../../../src/gadgets/shared/toolDefinition.js';
@@ -17,6 +18,7 @@ const ALL_PM_DEFINITIONS: ToolDefinition[] = [
 	postCommentDef,
 	updateWorkItemDef,
 	createWorkItemDef,
+	reportFrictionDef,
 	listWorkItemsDef,
 	moveWorkItemDef,
 	addChecklistDef,
@@ -26,8 +28,8 @@ const ALL_PM_DEFINITIONS: ToolDefinition[] = [
 
 describe('PM gadget definitions', () => {
 	describe('all definitions integrity', () => {
-		it('exports exactly 9 definitions', () => {
-			expect(ALL_PM_DEFINITIONS).toHaveLength(9);
+		it('exports exactly 10 definitions', () => {
+			expect(ALL_PM_DEFINITIONS).toHaveLength(10);
 		});
 
 		it('all definitions have unique names', () => {
@@ -105,6 +107,10 @@ describe('PM gadget definitions', () => {
 
 		it('includes CreateWorkItem', () => {
 			expect(ALL_PM_DEFINITIONS.map((d) => d.name)).toContain('CreateWorkItem');
+		});
+
+		it('includes ReportFriction', () => {
+			expect(ALL_PM_DEFINITIONS.map((d) => d.name)).toContain('ReportFriction');
 		});
 
 		it('includes ListWorkItems', () => {
@@ -193,6 +199,46 @@ describe('PM gadget definitions', () => {
 
 		it('description is optional', () => {
 			expect(createWorkItemDef.parameters.description?.optional).toBe(true);
+		});
+	});
+
+	describe('reportFrictionDef', () => {
+		it('has required summary, details, category, and severity parameters', () => {
+			expect(reportFrictionDef.parameters.summary?.required).toBe(true);
+			expect(reportFrictionDef.parameters.details?.required).toBe(true);
+			expect(reportFrictionDef.parameters.category?.required).toBe(true);
+			expect(reportFrictionDef.parameters.severity?.required).toBe(true);
+		});
+
+		it('category and severity are enums with expected options', () => {
+			const category = reportFrictionDef.parameters.category;
+			const severity = reportFrictionDef.parameters.severity;
+			expect(category?.type).toBe('enum');
+			expect((category as { options?: string[] }).options).toEqual([
+				'tooling',
+				'environment',
+				'permissions',
+				'dependency',
+				'test-failure',
+				'pm-data',
+				'scm-data',
+				'other',
+			]);
+			expect(severity?.type).toBe('enum');
+			expect((severity as { options?: string[] }).options).toEqual([
+				'low',
+				'medium',
+				'high',
+				'critical',
+			]);
+		});
+
+		it('has details file input alternative', () => {
+			const detailsAlt = reportFrictionDef.cli?.fileInputAlternatives?.find(
+				(a) => a.paramName === 'details',
+			);
+			expect(detailsAlt).toBeDefined();
+			expect(detailsAlt?.fileFlag).toBe('details-file');
 		});
 	});
 

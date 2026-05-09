@@ -5,5 +5,6 @@ export { ListWorkItems } from './ListWorkItems.js';
 export { MoveWorkItem } from './MoveWorkItem.js';
 export { PostComment } from './PostComment.js';
 export { ReadWorkItem } from './ReadWorkItem.js';
+export { ReportFriction } from './ReportFriction.js';
 export { PMUpdateChecklistItem } from './UpdateChecklistItem.js';
 export { UpdateWorkItem } from './UpdateWorkItem.js';

@@ -7,7 +7,7 @@
  * Integration Category → Capabilities → Gadgets/Tools
  *        │                    │              │
  *        pm          →    pm:read     →  ReadWorkItem, ListWorkItems
- *                         pm:write    →  CreateWorkItem, UpdateWorkItem, PostComment
+ *                         pm:write    →  CreateWorkItem, ReportFriction, UpdateWorkItem, PostComment
  *                         pm:checklist → PMUpdateChecklistItem, PMDeleteChecklistItem
  *
  *        scm         →    scm:read    →  GetPRDetails, GetPRDiff, GetPRChecks

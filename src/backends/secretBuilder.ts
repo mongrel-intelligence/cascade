@@ -1,7 +1,7 @@
 import type { AgentProfile } from '../agents/definitions/profiles.js';
 import { getAllProjectCredentials } from '../config/provider.js';
 import { getPersonaToken } from '../github/personas.js';
-import { getJiraConfig, getLinearConfig } from '../pm/config.js';
+import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import { ENV_VAR_NAME } from './progressState.js';
@@ -30,6 +30,24 @@ export async function resolveGitHubToken(
  * Build the per-project secrets map by fetching credentials and injecting
  * CASCADE-specific env vars (base branch, JIRA config, repo owner/name, agent type, PM type).
  */
+function injectProjectContext(
+	projectSecrets: Record<string, string>,
+	project: ProjectConfig,
+): void {
+	projectSecrets.CASCADE_PROJECT_ID = project.id;
+	if (project.orgId) projectSecrets.CASCADE_ORG_ID = project.orgId;
+	if (project.name) projectSecrets.CASCADE_PROJECT_NAME = project.name;
+}
+
+function injectTrelloConfig(projectSecrets: Record<string, string>, project: ProjectConfig): void {
+	const trelloConfig = getTrelloConfig(project);
+	if (!trelloConfig) return;
+
+	projectSecrets.CASCADE_TRELLO_BOARD_ID = trelloConfig.boardId;
+	projectSecrets.CASCADE_TRELLO_LISTS = JSON.stringify(trelloConfig.lists);
+	projectSecrets.CASCADE_TRELLO_LABELS = JSON.stringify(trelloConfig.labels);
+}
+
 export async function augmentProjectSecrets(
 	project: ProjectConfig,
 	agentType: string,
@@ -37,10 +55,15 @@ export async function augmentProjectSecrets(
 ): Promise<Record<string, string>> {
 	const projectSecrets = await getAllProjectCredentials(project.id);
 
+	injectProjectContext(projectSecrets, project);
+
 	// Inject base branch so cascade-tools create-pr uses the correct target automatically
 	if (project.baseBranch) {
 		projectSecrets.CASCADE_BASE_BRANCH = project.baseBranch;
 	}
+
+	// Inject Trello integration config so friction reports can resolve optional PM slots.
+	injectTrelloConfig(projectSecrets, project);
 
 	// Inject JIRA integration config so cascade-tools can construct JiraPMProvider
 	const jiraConfig = getJiraConfig(project);

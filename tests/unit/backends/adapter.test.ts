@@ -669,9 +669,14 @@ describe('executeWithEngine', () => {
 		expect(backendInput.projectSecrets).toEqual({
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
+			CASCADE_PROJECT_ID: 'test',
+			CASCADE_PROJECT_NAME: 'Test',
 			CASCADE_BASE_BRANCH: 'main',
 			CASCADE_REPO_OWNER: 'owner',
 			CASCADE_REPO_NAME: 'repo',
+			CASCADE_TRELLO_BOARD_ID: 'b1',
+			CASCADE_TRELLO_LISTS: '{}',
+			CASCADE_TRELLO_LABELS: '{}',
 			CASCADE_AGENT_TYPE: 'implementation',
 			CASCADE_PM_TYPE: 'trello',
 		});
@@ -713,9 +718,14 @@ describe('executeWithEngine', () => {
 
 		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
+			CASCADE_PROJECT_ID: 'test',
+			CASCADE_PROJECT_NAME: 'Test',
 			CASCADE_BASE_BRANCH: 'main',
 			CASCADE_REPO_OWNER: 'owner',
 			CASCADE_REPO_NAME: 'repo',
+			CASCADE_TRELLO_BOARD_ID: 'b1',
+			CASCADE_TRELLO_LISTS: '{}',
+			CASCADE_TRELLO_LABELS: '{}',
 			CASCADE_AGENT_TYPE: 'implementation',
 			CASCADE_PM_TYPE: 'trello',
 		});

@@ -8,6 +8,7 @@
  * - delete-checklist-item
  * - update-checklist-item
  * - create-work-item (basic param-passing)
+ * - report-friction (basic param-passing)
  * - post-comment (basic param-passing)
  */
 
@@ -55,6 +56,11 @@ vi.mock('../../../../src/gadgets/pm/core/updateChecklistItem.js', () => ({
 vi.mock('../../../../src/gadgets/pm/core/createWorkItem.js', () => ({
 	createWorkItem: vi.fn().mockResolvedValue({ id: 'wi-new' }),
 }));
+vi.mock('../../../../src/gadgets/pm/core/reportFriction.js', () => ({
+	reportFriction: vi
+		.fn()
+		.mockResolvedValue({ status: 'filed', workItemUrl: 'https://pm/friction' }),
+}));
 vi.mock('../../../../src/gadgets/pm/core/postComment.js', () => ({
 	postComment: vi.fn().mockResolvedValue({ id: 'comment-1' }),
 }));
@@ -65,6 +71,7 @@ import ListWorkItems from '../../../../src/cli/pm/list-work-items.js';
 import MoveWorkItem from '../../../../src/cli/pm/move-work-item.js';
 import PostComment from '../../../../src/cli/pm/post-comment.js';
 import ReadWorkItem from '../../../../src/cli/pm/read-work-item.js';
+import ReportFriction from '../../../../src/cli/pm/report-friction.js';
 import UpdateChecklistItem from '../../../../src/cli/pm/update-checklist-item.js';
 import { createWorkItem } from '../../../../src/gadgets/pm/core/createWorkItem.js';
 import { deleteChecklistItem } from '../../../../src/gadgets/pm/core/deleteChecklistItem.js';
@@ -72,6 +79,7 @@ import { listWorkItems } from '../../../../src/gadgets/pm/core/listWorkItems.js'
 import { moveWorkItem } from '../../../../src/gadgets/pm/core/moveWorkItem.js';
 import { postComment } from '../../../../src/gadgets/pm/core/postComment.js';
 import { readWorkItem } from '../../../../src/gadgets/pm/core/readWorkItem.js';
+import { reportFriction } from '../../../../src/gadgets/pm/core/reportFriction.js';
 import { updateChecklistItem } from '../../../../src/gadgets/pm/core/updateChecklistItem.js';
 
 /** Create a fresh minimal oclif config to satisfy this.parse() in each test */
@@ -303,6 +311,64 @@ describe('CreateWorkItem command (basic params)', () => {
 		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
 		expect(output.success).toBe(true);
 		expect(output.data).toEqual({ id: 'new-wi' });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// report-friction (basic param-passing test)
+// ---------------------------------------------------------------------------
+describe('ReportFriction command (basic params)', () => {
+	it('passes summary, details, category, severity, and whileDoing to reportFriction', async () => {
+		const cmd = new ReportFriction(
+			[
+				'--summary',
+				'Friction summary',
+				'--details',
+				'Details',
+				'--category',
+				'tooling',
+				'--severity',
+				'medium',
+				'--whileDoing',
+				'Running tests',
+			],
+			makeMockConfig() as never,
+		);
+		await cmd.run();
+
+		expect(reportFriction).toHaveBeenCalledWith({
+			summary: 'Friction summary',
+			details: 'Details',
+			category: 'tooling',
+			severity: 'medium',
+			whileDoing: 'Running tests',
+		});
+	});
+
+	it('outputs JSON success result', async () => {
+		vi.mocked(reportFriction).mockResolvedValue({
+			status: 'filed',
+			workItemUrl: 'https://pm/friction',
+		} as never);
+		const cmd = new ReportFriction(
+			[
+				'--summary',
+				'Friction summary',
+				'--details',
+				'Details',
+				'--category',
+				'tooling',
+				'--severity',
+				'medium',
+			],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output.success).toBe(true);
+		expect(output.data).toEqual({ status: 'filed', workItemUrl: 'https://pm/friction' });
 	});
 });
 

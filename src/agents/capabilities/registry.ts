@@ -127,6 +127,7 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		gadgetNames: [
 			'UpdateWorkItem',
 			'CreateWorkItem',
+			'ReportFriction',
 			'MoveWorkItem',
 			'PostComment',
 			'AddChecklist',

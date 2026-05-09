@@ -1,5 +1,5 @@
 /**
- * Unified ToolDefinition objects for all 9 PM tools.
+ * Unified ToolDefinition objects for all PM tools.
  *
  * These definitions are the single source of truth for:
  * - Gadget classes (generated via createGadgetClass)
@@ -160,6 +160,75 @@ export const createWorkItemDef: ToolDefinition = {
 				paramName: 'description',
 				fileFlag: 'description-file',
 				description: 'Read description from file (use - for stdin)',
+			},
+		],
+	},
+};
+
+export const reportFrictionDef: ToolDefinition = {
+	name: 'ReportFriction',
+	description:
+		'File an incidental friction report with structured context. Use this for papercuts, tool issues, missing permissions, flaky dependencies, or confusing PM/SCM data discovered while working.',
+	timeoutMs: 30000,
+	parameters: {
+		summary: {
+			type: 'string',
+			describe: 'Short one-line summary of the friction encountered',
+			required: true,
+		},
+		details: {
+			type: 'string',
+			describe: 'Markdown details with concrete symptoms, impact, and useful reproduction context',
+			required: true,
+		},
+		category: {
+			type: 'enum',
+			options: [
+				'tooling',
+				'environment',
+				'permissions',
+				'dependency',
+				'test-failure',
+				'pm-data',
+				'scm-data',
+				'other',
+			],
+			describe:
+				'Friction category: tooling, environment, permissions, dependency, test-failure, pm-data, scm-data, or other',
+			required: true,
+		},
+		severity: {
+			type: 'enum',
+			options: ['low', 'medium', 'high', 'critical'],
+			describe:
+				'Severity: low annoyance, medium slowdown, high blocker risk, or critical hard blocker',
+			required: true,
+		},
+		whileDoing: {
+			type: 'string',
+			describe: 'Optional short description of the task or operation in progress',
+			optional: true,
+		},
+	},
+	examples: [
+		{
+			params: {
+				summary: 'Typecheck requires undocumented Redis env var',
+				details:
+					'`npm run typecheck` failed until REDIS_URL was set. The setup docs mention Redis for router runtime but not for this command path.',
+				category: 'environment',
+				severity: 'medium',
+				whileDoing: 'Running pre-PR verification',
+			},
+			comment: 'Report a non-blocking setup papercut discovered during implementation',
+		},
+	],
+	cli: {
+		fileInputAlternatives: [
+			{
+				paramName: 'details',
+				fileFlag: 'details-file',
+				description: 'Read friction details from file (use - for stdin)',
 			},
 		],
 	},
