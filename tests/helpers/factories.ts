@@ -372,9 +372,16 @@ export function createCheckSuiteStatus(
 	return {
 		totalCount: checkRuns.length,
 		checkRuns,
-		allPassing: checkRuns.every(
-			(checkRun) => checkRun.status === 'completed' && checkRun.conclusion === 'success',
-		),
+		// Mirror production predicate: at least one check required; success/skipped/neutral are passing.
+		allPassing:
+			checkRuns.length > 0 &&
+			checkRuns.every(
+				(checkRun) =>
+					checkRun.status === 'completed' &&
+					(checkRun.conclusion === 'success' ||
+						checkRun.conclusion === 'skipped' ||
+						checkRun.conclusion === 'neutral'),
+			),
 		...overrides,
 	};
 }

@@ -183,7 +183,7 @@ function findRawTriggerLiteralOccurrences(files: string[]): RawTriggerLiteralOcc
 	const escapedEvents = ALL_TRIGGER_EVENTS.map((event) =>
 		event.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
 	).join('|');
-	const rawLiteralPattern = new RegExp(`['"](${escapedEvents})['"]`, 'g');
+	const rawLiteralPattern = new RegExp(`[\`'"](${escapedEvents})[\`'"]`, 'g');
 
 	return files
 		.filter((file) => !file.endsWith('/shared/events.ts'))
