@@ -139,6 +139,7 @@ export const mockSessionStateModule = {
 	getWorkItemId: vi.fn(() => null),
 	getWorkItemUrl: vi.fn(() => null),
 	getWorkItemTitle: vi.fn(() => null),
+	getProject: vi.fn(() => null),
 };
 
 // ---------------------------------------------------------------------------

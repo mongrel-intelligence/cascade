@@ -119,6 +119,10 @@ export class LlmistEngine implements AgentEngine {
 			prNumber: agentInput.prNumber,
 			prUrl: agentInput.prUrl as string | undefined,
 			prTitle: agentInput.prTitle as string | undefined,
+			// Pass full project config so in-process gadgets (e.g. ReportFriction) can
+			// build accurate reports. In LLMist, projectSecrets are NOT exported into
+			// process.env, so projectFromEnv() would return 'unknown-project'/empty PM config.
+			project: input.project,
 			// Pass resolved hook flags for finish validation (hook-driven instead of agent-type checks)
 			hooks: profile.finishHooks,
 			// Pass the progress monitor from the adapter so createObserverHooks can call

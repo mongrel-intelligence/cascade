@@ -11,6 +11,7 @@ import { getIterationTrailingMessage } from '../../config/hintConfig.js';
 import { getRateLimitForModel } from '../../config/rateLimits.js';
 import { getRetryConfig } from '../../config/retryConfig.js';
 import { initSessionState, type SessionHooks, setReadOnlyFs } from '../../gadgets/sessionState.js';
+import type { ProjectConfig } from '../../types/index.js';
 import type { LLMCallLogger } from '../../utils/llmLogging.js';
 import type { IProgressMonitor } from '../contracts/index.js';
 import { getAgentCapabilities } from '../definitions/index.js';
@@ -63,6 +64,10 @@ export interface CreateBuilderOptions {
 	prUrl?: string;
 	/** PR title for the current execution. Passed to session state for in-process gadget fallback. */
 	prTitle?: string;
+	/** Full project config. Stored in session state so in-process gadgets (e.g. LLMist ReportFriction)
+	 * can access project context without relying on process.env (projectSecrets are not exported
+	 * to env for in-process runs). */
+	project?: ProjectConfig;
 	/** Resolved SCM hook flags for finish validation (requiresPR, requiresReview, etc.) */
 	hooks?: SessionHooks;
 }
@@ -103,6 +108,7 @@ export async function createConfiguredBuilder(options: CreateBuilderOptions): Pr
 			baseBranch: options.baseBranch,
 			prBranch: options.prBranch,
 			projectId: options.projectId,
+			project: options.project,
 			workItemId: options.workItemId,
 			hooks: options.hooks,
 			workItemUrl: options.workItemUrl,

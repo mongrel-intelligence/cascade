@@ -49,6 +49,10 @@ beforeEach(() => {
 	delete process.env.CASCADE_PR_NUMBER;
 	delete process.env.CASCADE_PR_TITLE;
 	delete process.env.CASCADE_PR_URL;
+	// Clear project env vars so projectFromEnv() would return 'unknown-project' when these are absent
+	delete process.env.CASCADE_PROJECT_ID;
+	delete process.env.CASCADE_PM_TYPE;
+	delete process.env.CASCADE_PROJECT_NAME;
 });
 
 describe('reportFriction', () => {
@@ -206,6 +210,65 @@ describe('reportFriction', () => {
 				url: 'https://github.com/o/r/pull/77',
 			},
 		});
+		rmSync(path, { force: true });
+	});
+
+	it('uses project from SessionState when params.project is absent (production ReportFriction wrapper path)', async () => {
+		// The production ReportFriction.ts gadget does NOT pass params.project.
+		// In LLMist, projectSecrets are NOT exported to process.env, so projectFromEnv()
+		// would produce 'unknown-project'/empty PM config. The project must come from
+		// SessionState (stored by LLMist via createConfiguredBuilder → initSessionState).
+		const path = sidecarPath();
+		const sessionProject = {
+			id: 'real-project-id',
+			orgId: 'org-1',
+			name: 'Real Project',
+			repo: 'owner/real-repo',
+			pm: { type: 'trello' as const },
+			trello: {
+				boardId: 'board-real',
+				lists: { friction: 'list-friction-real' },
+				labels: {},
+			},
+		} as ProjectConfig;
+		const state = createSessionState();
+		state.init({
+			agentType: 'implementation',
+			projectId: 'real-project-id',
+			project: sessionProject,
+			frictionSidecarPath: path,
+		});
+		setDefaultSessionState(state);
+		// Simulate LLMist env: no project secrets exported
+		// (beforeEach already clears CASCADE_PROJECT_ID, etc.)
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'friction-card-real',
+		});
+
+		// Crucially: NO params.project — this is what the production wrapper does
+		await reportFriction({
+			summary: 'Missing config',
+			details: 'Need better docs.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		const event = JSON.parse(readFileSync(path, 'utf-8').trim().split('\n')[0]);
+		// The report must carry the real project context, not 'unknown-project'
+		expect(event.report.context.project).toMatchObject({
+			id: 'real-project-id',
+			name: 'Real Project',
+			repo: 'owner/real-repo',
+			pmType: 'trello',
+		});
+		// Materialization must receive the real project so drain can place the card correctly
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({ id: 'real-project-id' }),
+			}),
+		);
 		rmSync(path, { force: true });
 	});
 });

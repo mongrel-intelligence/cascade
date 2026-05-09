@@ -1,4 +1,5 @@
 import type { FinishHookFlags } from '../agents/definitions/schema.js';
+import type { ProjectConfig } from '../types/index.js';
 
 /** Env var holding the temp file path for the review sidecar (written by CLI subprocess, read by adapter). */
 export const REVIEW_SIDECAR_ENV_VAR = 'CASCADE_REVIEW_SIDECAR_PATH';
@@ -23,6 +24,9 @@ export interface InitSessionStateOptions {
 	workItemTitle?: string;
 	frictionSidecarPath?: string;
 	initialHeadSha?: string;
+	/** Full project config for in-process gadgets (e.g. LLMist ReportFriction) that need project
+	 * context but cannot access it via process.env (projectSecrets are not exported in-process). */
+	project?: ProjectConfig;
 	/** Run ID for the current agent execution. Used by in-process gadgets as a fallback
 	 * when CASCADE_RUN_ID is not exported to process.env (e.g. LLMist runs). */
 	runId?: string;
@@ -49,6 +53,7 @@ interface SessionStateData {
 	baseBranch: string;
 	prBranch: string | null;
 	projectId: string | null;
+	project: ProjectConfig | null;
 	workItemId: string | null;
 	workItemUrl: string | null;
 	workItemTitle: string | null;
@@ -87,6 +92,7 @@ export class SessionState {
 		baseBranch: 'main',
 		prBranch: null,
 		projectId: null,
+		project: null,
 		workItemId: null,
 		workItemUrl: null,
 		workItemTitle: null,
@@ -113,6 +119,7 @@ export class SessionState {
 			baseBranch,
 			prBranch,
 			projectId,
+			project,
 			workItemId,
 			hooks,
 			workItemUrl,
@@ -129,6 +136,7 @@ export class SessionState {
 			baseBranch: baseBranch ?? 'main',
 			prBranch: prBranch ?? null,
 			projectId: projectId ?? null,
+			project: project ?? null,
 			workItemId: workItemId ?? null,
 			workItemUrl: workItemUrl ?? null,
 			workItemTitle: workItemTitle ?? null,
@@ -172,6 +180,10 @@ export class SessionState {
 
 	getWorkItemTitle(): string | null {
 		return this.state.workItemTitle;
+	}
+
+	getProject(): ProjectConfig | null {
+		return this.state.project;
 	}
 
 	getFrictionSidecarPath(): string | null {
@@ -310,6 +322,10 @@ export function getWorkItemUrl(): string | null {
 
 export function getWorkItemTitle(): string | null {
 	return _defaultInstance.getWorkItemTitle();
+}
+
+export function getProject(): ProjectConfig | null {
+	return _defaultInstance.getProject();
 }
 
 export function getFrictionSidecarPath(): string | null {

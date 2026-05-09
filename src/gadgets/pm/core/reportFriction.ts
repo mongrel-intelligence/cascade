@@ -14,6 +14,7 @@ import {
 	FRICTION_SIDECAR_ENV_VAR,
 	getFrictionSidecarPath,
 	getPrNumber,
+	getProject,
 	getPrTitle,
 	getPrUrl,
 	getRunId,
@@ -190,7 +191,11 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 }
 
 export async function reportFriction(params: ReportFrictionParams): Promise<ReportFrictionResult> {
-	const project = params.project ?? projectFromEnv();
+	// Prefer params.project; fall back to SessionState (populated by LLMist createConfiguredBuilder
+	// from the full AgentExecutionPlan's project) before falling back to the env-var reconstruction.
+	// In LLMist (in-process gadgets), projectSecrets are NOT exported into process.env, so
+	// projectFromEnv() would return 'unknown-project' with empty PM placement config.
+	const project = params.project ?? getProject() ?? projectFromEnv();
 	const sidecarPath =
 		params.sidecarPath ??
 		process.env[FRICTION_SIDECAR_ENV_VAR] ??
