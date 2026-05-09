@@ -121,7 +121,7 @@ describe('agent-work-items', () => {
 			});
 		});
 
-		it('leaves agentInput untouched when no work item is resolved', async () => {
+		it('leaves agentInput untouched when no work item is resolved and no URL/title on result', async () => {
 			const agentInput = { prNumber: 42 };
 			const result = await prepareAgentWorkItem(
 				{ agentType: 'review', agentInput, prNumber: 42 },
@@ -130,6 +130,63 @@ describe('agent-work-items', () => {
 
 			expect(result.workItemId).toBeUndefined();
 			expect(result.agentInput).toBe(agentInput);
+		});
+
+		it('merges top-level prUrl/prTitle into agentInput when handler omits them from agentInput', async () => {
+			// Simulates PRReviewSubmittedTrigger, PROpenedTrigger, ReviewRequestedTrigger:
+			// prUrl/prTitle are on TriggerResult top level but NOT in agentInput.
+			const result = await prepareAgentWorkItem(
+				{
+					agentType: 'review',
+					agentInput: {
+						prNumber: 42,
+						prBranch: 'feature/foo',
+						repoFullName: 'acme/myapp',
+						headSha: 'sha123',
+						triggerEvent: 'scm:pr-review-submitted',
+						workItemId: 'card-1',
+					},
+					prNumber: 42,
+					prUrl: 'https://github.com/acme/myapp/pull/42',
+					prTitle: 'fix: some issue',
+					workItemId: 'card-1',
+					workItemUrl: 'https://trello.com/c/card-1',
+					workItemTitle: 'Do the thing',
+				},
+				'project-1',
+			);
+
+			expect(result.agentInput).toMatchObject({
+				prNumber: 42,
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				prTitle: 'fix: some issue',
+				workItemId: 'card-1',
+				workItemUrl: 'https://trello.com/c/card-1',
+				workItemTitle: 'Do the thing',
+			});
+		});
+
+		it('does not overwrite agentInput fields that are already populated', async () => {
+			// When a handler (via buildGitHubPRDispatchResult) already set prUrl in agentInput,
+			// the centralized merge must not overwrite with the top-level value.
+			const result = await prepareAgentWorkItem(
+				{
+					agentType: 'review',
+					agentInput: {
+						prNumber: 42,
+						prUrl: 'https://github.com/acme/myapp/pull/42',
+						prTitle: 'feat: already set',
+					},
+					prNumber: 42,
+					prUrl: 'https://github.com/acme/myapp/pull/42',
+					prTitle: 'feat: already set',
+				},
+				'project-1',
+			);
+
+			// Should not create a new object reference (no extras added)
+			expect(result.agentInput.prUrl).toBe('https://github.com/acme/myapp/pull/42');
+			expect(result.agentInput.prTitle).toBe('feat: already set');
 		});
 	});
 
