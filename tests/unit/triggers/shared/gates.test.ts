@@ -11,7 +11,7 @@ import {
 	gateTriggerEnabled,
 	requirePersonaIdentities,
 } from '../../../../src/triggers/shared/gates.js';
-import { checkTriggerEnabled } from '../../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnablement } from '../../../../src/triggers/shared/trigger-check.js';
 import type { ProjectConfig } from '../../../../src/types/index.js';
 import { createMockProject } from '../../../helpers/factories.js';
 
@@ -24,11 +24,15 @@ const mockPersonas: PersonaIdentities = {
 
 describe('gateTriggerEnabled', () => {
 	beforeEach(() => {
-		vi.mocked(checkTriggerEnabled).mockReset();
+		vi.mocked(checkTriggerEnablement).mockReset();
 	});
 
-	it('returns null when checkTriggerEnabled resolves true', async () => {
-		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+	it('returns null when checkTriggerEnablement has no skip result', async () => {
+		vi.mocked(checkTriggerEnablement).mockResolvedValue({
+			enabled: true,
+			parameters: {},
+			skipResult: null,
+		});
 		const result = await gateTriggerEnabled(
 			'proj',
 			'respond-to-ci',
@@ -38,8 +42,19 @@ describe('gateTriggerEnabled', () => {
 		expect(result).toBeNull();
 	});
 
-	it('returns a structured skip when checkTriggerEnabled resolves false', async () => {
-		vi.mocked(checkTriggerEnabled).mockResolvedValue(false);
+	it('returns the centralized structured skip when checkTriggerEnablement resolves disabled', async () => {
+		vi.mocked(checkTriggerEnablement).mockResolvedValue({
+			enabled: false,
+			parameters: {},
+			skipResult: {
+				agentType: null,
+				agentInput: {},
+				skipReason: {
+					handler: 'check-suite-failure',
+					message: 'respond-to-ci trigger is disabled for this project',
+				},
+			},
+		});
 		const result = await gateTriggerEnabled(
 			'proj',
 			'respond-to-ci',

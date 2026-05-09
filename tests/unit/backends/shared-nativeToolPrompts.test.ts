@@ -262,6 +262,36 @@ describe('buildToolGuidance', () => {
 			]);
 			expect(result).toContain('[--verbose]');
 		});
+
+		// Prod regression — 9/14 codex runs hit `--includeComments true` because
+		// the example renderer emitted `# example: --includeComments 'true'` while
+		// oclif's `Flags.boolean({ allowNo: true })` rejects that form. The
+		// example must match the canonical CLI grammar — `--key` for true,
+		// `--no-key` for false — never `--key 'true'`.
+		it('renders example=true as the toggle form (--key) — never as a quoted value', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						includeComments: { type: 'boolean', default: true, example: true },
+					},
+				}),
+			]);
+			expect(result).not.toContain(`--includeComments 'true'`);
+			expect(result).not.toContain('--includeComments "true"');
+			expect(result).toContain('# example: --includeComments');
+		});
+
+		it('renders example=false as the negation form (--no-key)', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						includeComments: { type: 'boolean', default: true, example: false },
+					},
+				}),
+			]);
+			expect(result).not.toContain(`--includeComments 'false'`);
+			expect(result).toContain('# example: --no-includeComments');
+		});
 	});
 
 	describe('formatParam — no description', () => {

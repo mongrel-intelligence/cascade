@@ -194,6 +194,7 @@ describe('processSentryWebhook', () => {
 			'alerting',
 			expect.any(Function),
 			'processSentryWebhook',
+			undefined,
 		);
 	});
 

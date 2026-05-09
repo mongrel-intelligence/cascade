@@ -127,4 +127,30 @@ describe('resolveTriggerResult', () => {
 		expect(mockRegistry.dispatch).toHaveBeenCalledOnce();
 		expect(result).toBe(triggerResult);
 	});
+
+	it('uses custom dispatch when provided', async () => {
+		const dispatch = vi.fn().mockResolvedValue(triggerResult);
+
+		const result = await resolveTriggerResult(mockRegistry as never, ctx, undefined, {
+			logLabel: 'CustomDispatch',
+			dispatch,
+		});
+
+		expect(dispatch).toHaveBeenCalledWith(ctx);
+		expect(mockRegistry.dispatch).not.toHaveBeenCalled();
+		expect(result).toBe(triggerResult);
+	});
+
+	it('runs onNoMatch when custom dispatch returns null', async () => {
+		const onNoMatch = vi.fn().mockResolvedValue(undefined);
+
+		const result = await resolveTriggerResult(mockRegistry as never, ctx, undefined, {
+			logLabel: 'CustomDispatch',
+			dispatch: vi.fn().mockResolvedValue(null),
+			onNoMatch,
+		});
+
+		expect(result).toBeNull();
+		expect(onNoMatch).toHaveBeenCalledOnce();
+	});
 });

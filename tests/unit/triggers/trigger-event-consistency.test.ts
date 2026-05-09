@@ -109,6 +109,24 @@ function scanHandler(file: string): HandlerScan {
 		emittedEvents.add(m[1]);
 	}
 
+	// PM status/label handlers intentionally centralize result assembly in shared
+	// builders. Treat those builder calls as local emissions for this drift guard.
+	if (src.includes('buildPMStatusDispatchResult')) {
+		emittedEvents.add('pm:status-changed');
+	}
+	if (src.includes('buildPMLabelDispatchResult')) {
+		emittedEvents.add('pm:label-added');
+	}
+	if (src.includes('buildReviewResult')) {
+		emittedEvents.add('scm:check-suite-success');
+	}
+	if (src.includes('buildRespondToCiResult')) {
+		emittedEvents.add('scm:check-suite-failure');
+	}
+	if (src.includes('buildResolveConflictsResult')) {
+		emittedEvents.add('scm:pr-conflict-detected');
+	}
+
 	return { file, gatingEvents, emittedEvents };
 }
 

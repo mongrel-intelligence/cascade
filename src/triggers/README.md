@@ -79,7 +79,15 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 | `pm-ack.ts` | `postPMAckComment()` — posts ack to Trello/JIRA | GitHub worker handler |
 | `events.ts` | `TRIGGER_EVENTS` — typed catalog of canonical trigger event names | Trigger handlers and tests |
 | `result-builders.ts` | Builders for dispatch, skip, no-agent, and deferred re-check `TriggerResult` shapes | Trigger handlers and tests |
-| `agent-execution.ts` | `runAgentExecutionPipeline()` — full agent lifecycle | All handlers (via `webhook-execution.ts`) |
+| `agent-execution.ts` | `runAgentExecutionPipeline()` — thin facade that orders validation, linking, prepare/run, post-run work, callbacks, follow-up dispatch, and auto-debug | All handlers (via `webhook-execution.ts`) |
+| `agent-execution-runtime.ts` | Context setup, lifecycle hook loading, `runAgent()` invocation, PR/work-item linking, PM summaries, and source callbacks | `agent-execution.ts` |
+| `agent-execution-lifecycle.ts` | Integration validation, pre/post budget checks, PM prepare/cleanup/success/failure lifecycle, and artifact handling | `agent-execution.ts` |
+| `agent-work-items.ts` | Runtime work-item re-resolution, pre-run work-item persistence, PR/work-item linking, and run PR-number backfill | `agent-execution-runtime.ts` |
+| `agent-pm-summary.ts` | Cross-source PM summaries for review and output-based agents | `agent-execution-runtime.ts` |
+| `agent-execution-followups.ts` | Recursive follow-up dispatch for post-completion review and splitting auto-chain | `agent-execution.ts` |
+| `post-completion-review.ts` | Builds the deterministic review dispatch after a successful implementation PR with passing CI | `agent-execution-followups.ts` |
+| `splitting-auto-chain.ts` | Propagates the auto label after splitting and optionally chains backlog-manager | `agent-execution-followups.ts` |
+| `agent-auto-debug.ts` | Triggers configured debug analysis after failed or timed-out runs | `agent-execution.ts` |
 | `webhook-execution.ts` | `runAgentWithCredentials()` — LLM keys + credentials + pipeline | GitHub, PM |
 
 ---
@@ -128,6 +136,38 @@ processSentryWebhook(payload, projectId, registry, triggerResult)
   └─ resolveTriggerResult(registry, ctx, preResolved)
   └─ withAgentTypeConcurrency(projectId, agentType)
        └─ startWatchdog()
-       └─ withPMScope(project)
-            └─ runAgentExecutionPipeline(result, ...)
+            └─ withPMScope(project)
+                 └─ runAgentExecutionPipeline(result, ...)
+```
+
+### Agent execution facade
+
+```
+runAgentExecutionPipeline(result, project, config, executionConfig)
+  └─ guard: skip no-agent TriggerResult values
+  └─ createAgentExecutionContext()
+       └─ create PM lifecycle manager
+       └─ load agent lifecycle hooks
+       └─ re-resolve workItemId from stored PR/work-item links when needed
+  └─ validateAgentExecutionLifecycle()
+       └─ validate PM/SCM credentials and notify PM/callbacks on preflight failure
+  └─ checkPreRunBudget()
+       └─ stop before run when workItemBudgetUsd is exceeded
+  └─ persistAgentWorkItemLinks()
+       └─ create/update work-item records and PR/work-item links before the run
+  └─ prepareAgentExecutionLifecycle()
+       └─ PM prepareForAgent unless the source config skips it
+  └─ runAgentForContext()
+       └─ runAgent(agentType, agentInput + project/config/remainingBudgetUsd)
+  └─ runPostAgentSideEffects()
+       └─ link created PRs back to work items and post PM summaries
+  └─ runPostAgentExecutionLifecycle()
+       └─ artifacts, post-run budget warning, cleanupProcessing, handleSuccess/Failure
+  └─ runAgentExecutionCallbacks()
+       └─ source-specific success/failure callbacks
+  └─ dispatchAgentFollowUps()
+       └─ implementation success + green CI → review dispatch
+       └─ splitting success + auto label → backlog-manager auto-chain
+  └─ triggerAutoDebugIfNeeded()
+       └─ fire-and-forget debug analysis for eligible failed/timed-out runs
 ```

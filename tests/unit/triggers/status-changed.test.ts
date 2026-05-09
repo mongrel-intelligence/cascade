@@ -198,6 +198,7 @@ describe('TrelloStatusChangedSplittingTrigger', () => {
 		expect(result?.workItemId).toBe('card123');
 		expect(result?.agentInput.workItemId).toBe('card123');
 		expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
+		expect(result?.coalesceKey).toBe('test:card123');
 	});
 
 	it('populates workItemUrl and workItemTitle from payload card data', async () => {

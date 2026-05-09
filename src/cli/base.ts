@@ -114,6 +114,15 @@ function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
 }
 
 export abstract class CredentialScopedCommand extends Command {
+	/**
+	 * Pin oclif strict mode (its documented default) for every cascade-tools
+	 * command. Without strict, unknown flags slip past parse validation and
+	 * reach the gadget body as positional args — silently bypassing the
+	 * spec-014 `unknown-flag` envelope. Locking the default explicitly guards
+	 * against future oclif behavior drift and makes the assumption visible.
+	 */
+	static override strict = true;
+
 	/** Subclasses implement this instead of run() */
 	abstract execute(): Promise<void>;
 

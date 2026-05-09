@@ -9,7 +9,9 @@ import {
 	gateTriggerEnabled,
 	requirePersonaIdentities,
 } from '../shared/gates.js';
+import { buildDeferredRecheckResult } from '../shared/result-builders.js';
 import { skip } from '../shared/skip.js';
+import { buildResolveConflictsResult } from './result-builders.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
 
@@ -112,14 +114,10 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 				coalesceKey,
 				delayMs: MERGEABILITY_RECHECK_DELAY_MS,
 			});
-			return {
-				agentType: null,
-				agentInput: {},
-				deferredRecheck: {
-					delayMs: MERGEABILITY_RECHECK_DELAY_MS,
-					coalesceKey,
-				},
-			};
+			return buildDeferredRecheckResult({
+				delayMs: MERGEABILITY_RECHECK_DELAY_MS,
+				coalesceKey,
+			});
 		}
 
 		// Only fire if PR is unmergeable (has conflicts)
@@ -155,21 +153,16 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 			attempt: attempts + 1,
 		});
 
-		return {
-			agentType: 'resolve-conflicts',
-			agentInput: {
-				prNumber,
-				prBranch: payload.pull_request.head.ref,
-				repoFullName,
-				headSha: payload.pull_request.head.sha,
-				triggerType: 'conflict-resolution',
-				triggerEvent: 'scm:pr-conflict-detected',
-				workItemId: workItemId,
-			},
+		return buildResolveConflictsResult({
 			prNumber,
-			prUrl: prDetails.htmlUrl,
-			prTitle: prDetails.title,
+			prDetails: {
+				headRef: payload.pull_request.head.ref,
+				htmlUrl: prDetails.htmlUrl,
+				title: prDetails.title,
+			},
+			repoFullName,
+			headSha: payload.pull_request.head.sha,
 			workItemId,
-		};
+		});
 	}
 }

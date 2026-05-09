@@ -101,10 +101,10 @@ Native-tool engines cannot invoke gadget classes directly (they run as subproces
 
 | Category | Commands | Example |
 |----------|----------|---------|
-| PM | `cascade-tools pm read-card`, `list-cards`, `update-card`, etc. | `cascade-tools pm read-card --cardId=abc123 --raw-json` |
-| SCM | `cascade-tools github get-pr-details`, `get-diff`, `post-comment`, etc. | `cascade-tools github get-pr-details --pr-number=42` |
-| Alerting | `cascade-tools sentry get-issue`, `list-events`, etc. | `cascade-tools sentry get-issue --issue-id=12345` |
-| Session | `cascade-tools session todo-upsert`, `todo-status`, etc. | `cascade-tools session todo-upsert --id=1 --title="Fix tests"` |
+| PM | `cascade-tools pm read-work-item`, `list-work-items`, `update-work-item`, etc. | `cascade-tools pm read-work-item --workItemId abc123` |
+| SCM | `cascade-tools scm get-pr-details`, `get-pr-diff`, `post-pr-comment`, etc. | `cascade-tools scm get-pr-details --prNumber 42` |
+| Alerting | `cascade-tools alerting get-alerting-issue`, `list-alerting-events`, etc. | `cascade-tools alerting get-alerting-issue --organizationId acme --issueId 12345` |
+| Session | `cascade-tools session finish` | `cascade-tools session finish --comment "Created PR and verified checks"` |
 
 The `cascade-tools` binary uses a separate oclif config (`bin/cascade-tools.js`) that discovers all non-dashboard commands, while `cascade` discovers only dashboard commands.
 

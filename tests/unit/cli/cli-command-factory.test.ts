@@ -144,6 +144,154 @@ describe('cliCommandFactory — flag generation', () => {
 		expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ enabled: false }));
 	});
 
+	// Prod regression: `--includeComments true` was the dominant codex failure
+	// mode (9/14 runs in the 2026-05-09 corpus). Boolean flags must accept the
+	// natural value form too — agents reach for `--key true|false|yes|no|1|0`
+	// whenever they encounter a boolean, regardless of the declared toggle form.
+	describe('boolean flags — accept the natural value form', () => {
+		const cases: Array<{ argv: string[]; expected: boolean; label: string }> = [
+			{ argv: ['--enabled', 'true'], expected: true, label: 'space-separated true' },
+			{ argv: ['--enabled', 'false'], expected: false, label: 'space-separated false' },
+			{ argv: ['--enabled=true'], expected: true, label: 'equals-separated true' },
+			{ argv: ['--enabled=false'], expected: false, label: 'equals-separated false' },
+			{ argv: ['--enabled', 'yes'], expected: true, label: 'yes' },
+			{ argv: ['--enabled', 'no'], expected: false, label: 'no' },
+			{ argv: ['--enabled', '1'], expected: true, label: '1' },
+			{ argv: ['--enabled', '0'], expected: false, label: '0' },
+			{ argv: ['--enabled', 'TRUE'], expected: true, label: 'uppercase TRUE' },
+			{ argv: ['--enabled', 'False'], expected: false, label: 'mixed-case False' },
+		];
+		for (const { argv, expected, label } of cases) {
+			it(`accepts ${label}`, async () => {
+				const coreFn = vi.fn().mockResolvedValue('ok');
+				const def = makeToolDef({
+					parameters: {
+						enabled: {
+							type: 'boolean',
+							describe: 'A boolean with allowNo',
+							optional: true,
+							default: true,
+							allowNo: true,
+						},
+					},
+				});
+				const Cmd = createCLICommand(def, coreFn);
+				const cmd = new Cmd(argv, makeMockConfig() as never);
+				await cmd.run();
+				expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ enabled: expected }));
+			});
+		}
+
+		it('canonical bare toggle (--enabled) still works', async () => {
+			const coreFn = vi.fn().mockResolvedValue('ok');
+			const def = makeToolDef({
+				parameters: {
+					enabled: {
+						type: 'boolean',
+						describe: 'A boolean with allowNo',
+						optional: true,
+						default: false,
+						allowNo: true,
+					},
+				},
+			});
+			const Cmd = createCLICommand(def, coreFn);
+			const cmd = new Cmd(['--enabled'], makeMockConfig() as never);
+			await cmd.run();
+			expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }));
+		});
+
+		it('rejects an unrecognised boolean value with a flag-parse envelope (no silent exit-2)', async () => {
+			const coreFn = vi.fn().mockResolvedValue('ok');
+			const def = makeToolDef({
+				parameters: {
+					enabled: {
+						type: 'boolean',
+						describe: 'A boolean with allowNo',
+						optional: true,
+						default: true,
+						allowNo: true,
+					},
+				},
+			});
+			const Cmd = createCLICommand(def, coreFn);
+			const cmd = new Cmd(['--enabled', 'banana'], makeMockConfig() as never);
+			const logSpy = vi.spyOn(cmd, 'log');
+			await expect(cmd.run()).rejects.toThrow();
+			const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+				success: boolean;
+				error: { type: string; flag?: string; got?: string; expected?: string };
+			};
+			expect(output.success).toBe(false);
+			expect(output.error.type).toBe('flag-parse');
+			expect(output.error.flag).toBe('enabled');
+			expect(output.error.got).toBe('banana');
+			expect(output.error.expected).toMatch(/true|false|yes|no/i);
+		});
+
+		it('does not leak the value-form parsing onto non-boolean flags', async () => {
+			// Static guard: an enum/string flag with the same name shape (e.g. the
+			// agent typing `--status true`) must not be silently converted.
+			const coreFn = vi.fn().mockResolvedValue('ok');
+			const def = makeToolDef({
+				parameters: {
+					status: {
+						type: 'enum',
+						options: ['open', 'closed'],
+						describe: 'enum',
+						required: true,
+					},
+				},
+			});
+			const Cmd = createCLICommand(def, coreFn);
+			const cmd = new Cmd(['--status', 'true'], makeMockConfig() as never);
+			// oclif rejects 'true' since it's not in the enum options
+			await expect(cmd.run()).rejects.toThrow();
+		});
+
+		// Regression for reviewer feedback: `scm create-pr` has a `draft` boolean
+		// without `allowNo`. Before the fix, `--draft false` was rewritten to
+		// `--no-draft`, which oclif rejected as an unknown flag. Non-negatable
+		// booleans must accept `false` by simply omitting the flag (absence = false).
+		describe('boolean flags without allowNo (draft-style)', () => {
+			function makeDraftDef() {
+				return makeToolDef({
+					parameters: {
+						draft: {
+							type: 'boolean',
+							describe: 'Create as a draft pull request (default: false)',
+							optional: true,
+						},
+					},
+				});
+			}
+
+			it('--draft false (space-separated) produces draft:undefined (falsy), not unknown-flag error', async () => {
+				const coreFn = vi.fn().mockResolvedValue('ok');
+				const Cmd = createCLICommand(makeDraftDef(), coreFn);
+				const cmd = new Cmd(['--draft', 'false'], makeMockConfig() as never);
+				await cmd.run();
+				expect(coreFn).toHaveBeenCalledWith(expect.not.objectContaining({ draft: true }));
+			});
+
+			it('--draft=false (equals-separated) produces draft:undefined (falsy), not unknown-flag error', async () => {
+				const coreFn = vi.fn().mockResolvedValue('ok');
+				const Cmd = createCLICommand(makeDraftDef(), coreFn);
+				const cmd = new Cmd(['--draft=false'], makeMockConfig() as never);
+				await cmd.run();
+				expect(coreFn).toHaveBeenCalledWith(expect.not.objectContaining({ draft: true }));
+			});
+
+			it('--draft true still works for non-negatable booleans', async () => {
+				const coreFn = vi.fn().mockResolvedValue('ok');
+				const Cmd = createCLICommand(makeDraftDef(), coreFn);
+				const cmd = new Cmd(['--draft', 'true'], makeMockConfig() as never);
+				await cmd.run();
+				expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ draft: true }));
+			});
+		});
+	});
+
 	it('generates enum flags with restricted options', async () => {
 		const coreFn = vi.fn().mockResolvedValue('ok');
 		const def = makeToolDef({
@@ -480,5 +628,113 @@ describe('cliCommandFactory — JSON output format', () => {
 
 		// Access static property directly on the class
 		expect((Cmd as { description?: string }).description).toBe('My test tool description');
+	});
+});
+
+// Spec 014: every cascade-tools failure must reach the agent as a structured
+// envelope. The 2026-05-09 corpus showed `--includeComments true` and
+// missing-required-flag failures bypassed it (exit 2 + empty stdout). After
+// the parse-error wrap, every oclif CLIParseError is mapped onto the envelope.
+describe('cliCommandFactory — parse-error envelope wrapping (spec 014, #4)', () => {
+	it('emits a missing-required envelope when a required string flag is omitted', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const def = makeToolDef({
+			parameters: {
+				name: { type: 'string', describe: 'A name', required: true },
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd([], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		expect(coreFn).not.toHaveBeenCalled();
+		expect(logSpy).toHaveBeenCalledTimes(1);
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('name');
+	});
+
+	it('emits an enum-mismatch envelope when a flag value is outside the declared options', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const def = makeToolDef({
+			parameters: {
+				status: {
+					type: 'enum',
+					options: ['open', 'closed'],
+					describe: 'Status',
+					required: true,
+				},
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--status', 'banana'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		expect(coreFn).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string; got?: string; expected?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('enum-mismatch');
+		expect(output.error.flag).toBe('status');
+		expect(output.error.got).toBe('banana');
+		expect(output.error.expected).toContain('open');
+		expect(output.error.expected).toContain('closed');
+	});
+
+	it('preserves the existing unknown-flag envelope (regression net for spec 014)', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const def = makeToolDef({
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'comments',
+					optional: true,
+					cliAliases: ['comment'],
+				},
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--commentt', 'oops'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string; hint?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('unknown-flag');
+	});
+
+	// Pin oclif strict mode on the factory-generated commands. CredentialScopedCommand
+	// now sets `static override strict = true` explicitly; without that, future oclif
+	// behavior drift could let unknown flags slip past parse validation and reach the
+	// gadget body as positional args — bypassing the spec-014 unknown-flag envelope.
+	it('rejects unknown flags on a factory-generated command (strict mode pinned)', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const def = makeToolDef({
+			name: 'Finish',
+			parameters: {
+				comment: { type: 'string', describe: 'A brief summary', required: true },
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--unknown-flag', 'foo', '--comment', 'x'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		expect(coreFn).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('unknown-flag');
+		expect(output.error.flag).toBe('--unknown-flag');
 	});
 });

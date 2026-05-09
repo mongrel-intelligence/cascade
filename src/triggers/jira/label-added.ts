@@ -14,8 +14,9 @@ import { getJiraConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { buildPMLabelDispatchResult, resolvePMLabelAgentByStatusName } from '../shared/pm-label.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
-import { type JiraWebhookPayload, STATUS_TO_AGENT } from './types.js';
+import type { JiraWebhookPayload } from './types.js';
 
 /**
  * Parse which labels were added from a JIRA label changelog item.
@@ -84,14 +85,10 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Invert the statuses mapping: find which CASCADE status key maps to this JIRA status
-		let agentType: string | undefined;
-		for (const [cascadeStatus, jiraStatus] of Object.entries(jiraConfig.statuses)) {
-			if (jiraStatus.toLowerCase() === currentStatus.toLowerCase()) {
-				agentType = STATUS_TO_AGENT[cascadeStatus];
-				break;
-			}
-		}
+		const agentType = resolvePMLabelAgentByStatusName({
+			statusName: currentStatus,
+			configuredStatuses: jiraConfig.statuses,
+		});
 
 		if (!agentType) {
 			logger.debug('JIRA issue status does not map to any agent', {
@@ -117,17 +114,11 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		const workItemUrl = `${jiraConfig.baseUrl}/browse/${issueKey}`;
 		const workItemTitle = payload.issue?.fields?.summary ?? undefined;
 
-		return {
+		return buildPMLabelDispatchResult({
 			agentType,
-			agentInput: {
-				workItemId: issueKey,
-				workItemUrl,
-				workItemTitle,
-				triggerEvent: 'pm:label-added',
-			},
 			workItemId: issueKey,
 			workItemUrl,
 			workItemTitle,
-		};
+		});
 	}
 }

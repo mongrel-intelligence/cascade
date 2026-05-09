@@ -220,6 +220,12 @@ describe('processPMWebhook', () => {
 		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
 
 		expect(mockRunAgentExecutionPipeline).not.toHaveBeenCalled();
+		expect(checkAgentTypeConcurrency).toHaveBeenCalledWith(
+			'project-1',
+			'implementation',
+			'trello webhook',
+			'card-abc',
+		);
 	});
 
 	it('calls withCredentials on integration during execution', async () => {

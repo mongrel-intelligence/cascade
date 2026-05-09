@@ -13,6 +13,7 @@ None of these files are required — CASCADE works without them — but they giv
 | [`setup.sh`](#-setupsh) | You | Install deps, run migrations, prepare the workspace |
 | [`on-file-edit.sh`](#-on-file-editsh) | You | Post-edit hook — lint/typecheck a single file |
 | [`on-verify.sh`](#-on-verifysh) | You | Verification suite — run tests or a broader check |
+| [`ensure-services.sh`](#-ensure-servicessh) | You | Restart local services needed by tests after long sessions |
 | [`env`](#-env) | You | Extra environment variables for the agent session |
 | [`context/`](#-context) | CASCADE | Temporary context files (auto-created and cleaned up) |
 
@@ -133,6 +134,26 @@ case "$SCOPE" in
     ;;
 esac
 ```
+
+---
+
+## 🩺 `ensure-services.sh`
+
+**When it runs:** Only when the agent explicitly invokes it after a command fails because a local service is unavailable.
+
+**What it does:** Restarts or verifies external services needed by the repository's tests, such as PostgreSQL, Redis, Docker Compose stacks, or local emulators. CASCADE does not run this file automatically; agent instructions tell the agent to look for `.cascade/ensure-services.sh` when tests fail with connection errors.
+
+**Example:**
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+docker compose -f docker-compose.test.yml up -d --wait
+redis-cli ping >/dev/null
+```
+
+Keep this script idempotent and make it print enough progress that long service startup is distinguishable from a hang.
 
 ---
 

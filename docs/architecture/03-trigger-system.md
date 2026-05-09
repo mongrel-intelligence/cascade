@@ -57,8 +57,11 @@ interface TriggerResult {
   prNumber?: number;
   prUrl?: string;
   prTitle?: string;
-  waitForChecks?: boolean;         // Poll CI before starting
   onBlocked?: () => void;          // Cleanup if job can't be enqueued
+  deferredRecheck?: {
+    delayMs: number;
+    coalesceKey: string;
+  };                               // Schedule a bare delayed re-dispatch
 }
 ```
 
@@ -135,7 +138,11 @@ function registerBuiltInTriggers(registry: TriggerRegistry): void {
 Triggers use category-prefixed events: `{category}:{event-name}`
 - `pm:status-changed`, `pm:label-added`
 - `scm:check-suite-success`, `scm:pr-review-submitted`, `scm:review-requested`
-- `alerting:issue-created`, `alerting:metric-alert`
+- `alerting:issue-alert`, `alerting:metric-alert`
+
+### Deferred re-checks
+
+Handlers that cannot make a final decision yet can return `deferredRecheck: { delayMs, coalesceKey }` with `agentType: null`. The router schedules a coalesced delayed BullMQ job and exits without spawning an agent. GitHub mergeability checks use this path; the worker recognizes re-check jobs via `mergeabilityRecheckAttempt` and captures a Sentry diagnostic if the second pass still cannot resolve state.
 
 ### Config resolution
 
@@ -166,26 +173,30 @@ Each trigger in a YAML agent definition can declare a `contextPipeline` — an o
 
 `src/triggers/shared/agent-execution.ts`
 
-After a trigger matches, the shared execution layer handles the agent lifecycle:
+After a trigger matches, the shared execution layer handles the agent lifecycle. `runAgentExecutionPipeline()` is intentionally a thin facade: it keeps the source-compatible call signature used by PM, GitHub, Sentry, and manual paths, while delegating each execution concern to helper modules under `src/triggers/shared/`.
 
 ```mermaid
 flowchart TD
-    A[Trigger matched] --> B[PM lifecycle: prepareForAgent]
-    B --> C[Check budget]
-    C -->|Over budget| D[Post budget warning, skip]
-    C -->|Within budget| E[Resolve agent definition]
-    E --> F[Set credential scope]
+    A[Trigger matched] --> B[Guard and context setup]
+    B --> C[Validation and budget preflight]
+    C -->|Blocked| D[Notify PM/callbacks and stop]
+    C -->|Allowed| E[Persist work-item and PR links]
+    E --> F[PM lifecycle: prepareForAgent]
     F --> G[Run agent via engine]
-    G -->|Success| H[PM lifecycle: handleSuccess]
-    G -->|Failure| I[PM lifecycle: handleFailure]
-    H --> J[Trigger debug analysis if configured]
-    I --> J
+    G --> H[Post-run side effects]
+    H --> I[PM lifecycle cleanup and success/failure]
+    I --> J[Source callbacks]
+    J --> K[Follow-up dispatch]
+    K --> L[Auto-debug if eligible]
 ```
 
 This includes:
-- PM lifecycle management (move card to "In Progress", post labels)
-- Budget checking (`workItemBudgetUsd`)
-- Credential scoping via `withCredentials()`
-- Agent execution via `runAgent()` (see [05-engine-backends](./05-engine-backends.md))
-- Post-run lifecycle (move card to "In Review", link PR, sync checklists)
-- Debug analysis triggering on failure
+- Context setup in `agent-execution-runtime.ts`: build the `PMLifecycleManager`, load agent lifecycle hooks, and re-resolve `workItemId` from PR links when a webhook arrived before the DB mapping existed.
+- Validation and lifecycle preflight in `agent-execution-lifecycle.ts`: validate PM/SCM integrations, notify PM/callbacks on validation failure, check `workItemBudgetUsd`, and run `prepareForAgent`.
+- Work-item and PR traceability in `agent-work-items.ts`: create/update work-item records, maintain PR/work-item links before and after execution, fetch PR titles, and backfill run PR numbers.
+- Agent execution in `agent-execution-runtime.ts`: call `runAgent()` with the resolved input plus project, config, and remaining budget.
+- Post-run PM behavior in `agent-pm-summary.ts` and `agent-execution-lifecycle.ts`: post review/output summaries to the PM work item, handle artifacts, post budget warnings, clean up processing state, and call `handleSuccess` or `handleFailure`.
+- Follow-up dispatch in `agent-execution-followups.ts`: dispatch review after a successful implementation PR once CI is passing and the review dedup key is claimed, and chain backlog-manager after a successful splitting run when the auto label/capacity checks allow it.
+- Auto-debug in `agent-auto-debug.ts`: fire-and-forget debug analysis for eligible failed or timed-out runs after callbacks and follow-up dispatch complete.
+
+Credential scoping still happens before the facade runs. PM webhook handling enters provider credentials and PM provider scope before dispatch; GitHub and Sentry use `webhook-execution.ts` / `credential-scope.ts` to inject LLM keys, PM credentials, PM provider scope, and GitHub persona tokens as needed.

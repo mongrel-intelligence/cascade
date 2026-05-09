@@ -45,6 +45,7 @@ describe('PM_SUMMARY_AGENT_TYPES and isOutputBasedAgent', () => {
 		expect(PM_SUMMARY_AGENT_TYPES).toContain('review');
 		expect(PM_SUMMARY_AGENT_TYPES).toContain('respond-to-ci');
 		expect(PM_SUMMARY_AGENT_TYPES).toContain('respond-to-review');
+		expect(PM_SUMMARY_AGENT_TYPES).toContain('respond-to-pr-comment');
 		expect(PM_SUMMARY_AGENT_TYPES).toContain('resolve-conflicts');
 	});
 
@@ -56,6 +57,7 @@ describe('PM_SUMMARY_AGENT_TYPES and isOutputBasedAgent', () => {
 	it('isOutputBasedAgent returns true for output-based agents', () => {
 		expect(isOutputBasedAgent('respond-to-ci')).toBe(true);
 		expect(isOutputBasedAgent('respond-to-review')).toBe(true);
+		expect(isOutputBasedAgent('respond-to-pr-comment')).toBe(true);
 		expect(isOutputBasedAgent('resolve-conflicts')).toBe(true);
 	});
 
@@ -160,6 +162,14 @@ describe('formatAgentOutputForPM', () => {
 		expect(result).toContain('🔀');
 		expect(result).toContain('**Conflict Resolution Summary**');
 		expect(result).toContain('Resolved merge conflicts in 3 files.');
+	});
+
+	it('formats respond-to-pr-comment output with correct emoji and header', () => {
+		const result = formatAgentOutputForPM('respond-to-pr-comment', 'Answered the PR question.');
+
+		expect(result).toContain('📝');
+		expect(result).toContain('**PR Comment Response**');
+		expect(result).toContain('Answered the PR question.');
 	});
 
 	it('tail-extracts when output exceeds 2000 chars', () => {

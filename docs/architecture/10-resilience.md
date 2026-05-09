@@ -27,8 +27,9 @@ startWatchdog(timeoutMs, () => {
 Prevents multiple agents from working on the same card/issue simultaneously. The lock is in-memory (router process) with TTL expiry.
 
 - Checked at webhook processing time (step 8 of the pipeline)
-- Marked when job is enqueued, cleared when worker completes
+- Marked when a job is enqueued, cleared when the worker completes or when dispatch failure compensation runs
 - Key: `(projectId, workItemId, agentType)`
+- Only same-agent duplicates are blocked; different agent types may run concurrently on the same work item
 
 ### Agent-type concurrency limit
 
@@ -48,6 +49,8 @@ Configurable `max_concurrency` per agent type per project (set via `agent_config
 
 The router's worker manager limits how many Docker containers run in parallel via `routerConfig.maxWorkers`.
 
+When the pool is full, dispatch waits for a slot via `slot-waiter.ts` for `SLOT_WAIT_TIMEOUT_MS` (default 5 minutes). A timeout is classified as transient, so BullMQ retries it under the bounded queue retry policy.
+
 ## Rate Limiting
 
 `src/config/rateLimits.ts`
@@ -61,6 +64,17 @@ Proactive, model-specific rate limits prevent hitting LLM provider quotas. Confi
 Rate limits are enforced by the LLMist SDK for `sdk`-archetype engines. Native-tool engines (Claude Code, Codex) handle rate limiting internally.
 
 ## Retry Strategy
+
+### Dispatch retries
+
+The router queues `cascade-jobs` and `cascade-dashboard-jobs` with `attempts: 4` and exponential backoff. Dispatch errors before a worker container starts are classified in `src/router/dispatch-error-classifier.ts`:
+
+- Transient: Docker socket `ECONNREFUSED` / `ECONNRESET` / `ENOTFOUND`, registry HTTP 429, container-name HTTP 409, and `SLOT_WAIT_TIMEOUT`.
+- Terminal: validation errors (`TypeError`, `ZodError`) and image-not-found after fallback exhaustion.
+
+Every failed dispatch path flows through the BullMQ `failed` event and calls `releaseLocksForFailedJob`, releasing the work-item lock, agent-type counter, and recently-dispatched mark. Webhook logs distinguish healthy backpressure (`Awaiting worker slot`) from the wedged-lock canary (`Work item locked (no active dispatch)`).
+
+### LLM/API retries
 
 `src/config/retryConfig.ts`
 
@@ -130,6 +144,8 @@ See [08-config-credentials](./08-config-credentials.md) — AES-256-GCM encrypti
 `src/router/orphan-cleanup.ts`
 
 Periodic scan for Docker containers that outlived their expected lifetime (watchdog timeout + buffer). Orphans are killed and their run records marked as failed.
+
+When a worker container exits non-zero, the router inspects it before Docker AutoRemove can reap it and writes a grep-stable error reason: `Worker crashed with exit code N · OOMKilled=<true|false> · reason="<State.Error>"`. `OOMKilled=true` is the definitive cgroup OOM signal; exit 137 without that marker means something else sent the signal.
 
 ## Snapshot Management
 

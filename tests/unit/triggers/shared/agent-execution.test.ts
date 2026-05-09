@@ -19,11 +19,7 @@ const {
 	mockTriggerDebugAnalysis,
 	mockLogger,
 	MockPMLifecycleManager,
-	mockGetSessionState,
-	mockPostReviewToPM,
-	mockPostAgentOutputToPM,
-	mockPM_SUMMARY_AGENT_TYPES,
-	mockIsOutputBasedAgent,
+	mockPostAgentSummaryToPM,
 	mockLookupWorkItemForPR,
 	mockGithubClient,
 	mockParseRepoFullName,
@@ -57,21 +53,7 @@ const {
 		handleBudgetWarning: vi.fn().mockResolvedValue(undefined),
 		cleanupProcessing: vi.fn().mockResolvedValue(undefined),
 	})),
-	mockGetSessionState: vi.fn().mockReturnValue({}),
-	mockPostReviewToPM: vi.fn().mockResolvedValue(undefined),
-	mockPostAgentOutputToPM: vi.fn().mockResolvedValue(undefined),
-	mockPM_SUMMARY_AGENT_TYPES: new Set([
-		'review',
-		'respond-to-ci',
-		'respond-to-review',
-		'resolve-conflicts',
-	]),
-	mockIsOutputBasedAgent: vi
-		.fn()
-		.mockImplementation(
-			(t: string) =>
-				t === 'respond-to-ci' || t === 'respond-to-review' || t === 'resolve-conflicts',
-		),
+	mockPostAgentSummaryToPM: vi.fn().mockResolvedValue(undefined),
 	mockLookupWorkItemForPR: vi.fn().mockResolvedValue(null),
 	mockGithubClient: {
 		getPR: vi.fn().mockResolvedValue({ title: 'feat: test PR', headSha: 'abc123' }),
@@ -142,19 +124,8 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	updateRunPRNumber: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
-	const actual = await importOriginal<typeof import('../../../../src/gadgets/sessionState.js')>();
-	return {
-		...actual,
-		getSessionState: mockGetSessionState,
-	};
-});
-
-vi.mock('../../../../src/triggers/shared/agent-pm-poster.js', () => ({
-	postReviewToPM: mockPostReviewToPM,
-	postAgentOutputToPM: mockPostAgentOutputToPM,
-	PM_SUMMARY_AGENT_TYPES: mockPM_SUMMARY_AGENT_TYPES,
-	isOutputBasedAgent: mockIsOutputBasedAgent,
+vi.mock('../../../../src/triggers/shared/agent-pm-summary.js', () => ({
+	postAgentSummaryToPM: mockPostAgentSummaryToPM,
 }));
 
 vi.mock('../../../../src/github/client.js', () => ({
@@ -264,7 +235,6 @@ describe('runAgentExecutionPipeline facade characterization', () => {
 		mockCheckBudgetExceeded.mockResolvedValue(null);
 		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
 		mockShouldTriggerDebug.mockResolvedValue(null);
-		mockGetSessionState.mockReturnValue({});
 		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
 		mockGithubClient.getCheckSuiteStatus.mockResolvedValue({ allPassing: false });
 	}
@@ -656,283 +626,38 @@ describe('propagateAutoLabelAfterSplitting (via runAgentExecutionPipeline)', () 
 	});
 });
 
-// ---------------------------------------------------------------------------
-// postAgentSummaryToPM (via runAgentExecutionPipeline)
-// ---------------------------------------------------------------------------
-
-describe('postAgentSummaryToPM (via runAgentExecutionPipeline)', () => {
-	function setupReviewDefaults() {
+describe('agent PM summary facade delegation', () => {
+	beforeEach(() => {
 		mockCreatePMProvider.mockReturnValue({});
 		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
 		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
 		mockCheckBudgetExceeded.mockResolvedValue(null);
 		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
 		mockShouldTriggerDebug.mockResolvedValue(null);
-	}
-
-	beforeEach(() => {
-		setupReviewDefaults();
 	});
 
-	it('calls postReviewToPM when agentType=review, success, and sessionState has reviewBody', async () => {
-		mockRunAgent.mockResolvedValueOnce({
-			success: true,
-			output: '',
-			runId: 'run-rev',
-			progressCommentId: 'pm-comment-1',
-		});
-		mockGetSessionState.mockReturnValue({
-			reviewBody: 'Looks good',
-			reviewEvent: 'APPROVE',
-			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'review', agentInput: {}, workItemId: 'card-1', prNumber: 42 },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).toHaveBeenCalledWith(
-			'card-1',
-			expect.objectContaining({ reviewBody: 'Looks good' }),
-			'pm-comment-1',
-		);
-	});
-
-	it('skips PM posting entirely for non-summary agent types (implementation)', async () => {
-		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-impl' });
-		mockGetSessionState.mockReturnValue({ reviewBody: 'something' });
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-		expect(mockPostAgentOutputToPM).not.toHaveBeenCalled();
-	});
-
-	it('skips when agent failed', async () => {
-		mockRunAgent.mockResolvedValueOnce({ success: false, output: '', error: 'review error' });
-		mockGetSessionState.mockReturnValue({ reviewBody: 'Looks good' });
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-	});
-
-	it('skips when sessionState has no reviewBody and logs reason', async () => {
-		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
-		mockGetSessionState.mockReturnValue({ reviewBody: null });
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-		expect(mockLogger.warn).toHaveBeenCalledWith(
-			'Review PM posting skipped: no reviewBody in session state',
-		);
-	});
-
-	it('resolves workItemId from DB when result.workItemId is undefined', async () => {
-		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
-		mockGetSessionState.mockReturnValue({
-			reviewBody: 'Nice',
-			reviewEvent: 'COMMENT',
-			reviewUrl: 'https://github.com/acme/myapp/pull/99#pullrequestreview-5',
-		});
-		mockLookupWorkItemForPR.mockResolvedValueOnce('card-from-db');
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'review', agentInput: {}, prNumber: 99 },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockLookupWorkItemForPR).toHaveBeenCalledWith('project-1', 99);
-		expect(mockPostReviewToPM).toHaveBeenCalledWith(
-			'card-from-db',
-			expect.objectContaining({ reviewBody: 'Nice' }),
-			undefined,
-		);
-	});
-
-	it('skips when no workItemId found (neither result nor DB) and logs reason', async () => {
-		mockRunAgent.mockResolvedValueOnce({ success: true, output: '', runId: 'run-rev' });
-		mockGetSessionState.mockReturnValue({
-			reviewBody: 'Good',
-			reviewEvent: 'APPROVE',
-			reviewUrl: 'https://github.com/acme/myapp/pull/55#pullrequestreview-6',
-		});
-		mockLookupWorkItemForPR.mockResolvedValueOnce(null);
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'review', agentInput: {}, prNumber: 55 },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-		expect(mockLogger.warn).toHaveBeenCalledWith(
-			'Agent PM posting skipped: no workItemId found',
-			expect.objectContaining({ agentType: 'review', projectId: 'project-1', prNumber: 55 }),
-		);
-	});
-
-	it('calls postAgentOutputToPM for respond-to-ci with successful result and non-empty output', async () => {
-		mockRunAgent.mockResolvedValueOnce({
-			success: true,
-			output: 'Fixed CI by updating the build config.',
-			runId: 'run-ci',
-			progressCommentId: 'pm-prog-ci',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'respond-to-ci', agentInput: {}, workItemId: 'card-2', prNumber: 10 },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostAgentOutputToPM).toHaveBeenCalledWith(
-			'card-2',
-			'respond-to-ci',
-			'Fixed CI by updating the build config.',
-			'pm-prog-ci',
-		);
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-	});
-
-	it('calls postAgentOutputToPM for respond-to-review with successful result', async () => {
-		mockRunAgent.mockResolvedValueOnce({
+	it('delegates PM summary posting after the agent run', async () => {
+		const agentResult = {
 			success: true,
 			output: 'Addressed all review comments.',
 			runId: 'run-rr',
 			progressCommentId: 'pm-prog-rr',
-		});
+		};
+		mockRunAgent.mockResolvedValueOnce(agentResult);
 
 		await runAgentExecutionPipeline(
-			{ agentType: 'respond-to-review', agentInput: {}, workItemId: 'card-3' },
+			{ agentType: 'respond-to-review', agentInput: {}, workItemId: 'card-3', prNumber: 42 },
 			PROJECT,
 			CONFIG,
 		);
 
-		expect(mockPostAgentOutputToPM).toHaveBeenCalledWith(
-			'card-3',
+		expect(mockPostAgentSummaryToPM).toHaveBeenCalledWith(
 			'respond-to-review',
-			'Addressed all review comments.',
-			'pm-prog-rr',
+			agentResult,
+			'card-3',
+			'project-1',
+			42,
 		);
-	});
-
-	it('calls postAgentOutputToPM for resolve-conflicts with successful result', async () => {
-		mockRunAgent.mockResolvedValueOnce({
-			success: true,
-			output: 'Resolved merge conflicts in 3 files.',
-			runId: 'run-rc',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'resolve-conflicts', agentInput: {}, workItemId: 'card-4' },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostAgentOutputToPM).toHaveBeenCalledWith(
-			'card-4',
-			'resolve-conflicts',
-			'Resolved merge conflicts in 3 files.',
-			undefined,
-		);
-	});
-
-	it('delegates empty output to postAgentOutputToPM (which handles the guard)', async () => {
-		mockRunAgent.mockResolvedValueOnce({
-			success: true,
-			output: '',
-			runId: 'run-ci-empty',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'respond-to-ci', agentInput: {}, workItemId: 'card-5' },
-			PROJECT,
-			CONFIG,
-		);
-
-		// The pipeline calls postAgentOutputToPM — the empty-output guard lives there, not here
-		expect(mockPostAgentOutputToPM).toHaveBeenCalledWith('card-5', 'respond-to-ci', '', undefined);
-	});
-
-	it('does not call postAgentOutputToPM when agent failed', async () => {
-		mockRunAgent.mockResolvedValueOnce({
-			success: false,
-			output: 'Some output before failure.',
-			error: 'CI fix failed',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'respond-to-ci', agentInput: {}, workItemId: 'card-6' },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostAgentOutputToPM).not.toHaveBeenCalled();
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-	});
-
-	it('does not post to PM for splitting agent type', async () => {
-		// Extra mock setup needed because splitting's success path triggers
-		// propagateAutoLabelAfterSplitting, which calls getPMProvider().
-		mockCreatePMProvider.mockReturnValue({});
-		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
-		mockGetPMProvider.mockReturnValue(
-			mockProvider({ listWorkItems: vi.fn().mockResolvedValue([]) }),
-		);
-		mockHasAutoLabel.mockReturnValue(false);
-		mockRunAgent.mockResolvedValueOnce({
-			success: true,
-			output: 'Split card into 3 sub-cards.',
-			runId: 'run-split',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'splitting', agentInput: {}, workItemId: 'card-8' },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).not.toHaveBeenCalled();
-		expect(mockPostAgentOutputToPM).not.toHaveBeenCalled();
-	});
-
-	it('passes progressCommentId through', async () => {
-		mockRunAgent.mockResolvedValueOnce({
-			success: true,
-			output: '',
-			runId: 'run-rev',
-			progressCommentId: 'pm-prog-xyz',
-		});
-		mockGetSessionState.mockReturnValue({
-			reviewBody: 'All good',
-			reviewEvent: 'APPROVE',
-			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-7',
-		});
-
-		await runAgentExecutionPipeline(
-			{ agentType: 'review', agentInput: {}, workItemId: 'card-1', prNumber: 42 },
-			PROJECT,
-			CONFIG,
-		);
-
-		expect(mockPostReviewToPM).toHaveBeenCalledWith('card-1', expect.anything(), 'pm-prog-xyz');
 	});
 });
 
@@ -948,7 +673,6 @@ describe('linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)'
 		mockCheckBudgetExceeded.mockResolvedValue(null);
 		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
 		mockShouldTriggerDebug.mockResolvedValue(null);
-		mockGetSessionState.mockReturnValue({});
 		mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
 	});
 
@@ -1018,7 +742,6 @@ describe('pre-execution PR linking (via runAgentExecutionPipeline)', () => {
 		mockCheckBudgetExceeded.mockResolvedValue(null);
 		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
 		mockShouldTriggerDebug.mockResolvedValue(null);
-		mockGetSessionState.mockReturnValue({});
 		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
 	});
 
@@ -1126,7 +849,6 @@ describe('workItemId staleness recovery (via runAgentExecutionPipeline)', () => 
 		mockCheckBudgetExceeded.mockResolvedValue(null);
 		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
 		mockShouldTriggerDebug.mockResolvedValue(null);
-		mockGetSessionState.mockReturnValue({});
 		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
 	});
 
@@ -1220,7 +942,6 @@ describe('post-completion review dispatch (via runAgentExecutionPipeline)', () =
 		mockCheckBudgetExceeded.mockResolvedValue(null);
 		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
 		mockShouldTriggerDebug.mockResolvedValue(null);
-		mockGetSessionState.mockReturnValue({});
 		mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
 		mockGithubClient.getPR.mockResolvedValue({
 			title: 'feat: test PR',
@@ -1372,6 +1093,41 @@ describe('post-completion review dispatch (via runAgentExecutionPipeline)', () =
 		expect(mockLogger.warn).toHaveBeenCalledWith(
 			expect.stringContaining('Post-completion review dispatch failed'),
 			expect.objectContaining({ error: expect.any(String) }),
+		);
+	});
+
+	it('does not break the implementation pipeline when the nested review pipeline throws', async () => {
+		// Arrange: implementation succeeds and green CI claims the dedup key;
+		// review pipeline then throws during its own execution.
+		mockRunAgent
+			.mockResolvedValueOnce({
+				success: true,
+				output: '',
+				runId: 'run-impl',
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+			})
+			.mockRejectedValueOnce(new Error('review pipeline exploded'));
+
+		// Pipeline should resolve (not reject) even though the nested review run threw.
+		await expect(
+			runAgentExecutionPipeline(
+				{ agentType: 'implementation', agentInput: {}, workItemId: 'card-1' },
+				PROJECT,
+				CONFIG,
+			),
+		).resolves.toBeUndefined();
+
+		// Both the implementation and review agents were attempted.
+		expect(mockRunAgent).toHaveBeenCalledTimes(2);
+
+		// The failure is logged as a non-fatal warning, not rethrown.
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			'Post-completion review pipeline failed (non-fatal)',
+			expect.objectContaining({
+				prUrl: 'https://github.com/acme/myapp/pull/42',
+				workItemId: 'card-1',
+				error: 'Error: review pipeline exploded',
+			}),
 		);
 	});
 });

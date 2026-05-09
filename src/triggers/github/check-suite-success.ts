@@ -2,22 +2,19 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { gateBaseBranch } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
+import { decideCheckSuiteGates, decideCheckSuiteOutcome } from './check-suite-decision.js';
+import { resolveCheckSuitePRNumber } from './pr-resolution.js';
 import { dispatchRespondToCi } from './respond-to-ci-dispatch.js';
+import { buildReviewResult } from './result-builders.js';
 import {
 	buildReviewDispatchKey,
 	claimReviewDispatch,
 	releaseReviewDispatch,
 } from './review-dispatch-dedup.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import {
-	evaluateAuthorMode,
-	parsePrNumberFromRef,
-	resolveWorkItemDisplayData,
-	resolveWorkItemId,
-} from './utils.js';
+import { parsePrNumberFromRef, resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
 /**
  * Dispatches an outcome agent when a check_suite completes with success
@@ -70,7 +67,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		if (payload.action !== 'completed') return false;
 		if (payload.check_suite.conclusion !== 'success') return false;
 
-		// Must have at least one associated PR, or head_branch must be a refs/pull/{N}/head ref
+		// Must have at least one associated PR, or head_branch must be a refs/pull/{N}/head ref.
 		const hasPrs = payload.check_suite.pull_requests.length > 0;
 		const hasPrRef = parsePrNumberFromRef(payload.check_suite.head_branch) !== null;
 		if (!hasPrs && !hasPrRef) return false;
@@ -93,54 +90,40 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);
 
-		// Resolve PR number — from payload directly, or by parsing refs/pull/{N}/head
-		let prNumber: number;
-		if (payload.check_suite.pull_requests.length > 0) {
-			prNumber = payload.check_suite.pull_requests[0].number;
-		} else {
-			const parsed = parsePrNumberFromRef(payload.check_suite.head_branch);
-			if (parsed === null) {
-				logger.info('Could not parse PR number from head_branch ref, skipping', {
-					handler: this.name,
-				});
-				return skip(this.name, 'Could not parse PR number from check_suite head_branch');
-			}
-			prNumber = parsed;
+		const prResolution = await resolveCheckSuitePRNumber({
+			owner,
+			repo,
+			pullRequests: payload.check_suite.pull_requests,
+			headBranch: payload.check_suite.head_branch,
+			handlerName: this.name,
+			lookupOpenPRByBranch: githubClient.getOpenPRByBranch,
+		});
+		if (!prResolution.ok) {
+			return skip(this.name, 'Could not parse PR number from check_suite head_branch');
 		}
+		const prNumber = prResolution.prNumber;
 		const headSha = payload.check_suite.head_sha;
 
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		// Gate on PR author based on configured authorMode parameter
-		const authorResult = evaluateAuthorMode(
-			prDetails.user.login,
-			ctx.personaIdentities,
-			triggerConfig.parameters,
-			this.name,
-		);
-		if (!authorResult) {
-			return skip(
-				this.name,
-				'Cascade persona identities could not be resolved (token / GitHub API issue)',
-			);
-		}
-		if (!authorResult.shouldTrigger) {
-			logger.info('PR author does not match configured authorMode, skipping', {
+		const gateDecision = decideCheckSuiteGates({
+			prNumber,
+			prAuthorLogin: prDetails.user.login,
+			prBaseRef: prDetails.baseRef,
+			project: ctx.project,
+			personaIdentities: ctx.personaIdentities,
+			handlerName: this.name,
+			mode: { kind: 'review', parameters: triggerConfig.parameters },
+		});
+		if (gateDecision) {
+			logger.info('Check-suite success gate skipped dispatch', {
 				handler: this.name,
 				prNumber,
-				prAuthor: prDetails.user.login,
-				isCascadePR: authorResult.isCascadePR,
-				authorMode: authorResult.authorMode,
+				message: gateDecision.message,
 			});
-			return skip(
-				this.name,
-				`PR #${prNumber} author ${prDetails.user.login} does not match configured authorMode '${authorResult.authorMode}' (isCascadePR=${authorResult.isCascadePR})`,
-			);
+			return skip(this.name, gateDecision.message);
 		}
-
-		const baseSkip = gateBaseBranch(prDetails.baseRef, prNumber, ctx.project, this.name);
-		if (baseSkip) return baseSkip;
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
@@ -158,31 +141,32 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// after PR #1245 (2026-05-01) where the worker polled 2 min, bailed,
 		// and the cross-process dedup blocked all retries.
 		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, headSha);
-		const allComplete = checkStatus.checkRuns.every((cr) => cr.status === 'completed');
-		const anyFailed = checkStatus.checkRuns.some(
-			(cr) =>
-				cr.conclusion === 'failure' ||
-				cr.conclusion === 'timed_out' ||
-				cr.conclusion === 'action_required',
-		);
+		const decision = decideCheckSuiteOutcome({
+			checkStatus,
+			prNumber,
+			prAuthorLogin: prDetails.user.login,
+			prBaseRef: prDetails.baseRef,
+			project: ctx.project,
+			personaIdentities: ctx.personaIdentities,
+			handlerName: this.name,
+			mode: { kind: 'review', parameters: triggerConfig.parameters },
+		});
 
-		if (!allComplete) {
-			const incomplete = checkStatus.checkRuns
-				.filter((cr) => cr.status !== 'completed')
-				.map((cr) => cr.name);
+		if (decision.action === 'defer') {
 			logger.info('Not all checks complete yet, waiting for next check_suite event', {
 				handler: this.name,
 				prNumber,
 				totalChecks: checkStatus.totalCount,
-				incompleteChecks: incomplete,
+				incompleteChecks: decision.incompleteChecks,
 			});
-			return skip(
-				this.name,
-				`Not all checks complete yet (${incomplete.length}/${checkStatus.totalCount} still running): ${incomplete.join(', ')}`,
-			);
+			return skip(this.name, decision.message);
 		}
 
-		if (anyFailed) {
+		if (decision.action === 'skip') {
+			return skip(this.name, decision.message);
+		}
+
+		if (decision.action === 'respond-to-ci') {
 			return dispatchRespondToCi({
 				ctx,
 				prNumber,
@@ -196,6 +180,7 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			});
 		}
 
+		// decision.action === 'review'
 		// allComplete && !anyFailed → review path. Skip if the reviewer
 		// persona's latest review already covers the current HEAD SHA.
 		const reviews = await githubClient.getPRReviews(owner, repo, prNumber);
@@ -252,22 +237,11 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			headSha,
 		});
 
-		const prBranch = prDetails.headRef;
-
-		return {
-			agentType: 'review',
-			agentInput: {
-				prNumber,
-				prBranch,
-				repoFullName: payload.repository.full_name,
-				headSha,
-				triggerType: 'ci-success',
-				triggerEvent: 'scm:check-suite-success',
-				workItemId: workItemId,
-			},
+		return buildReviewResult({
 			prNumber,
-			prUrl: prDetails.htmlUrl,
-			prTitle: prDetails.title,
+			prDetails,
+			repoFullName: payload.repository.full_name,
+			headSha,
 			workItemId,
 			workItemUrl,
 			workItemTitle,
@@ -275,6 +249,6 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 				// Fire-and-forget — release is best-effort and the TTL is the safety net.
 				void releaseReviewDispatch(dedupKey);
 			},
-		};
+		});
 	}
 }

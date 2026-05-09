@@ -30,7 +30,7 @@ docker compose exec dashboard node dist/tools/create-admin-user.mjs \
   --email admin@example.com --password changeme --name "Admin"
 ```
 
-Open **http://localhost:3001** and log in with your admin credentials.
+Open **http://localhost:3001** and log in with your admin credentials. The router listens on **http://localhost:3000** for provider webhooks.
 
 For the full setup walkthrough — projects, credentials, webhooks, and triggers — see **[Getting Started](./docs/getting-started.md)**.
 
@@ -51,9 +51,8 @@ For the full setup walkthrough — projects, credentials, webhooks, and triggers
 
 ## 🏗️ Architecture
 
-<p align="center">
-  <img src="docs/architecture.jpg" alt="CASCADE architecture diagram" />
-</p>
+> The architecture diagram source lives at [`docs/architecture.d2`](./docs/architecture.d2).
+> Render it locally with the [D2 CLI](https://d2lang.com/): `d2 docs/architecture.d2 docs/architecture.svg`.
 
 Cascade runs as three independent services:
 
@@ -152,7 +151,7 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **Dual-persona GitHub model** — Cascade uses two separate GitHub bot accounts per project (implementer and reviewer) to prevent feedback loops. The implementer writes code and creates PRs; the reviewer reviews and approves them.
 
-**Trigger system** — Events from Trello, JIRA, Linear, and GitHub webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database.
+**Trigger system** — Events from Trello, JIRA, Linear, GitHub, and Sentry webhooks are matched against registered `TriggerHandler` instances. Triggers are configured per-project in the database. Event names are category-prefixed, for example `pm:status-changed`, `scm:check-suite-success`, and `alerting:issue-alert`.
 
 **Agent engines** — Agents run through a shared execution lifecycle with a pluggable engine registry. Default engine is `claude-code` (Anthropic Claude Code SDK). Alternatives: `llmist` (supports OpenRouter, Anthropic, OpenAI), `codex` (OpenAI Codex CLI), `opencode` (OpenCode server).
 
@@ -160,7 +159,7 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **`.cascade/` directory** — Each target repository can include a `.cascade/` directory with hooks that control how the agent sets up the project, lints after edits, and runs tests. See **[`.cascade/` Directory Guide](./docs/cascade-directory.md)**.
 
-**Observable subprocesses** — `cascade-tools` streams child stdout/stderr live to the parent's stderr so LLM-driven agents can see progress as it happens, emits 30-second heartbeats during silent stretches, and enforces both idle-silence and wall-clock timeouts with SIGTERM→SIGKILL escalation across the full process tree. See [spec 013](./docs/specs/013-subprocess-output-streaming.md).
+**Observable subprocesses** — `cascade-tools` streams child stdout/stderr live to the parent's stderr so LLM-driven agents can see progress as it happens, emits 30-second heartbeats during silent stretches, and enforces both idle-silence and wall-clock timeouts with SIGTERM→SIGKILL escalation across the full process tree. See [spec 013](./docs/specs/013-subprocess-output-streaming.md.done).
 
 For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 

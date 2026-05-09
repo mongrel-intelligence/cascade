@@ -117,7 +117,7 @@ Key functions:
 | `respond-to-planning-comment` | fs, session, pm | Implementer | `pm:comment-mention` |
 | `backlog-manager` | fs, session, pm, scm:read | Implementer | `pm:status-changed` (backlog, merged) |
 | `resolve-conflicts` | fs, shell, session, scm | Implementer | `scm:pr-conflict-detected` |
-| `alerting` | fs, shell, session, alerting, scm | Implementer | `alerting:issue-created`, `alerting:metric-alert` |
+| `alerting` | fs, shell, session, alerting, scm | Implementer | `alerting:issue-alert`, `alerting:metric-alert` |
 | `debug` | fs, session, pm | Implementer | `internal:debug-analysis` |
 
 ## Capabilities

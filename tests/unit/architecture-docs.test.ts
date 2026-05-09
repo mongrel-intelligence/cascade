@@ -1,16 +1,49 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { TRIGGER_EVENTS } from '../../src/triggers/shared/events.js';
 
+const REPO_ROOT = path.resolve(__dirname, '../..');
 const DOCS_ROOT = path.resolve(__dirname, '../../docs');
 const ARCH_DIR = path.join(DOCS_ROOT, 'architecture');
+const ROOT_DOCS = ['README.md', 'CLAUDE.md', 'AGENTS.md'];
+const EXTRA_ACTIVE_DOCS = [
+	'src/integrations/README.md',
+	'src/gadgets/README.md',
+	'src/backends/README.md',
+	'tests/README.md',
+];
 
 function readDoc(filePath: string): string {
 	return readFileSync(filePath, 'utf-8');
 }
 
 function extractMarkdownLinks(content: string): string[] {
-	const linkPattern = /\[.*?\]\((\.\.?\/[^)]+\.md)\)/g;
+	const linkPattern = /\[[^\]]+\]\((\.\.?\/[^)\s]+\.md(?:\.done)?(?:#[^)]+)?)\)/g;
 	return Array.from(content.matchAll(linkPattern), (m) => m[1]);
+}
+
+function listMarkdownDocs(dir: string): string[] {
+	const entries = readdirSync(dir);
+	return entries.flatMap((entry) => {
+		const fullPath = path.join(dir, entry);
+		const stats = statSync(fullPath);
+		if (stats.isDirectory()) return listMarkdownDocs(fullPath);
+		if (entry.endsWith('.md')) return [fullPath];
+		return [];
+	});
+}
+
+function activeMarkdownDocs(): string[] {
+	return [
+		...ROOT_DOCS.map((file) => path.join(REPO_ROOT, file)),
+		...EXTRA_ACTIVE_DOCS.map((file) => path.join(REPO_ROOT, file)),
+		...listMarkdownDocs(DOCS_ROOT),
+	];
+}
+
+function resolveMarkdownLink(fromFile: string, link: string): string {
+	const [target] = link.split('#');
+	return path.resolve(path.dirname(fromFile), target);
 }
 
 describe('Architecture documentation', () => {
@@ -142,7 +175,7 @@ describe('Architecture documentation', () => {
 
 			expect(links.length).toBeGreaterThan(0);
 			for (const link of links) {
-				const resolved = path.resolve(DOCS_ROOT, link);
+				const resolved = resolveMarkdownLink(hubPath, link);
 				expect(existsSync(resolved)).toBe(true);
 			}
 		});
@@ -154,10 +187,56 @@ describe('Architecture documentation', () => {
 				const content = readDoc(filePath);
 				const links = extractMarkdownLinks(content);
 				for (const link of links) {
-					const resolved = path.resolve(ARCH_DIR, link);
+					const resolved = resolveMarkdownLink(filePath, link);
 					expect(existsSync(resolved)).toBe(true);
 				}
 			}
+		});
+
+		it('all relative .md and .md.done links in active docs resolve to existing files', () => {
+			for (const filePath of activeMarkdownDocs()) {
+				const links = extractMarkdownLinks(readDoc(filePath));
+				for (const link of links) {
+					const resolved = resolveMarkdownLink(filePath, link);
+					expect(existsSync(resolved), `${filePath} links to missing ${link}`).toBe(true);
+				}
+			}
+		});
+	});
+
+	describe('canonical documentation facts', () => {
+		it('uses the canonical alerting issue trigger event in active docs', () => {
+			const staleEvent = 'alerting:issue-created';
+			for (const filePath of activeMarkdownDocs()) {
+				const content = readDoc(filePath);
+				expect(content, `${filePath} should not mention ${staleEvent}`).not.toContain(staleEvent);
+			}
+			expect(TRIGGER_EVENTS.ALERTING.ISSUE_ALERT).toBe('alerting:issue-alert');
+		});
+
+		it('documents current cascade-tools namespaces and work-item terminology', () => {
+			const stalePatterns = [
+				/cascade-tools\s+github\b/,
+				/cascade-tools\s+sentry\b/,
+				/\bread-card\b/,
+				/\blist-cards\b/,
+				/\bupdate-card\b/,
+				/--cardId\b/,
+				/\bwork_items\b/,
+			];
+
+			for (const filePath of activeMarkdownDocs()) {
+				const content = readDoc(filePath);
+				for (const pattern of stalePatterns) {
+					expect(content, `${filePath} should not match ${pattern}`).not.toMatch(pattern);
+				}
+			}
+		});
+
+		it('keeps AGENTS.md synchronized with CLAUDE.md', () => {
+			const agents = readDoc(path.join(REPO_ROOT, 'AGENTS.md'));
+			const claude = readDoc(path.join(REPO_ROOT, 'CLAUDE.md'));
+			expect(agents).toBe(claude);
 		});
 	});
 });

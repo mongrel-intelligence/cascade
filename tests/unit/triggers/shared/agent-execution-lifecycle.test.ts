@@ -280,4 +280,67 @@ describe('agent execution lifecycle helper', () => {
 		expect(lifecycle.handleSuccess).not.toHaveBeenCalled();
 		expect(lifecycle.handleFailure).not.toHaveBeenCalled();
 	});
+
+	it('calls handleFailure when agent fails and skipHandleFailure is not set', async () => {
+		const lifecycle = createLifecycle();
+
+		await runPostAgentExecutionLifecycle(
+			'card-1',
+			'implementation',
+			{ success: false, output: '', error: 'agent error' },
+			PROJECT,
+			lifecycle,
+			{},
+			{},
+		);
+
+		expect(lifecycle.handleFailure).toHaveBeenCalledWith('card-1', 'agent error');
+		expect(lifecycle.handleSuccess).not.toHaveBeenCalled();
+	});
+
+	it('skips handleBudgetWarning when post-run budget check returns null', async () => {
+		const lifecycle = createLifecycle();
+		// default mock: mockCheckBudgetExceeded returns null (no budget configured)
+
+		await runPostAgentExecutionLifecycle(
+			'card-1',
+			'implementation',
+			{ success: true, output: '' },
+			PROJECT,
+			lifecycle,
+			{},
+			{},
+		);
+
+		expect(lifecycle.handleBudgetWarning).not.toHaveBeenCalled();
+		expect(lifecycle.handleSuccess).toHaveBeenCalledWith('card-1', {}, undefined, undefined);
+	});
+
+	it('skips PM notification when workItemId is absent from result', async () => {
+		const lifecycle = createLifecycle();
+		const onFailure = vi.fn().mockResolvedValue(undefined);
+		mockValidateIntegrations.mockResolvedValueOnce({
+			valid: false,
+			errors: [{ category: 'scm' as const, message: 'GitHub token missing' }],
+		});
+
+		await validateAgentExecutionLifecycle({
+			result: { agentType: 'implementation', agentInput: {} }, // no workItemId
+			project: PROJECT,
+			executionConfig: { onFailure },
+			agentType: 'implementation',
+			lifecycle,
+		});
+
+		expect(lifecycle.handleFailure).not.toHaveBeenCalled();
+		expect(onFailure).toHaveBeenCalled();
+	});
+
+	it('skips prepareForAgent when workItemId is absent from context', async () => {
+		const lifecycle = createLifecycle();
+
+		await prepareAgentExecutionLifecycle(createContext(lifecycle, { workItemId: undefined }));
+
+		expect(lifecycle.prepareForAgent).not.toHaveBeenCalled();
+	});
 });

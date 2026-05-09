@@ -133,8 +133,34 @@ export const mockGitHubClientModule = {
  * vi.mock('../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
  * ```
  */
+const mockCheckTriggerEnabled = vi.fn().mockResolvedValue(true);
+
 export const mockTriggerCheckModule = {
-	checkTriggerEnabled: vi.fn().mockResolvedValue(true),
+	checkTriggerEnablement: vi.fn(
+		async (projectId: string, agentType: string, triggerEvent: string, handlerName: string) => {
+			const enabled = await mockCheckTriggerEnabled(
+				projectId,
+				agentType,
+				triggerEvent,
+				handlerName,
+			);
+			return {
+				enabled,
+				parameters: {},
+				skipResult: enabled
+					? null
+					: {
+							agentType: null,
+							agentInput: {},
+							skipReason: {
+								handler: handlerName,
+								message: `${agentType} trigger is disabled for this project`,
+							},
+						},
+			};
+		},
+	),
+	checkTriggerEnabled: mockCheckTriggerEnabled,
 	checkTriggerEnabledWithParams: vi.fn().mockResolvedValue({ enabled: true, parameters: {} }),
 };
 

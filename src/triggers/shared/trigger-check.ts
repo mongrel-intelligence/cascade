@@ -5,8 +5,59 @@
  * with consistent logging.
  */
 
+import type { TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { getResolvedTriggerConfig, isTriggerEnabled } from '../config-resolver.js';
+import { getResolvedTriggerConfig } from '../config-resolver.js';
+import { skip } from './skip.js';
+
+export interface TriggerEnablementCheck {
+	enabled: boolean;
+	parameters: Record<string, unknown>;
+	skipResult: TriggerResult | null;
+}
+
+const DISABLED_TRIGGER_LOG_MESSAGE = 'Trigger disabled by config, skipping';
+
+function logDisabledTrigger(
+	projectId: string,
+	agentType: string,
+	triggerEvent: string,
+	handlerName: string,
+) {
+	logger.info(DISABLED_TRIGGER_LOG_MESSAGE, {
+		handler: handlerName,
+		agentType,
+		triggerEvent,
+		projectId,
+	});
+}
+
+/**
+ * Resolve trigger enablement, merged parameters, and structured disabled-skip
+ * output in one config lookup. This is the canonical path for handler gates.
+ */
+export async function checkTriggerEnablement(
+	projectId: string,
+	agentType: string,
+	triggerEvent: string,
+	handlerName: string,
+): Promise<TriggerEnablementCheck> {
+	const config = await getResolvedTriggerConfig(projectId, agentType, triggerEvent);
+	if (!config?.enabled) {
+		logDisabledTrigger(projectId, agentType, triggerEvent, handlerName);
+		return {
+			enabled: false,
+			parameters: config?.parameters ?? {},
+			skipResult: skip(handlerName, `${agentType} trigger is disabled for this project`),
+		};
+	}
+
+	return {
+		enabled: true,
+		parameters: config.parameters,
+		skipResult: null,
+	};
+}
 
 /**
  * Check whether a trigger is enabled for a project/agent/event combination.
@@ -18,16 +69,8 @@ export async function checkTriggerEnabled(
 	triggerEvent: string,
 	handlerName: string,
 ): Promise<boolean> {
-	const enabled = await isTriggerEnabled(projectId, agentType, triggerEvent);
-	if (!enabled) {
-		logger.info('Trigger disabled by config, skipping', {
-			handler: handlerName,
-			agentType,
-			triggerEvent,
-			projectId,
-		});
-	}
-	return enabled;
+	const result = await checkTriggerEnablement(projectId, agentType, triggerEvent, handlerName);
+	return result.enabled;
 }
 
 /**
@@ -40,15 +83,9 @@ export async function checkTriggerEnabledWithParams(
 	triggerEvent: string,
 	handlerName: string,
 ): Promise<{ enabled: boolean; parameters: Record<string, unknown> }> {
-	const config = await getResolvedTriggerConfig(projectId, agentType, triggerEvent);
-	if (!config?.enabled) {
-		logger.info('Trigger disabled by config, skipping', {
-			handler: handlerName,
-			agentType,
-			triggerEvent,
-			projectId,
-		});
+	const result = await checkTriggerEnablement(projectId, agentType, triggerEvent, handlerName);
+	if (!result.enabled) {
 		return { enabled: false, parameters: {} };
 	}
-	return { enabled: true, parameters: config.parameters };
+	return { enabled: true, parameters: result.parameters };
 }

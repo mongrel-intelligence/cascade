@@ -22,6 +22,7 @@ import type { TriggerRegistry } from '../registry.js';
 import { withAgentTypeConcurrency } from '../shared/concurrency.js';
 import { withPMScope } from '../shared/credential-scope.js';
 import { postPMAckComment } from '../shared/pm-ack.js';
+import { resolveTriggerResult } from '../shared/trigger-resolution.js';
 import { runAgentWithCredentials } from '../shared/webhook-execution.js';
 import type { TriggerResult } from '../types.js';
 import { postAcknowledgmentComment, updateInitialCommentWithError } from './ack-comments.js';
@@ -78,17 +79,14 @@ async function maybePostPmAckComment(
 	}
 }
 
-/** Dispatch to trigger registry within PM credential + provider scope. */
-async function dispatchTrigger(
-	registry: TriggerRegistry,
+/** Build a GitHub trigger context with persona identities for registry dispatch. */
+async function buildTriggerContext(
 	payload: unknown,
 	project: ProjectConfig,
-): Promise<TriggerResult | null> {
+): Promise<TriggerContext> {
 	const projectId = requireProjectId(project);
 	const personaIdentities = await resolvePersonaIdentities(projectId);
-	const githubToken = await getPersonaToken(projectId, 'implementation');
-	const ctx: TriggerContext = { project, source: 'github', payload, personaIdentities };
-	return withPMScope(project, () => withGitHubToken(githubToken, () => registry.dispatch(ctx)));
+	return { project, source: 'github', payload, personaIdentities };
 }
 
 /** Post ack comment on the PR using the agent-specific persona token. */
@@ -174,7 +172,13 @@ async function runGitHubAgent(
 	// Agent-type concurrency limit wraps the entire execution
 	try {
 		if (agentType) {
-			await withAgentTypeConcurrency(project.id, agentType, execute, 'GitHub agent');
+			await withAgentTypeConcurrency(
+				project.id,
+				agentType,
+				execute,
+				'GitHub agent',
+				result.workItemId,
+			);
 		} else {
 			await execute();
 		}
@@ -219,15 +223,21 @@ export async function processGitHubWebhook(
 	}
 	const { project, config } = projectConfig;
 
-	// Resolve trigger result — use pre-resolved from router or dispatch via registry
-	let result: TriggerResult | null;
-	if (triggerResult) {
-		logger.info('Using pre-resolved trigger result for GitHub webhook', {
-			agentType: triggerResult.agentType,
-		});
-		result = triggerResult;
-	} else {
-		result = await dispatchTrigger(registry, payload, project);
+	const ctx = triggerResult
+		? ({ project, source: 'github', payload } satisfies TriggerContext)
+		: await buildTriggerContext(payload, project);
+
+	const result = await resolveTriggerResult(registry, ctx, triggerResult, {
+		logLabel: 'GitHub webhook',
+		dispatch: async (dispatchCtx) => {
+			const githubToken = await getPersonaToken(requireProjectId(project), 'implementation');
+			return withPMScope(project, () =>
+				withGitHubToken(githubToken, () => registry.dispatch(dispatchCtx)),
+			);
+		},
+	});
+
+	if (!triggerResult) {
 		if (result?.deferredRecheck && isRecheckJob) {
 			logger.warn('Mergeability still null after deferred re-check — giving up', { eventType });
 			captureException(

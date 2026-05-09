@@ -2,6 +2,7 @@ import { getTrelloConfig } from '../../pm/config.js';
 import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import { logger } from '../../utils/logging.js';
 import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
+import { buildPMStatusDispatchResult, shouldFirePMStatusEvent } from '../shared/pm-status.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload, type TrelloWebhookPayload } from './types.js';
@@ -24,11 +25,6 @@ interface StatusChangedConfig {
 	agentType: 'splitting' | 'planning' | 'implementation' | 'backlog-manager';
 	/** When true, invalidate any snapshot for the card when it reaches this status */
 	invalidateSnapshotOnMove?: boolean;
-}
-
-function shouldFireOnEvent(isCreate: boolean, parameters: Record<string, unknown>): boolean {
-	if (isCreate) return parameters.onCreate === true;
-	return parameters.onMove !== false; // default true
 }
 
 function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler {
@@ -69,7 +65,7 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 
 			const payload = ctx.payload as TrelloWebhookPayload;
 			const isCreate = payload.action.type === 'createCard';
-			if (!shouldFireOnEvent(isCreate, parameters)) {
+			if (!shouldFirePMStatusEvent(isCreate, parameters)) {
 				logger.debug('Trello status-changed event gated by trigger params', {
 					trigger: config.name,
 					eventKind: isCreate ? 'create' : 'move',
@@ -108,18 +104,13 @@ function createStatusChangedTrigger(config: StatusChangedConfig): TriggerHandler
 				invalidateSnapshot(ctx.project.id, cardId);
 			}
 
-			return {
+			return buildPMStatusDispatchResult({
+				projectId: ctx.project.id,
 				agentType: config.agentType,
-				agentInput: {
-					workItemId: cardId,
-					workItemUrl,
-					workItemTitle,
-					triggerEvent: 'pm:status-changed',
-				},
 				workItemId: cardId,
 				workItemUrl,
 				workItemTitle,
-			};
+			});
 		},
 	};
 }

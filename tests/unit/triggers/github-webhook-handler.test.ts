@@ -227,6 +227,20 @@ describe('processGitHubWebhook', () => {
 		expect(mockRunAgentWithCredentials).not.toHaveBeenCalled();
 	});
 
+	it('passes workItemId to shared concurrency helper', async () => {
+		const registry = createMockRegistry('implementation', 'card-abc');
+
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
+
+		expect(withAgentTypeConcurrency).toHaveBeenCalledWith(
+			'project-1',
+			'implementation',
+			expect.any(Function),
+			'GitHub agent',
+			'card-abc',
+		);
+	});
+
 	it('skips execution when no agentType in result', async () => {
 		const registry = {
 			dispatch: vi.fn().mockResolvedValue({

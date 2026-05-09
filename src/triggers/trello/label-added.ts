@@ -1,6 +1,7 @@
 import { getTrelloConfig } from '../../pm/config.js';
 import { trelloClient } from '../../trello/client.js';
 import { logger } from '../../utils/logging.js';
+import { buildPMLabelDispatchResult, resolvePMLabelAgentByList } from '../shared/pm-label.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type {
 	TrelloWebhookPayload,
@@ -44,15 +45,8 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 
 		// Determine agent type based on current list
 		const lists = getTrelloConfig(ctx.project)?.lists ?? {};
-		let agentType: string;
-
-		if (currentListId === lists.splitting) {
-			agentType = 'splitting';
-		} else if (currentListId === lists.planning) {
-			agentType = 'planning';
-		} else if (currentListId === lists.todo) {
-			agentType = 'implementation';
-		} else {
+		const agentType = resolvePMLabelAgentByList({ currentListId, lists });
+		if (!agentType) {
 			logger.info('Card not in a trigger-eligible list, skipping ready-to-process label', {
 				currentListId,
 				lists,
@@ -72,17 +66,11 @@ export class ReadyToProcessLabelTrigger implements TriggerHandler {
 		const workItemUrl = card.shortUrl || undefined;
 		const workItemTitle = card.name || undefined;
 
-		return {
+		return buildPMLabelDispatchResult({
 			agentType,
-			agentInput: {
-				workItemId: cardId,
-				workItemUrl,
-				workItemTitle,
-				triggerEvent: 'pm:label-added',
-			},
 			workItemId: cardId,
 			workItemUrl,
 			workItemTitle,
-		};
+		});
 	}
 }

@@ -152,5 +152,6 @@ export async function processSentryWebhook(
 			});
 		},
 		'processSentryWebhook',
+		result.workItemId,
 	);
 }

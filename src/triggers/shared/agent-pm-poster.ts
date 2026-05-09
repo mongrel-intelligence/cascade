@@ -3,7 +3,7 @@
  *
  * Handles two cases:
  * - **Review agent**: structured session state (reviewBody/reviewEvent/reviewUrl)
- * - **Output-based agents** (respond-to-ci, respond-to-review, resolve-conflicts):
+ * - **Output-based agents** (respond-to-ci, respond-to-review, respond-to-pr-comment, resolve-conflicts):
  *   free-form AgentResult.output with per-agent-type formatting
  *
  * Best-effort: failures are silently swallowed via safeOperation so they
@@ -208,7 +208,7 @@ export async function postReviewToPM(
 /**
  * Post agent output to the PM work item as a comment.
  *
- * Used by respond-to-ci, respond-to-review, and resolve-conflicts agents
+ * Used by respond-to-ci, respond-to-review, respond-to-pr-comment, and resolve-conflicts agents
  * to replace the progress comment with their final output.
  *
  * @param workItemId - The PM work item ID to post to

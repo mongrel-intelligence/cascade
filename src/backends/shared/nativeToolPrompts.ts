@@ -67,12 +67,23 @@ function formatParam(
 
 	// Spec 014: surface a concrete shape beneath the flag so agents see a
 	// copy/paste-ready JSON payload without having to run --help.
+	//
+	// Booleans are special: oclif's `Flags.boolean({ allowNo: true })` rejects
+	// `--key 'true'` at parse time, so the example must mirror the canonical
+	// CLI grammar (`--key` / `--no-key`) — never a quoted value. Prod regression
+	// (2026-05-09): 9/14 codex runs hit `--includeComments true` because the
+	// per-flag example said exactly that. The synopsis renders the toggle form;
+	// the example reinforces it concretely.
 	if (schema.example !== undefined) {
-		try {
-			result += `\n  # example: --${key} '${JSON.stringify(schema.example)}'`;
-		} catch {
-			// JSON.stringify throws on cyclic refs — never in our tool definitions,
-			// but be defensive so a malformed example never crashes prompt building.
+		if (schema.type === 'boolean') {
+			result += schema.example ? `\n  # example: --${key}` : `\n  # example: --no-${key}`;
+		} else {
+			try {
+				result += `\n  # example: --${key} '${JSON.stringify(schema.example)}'`;
+			} catch {
+				// JSON.stringify throws on cyclic refs — never in our tool definitions,
+				// but be defensive so a malformed example never crashes prompt building.
+			}
 		}
 	}
 

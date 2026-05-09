@@ -3,7 +3,7 @@ import { isCascadeBot } from '../../github/personas.js';
 import type { ProjectConfig, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { skip } from './skip.js';
-import { checkTriggerEnabled } from './trigger-check.js';
+import { checkTriggerEnablement } from './trigger-check.js';
 
 /**
  * Composable self-skip gates for trigger handlers.
@@ -32,8 +32,8 @@ import { checkTriggerEnabled } from './trigger-check.js';
 /**
  * Async gate: is the trigger enabled in this project's `agent_trigger_configs`?
  *
- * Wraps `checkTriggerEnabled` and converts a `false` result into a
- * structured skip. Eliminates the repeated `if (!await checkTriggerEnabled(...)) return null;`
+ * Wraps the centralized trigger enablement helper and returns its structured
+ * skip. Eliminates the repeated `if (!await checkTriggerEnabled(...)) return null;`
  * pattern across every handler.
  */
 export async function gateTriggerEnabled(
@@ -42,11 +42,8 @@ export async function gateTriggerEnabled(
 	triggerEvent: string,
 	handlerName: string,
 ): Promise<TriggerResult | null> {
-	const enabled = await checkTriggerEnabled(projectId, agentType, triggerEvent, handlerName);
-	if (!enabled) {
-		return skip(handlerName, `${agentType} trigger is disabled for this project`);
-	}
-	return null;
+	const result = await checkTriggerEnablement(projectId, agentType, triggerEvent, handlerName);
+	return result.skipResult;
 }
 
 /**
