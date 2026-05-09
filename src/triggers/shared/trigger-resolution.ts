@@ -13,6 +13,22 @@ import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import type { TriggerRegistry } from '../registry.js';
 
+type TriggerDispatch = (ctx: TriggerContext) => Promise<TriggerResult | null>;
+
+interface ResolveTriggerResultOptions {
+	logLabel?: string;
+	dispatch?: TriggerDispatch;
+	onNoMatch?: () => Promise<void> | void;
+}
+
+function normalizeOptions(
+	optionsOrLogLabel?: string | ResolveTriggerResultOptions,
+): ResolveTriggerResultOptions {
+	return typeof optionsOrLogLabel === 'string'
+		? { logLabel: optionsOrLogLabel }
+		: (optionsOrLogLabel ?? {});
+}
+
 /**
  * Resolve a trigger result from either a pre-computed result or registry dispatch.
  *
@@ -22,16 +38,17 @@ import type { TriggerRegistry } from '../registry.js';
  * @param registry           Trigger registry to dispatch against (when no pre-resolved result).
  * @param ctx                Trigger context passed to registry dispatch.
  * @param preResolvedResult  Optional pre-computed result from the router (skips dispatch).
- * @param logLabel           Optional label for log messages (default: uses ctx.source).
+ * @param optionsOrLogLabel  Optional label or dispatch/no-match hooks.
  * @returns                  The resolved TriggerResult, or null if no trigger matched.
  */
 export async function resolveTriggerResult(
 	registry: TriggerRegistry,
 	ctx: TriggerContext,
 	preResolvedResult?: TriggerResult,
-	logLabel?: string,
+	optionsOrLogLabel?: string | ResolveTriggerResultOptions,
 ): Promise<TriggerResult | null> {
-	const label = logLabel ?? ctx.source;
+	const options = normalizeOptions(optionsOrLogLabel);
+	const label = options.logLabel ?? ctx.source;
 
 	if (preResolvedResult) {
 		logger.info(`${label}: using pre-resolved trigger result`, {
@@ -40,9 +57,10 @@ export async function resolveTriggerResult(
 		return preResolvedResult;
 	}
 
-	const result = await registry.dispatch(ctx);
+	const result = await (options.dispatch ?? ((dispatchCtx) => registry.dispatch(dispatchCtx)))(ctx);
 	if (!result) {
 		logger.info(`${label}: no trigger matched`);
+		await options.onNoMatch?.();
 	}
 	return result;
 }

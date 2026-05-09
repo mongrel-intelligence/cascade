@@ -31,25 +31,33 @@ import { logger } from '../../utils/logging.js';
  * @param agentType  The agent type being dispatched.
  * @param fn         The async function to run if not blocked.
  * @param logLabel   Optional label for log messages (default: 'Agent').
+ * @param workItemId Optional work-item scope for recent-dispatch dedup.
  */
 export async function withAgentTypeConcurrency(
 	projectId: string,
 	agentType: string,
 	fn: () => Promise<void>,
 	logLabel?: string,
+	workItemId?: string,
 ): Promise<boolean> {
-	const concurrencyCheck = await checkAgentTypeConcurrency(projectId, agentType, logLabel);
+	const concurrencyCheck = await checkAgentTypeConcurrency(
+		projectId,
+		agentType,
+		logLabel,
+		workItemId,
+	);
 	if (concurrencyCheck.blocked) {
 		logger.info(`${logLabel ?? 'Agent'} type concurrency blocked, skipping`, {
 			projectId,
 			agentType,
+			workItemId,
 		});
 		return false;
 	}
 
 	const hasLimit = concurrencyCheck.maxConcurrency !== null;
 	if (hasLimit) {
-		markRecentlyDispatched(projectId, agentType);
+		markRecentlyDispatched(projectId, agentType, workItemId);
 		markAgentTypeEnqueued(projectId, agentType);
 	}
 

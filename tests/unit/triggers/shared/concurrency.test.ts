@@ -78,8 +78,23 @@ describe('withAgentTypeConcurrency', () => {
 
 		await withAgentTypeConcurrency(PROJECT_ID, AGENT_TYPE, fn);
 
-		expect(mockMarkRecentlyDispatched).toHaveBeenCalledWith(PROJECT_ID, AGENT_TYPE);
+		expect(mockMarkRecentlyDispatched).toHaveBeenCalledWith(PROJECT_ID, AGENT_TYPE, undefined);
 		expect(mockMarkAgentTypeEnqueued).toHaveBeenCalledWith(PROJECT_ID, AGENT_TYPE);
+	});
+
+	it('passes workItemId through concurrency check and recent-dispatch dedup', async () => {
+		const fn = vi.fn().mockResolvedValue(undefined);
+		mockCheckAgentTypeConcurrency.mockResolvedValue({ maxConcurrency: 2, blocked: false });
+
+		await withAgentTypeConcurrency(PROJECT_ID, AGENT_TYPE, fn, 'My handler', 'card-123');
+
+		expect(mockCheckAgentTypeConcurrency).toHaveBeenCalledWith(
+			PROJECT_ID,
+			AGENT_TYPE,
+			'My handler',
+			'card-123',
+		);
+		expect(mockMarkRecentlyDispatched).toHaveBeenCalledWith(PROJECT_ID, AGENT_TYPE, 'card-123');
 	});
 
 	it('does not mark enqueued when no limit (maxConcurrency null)', async () => {
@@ -140,6 +155,7 @@ describe('withAgentTypeConcurrency', () => {
 			PROJECT_ID,
 			AGENT_TYPE,
 			'My handler',
+			undefined,
 		);
 	});
 });

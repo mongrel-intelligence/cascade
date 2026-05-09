@@ -7,13 +7,9 @@
  * ack comment management) is delegated to the PMIntegration interface.
  */
 
-import {
-	checkAgentTypeConcurrency,
-	clearAgentTypeEnqueued,
-	markAgentTypeEnqueued,
-	markRecentlyDispatched,
-} from '../router/agent-type-lock.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
+import { withAgentTypeConcurrency } from '../triggers/shared/concurrency.js';
+import { resolveTriggerResult } from '../triggers/shared/trigger-resolution.js';
 import { runAgentWithCredentials } from '../triggers/shared/webhook-execution.js';
 import type { TriggerResult } from '../triggers/types.js';
 import type {
@@ -61,7 +57,7 @@ async function cleanupOrphanAck(
 	}
 }
 
-async function resolveTriggerResult(
+async function resolvePMTriggerResult(
 	integration: PMIntegration,
 	registry: TriggerRegistry,
 	payload: unknown,
@@ -69,21 +65,14 @@ async function resolveTriggerResult(
 	ackCommentId: string | undefined,
 	preResolvedResult: TriggerResult | undefined,
 ): Promise<TriggerResult | null> {
-	if (preResolvedResult) {
-		logger.info(`Using pre-resolved trigger result for ${integration.type} webhook`, {
-			agentType: preResolvedResult.agentType,
-		});
-		return preResolvedResult;
-	}
 	const ctx: TriggerContext = { project, source: integration.type as TriggerSource, payload };
-	const result = await registry.dispatch(ctx);
-	if (!result) {
-		logger.info(`No trigger matched for ${integration.type} webhook`);
-		if (ackCommentId) {
+	return resolveTriggerResult(registry, ctx, preResolvedResult, {
+		logLabel: `${integration.type} webhook`,
+		onNoMatch: async () => {
+			if (!ackCommentId) return;
 			await cleanupOrphanAck(integration, project.id, payload, ackCommentId);
-		}
-	}
-	return result;
+		},
+	});
 }
 
 async function handleMatchedTrigger(
@@ -95,7 +84,7 @@ async function handleMatchedTrigger(
 	ackCommentId?: string,
 	preResolvedResult?: TriggerResult,
 ): Promise<void> {
-	const result = await resolveTriggerResult(
+	const result = await resolvePMTriggerResult(
 		integration,
 		registry,
 		payload,
@@ -110,44 +99,37 @@ async function handleMatchedTrigger(
 		result.agentInput.ackCommentId = ackCommentId;
 	}
 
-	// Agent-type concurrency limit
-	let agentTypeMaxConcurrency: number | null = null;
-	if (result.agentType) {
-		const concurrencyCheck = await checkAgentTypeConcurrency(
-			project.id,
-			result.agentType,
-			undefined,
-			result.workItemId,
-		);
-		agentTypeMaxConcurrency = concurrencyCheck.maxConcurrency;
-		if (concurrencyCheck.blocked) return;
-		if (agentTypeMaxConcurrency !== null) {
-			markRecentlyDispatched(project.id, result.agentType, result.workItemId);
-			markAgentTypeEnqueued(project.id, result.agentType);
-		}
-	}
-
 	logger.info(`${integration.type} trigger matched`, {
 		agentType: result.agentType,
 		workItemId: result.workItemId,
 	});
 
-	startWatchdog(project.watchdogTimeoutMs);
+	const execute = async () => {
+		startWatchdog(project.watchdogTimeoutMs);
 
-	const pmConfig = resolveProjectPMConfig(project);
-	const lifecycle = new PMLifecycleManager(getPMProvider(), pmConfig);
+		const pmConfig = resolveProjectPMConfig(project);
+		const lifecycle = new PMLifecycleManager(getPMProvider(), pmConfig);
 
-	try {
-		await executeAgent(integration, result, project, config);
-	} catch (err) {
-		logger.error(`Failed to process ${integration.type} webhook`, { error: String(err) });
-		if (result.workItemId) {
-			await lifecycle.handleError(result.workItemId, String(err));
+		try {
+			await executeAgent(integration, result, project, config);
+		} catch (err) {
+			logger.error(`Failed to process ${integration.type} webhook`, { error: String(err) });
+			if (result.workItemId) {
+				await lifecycle.handleError(result.workItemId, String(err));
+			}
 		}
-	} finally {
-		if (result.agentType && agentTypeMaxConcurrency !== null) {
-			clearAgentTypeEnqueued(project.id, result.agentType);
-		}
+	};
+
+	if (result.agentType) {
+		await withAgentTypeConcurrency(
+			project.id,
+			result.agentType,
+			execute,
+			`${integration.type} webhook`,
+			result.workItemId,
+		);
+	} else {
+		await execute();
 	}
 }
 
