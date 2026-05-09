@@ -15,6 +15,14 @@ vi.mock('../../../../src/github/client.js', () => ({
 	githubClient: {
 		getOpenPRByBranch: vi.fn(),
 	},
+	withGitHubToken: vi.fn((_token: string, fn: () => Promise<void>) => fn()),
+}));
+
+// PM and other-credential scopes are irrelevant to these tests (only pushed-changes
+// validation is exercised). Short-circuit them so we don't need the manifest registry.
+vi.mock('../../../../src/pm/index.js', () => ({
+	createPMProvider: vi.fn().mockReturnValue({}),
+	withPMProvider: vi.fn((_p: unknown, fn: () => Promise<void>) => fn()),
 }));
 
 import FinishCommand from '../../../../src/cli/session/finish.js';

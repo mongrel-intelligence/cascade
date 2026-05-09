@@ -1,4 +1,4 @@
-import { Command, Flags } from '@oclif/core';
+import { Flags } from '@oclif/core';
 import { readCompletionEvidence } from '../../backends/completion.js';
 import { validateFinish, writePushedChangesSidecar } from '../../gadgets/session/core/finish.js';
 import { finishDef } from '../../gadgets/session/definitions.js';
@@ -8,6 +8,7 @@ import {
 	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
 } from '../../gadgets/sessionState.js';
+import { CredentialScopedCommand } from '../base.js';
 
 function readFinishHooksFromEnv(): SessionHooks {
 	const raw = process.env.CASCADE_FINISH_HOOKS;
@@ -20,7 +21,7 @@ function readFinishHooksFromEnv(): SessionHooks {
 	}
 }
 
-export default class Finish extends Command {
+export default class Finish extends CredentialScopedCommand {
 	static override description = finishDef.description;
 
 	static override flags = {
@@ -39,7 +40,7 @@ export default class Finish extends Command {
 		}),
 	};
 
-	async run(): Promise<void> {
+	async execute(): Promise<void> {
 		const { flags } = await this.parse(Finish);
 		const hooks = readFinishHooksFromEnv();
 		const evidence = readCompletionEvidence({
