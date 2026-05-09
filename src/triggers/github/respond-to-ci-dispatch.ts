@@ -3,6 +3,7 @@ import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { gateAttemptLimit, gateTriggerEnabled } from '../shared/gates.js';
+import { buildRespondToCiResult } from './result-builders.js';
 import type { GitHubCheckSuitePayload } from './types.js';
 
 // Per-PR fix-attempt counter shared across the failure handler and the
@@ -83,21 +84,14 @@ export async function dispatchRespondToCi(opts: {
 	});
 
 	return {
-		agentType: 'respond-to-ci',
-		agentInput: {
+		...buildRespondToCiResult({
 			prNumber: opts.prNumber,
-			prBranch: opts.prDetails.headRef,
+			prDetails: opts.prDetails,
 			repoFullName: opts.payload.repository.full_name,
 			headSha: opts.payload.check_suite.head_sha,
-			triggerType: 'check-failure',
-			triggerEvent: 'scm:check-suite-failure',
 			workItemId: opts.workItemId,
-		},
-		prNumber: opts.prNumber,
-		prUrl: opts.prDetails.htmlUrl,
-		prTitle: opts.prDetails.title,
-		workItemId: opts.workItemId,
-		workItemUrl: opts.workItemUrl,
-		workItemTitle: opts.workItemTitle,
+			workItemUrl: opts.workItemUrl,
+			workItemTitle: opts.workItemTitle,
+		}),
 	};
 }

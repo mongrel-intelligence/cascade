@@ -117,6 +117,15 @@ function scanHandler(file: string): HandlerScan {
 	if (src.includes('buildPMLabelDispatchResult')) {
 		emittedEvents.add('pm:label-added');
 	}
+	if (src.includes('buildReviewResult')) {
+		emittedEvents.add('scm:check-suite-success');
+	}
+	if (src.includes('buildRespondToCiResult')) {
+		emittedEvents.add('scm:check-suite-failure');
+	}
+	if (src.includes('buildResolveConflictsResult')) {
+		emittedEvents.add('scm:pr-conflict-detected');
+	}
 
 	return { file, gatingEvents, emittedEvents };
 }
