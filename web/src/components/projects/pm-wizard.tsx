@@ -8,7 +8,7 @@ import { trpc } from '@/lib/trpc.js';
 // this file never needs to change for a new provider.
 import './pm-providers/index.js';
 import { ManifestProviderWizardSection } from './pm-providers/manifest-section.js';
-import { getProviderWizard } from './pm-providers/registry.js';
+import { getProviderWizard, listProviderWizards } from './pm-providers/registry.js';
 import type { ProviderWizardDefinition } from './pm-providers/types.js';
 import { SaveStep } from './pm-wizard-common-steps.js';
 import { useSaveMutation, useVerification } from './pm-wizard-hooks.js';
@@ -22,6 +22,7 @@ import {
 	buildEditState,
 	createInitialState,
 	isStep1Complete,
+	type Provider,
 	type WizardAction,
 	type WizardState,
 	wizardReducer,
@@ -36,18 +37,9 @@ import { WizardStep } from './wizard-shared.js';
 // (manifestDef.steps[i].title). Only step 1 (provider picker) and the
 // legacy Webhook + Save slots have fixed titles; rendered inline.
 
-const PROVIDER_LABELS: Record<'trello' | 'jira' | 'linear', string> = {
-	trello: 'Trello',
-	jira: 'JIRA',
-	linear: 'Linear',
-};
-
-function confirmProviderSwitch(
-	from: 'trello' | 'jira' | 'linear',
-	to: 'trello' | 'jira' | 'linear',
-): boolean {
+function confirmProviderSwitch(fromLabel: string, toLabel: string): boolean {
 	return window.confirm(
-		`Switch PM provider from ${PROVIDER_LABELS[from]} to ${PROVIDER_LABELS[to]}?\n\nYou'll need to re-enter credentials and re-map fields for ${PROVIDER_LABELS[to]}. The old provider's credentials will be deleted when you save.`,
+		`Switch PM provider from ${fromLabel} to ${toLabel}?\n\nYou'll need to re-enter credentials and re-map fields for ${toLabel}. The old provider's credentials will be deleted when you save.`,
 	);
 }
 
@@ -281,23 +273,26 @@ export function PMWizard({
 				<div className="space-y-2">
 					<Label>Provider</Label>
 					<div className="flex gap-2">
-						{(['trello', 'jira', 'linear'] as const).map((p) => (
+						{listProviderWizards().map((wizard) => (
 							<button
-								key={p}
+								key={wizard.id}
 								type="button"
 								onClick={() => {
-									if (p === state.provider) return;
-									if (state.isEditing && !confirmProviderSwitch(state.provider, p)) return;
-									dispatch({ type: 'SET_PROVIDER', provider: p });
+									if (wizard.id === state.provider) return;
+									if (state.isEditing) {
+										const fromLabel = getProviderWizard(state.provider)?.label ?? state.provider;
+										if (!confirmProviderSwitch(fromLabel, wizard.label)) return;
+									}
+									dispatch({ type: 'SET_PROVIDER', provider: wizard.id as Provider });
 									advanceToStep(2);
 								}}
 								className={`flex-1 rounded-md border px-4 py-3 text-sm font-medium transition-colors ${
-									state.provider === p
+									state.provider === wizard.id
 										? 'border-primary bg-primary/5 text-foreground'
 										: 'border-input text-muted-foreground hover:text-foreground hover:bg-accent/50'
 								}`}
 							>
-								{PROVIDER_LABELS[p]}
+								{wizard.label}
 							</button>
 						))}
 					</div>
