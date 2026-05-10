@@ -117,6 +117,23 @@ interface LabelCreationConfig {
 	setLabelMapping: (slot: string, id: string) => WizardAction;
 }
 
+export function buildProviderLabelCreationRequest(
+	config: Pick<LabelCreationConfig, 'providerId' | 'auth' | 'getContainerId' | 'containerError'>,
+	state: WizardState,
+	projectId: string,
+	vars: { name: string; color?: string },
+) {
+	const containerId = config.getContainerId(state);
+	if (!containerId) throw new Error(config.containerError);
+	return {
+		providerId: config.providerId,
+		containerId,
+		name: vars.name,
+		color: vars.color,
+		...buildProviderAuthArgFromMetadata(state, projectId, config.auth),
+	};
+}
+
 function useProviderLabelCreation(
 	config: LabelCreationConfig,
 	state: WizardState,
@@ -125,16 +142,8 @@ function useProviderLabelCreation(
 ) {
 	const createLabelMutation = useMutation({
 		mutationFn: (vars: { name: string; color?: string; slot: string }) => {
-			const containerId = config.getContainerId(state);
-			if (!containerId) throw new Error(config.containerError);
-			const authArg = buildProviderAuthArgFromMetadata(state, projectId, config.auth);
-			return trpcClient.pm.discovery.createLabel.mutate({
-				providerId: config.providerId,
-				containerId,
-				name: vars.name,
-				color: vars.color,
-				...authArg,
-			});
+			const request = buildProviderLabelCreationRequest(config, state, projectId, vars);
+			return trpcClient.pm.discovery.createLabel.mutate(request);
 		},
 		onSuccess: (label, vars) => {
 			dispatch(config.addLabel(label));
@@ -202,6 +211,25 @@ interface CustomFieldCreationConfig {
 	onError?: (error: unknown) => void;
 }
 
+export function buildProviderCustomFieldCreationRequest(
+	config: Pick<
+		CustomFieldCreationConfig,
+		'providerId' | 'auth' | 'getContainerId' | 'containerError'
+	>,
+	state: WizardState,
+	projectId: string,
+	vars: { name: string },
+) {
+	const containerId = config.getContainerId(state);
+	if (!containerId && config.containerError) throw new Error(config.containerError);
+	return {
+		providerId: config.providerId,
+		containerId: containerId || 'global',
+		name: vars.name,
+		...buildProviderAuthArgFromMetadata(state, projectId, config.auth),
+	};
+}
+
 function useProviderCustomFieldCreation(
 	config: CustomFieldCreationConfig,
 	state: WizardState,
@@ -210,15 +238,8 @@ function useProviderCustomFieldCreation(
 ) {
 	const createCustomFieldMutation = useMutation({
 		mutationFn: ({ name }: { name: string }) => {
-			const containerId = config.getContainerId(state);
-			if (!containerId && config.containerError) throw new Error(config.containerError);
-			const authArg = buildProviderAuthArgFromMetadata(state, projectId, config.auth);
-			return trpcClient.pm.discovery.createCustomField.mutate({
-				providerId: config.providerId,
-				containerId: containerId || 'global',
-				name,
-				...authArg,
-			});
+			const request = buildProviderCustomFieldCreationRequest(config, state, projectId, { name });
+			return trpcClient.pm.discovery.createCustomField.mutate(request);
 		},
 		onSuccess: (customField) => {
 			dispatch(

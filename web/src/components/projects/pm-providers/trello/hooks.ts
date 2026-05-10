@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { trpcClient } from '@/lib/trpc.js';
 import { useProviderCustomFieldCreation, useProviderLabelCreation } from '../../pm-wizard-hooks.js';
 import type { WizardAction, WizardState } from '../../pm-wizard-state.js';
-import { trelloAuthMetadata } from './auth.js';
+import type { ProviderAuthMetadata } from '../types.js';
 
 // ============================================================================
 // Trello Discovery
@@ -113,14 +113,16 @@ export function useTrelloDiscovery(
 // ============================================================================
 
 export function useTrelloLabelCreation(
+	providerId: string,
+	auth: ProviderAuthMetadata,
 	state: WizardState,
 	dispatch: Dispatch<WizardAction>,
 	projectId: string,
 ) {
 	return useProviderLabelCreation(
 		{
-			providerId: 'trello',
-			auth: trelloAuthMetadata,
+			providerId,
+			auth,
 			getContainerId: (s) => s.trelloBoardId,
 			containerError: 'Board must be selected before creating a label',
 			addLabel: (label) => ({ type: 'ADD_TRELLO_BOARD_LABEL', label }),
@@ -137,14 +139,16 @@ export function useTrelloLabelCreation(
 // ============================================================================
 
 export function useTrelloCustomFieldCreation(
+	providerId: string,
+	auth: ProviderAuthMetadata,
 	state: WizardState,
 	dispatch: Dispatch<WizardAction>,
 	projectId: string,
 ) {
 	return useProviderCustomFieldCreation(
 		{
-			providerId: 'trello',
-			auth: trelloAuthMetadata,
+			providerId,
+			auth,
 			getContainerId: (s) => s.trelloBoardId,
 			containerError: 'Board must be selected before creating a custom field',
 			addCustomField: (f) => ({ type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD', customField: f }),

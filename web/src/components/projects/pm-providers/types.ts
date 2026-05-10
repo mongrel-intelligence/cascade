@@ -45,6 +45,8 @@ export interface ProviderWizardStepProps {
  * provider-specific discovery / label-creation hooks.
  */
 export interface ProviderHooksContext {
+	readonly providerId: string;
+	readonly auth: ProviderAuthMetadata;
 	readonly state: WizardState;
 	readonly dispatch: React.Dispatch<WizardAction>;
 	readonly projectId: string | undefined;

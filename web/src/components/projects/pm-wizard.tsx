@@ -139,7 +139,14 @@ function ManifestStepsSection({
 }: ManifestStepsSectionProps) {
 	// Called exactly once — the whole point of this wrapper component.
 	const providerHooks =
-		manifestDef.useProviderHooks?.({ state, dispatch, projectId, advanceToStep }) ?? {};
+		manifestDef.useProviderHooks?.({
+			providerId: manifestDef.id,
+			auth: manifestDef.auth,
+			state,
+			dispatch,
+			projectId,
+			advanceToStep,
+		}) ?? {};
 
 	return (
 		<>

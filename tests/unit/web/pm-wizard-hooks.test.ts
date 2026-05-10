@@ -13,6 +13,8 @@ import {
 	buildIntegrationUpsertInput,
 	buildPersistedCredentialInputs,
 	buildProviderAuthArgFromMetadata,
+	buildProviderCustomFieldCreationRequest,
+	buildProviderLabelCreationRequest,
 	runPerLabelCreations,
 } from '../../../web/src/components/projects/pm-wizard-hooks.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
@@ -242,6 +244,209 @@ describe('metadata-driven verification request', () => {
 		expect(linearProviderWizard.formatVerificationDisplay({ id: '4', name: 'Linear User' })).toBe(
 			'Linear User',
 		);
+	});
+});
+
+// ============================================================================
+// Metadata-driven mutation requests
+// ============================================================================
+
+describe('metadata-driven mutation requests', () => {
+	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'trello', trelloBoardId: 'board-1', ...overrides };
+	}
+	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'jira', jiraProjectKey: 'PROJ', ...overrides };
+	}
+	function linearState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'linear', linearTeamId: 'team-1', ...overrides };
+	}
+
+	it('builds raw credential payloads for provider label creation', () => {
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a label',
+				},
+				trelloState({ trelloApiKey: 'key', trelloToken: 'token' }),
+				'proj-t',
+				{ name: 'cascade-ready', color: 'sky' },
+			),
+		).toEqual({
+			providerId: 'trello',
+			containerId: 'board-1',
+			name: 'cascade-ready',
+			color: 'sky',
+			credentials: { api_key: 'key', token: 'token' },
+		});
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: linearProviderWizard.id,
+					auth: linearProviderWizard.auth,
+					getContainerId: (state) => state.linearTeamId,
+					containerError: 'Team must be selected before creating a label',
+				},
+				linearState({ linearApiKey: 'lin-key' }),
+				'proj-l',
+				{ name: 'cascade-ready', color: '#0284C7' },
+			),
+		).toEqual({
+			providerId: 'linear',
+			containerId: 'team-1',
+			name: 'cascade-ready',
+			color: '#0284C7',
+			credentials: { api_key: 'lin-key' },
+		});
+	});
+
+	it('builds stored credential fallback payloads for provider label creation', () => {
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a label',
+				},
+				trelloState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					trelloApiKey: '',
+					trelloToken: '',
+				}),
+				'proj-t',
+				{ name: 'cascade-ready', color: 'sky' },
+			),
+		).toMatchObject({ providerId: 'trello', projectId: 'proj-t' });
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: linearProviderWizard.id,
+					auth: linearProviderWizard.auth,
+					getContainerId: (state) => state.linearTeamId,
+					containerError: 'Team must be selected before creating a label',
+				},
+				linearState({ isEditing: true, hasStoredCredentials: true, linearApiKey: '' }),
+				'proj-l',
+				{ name: 'cascade-ready', color: '#0284C7' },
+			),
+		).toMatchObject({ providerId: 'linear', projectId: 'proj-l' });
+	});
+
+	it('builds raw credential payloads for provider custom-field creation', () => {
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a custom field',
+				},
+				trelloState({ trelloApiKey: 'key', trelloToken: 'token' }),
+				'proj-t',
+				{ name: 'Cost' },
+			),
+		).toEqual({
+			providerId: 'trello',
+			containerId: 'board-1',
+			name: 'Cost',
+			credentials: { api_key: 'key', token: 'token' },
+		});
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: jiraProviderWizard.id,
+					auth: jiraProviderWizard.auth,
+					getContainerId: (state) => state.jiraProjectKey || 'global',
+				},
+				jiraState({
+					jiraEmail: 'user@example.com',
+					jiraApiToken: 'jira-token',
+					jiraBaseUrl: 'https://example.atlassian.net',
+				}),
+				'proj-j',
+				{ name: 'Cost' },
+			),
+		).toEqual({
+			providerId: 'jira',
+			containerId: 'PROJ',
+			name: 'Cost',
+			credentials: {
+				email: 'user@example.com',
+				api_token: 'jira-token',
+				base_url: 'https://example.atlassian.net',
+			},
+		});
+	});
+
+	it('builds stored credential fallback payloads for provider custom-field creation', () => {
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a custom field',
+				},
+				trelloState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					trelloApiKey: '',
+					trelloToken: '',
+				}),
+				'proj-t',
+				{ name: 'Cost' },
+			),
+		).toMatchObject({ providerId: 'trello', projectId: 'proj-t' });
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: jiraProviderWizard.id,
+					auth: jiraProviderWizard.auth,
+					getContainerId: (state) => state.jiraProjectKey || 'global',
+				},
+				jiraState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					jiraEmail: '',
+					jiraApiToken: '',
+				}),
+				'proj-j',
+				{ name: 'Cost' },
+			),
+		).toMatchObject({ providerId: 'jira', projectId: 'proj-j' });
+	});
+
+	it('throws metadata missing-credential errors for mutation requests', () => {
+		expect(() =>
+			buildProviderLabelCreationRequest(
+				{
+					providerId: linearProviderWizard.id,
+					auth: linearProviderWizard.auth,
+					getContainerId: (state) => state.linearTeamId,
+					containerError: 'Team must be selected before creating a label',
+				},
+				linearState({ linearApiKey: '' }),
+				'proj-l',
+				{ name: 'cascade-ready' },
+			),
+		).toThrow('Enter your API key before verifying');
+		expect(() =>
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: jiraProviderWizard.id,
+					auth: jiraProviderWizard.auth,
+					getContainerId: (state) => state.jiraProjectKey || 'global',
+				},
+				jiraState({ jiraEmail: 'user@example.com', jiraApiToken: 'tok', jiraBaseUrl: '' }),
+				'proj-j',
+				{ name: 'Cost' },
+			),
+		).toThrow('Enter both credentials before verifying');
 	});
 });
 

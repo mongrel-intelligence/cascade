@@ -313,9 +313,15 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		return isCredentialsComplete(state);
 	},
 
-	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
+	useProviderHooks: ({ providerId, auth, state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useJiraDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const customField = useJiraCustomFieldCreation(state, dispatch, projectId ?? '');
+		const customField = useJiraCustomFieldCreation(
+			providerId,
+			auth,
+			state,
+			dispatch,
+			projectId ?? '',
+		);
 		const queryClient = useQueryClient();
 
 		const onCreateCustomField = (_slotKey: string, name: string) => {

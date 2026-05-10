@@ -305,10 +305,16 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		return isCredentialsComplete(state);
 	},
 
-	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
+	useProviderHooks: ({ providerId, auth, state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useTrelloDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const labels = useTrelloLabelCreation(state, dispatch, projectId ?? '');
-		const customField = useTrelloCustomFieldCreation(state, dispatch, projectId ?? '');
+		const labels = useTrelloLabelCreation(providerId, auth, state, dispatch, projectId ?? '');
+		const customField = useTrelloCustomFieldCreation(
+			providerId,
+			auth,
+			state,
+			dispatch,
+			projectId ?? '',
+		);
 		const queryClient = useQueryClient();
 
 		const [creatingSlot, setCreatingSlot] = useState<string | null>(null);

@@ -283,9 +283,9 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		return isCredentialsComplete(state);
 	},
 
-	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
+	useProviderHooks: ({ providerId, auth, state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useLinearDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const labels = useLinearLabelCreation(state, dispatch, projectId ?? '');
+		const labels = useLinearLabelCreation(providerId, auth, state, dispatch, projectId ?? '');
 		// Lift the LINEAR_WEBHOOK_SECRET credential lookup from the parent
 		// wizard (`pm-wizard.tsx`) into the provider hooks so the Linear
 		// webhook step adapter can compose the shared `WebhookUrlDisplayStep`
