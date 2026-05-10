@@ -27,6 +27,7 @@ import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { jiraAuthMetadata, jiraCredentialPersistence } from './auth.js';
 import { useJiraCustomFieldCreation, useJiraDiscovery } from './hooks.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
 import { JiraWebhookAdapter } from './webhook-step.js';
@@ -248,19 +249,9 @@ function JiraIssueTypeAdapter({
 export const jiraProviderWizard: ProviderWizardDefinition = {
 	id: 'jira',
 	label: 'JIRA',
-	auth: {
-		rawCredentials: [
-			{ role: 'email', stateField: 'jiraEmail' },
-			{ role: 'api_token', stateField: 'jiraApiToken' },
-			{ role: 'base_url', stateField: 'jiraBaseUrl' },
-		],
-		storedCredentials: { fallbackWhenStateFieldEmpty: 'jiraEmail' },
-		missingCredentialsMessage: 'Enter both credentials before verifying',
-	},
-	credentialPersistence: [
-		{ envVarKey: 'JIRA_EMAIL', stateField: 'jiraEmail', label: 'JIRA Email' },
-		{ envVarKey: 'JIRA_API_TOKEN', stateField: 'jiraApiToken', label: 'JIRA API Token' },
-	],
+	auth: jiraAuthMetadata,
+	formatVerificationDisplay: (me) => (me.displayName ? `${me.name} (${me.displayName})` : me.name),
+	credentialPersistence: jiraCredentialPersistence,
 
 	steps: [
 		{

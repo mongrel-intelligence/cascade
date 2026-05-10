@@ -27,6 +27,7 @@ import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { trelloAuthMetadata, trelloCredentialPersistence } from './auth.js';
 import {
 	useTrelloCustomFieldCreation,
 	useTrelloDiscovery,
@@ -247,18 +248,9 @@ function TrelloCustomFieldMappingAdapter({
 export const trelloProviderWizard: ProviderWizardDefinition = {
 	id: 'trello',
 	label: 'Trello',
-	auth: {
-		rawCredentials: [
-			{ role: 'api_key', stateField: 'trelloApiKey' },
-			{ role: 'token', stateField: 'trelloToken' },
-		],
-		storedCredentials: { fallbackWhenStateFieldEmpty: 'trelloApiKey' },
-		missingCredentialsMessage: 'Enter both credentials before verifying',
-	},
-	credentialPersistence: [
-		{ envVarKey: 'TRELLO_API_KEY', stateField: 'trelloApiKey', label: 'Trello API Key' },
-		{ envVarKey: 'TRELLO_TOKEN', stateField: 'trelloToken', label: 'Trello Token' },
-	],
+	auth: trelloAuthMetadata,
+	formatVerificationDisplay: (me) => (me.displayName ? `@${me.displayName} (${me.name})` : me.name),
+	credentialPersistence: trelloCredentialPersistence,
 
 	// Each step mirrors `trelloManifest.wizardSpec.steps` by id.
 	steps: [

@@ -95,6 +95,12 @@ export interface ProviderWizardDefinition {
 	readonly steps: readonly ProviderWizardStep[];
 	/** Provider-owned auth contract for raw credentials and stored fallback. */
 	readonly auth: ProviderAuthMetadata;
+	/** Formats the provider's normalized current-user discovery response. */
+	readonly formatVerificationDisplay: (me: {
+		readonly id: string;
+		readonly name: string;
+		readonly displayName?: string;
+	}) => string;
 	/** Normal provider credentials saved to project_credentials. */
 	readonly credentialPersistence: readonly ProviderCredentialPersistenceMapping[];
 	/**

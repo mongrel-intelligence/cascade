@@ -10,6 +10,7 @@ import type {
 	WizardAction,
 	WizardState,
 } from '../../pm-wizard-state.js';
+import { linearAuthMetadata } from './auth.js';
 
 // ============================================================================
 // Linear Discovery
@@ -162,6 +163,7 @@ export function useLinearLabelCreation(
 	return useProviderLabelCreation(
 		{
 			providerId: 'linear',
+			auth: linearAuthMetadata,
 			getContainerId: (s) => s.linearTeamId,
 			containerError: 'Team must be selected before creating a label',
 			addLabel: (label) => ({ type: 'ADD_LINEAR_TEAM_LABEL', label }),

@@ -1,6 +1,5 @@
 /**
  * Unit tests for pure functions extracted in the pm-wizard-hooks refactor:
- *   - buildProviderAuthArg (generic auth-arg builder for all three providers)
  *   - runPerLabelCreations (batch label creator with per-item error handling)
  *   - buildTrelloIntegrationConfig / buildJiraIntegrationConfig (pure config builders)
  */
@@ -13,9 +12,7 @@ import {
 	buildCurrentUserDiscoveryRequest,
 	buildIntegrationUpsertInput,
 	buildPersistedCredentialInputs,
-	buildProviderAuthArg,
 	buildProviderAuthArgFromMetadata,
-	formatVerificationDisplay,
 	runPerLabelCreations,
 } from '../../../web/src/components/projects/pm-wizard-hooks.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
@@ -25,142 +22,6 @@ import {
 	buildTrelloIntegrationConfig,
 	createInitialState,
 } from '../../../web/src/components/projects/pm-wizard-state.js';
-
-// ============================================================================
-// buildProviderAuthArg
-// ============================================================================
-
-describe('buildProviderAuthArg', () => {
-	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
-		return { ...createInitialState(), provider: 'trello', ...overrides };
-	}
-	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
-		return { ...createInitialState(), provider: 'jira', ...overrides };
-	}
-	function linearState(overrides: Partial<WizardState> = {}): WizardState {
-		return { ...createInitialState(), provider: 'linear', ...overrides };
-	}
-
-	// ── Edit mode — stored credentials path ──────────────────────────────
-	it('trello: returns { projectId } in edit mode when stored creds and no raw key', () => {
-		const state = trelloState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			trelloApiKey: '',
-			trelloToken: '',
-		});
-		expect(buildProviderAuthArg(state, 'proj-1')).toEqual({ projectId: 'proj-1' });
-	});
-
-	it('jira: returns { projectId } in edit mode when stored creds and no raw token', () => {
-		const state = jiraState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			jiraApiToken: '',
-			jiraEmail: '',
-		});
-		expect(buildProviderAuthArg(state, 'proj-jira')).toEqual({ projectId: 'proj-jira' });
-	});
-
-	it('linear: returns { projectId } in edit mode when stored creds and no raw key', () => {
-		const state = linearState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			linearApiKey: '',
-		});
-		expect(buildProviderAuthArg(state, 'proj-lin')).toEqual({ projectId: 'proj-lin' });
-	});
-
-	// ── Fresh setup — credentials path ──────────────────────────────────
-	it('trello: returns credentials when api_key and token present (fresh setup)', () => {
-		const state = trelloState({ trelloApiKey: 'key-abc', trelloToken: 'tok-xyz' });
-		expect(buildProviderAuthArg(state, 'proj-1')).toEqual({
-			credentials: { api_key: 'key-abc', token: 'tok-xyz' },
-		});
-	});
-
-	it('jira: returns credentials when email + api_token + base_url present (fresh setup)', () => {
-		const state = jiraState({
-			jiraEmail: 'user@example.com',
-			jiraApiToken: 'jira-tok',
-			jiraBaseUrl: 'https://example.atlassian.net',
-		});
-		expect(buildProviderAuthArg(state, 'proj-j')).toEqual({
-			credentials: {
-				email: 'user@example.com',
-				api_token: 'jira-tok',
-				base_url: 'https://example.atlassian.net',
-			},
-		});
-	});
-
-	it('linear: returns credentials when api_key present (fresh setup)', () => {
-		const state = linearState({ linearApiKey: 'lin_abc' });
-		expect(buildProviderAuthArg(state, 'proj-l')).toEqual({
-			credentials: { api_key: 'lin_abc' },
-		});
-	});
-
-	// ── Edit mode — user re-typed key → use fresh credentials ───────────
-	it('trello: uses fresh credentials when user re-typed api_key in edit mode', () => {
-		const state = trelloState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			trelloApiKey: 'new-key',
-			trelloToken: 'new-tok',
-		});
-		expect(buildProviderAuthArg(state, 'proj-1')).toEqual({
-			credentials: { api_key: 'new-key', token: 'new-tok' },
-		});
-	});
-
-	it('linear: uses fresh credentials when user re-typed api_key in edit mode', () => {
-		const state = linearState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			linearApiKey: 'lin_fresh',
-		});
-		expect(buildProviderAuthArg(state, 'proj-l')).toEqual({
-			credentials: { api_key: 'lin_fresh' },
-		});
-	});
-
-	// ── Error cases ──────────────────────────────────────────────────────
-	it('trello: throws when no api_key in fresh mode', () => {
-		const state = trelloState({ trelloToken: 'tok' });
-		expect(() => buildProviderAuthArg(state, 'proj-1')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('trello: throws when no token in fresh mode', () => {
-		const state = trelloState({ trelloApiKey: 'key' });
-		expect(() => buildProviderAuthArg(state, 'proj-1')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('jira: throws when no email in fresh mode', () => {
-		const state = jiraState({ jiraApiToken: 'tok', jiraBaseUrl: 'https://x.atlassian.net' });
-		expect(() => buildProviderAuthArg(state, 'proj-j')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('jira: throws when no api_token in fresh mode', () => {
-		const state = jiraState({ jiraEmail: 'u@x.com', jiraBaseUrl: 'https://x.atlassian.net' });
-		expect(() => buildProviderAuthArg(state, 'proj-j')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('linear: throws when no api_key in fresh mode', () => {
-		const state = linearState({ linearApiKey: '' });
-		expect(() => buildProviderAuthArg(state, 'proj-l')).toThrow(
-			'Enter your API key before verifying',
-		);
-	});
-});
 
 // ============================================================================
 // Provider-owned credential metadata
@@ -358,19 +219,27 @@ describe('metadata-driven verification request', () => {
 
 	it('preserves provider-specific verified-as display formatting', () => {
 		expect(
-			formatVerificationDisplay('trello', { id: '1', name: 'Full Name', displayName: 'user' }),
+			trelloProviderWizard.formatVerificationDisplay({
+				id: '1',
+				name: 'Full Name',
+				displayName: 'user',
+			}),
 		).toBe('@user (Full Name)');
 		expect(
-			formatVerificationDisplay('jira', {
+			jiraProviderWizard.formatVerificationDisplay({
 				id: '2',
 				name: 'Jira User',
 				displayName: 'user@example.com',
 			}),
 		).toBe('Jira User (user@example.com)');
 		expect(
-			formatVerificationDisplay('linear', { id: '3', name: 'Linear User', displayName: 'lin' }),
+			linearProviderWizard.formatVerificationDisplay({
+				id: '3',
+				name: 'Linear User',
+				displayName: 'lin',
+			}),
 		).toBe('lin');
-		expect(formatVerificationDisplay('linear', { id: '4', name: 'Linear User' })).toBe(
+		expect(linearProviderWizard.formatVerificationDisplay({ id: '4', name: 'Linear User' })).toBe(
 			'Linear User',
 		);
 	});

@@ -3,7 +3,7 @@
  * Each hook encapsulates one concern to keep the main orchestrator thin.
  *
  * Generic hooks introduced in spec 013 refactor:
- *   - buildProviderAuthArg    — single auth-arg builder for all three providers
+ *   - buildProviderAuthArgFromMetadata — auth-arg builder driven by provider metadata
  *   - useProviderLabelCreation— parameterized label-creation hook (replaces 2 copies)
  *   - useProviderCustomFieldCreation — parameterized CF hook (replaces 2 copies)
  *   - useSaveMutation         — data-driven, no provider branching
@@ -16,50 +16,6 @@ import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
 import type { ProviderAuthMetadata, ProviderWizardDefinition } from './pm-providers/types.js';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
 import { shouldUseStoredCredentials } from './pm-wizard-state.js';
-
-// ============================================================================
-// Auth-arg builder — shared across all mutations
-// ============================================================================
-
-/**
- * Build the `{ projectId }` or `{ credentials: ... }` portion of a tRPC
- * request for any provider. Returns the stored-creds path when the user is
- * editing an existing integration without re-typing their key.
- *
- * Extracted so every per-provider mutation stays below the cognitive-
- * complexity threshold and a single place enforces the invariant.
- */
-export function buildProviderAuthArg(
-	state: WizardState,
-	projectId: string,
-): { projectId: string } | { credentials: Record<string, string> } {
-	if (shouldUseStoredCredentials(state)) {
-		return { projectId };
-	}
-	if (state.provider === 'trello') {
-		if (!state.trelloApiKey || !state.trelloToken) {
-			throw new Error('Enter both credentials before verifying');
-		}
-		return { credentials: { api_key: state.trelloApiKey, token: state.trelloToken } };
-	}
-	if (state.provider === 'linear') {
-		if (!state.linearApiKey) {
-			throw new Error('Enter your API key before verifying');
-		}
-		return { credentials: { api_key: state.linearApiKey } };
-	}
-	// jira
-	if (!state.jiraEmail || !state.jiraApiToken) {
-		throw new Error('Enter both credentials before verifying');
-	}
-	return {
-		credentials: {
-			email: state.jiraEmail,
-			api_token: state.jiraApiToken,
-			base_url: state.jiraBaseUrl,
-		},
-	};
-}
 
 export function buildProviderAuthArgFromMetadata(
 	state: WizardState,
@@ -129,6 +85,8 @@ export async function runPerLabelCreations(opts: {
 
 interface LabelCreationConfig {
 	providerId: 'trello' | 'linear';
+	/** Provider-owned auth contract for raw credentials and stored fallback */
+	auth: ProviderAuthMetadata;
 	/** Returns the container ID (board / team) from state */
 	getContainerId: (state: WizardState) => string;
 	/** Error when container not yet selected */
@@ -149,7 +107,7 @@ function useProviderLabelCreation(
 		mutationFn: (vars: { name: string; color?: string; slot: string }) => {
 			const containerId = config.getContainerId(state);
 			if (!containerId) throw new Error(config.containerError);
-			const authArg = buildProviderAuthArg(state, projectId);
+			const authArg = buildProviderAuthArgFromMetadata(state, projectId, config.auth);
 			return trpcClient.pm.discovery.createLabel.mutate({
 				providerId: config.providerId,
 				containerId,
@@ -172,7 +130,7 @@ function useProviderLabelCreation(
 		mutationFn: async (labelsToCreate: Array<{ slot: string; name: string; color?: string }>) => {
 			const containerId = config.getContainerId(state);
 			if (!containerId) throw new Error(config.containerError);
-			const authArg = buildProviderAuthArg(state, projectId);
+			const authArg = buildProviderAuthArgFromMetadata(state, projectId, config.auth);
 			return runPerLabelCreations({
 				labelsToCreate,
 				providerId: config.providerId,
@@ -210,6 +168,8 @@ function useProviderLabelCreation(
 
 interface CustomFieldCreationConfig {
 	providerId: 'trello' | 'jira';
+	/** Provider-owned auth contract for raw credentials and stored fallback */
+	auth: ProviderAuthMetadata;
 	/** Returns the container ID from state (boardId / projectKey) */
 	getContainerId: (state: WizardState) => string;
 	/** Error thrown when container not yet selected (required for Trello; omit for global providers like JIRA) */
@@ -232,7 +192,7 @@ function useProviderCustomFieldCreation(
 		mutationFn: ({ name }: { name: string }) => {
 			const containerId = config.getContainerId(state);
 			if (!containerId && config.containerError) throw new Error(config.containerError);
-			const authArg = buildProviderAuthArg(state, projectId);
+			const authArg = buildProviderAuthArgFromMetadata(state, projectId, config.auth);
 			return trpcClient.pm.discovery.createCustomField.mutate({
 				providerId: config.providerId,
 				containerId: containerId || 'global',
@@ -285,23 +245,6 @@ export function buildCurrentUserDiscoveryRequest(
 	};
 }
 
-export function formatVerificationDisplay(
-	provider: string,
-	me: { id: string; name: string; displayName?: string },
-): string {
-	// Per-provider display formatting mirrors the pre-009/5 UX:
-	//   Trello: "@{username} ({fullName})"   — displayName is username
-	//   JIRA:   "{displayName} ({email})"     — displayName is email
-	//   Linear: "{displayName || name}"       — displayName is the preferred handle
-	if (provider === 'trello') {
-		return me.displayName ? `@${me.displayName} (${me.name})` : me.name;
-	}
-	if (provider === 'jira') {
-		return me.displayName ? `${me.name} (${me.displayName})` : me.name;
-	}
-	return me.displayName || me.name;
-}
-
 export function useVerification(
 	state: WizardState,
 	dispatch: Dispatch<WizardAction>,
@@ -331,7 +274,7 @@ export function useVerification(
 			if (provider !== state.provider) return;
 			dispatch({
 				type: 'SET_VERIFICATION',
-				result: { provider, display: formatVerificationDisplay(provider, me) },
+				result: { provider, display: manifestDef.formatVerificationDisplay(me) },
 			});
 			advanceToStep(3);
 		},

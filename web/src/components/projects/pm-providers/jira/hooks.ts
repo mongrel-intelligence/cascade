@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { trpcClient } from '@/lib/trpc.js';
 import { useProviderCustomFieldCreation } from '../../pm-wizard-hooks.js';
 import type { WizardAction, WizardState } from '../../pm-wizard-state.js';
+import { jiraAuthMetadata } from './auth.js';
 
 // ============================================================================
 // JIRA Discovery
@@ -122,6 +123,7 @@ export function useJiraCustomFieldCreation(
 	const inner = useProviderCustomFieldCreation(
 		{
 			providerId: 'jira',
+			auth: jiraAuthMetadata,
 			// JIRA fields are global; containerId is sent as-is for uniform shape
 			getContainerId: (s) => s.jiraProjectKey || 'global',
 			addCustomField: (f) => ({

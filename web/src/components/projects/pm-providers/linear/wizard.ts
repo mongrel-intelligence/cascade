@@ -31,6 +31,7 @@ import { LabelMappingStep } from '../steps/label-mapping.js';
 import { ProjectScopeStep } from '../steps/project-scope.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { linearAuthMetadata, linearCredentialPersistence } from './auth.js';
 import { useLinearDiscovery, useLinearLabelCreation } from './hooks.js';
 import { LinearWebhookAdapter } from './webhook-step.js';
 
@@ -231,14 +232,9 @@ function LinearProjectScopeAdapter({ providerHooks }: ProviderWizardStepProps): 
 export const linearProviderWizard: ProviderWizardDefinition = {
 	id: 'linear',
 	label: 'Linear',
-	auth: {
-		rawCredentials: [{ role: 'api_key', stateField: 'linearApiKey' }],
-		storedCredentials: { fallbackWhenStateFieldEmpty: 'linearApiKey' },
-		missingCredentialsMessage: 'Enter your API key before verifying',
-	},
-	credentialPersistence: [
-		{ envVarKey: 'LINEAR_API_KEY', stateField: 'linearApiKey', label: 'Linear API Key' },
-	],
+	auth: linearAuthMetadata,
+	formatVerificationDisplay: (me) => me.displayName || me.name,
+	credentialPersistence: linearCredentialPersistence,
 
 	steps: [
 		{
