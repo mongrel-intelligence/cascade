@@ -5,6 +5,9 @@
  * This file is the new coverage for the migrated wizard definition.
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { jiraManifest } from '../../../src/integrations/pm/jira/manifest.js';
 import {
@@ -13,6 +16,19 @@ import {
 } from '../../../web/src/components/projects/pm-providers/generator.js';
 import { IssueTypeMappingStep } from '../../../web/src/components/projects/pm-providers/jira/issue-type-step.js';
 import { jiraProviderWizard } from '../../../web/src/components/projects/pm-providers/jira/wizard.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const REPO_ROOT = resolve(__dirname, '..', '..', '..');
+const JIRA_HOOKS_PATH = resolve(
+	REPO_ROOT,
+	'web/src/components/projects/pm-providers/jira/hooks.ts',
+);
+const JIRA_WIZARD_PATH = resolve(
+	REPO_ROOT,
+	'web/src/components/projects/pm-providers/jira/wizard.ts',
+);
+const PM_WIZARD_HOOKS_PATH = resolve(REPO_ROOT, 'web/src/components/projects/pm-wizard-hooks.ts');
 
 describe('JIRA wizardSpec through the shared generator (post plan 011/3)', () => {
 	it('each declared standard step dispatches to the corresponding real shared component', () => {
@@ -80,5 +96,23 @@ describe('jiraProviderWizard (post plan 011/3)', () => {
 
 	it('has useProviderHooks declared', () => {
 		expect(jiraProviderWizard.useProviderHooks).toBeDefined();
+	});
+});
+
+describe('jiraProviderWizard provider-owned hooks', () => {
+	it('imports JIRA-specific hooks from the JIRA provider folder', () => {
+		const source = readFileSync(JIRA_WIZARD_PATH, 'utf8');
+		expect(source).toContain("} from './hooks.js'");
+		expect(source).not.toContain("} from '../../pm-wizard-hooks.js'");
+	});
+
+	it('keeps JIRA-specific hook definitions out of the shared wizard hook module', () => {
+		const jiraHooks = readFileSync(JIRA_HOOKS_PATH, 'utf8');
+		const sharedHooks = readFileSync(PM_WIZARD_HOOKS_PATH, 'utf8');
+
+		for (const hookName of ['useJiraDiscovery', 'useJiraCustomFieldCreation']) {
+			expect(jiraHooks).toContain(`export function ${hookName}`);
+			expect(sharedHooks).not.toContain(`export function ${hookName}`);
+		}
 	});
 });
