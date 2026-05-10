@@ -20,10 +20,28 @@ import type { DataProps } from '@/lib/data-props.js';
 import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
 import type { ProviderWizardStepProps } from '../types.js';
 
-interface ActiveWebhook {
+export interface ActiveWebhook {
 	readonly id: string;
 	readonly url: string;
 	readonly active: boolean;
+}
+
+export interface JiraWebhookListData {
+	readonly jira?: ReadonlyArray<{
+		readonly id: string | number;
+		readonly url: string;
+		readonly enabled: boolean;
+	}>;
+}
+
+export function normalizeJiraActiveWebhooks(
+	webhooksData: JiraWebhookListData | undefined,
+): ActiveWebhook[] {
+	return (webhooksData?.jira ?? []).map((webhook) => ({
+		id: String(webhook.id),
+		url: webhook.url,
+		active: webhook.enabled,
+	}));
 }
 
 interface JiraWebhookProviderHooks {

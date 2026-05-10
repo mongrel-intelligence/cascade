@@ -11,7 +11,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { JiraWebhookAdapter } from '../../../web/src/components/projects/pm-providers/jira/webhook-step.js';
+import {
+	JiraWebhookAdapter,
+	normalizeJiraActiveWebhooks,
+} from '../../../web/src/components/projects/pm-providers/jira/webhook-step.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 function makeState(overrides: Partial<WizardState> = {}): WizardState {
@@ -37,6 +40,24 @@ function makeProviderHooks(overrides: Record<string, unknown> = {}): Record<stri
 }
 
 describe('JiraWebhookAdapter', () => {
+	it('normalizes JIRA webhook list data from enabled to active', () => {
+		expect(
+			normalizeJiraActiveWebhooks({
+				jira: [
+					{ id: 1, url: 'https://hook/jira', enabled: true },
+					{ id: 'wh-2', url: 'https://hook/jira-2', enabled: false },
+				],
+			}),
+		).toEqual([
+			{ id: '1', url: 'https://hook/jira', active: true },
+			{ id: 'wh-2', url: 'https://hook/jira-2', active: false },
+		]);
+	});
+
+	it('normalizes missing JIRA webhook list data to an empty active list', () => {
+		expect(normalizeJiraActiveWebhooks(undefined)).toEqual([]);
+	});
+
 	it('renders the shared WebhookUrlDisplayStep (URL + copy button)', () => {
 		const html = renderToStaticMarkup(
 			createElement(JiraWebhookAdapter, {
@@ -86,6 +107,19 @@ describe('JiraWebhookAdapter', () => {
 			}),
 		);
 		expect(html).toContain('data-action="create-webhook"');
+	});
+
+	it('renders the loading state while webhooks are loading', () => {
+		const html = renderToStaticMarkup(
+			createElement(JiraWebhookAdapter, {
+				state: makeState(),
+				dispatch: () => {},
+				providerHooks: makeProviderHooks({ webhooksLoading: true }),
+			}),
+		);
+		expect(html).toContain('data-state="loading"');
+		expect(html).toContain('Loading webhooks');
+		expect(html).not.toContain('No JIRA webhooks configured');
 	});
 
 	it('disables the Create button when callbackBaseUrl is empty', () => {

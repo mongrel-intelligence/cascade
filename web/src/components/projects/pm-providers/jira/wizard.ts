@@ -20,7 +20,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
@@ -30,7 +29,7 @@ import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types
 import { jiraAuthMetadata, jiraCredentialPersistence } from './auth.js';
 import { useJiraCustomFieldCreation, useJiraDiscovery } from './hooks.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
-import { JiraWebhookAdapter } from './webhook-step.js';
+import { JiraWebhookAdapter, normalizeJiraActiveWebhooks } from './webhook-step.js';
 
 // CASCADE stage keys that map to JIRA statuses (name-based, not id-based
 // — JIRA statuses are configured per project, name is the stable identity).
@@ -358,11 +357,7 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
-		const activeJiraWebhooks = deriveActiveWebhooks('jira', webhooksQuery.data) as Array<{
-			id: string;
-			url: string;
-			active: boolean;
-		}>;
+		const activeJiraWebhooks = normalizeJiraActiveWebhooks(webhooksQuery.data);
 
 		const createWebhookMutation = useMutation({
 			mutationFn: () =>

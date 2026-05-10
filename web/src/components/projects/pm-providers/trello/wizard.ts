@@ -21,7 +21,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { deriveActiveWebhooks, type WizardState } from '../../pm-wizard-state.js';
+import type { WizardState } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
@@ -34,7 +34,7 @@ import {
 	useTrelloLabelCreation,
 } from './hooks.js';
 import { TrelloOAuthStep } from './oauth-step.js';
-import { TrelloWebhookAdapter } from './webhook-step.js';
+import { normalizeTrelloActiveWebhooks, TrelloWebhookAdapter } from './webhook-step.js';
 
 // CASCADE stage keys that map to Trello lists (one list per stage).
 export const TRELLO_LIST_SLOTS = [
@@ -376,11 +376,7 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
-		const activeTrelloWebhooks = deriveActiveWebhooks('trello', webhooksQuery.data) as Array<{
-			id: string;
-			url: string;
-			active: boolean;
-		}>;
+		const activeTrelloWebhooks = normalizeTrelloActiveWebhooks(webhooksQuery.data);
 
 		const createWebhookMutation = useMutation({
 			mutationFn: () =>

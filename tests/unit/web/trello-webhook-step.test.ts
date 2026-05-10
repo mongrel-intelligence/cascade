@@ -14,7 +14,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { TrelloWebhookAdapter } from '../../../web/src/components/projects/pm-providers/trello/webhook-step.js';
+import {
+	normalizeTrelloActiveWebhooks,
+	TrelloWebhookAdapter,
+} from '../../../web/src/components/projects/pm-providers/trello/webhook-step.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 function makeState(overrides: Partial<WizardState> = {}): WizardState {
@@ -40,6 +43,24 @@ function makeProviderHooks(overrides: Record<string, unknown> = {}): Record<stri
 }
 
 describe('TrelloWebhookAdapter', () => {
+	it('normalizes Trello webhook list data from callbackURL to url', () => {
+		expect(
+			normalizeTrelloActiveWebhooks({
+				trello: [
+					{ id: 1, callbackURL: 'https://hook/trello', active: true },
+					{ id: 2, callbackURL: 'https://hook/trello-2', active: false },
+				],
+			}),
+		).toEqual([
+			{ id: '1', url: 'https://hook/trello', active: true },
+			{ id: '2', url: 'https://hook/trello-2', active: false },
+		]);
+	});
+
+	it('normalizes missing Trello webhook list data to an empty active list', () => {
+		expect(normalizeTrelloActiveWebhooks(undefined)).toEqual([]);
+	});
+
 	it('renders the shared WebhookUrlDisplayStep (URL + copy button)', () => {
 		const html = renderToStaticMarkup(
 			createElement(TrelloWebhookAdapter, {
@@ -89,6 +110,19 @@ describe('TrelloWebhookAdapter', () => {
 			}),
 		);
 		expect(html).toContain('data-action="create-webhook"');
+	});
+
+	it('renders the loading state while webhooks are loading', () => {
+		const html = renderToStaticMarkup(
+			createElement(TrelloWebhookAdapter, {
+				state: makeState(),
+				dispatch: () => {},
+				providerHooks: makeProviderHooks({ webhooksLoading: true }),
+			}),
+		);
+		expect(html).toContain('data-state="loading"');
+		expect(html).toContain('Loading webhooks');
+		expect(html).not.toContain('No Trello webhooks configured');
 	});
 
 	it('disables the Create button when callbackBaseUrl is empty', () => {

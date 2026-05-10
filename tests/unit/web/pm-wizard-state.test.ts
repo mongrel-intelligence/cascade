@@ -24,7 +24,6 @@ import {
 	areCredentialsReady,
 	buildLinearIntegrationConfig,
 	createInitialState,
-	deriveActiveWebhooks,
 	INITIAL_JIRA_LABELS,
 	isStep1Complete,
 	isStep2Complete,
@@ -1039,56 +1038,5 @@ describe('buildLinearIntegrationConfig — save payload', () => {
 		expect(withLabels).toHaveProperty('labels', {
 			processing: '11111111-1111-4111-8111-111111111111',
 		});
-	});
-});
-
-// ============================================================================
-// deriveActiveWebhooks
-// ============================================================================
-
-describe('deriveActiveWebhooks', () => {
-	it('maps Trello webhooks via callbackURL + active', () => {
-		const result = deriveActiveWebhooks('trello', {
-			trello: [
-				{ id: 1, callbackURL: 'https://hook/trello', active: true },
-				{ id: 2, callbackURL: 'https://hook/trello-2', active: false },
-			],
-		});
-
-		expect(result).toEqual([
-			{ id: '1', url: 'https://hook/trello', active: true },
-			{ id: '2', url: 'https://hook/trello-2', active: false },
-		]);
-	});
-
-	it('maps JIRA webhooks via url + enabled (renamed to active)', () => {
-		const result = deriveActiveWebhooks('jira', {
-			jira: [{ id: 'abc', url: 'https://hook/jira', enabled: true }],
-		});
-
-		expect(result).toEqual([{ id: 'abc', url: 'https://hook/jira', active: true }]);
-	});
-
-	it('returns empty array for Linear (manual webhook setup)', () => {
-		const result = deriveActiveWebhooks('linear', {
-			trello: [{ id: 1, callbackURL: 'irrelevant', active: true }],
-			jira: [{ id: 1, url: 'irrelevant', enabled: true }],
-		});
-
-		expect(result).toEqual([]);
-	});
-
-	it('returns empty array when webhooksData is undefined', () => {
-		expect(deriveActiveWebhooks('trello', undefined)).toEqual([]);
-		expect(deriveActiveWebhooks('jira', undefined)).toEqual([]);
-		expect(deriveActiveWebhooks('linear', undefined)).toEqual([]);
-	});
-
-	it('coerces numeric IDs to strings', () => {
-		const result = deriveActiveWebhooks('trello', {
-			trello: [{ id: 42, callbackURL: 'u', active: true }],
-		});
-		expect(result[0].id).toBe('42');
-		expect(typeof result[0].id).toBe('string');
 	});
 });
