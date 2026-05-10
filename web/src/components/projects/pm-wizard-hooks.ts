@@ -7,23 +7,14 @@
  *   - useProviderLabelCreation— parameterized label-creation hook (replaces 2 copies)
  *   - useProviderCustomFieldCreation — parameterized CF hook (replaces 2 copies)
  *   - useSaveMutation         — data-driven, no provider branching
- *
- * Linear thin wrappers remain exported here for compatibility while
- * Trello- and JIRA-owned setup logic lives in provider-local hooks modules.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import type { Dispatch } from 'react';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
 import type { ProviderAuthMetadata, ProviderWizardDefinition } from './pm-providers/types.js';
-import type {
-	LinearProjectOption,
-	LinearTeamDetails,
-	LinearTeamOption,
-	WizardAction,
-	WizardState,
-} from './pm-wizard-state.js';
+import type { WizardAction, WizardState } from './pm-wizard-state.js';
 import { shouldUseStoredCredentials } from './pm-wizard-state.js';
 
 // ============================================================================
@@ -151,7 +142,7 @@ interface LabelCreationConfig {
 function useProviderLabelCreation(
 	config: LabelCreationConfig,
 	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
+	dispatch: Dispatch<WizardAction>,
 	projectId: string,
 ) {
 	const createLabelMutation = useMutation({
@@ -234,7 +225,7 @@ interface CustomFieldCreationConfig {
 function useProviderCustomFieldCreation(
 	config: CustomFieldCreationConfig,
 	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
+	dispatch: Dispatch<WizardAction>,
 	projectId: string,
 ) {
 	const createCustomFieldMutation = useMutation({
@@ -271,145 +262,6 @@ function useProviderCustomFieldCreation(
 	});
 
 	return { createCustomFieldMutation };
-}
-
-// ============================================================================
-// Linear Discovery
-// ============================================================================
-
-export function useLinearDiscovery(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	advanceToStep: (step: number) => void,
-	projectId: string,
-) {
-	const linearTeamsMutation = useMutation({
-		mutationFn: async () => {
-			// Plan 010/2: routes through generic pm.discovery.discover.
-			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
-				return (await trpcClient.pm.discovery.discover.mutate({
-					providerId: 'linear',
-					capability: 'teams',
-					args: {},
-					projectId,
-				})) as Array<{ id: string; name: string }>;
-			}
-			if (!state.linearApiKey) {
-				throw new Error('Enter your API key before fetching teams');
-			}
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: 'linear',
-				capability: 'teams',
-				args: {},
-				credentials: { api_key: state.linearApiKey },
-			})) as Array<{ id: string; name: string }>;
-		},
-		onSuccess: (teams) =>
-			dispatch({
-				type: 'SET_LINEAR_TEAMS',
-				teams: teams as LinearTeamOption[],
-			}),
-	});
-
-	const linearDetailsMutation = useMutation({
-		mutationFn: (teamId: string) => {
-			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
-				return trpcClient.integrationsDiscovery.linearTeamDetailsByProject.mutate({
-					projectId,
-					teamId,
-				});
-			}
-			if (!state.linearApiKey) {
-				throw new Error('Enter your API key before fetching team details');
-			}
-			return trpcClient.integrationsDiscovery.linearTeamDetails.mutate({
-				apiKey: state.linearApiKey,
-				teamId,
-			});
-		},
-		onSuccess: (details) => {
-			dispatch({
-				type: 'SET_LINEAR_TEAM_DETAILS',
-				details: details as LinearTeamDetails,
-			});
-			advanceToStep(4);
-		},
-	});
-
-	const linearProjectsMutation = useMutation({
-		mutationFn: async (teamId: string) => {
-			// Plan 010/2: routes through generic pm.discovery.discover.
-			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
-				return (await trpcClient.pm.discovery.discover.mutate({
-					providerId: 'linear',
-					capability: 'projects',
-					args: { containerId: teamId },
-					projectId,
-				})) as Array<{ id: string; name: string }>;
-			}
-			if (!state.linearApiKey) {
-				throw new Error('Enter your API key before fetching projects');
-			}
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: 'linear',
-				capability: 'projects',
-				args: { containerId: teamId },
-				credentials: { api_key: state.linearApiKey },
-			})) as Array<{ id: string; name: string }>;
-		},
-		onSuccess: (projects) =>
-			dispatch({
-				type: 'SET_LINEAR_PROJECTS',
-				projects: projects as LinearProjectOption[],
-			}),
-	});
-
-	const handleTeamSelect = (teamId: string) => {
-		dispatch({ type: 'SET_LINEAR_TEAM_ID', id: teamId });
-		if (teamId) {
-			linearDetailsMutation.mutate(teamId);
-			linearProjectsMutation.mutate(teamId);
-		}
-	};
-
-	// Auto-fetch teams when verification result changes
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on verification result change
-	useEffect(() => {
-		if (!state.verificationResult || state.provider !== 'linear') return;
-		if (state.linearTeams.length === 0 && !linearTeamsMutation.isPending) {
-			linearTeamsMutation.mutate();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.verificationResult]);
-
-	// In edit mode, auto-fetch team list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
-	useEffect(() => {
-		if (!state.isEditing || state.provider !== 'linear') return;
-		const canFetch = state.linearApiKey ? true : state.hasStoredCredentials;
-		if (canFetch && state.linearTeams.length === 0 && !linearTeamsMutation.isPending) {
-			linearTeamsMutation.mutate();
-		}
-		if (
-			state.linearTeamId &&
-			!state.linearTeamDetails &&
-			canFetch &&
-			!linearDetailsMutation.isPending
-		) {
-			linearDetailsMutation.mutate(state.linearTeamId);
-		}
-		if (
-			state.linearTeamId &&
-			state.linearProjects.length === 0 &&
-			canFetch &&
-			!linearProjectsMutation.isPending
-		) {
-			linearProjectsMutation.mutate(state.linearTeamId);
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.linearTeamId, state.hasStoredCredentials]);
-
-	return { linearTeamsMutation, linearDetailsMutation, linearProjectsMutation, handleTeamSelect };
 }
 
 // ============================================================================
@@ -452,7 +304,7 @@ export function formatVerificationDisplay(
 
 export function useVerification(
 	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
+	dispatch: Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
 	projectId: string,
 	manifestDef: ProviderWizardDefinition,
@@ -589,29 +441,6 @@ export function useSaveMutation(
 	});
 
 	return { saveMutation };
-}
-
-// ============================================================================
-// Linear Label Creation
-// ============================================================================
-
-export function useLinearLabelCreation(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	projectId: string,
-) {
-	return useProviderLabelCreation(
-		{
-			providerId: 'linear',
-			getContainerId: (s) => s.linearTeamId,
-			containerError: 'Team must be selected before creating a label',
-			addLabel: (label) => ({ type: 'ADD_LINEAR_TEAM_LABEL', label }),
-			setLabelMapping: (slot, id) => ({ type: 'SET_LINEAR_LABEL', key: slot, value: id }),
-		},
-		state,
-		dispatch,
-		projectId,
-	);
 }
 
 export type { CustomFieldCreationConfig, LabelCreationConfig };
