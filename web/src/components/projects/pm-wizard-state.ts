@@ -6,23 +6,29 @@ import type { Reducer } from 'react';
 import {
 	createInitialJiraState,
 	INITIAL_JIRA_LABELS,
+	isJiraWizardAction,
 	type JiraProjectDetails,
 	type JiraProjectOption,
-	resetJiraProjectState,
+	type JiraWizardAction,
+	jiraWizardReducer,
 } from './pm-providers/jira/state.js';
 import {
 	createInitialLinearState,
 	INITIAL_LINEAR_LABELS,
+	isLinearWizardAction,
 	type LinearProjectOption,
 	type LinearTeamDetails,
 	type LinearTeamOption,
-	resetLinearTeamState,
+	type LinearWizardAction,
+	linearWizardReducer,
 } from './pm-providers/linear/state.js';
 import {
 	createInitialTrelloState,
-	resetTrelloBoardState,
+	isTrelloWizardAction,
 	type TrelloBoardDetails,
 	type TrelloBoardOption,
+	type TrelloWizardAction,
+	trelloWizardReducer,
 } from './pm-providers/trello/state.js';
 
 export type {
@@ -105,45 +111,15 @@ export interface WizardState {
 
 export type WizardAction =
 	| { type: 'SET_PROVIDER'; provider: Provider }
-	| { type: 'SET_TRELLO_API_KEY'; value: string }
-	| { type: 'SET_TRELLO_TOKEN'; value: string }
-	| { type: 'SET_JIRA_EMAIL'; value: string }
-	| { type: 'SET_JIRA_API_TOKEN'; value: string }
-	| { type: 'SET_JIRA_BASE_URL'; url: string }
-	| { type: 'SET_LINEAR_API_KEY'; value: string }
 	| {
 			type: 'SET_VERIFICATION';
 			result: { provider: Provider; display: string } | null;
 			error?: string | null;
 	  }
-	| { type: 'SET_TRELLO_BOARDS'; boards: TrelloBoardOption[] }
-	| { type: 'SET_TRELLO_BOARD_ID'; id: string }
-	| { type: 'SET_JIRA_PROJECTS'; projects: JiraProjectOption[] }
-	| { type: 'SET_JIRA_PROJECT_KEY'; key: string }
-	| { type: 'SET_LINEAR_TEAMS'; teams: LinearTeamOption[] }
-	| { type: 'SET_LINEAR_TEAM_ID'; id: string }
-	| { type: 'SET_LINEAR_TEAM_DETAILS'; details: LinearTeamDetails | null }
-	| { type: 'SET_LINEAR_PROJECTS'; projects: LinearProjectOption[] }
-	| { type: 'SET_LINEAR_PROJECT_ID'; value: string }
-	| { type: 'SET_TRELLO_BOARD_DETAILS'; details: TrelloBoardDetails | null }
-	| { type: 'SET_JIRA_PROJECT_DETAILS'; details: JiraProjectDetails | null }
-	| { type: 'SET_TRELLO_LIST_MAPPING'; key: string; value: string }
-	| { type: 'SET_TRELLO_LABEL_MAPPING'; key: string; value: string }
-	| { type: 'SET_TRELLO_COST_FIELD'; id: string }
-	| { type: 'SET_JIRA_STATUS_MAPPING'; key: string; value: string }
-	| { type: 'SET_JIRA_ISSUE_TYPE'; key: string; value: string }
-	| { type: 'SET_JIRA_LABEL'; key: string; value: string }
-	| { type: 'SET_JIRA_COST_FIELD'; id: string }
-	| { type: 'SET_LINEAR_STATUS_MAPPING'; key: string; value: string }
-	| { type: 'SET_LINEAR_LABEL'; key: string; value: string }
 	| { type: 'INIT_EDIT'; state: Partial<WizardState> }
-	| { type: 'ADD_TRELLO_BOARD_LABEL'; label: { id: string; name: string; color: string } }
-	| { type: 'ADD_LINEAR_TEAM_LABEL'; label: { id: string; name: string; color: string } }
-	| {
-			type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD';
-			customField: { id: string; name: string; type: string };
-	  }
-	| { type: 'ADD_JIRA_PROJECT_CUSTOM_FIELD'; field: { id: string; name: string; custom: boolean } };
+	| TrelloWizardAction
+	| JiraWizardAction
+	| LinearWizardAction;
 
 // ============================================================================
 // Initial state and constants
@@ -216,119 +192,16 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 			};
 		case 'SET_VERIFICATION':
 			return { ...state, verificationResult: action.result, verifyError: action.error ?? null };
-		case 'SET_TRELLO_BOARDS':
-			return { ...state, trelloBoards: action.boards };
-		case 'SET_TRELLO_BOARD_ID':
-			return {
-				...state,
-				...resetTrelloBoardState(action.id),
-			};
-		case 'SET_JIRA_PROJECTS':
-			return { ...state, jiraProjects: action.projects };
-		case 'SET_JIRA_PROJECT_KEY':
-			return {
-				...state,
-				...resetJiraProjectState(action.key),
-			};
-		case 'SET_LINEAR_TEAMS':
-			return { ...state, linearTeams: action.teams };
-		case 'SET_LINEAR_TEAM_ID':
-			return {
-				...state,
-				...resetLinearTeamState(action.id),
-			};
-		case 'SET_LINEAR_PROJECTS':
-			return { ...state, linearProjects: action.projects };
-		case 'SET_LINEAR_PROJECT_ID':
-			return { ...state, linearProjectId: action.value };
-		case 'SET_LINEAR_TEAM_DETAILS':
-			return { ...state, linearTeamDetails: action.details };
-		case 'SET_TRELLO_BOARD_DETAILS':
-			return { ...state, trelloBoardDetails: action.details };
-		case 'SET_JIRA_PROJECT_DETAILS':
-			return { ...state, jiraProjectDetails: action.details };
-		case 'SET_TRELLO_LIST_MAPPING':
-			return {
-				...state,
-				trelloListMappings: { ...state.trelloListMappings, [action.key]: action.value },
-			};
-		case 'SET_TRELLO_LABEL_MAPPING':
-			return {
-				...state,
-				trelloLabelMappings: { ...state.trelloLabelMappings, [action.key]: action.value },
-			};
-		case 'SET_TRELLO_COST_FIELD':
-			return { ...state, trelloCostFieldId: action.id };
-		case 'SET_JIRA_STATUS_MAPPING':
-			return {
-				...state,
-				jiraStatusMappings: { ...state.jiraStatusMappings, [action.key]: action.value },
-			};
-		case 'SET_JIRA_ISSUE_TYPE':
-			return {
-				...state,
-				jiraIssueTypes: { ...state.jiraIssueTypes, [action.key]: action.value },
-			};
-		case 'SET_JIRA_LABEL':
-			return {
-				...state,
-				jiraLabels: { ...state.jiraLabels, [action.key]: action.value },
-			};
-		case 'SET_JIRA_COST_FIELD':
-			return { ...state, jiraCostFieldId: action.id };
-		case 'SET_LINEAR_STATUS_MAPPING':
-			return {
-				...state,
-				linearStatusMappings: { ...state.linearStatusMappings, [action.key]: action.value },
-			};
-		case 'SET_LINEAR_LABEL':
-			return {
-				...state,
-				linearLabels: { ...state.linearLabels, [action.key]: action.value },
-			};
 		case 'INIT_EDIT': {
 			const merged = { ...state, ...action.state, isEditing: true };
 			// Snapshot the loaded provider so a later SET_PROVIDER knows what to clean up.
 			merged.previousProvider = merged.provider;
 			return merged;
 		}
-		case 'ADD_TRELLO_BOARD_LABEL':
-			if (!state.trelloBoardDetails) return state;
-			return {
-				...state,
-				trelloBoardDetails: {
-					...state.trelloBoardDetails,
-					labels: [...state.trelloBoardDetails.labels, action.label],
-				},
-			};
-		case 'ADD_LINEAR_TEAM_LABEL':
-			if (!state.linearTeamDetails) return state;
-			return {
-				...state,
-				linearTeamDetails: {
-					...state.linearTeamDetails,
-					labels: [...state.linearTeamDetails.labels, action.label],
-				},
-			};
-		case 'ADD_TRELLO_BOARD_CUSTOM_FIELD':
-			if (!state.trelloBoardDetails) return state;
-			return {
-				...state,
-				trelloBoardDetails: {
-					...state.trelloBoardDetails,
-					customFields: [...state.trelloBoardDetails.customFields, action.customField],
-				},
-			};
-		case 'ADD_JIRA_PROJECT_CUSTOM_FIELD':
-			if (!state.jiraProjectDetails) return state;
-			return {
-				...state,
-				jiraProjectDetails: {
-					...state.jiraProjectDetails,
-					fields: [...state.jiraProjectDetails.fields, action.field],
-				},
-			};
 		default:
+			if (isTrelloWizardAction(action)) return trelloWizardReducer(state, action);
+			if (isJiraWizardAction(action)) return jiraWizardReducer(state, action);
+			if (isLinearWizardAction(action)) return linearWizardReducer(state, action);
 			return state;
 	}
 };
@@ -339,36 +212,6 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 
 export function isStep1Complete(state: WizardState): boolean {
 	return !!state.provider;
-}
-
-export function isStep2Complete(state: WizardState): boolean {
-	if (state.isEditing && state.hasStoredCredentials) return true;
-	const credsReady =
-		state.provider === 'trello'
-			? !!(state.trelloApiKey && state.trelloToken)
-			: state.provider === 'jira'
-				? !!(state.jiraEmail && state.jiraApiToken && state.jiraBaseUrl)
-				: !!state.linearApiKey;
-	return credsReady && !!state.verificationResult;
-}
-
-export function isStep3Complete(state: WizardState): boolean {
-	if (state.provider === 'trello') return !!state.trelloBoardId;
-	if (state.provider === 'jira') return !!state.jiraProjectKey;
-	return !!state.linearTeamId;
-}
-
-export function isStep4Complete(state: WizardState): boolean {
-	if (state.provider === 'trello') return Object.keys(state.trelloListMappings).length > 0;
-	if (state.provider === 'jira') return Object.keys(state.jiraStatusMappings).length > 0;
-	return Object.keys(state.linearStatusMappings).length > 0;
-}
-
-export function areCredentialsReady(state: WizardState): boolean {
-	if (state.provider === 'trello') return !!(state.trelloApiKey && state.trelloToken);
-	if (state.provider === 'jira')
-		return !!(state.jiraEmail && state.jiraApiToken && state.jiraBaseUrl);
-	return !!state.linearApiKey;
 }
 
 /**
