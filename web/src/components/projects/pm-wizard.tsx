@@ -11,18 +11,20 @@ import { ManifestProviderWizardSection } from './pm-providers/manifest-section.j
 import { getProviderWizard, listProviderWizards } from './pm-providers/registry.js';
 import type { ProviderWizardDefinition } from './pm-providers/types.js';
 import { SaveStep } from './pm-wizard-common-steps.js';
-import { useSaveMutation, useVerification } from './pm-wizard-hooks.js';
+import {
+	areCredentialsReadyFromMetadata,
+	useSaveMutation,
+	useVerification,
+} from './pm-wizard-hooks.js';
 // Plan 011/5: the three legacy `pm-wizard-{trello,jira,linear}-steps.tsx`
 // files were deleted; all three providers now render exclusively through
 // the manifest path (see `./pm-providers/<provider>/wizard.ts`).
 // Plan 012/4: `WebhookStep` + `LinearWebhookInfoPanel` + supporting hooks
 // deleted; every provider owns its webhook UX via the manifest path.
 import {
-	areCredentialsReady,
 	buildEditState,
 	createInitialState,
 	isStep1Complete,
-	type Provider,
 	type WizardAction,
 	type WizardState,
 	wizardReducer,
@@ -243,7 +245,9 @@ export function PMWizard({
 
 	// ---- Step status ----
 
-	const credsReady = areCredentialsReady(state);
+	// Metadata-driven: reads rawCredentials from the provider's auth spec so
+	// no shared file needs to change when a new provider is added.
+	const credsReady = areCredentialsReadyFromMetadata(state, manifestDef.auth);
 
 	function getStatus(
 		stepNum: number,
@@ -283,7 +287,7 @@ export function PMWizard({
 										const fromLabel = getProviderWizard(state.provider)?.label ?? state.provider;
 										if (!confirmProviderSwitch(fromLabel, wizard.label)) return;
 									}
-									dispatch({ type: 'SET_PROVIDER', provider: wizard.id as Provider });
+									dispatch({ type: 'SET_PROVIDER', provider: wizard.id });
 									advanceToStep(2);
 								}}
 								className={`flex-1 rounded-md border px-4 py-3 text-sm font-medium transition-colors ${

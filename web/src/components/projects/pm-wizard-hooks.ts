@@ -15,15 +15,35 @@ import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
 import type { ProviderAuthMetadata, ProviderWizardDefinition } from './pm-providers/types.js';
 import type { WizardAction, WizardState } from './pm-wizard-state.js';
-import { shouldUseStoredCredentials } from './pm-wizard-state.js';
+
+/**
+ * Returns true when the provider's credentials form fields are all non-empty.
+ * Driven entirely by the provider's `auth.rawCredentials` metadata so no
+ * shared file needs to change when a new provider declares its credential
+ * fields. Used to enable the "Verify Connection" button.
+ */
+export function areCredentialsReadyFromMetadata(
+	state: WizardState,
+	auth: ProviderAuthMetadata,
+): boolean {
+	return auth.rawCredentials.every((cred) => {
+		const value = state[cred.stateField];
+		return typeof value === 'string' && !!value;
+	});
+}
 
 export function buildProviderAuthArgFromMetadata(
 	state: WizardState,
 	projectId: string,
 	metadata: ProviderAuthMetadata,
 ): { projectId: string } | { credentials: Record<string, string> } {
+	// In edit mode with stored credentials, pass { projectId } when the primary
+	// credential field is still empty (user hasn't re-typed their key). The
+	// fallbackWhenStateFieldEmpty field from the provider's auth metadata tells
+	// us which state field to check — no provider-specific branching needed.
 	if (
-		shouldUseStoredCredentials(state) &&
+		state.isEditing &&
+		state.hasStoredCredentials &&
 		!state[metadata.storedCredentials.fallbackWhenStateFieldEmpty]
 	) {
 		return { projectId };

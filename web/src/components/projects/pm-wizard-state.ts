@@ -49,7 +49,20 @@ export interface LinearTeamDetails {
 	labels: Array<{ id: string; name: string; color: string }>;
 }
 
-export type Provider = 'trello' | 'jira' | 'linear';
+/**
+ * Provider identifier — an open string so new providers registered via the
+ * frontend barrel (`web/src/components/projects/pm-providers/index.ts`) can
+ * be dispatched without adding to a closed union here.
+ *
+ * Note: adding a new PM provider still requires updating `WizardState` with
+ * the provider's credential fields (e.g. `asanaApiKey: string`), the reducer
+ * with the corresponding action types, and `buildEditState` with the new
+ * provider's config-shape handling. The credential-readiness path
+ * (`areCredentialsReadyFromMetadata` in `pm-wizard-hooks.ts`) and the
+ * mutation auth path (`buildProviderAuthArgFromMetadata`) are metadata-driven
+ * and do NOT require changes.
+ */
+export type Provider = string;
 
 export interface WizardState {
 	provider: Provider;
