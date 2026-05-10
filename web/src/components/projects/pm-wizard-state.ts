@@ -153,43 +153,6 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 				isEditing: state.isEditing,
 				previousProvider: state.previousProvider,
 			};
-		case 'SET_TRELLO_API_KEY':
-			return {
-				...state,
-				trelloApiKey: action.value,
-				verificationResult: null,
-				verifyError: null,
-			};
-		case 'SET_TRELLO_TOKEN':
-			return {
-				...state,
-				trelloToken: action.value,
-				verificationResult: null,
-				verifyError: null,
-			};
-		case 'SET_JIRA_EMAIL':
-			return {
-				...state,
-				jiraEmail: action.value,
-				verificationResult: null,
-				verifyError: null,
-			};
-		case 'SET_JIRA_API_TOKEN':
-			return {
-				...state,
-				jiraApiToken: action.value,
-				verificationResult: null,
-				verifyError: null,
-			};
-		case 'SET_JIRA_BASE_URL':
-			return { ...state, jiraBaseUrl: action.url, verificationResult: null, verifyError: null };
-		case 'SET_LINEAR_API_KEY':
-			return {
-				...state,
-				linearApiKey: action.value,
-				verificationResult: null,
-				verifyError: null,
-			};
 		case 'SET_VERIFICATION':
 			return { ...state, verificationResult: action.result, verifyError: action.error ?? null };
 		case 'INIT_EDIT': {
