@@ -122,6 +122,8 @@ Envelope fields:
 
 You do not call `emitCliError` directly. The shared factory routes every failure through it automatically — your job is to make the declarative metadata (describe text, examples, aliases, file alternatives) rich enough that the auto-generated envelope is actually useful.
 
+Core gadget functions must throw for fatal runtime/API/provider failures. Do not return sentinel prose such as `Error posting comment: ...`; `createCLICommand()` treats returned values as successful `data`, and thrown errors as runtime failure envelopes. Intentional non-fatal outcomes may still return structured data or explicit status text when they are part of the command contract, such as guarded PM move no-ops or friction reports queued for retry.
+
 ---
 
 ## Shared CLI helper layout

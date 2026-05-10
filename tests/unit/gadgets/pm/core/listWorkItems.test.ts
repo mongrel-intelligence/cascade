@@ -100,11 +100,9 @@ describe('listWorkItems', () => {
 		expect(result).not.toContain('...');
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.listWorkItems.mockRejectedValue(new Error('API error'));
 
-		const result = await listWorkItems('list1');
-
-		expect(result).toBe('Error listing work items: API error');
+		await expect(listWorkItems('list1')).rejects.toThrow('Error listing work items: API error');
 	});
 });

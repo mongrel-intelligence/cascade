@@ -29,19 +29,19 @@ describe('updateChecklistItem', () => {
 		expect(result).toBe('Checklist item checkItem1 marked incomplete on work item item1');
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.updateChecklistItem.mockRejectedValue(new Error('API error'));
 
-		const result = await updateChecklistItem('item1', 'checkItem1', true);
-
-		expect(result).toBe('Error updating checklist item: API error');
+		await expect(updateChecklistItem('item1', 'checkItem1', true)).rejects.toThrow(
+			'Error updating checklist item: API error',
+		);
 	});
 
 	it('handles non-Error thrown value', async () => {
 		mockProvider.updateChecklistItem.mockRejectedValue('string error');
 
-		const result = await updateChecklistItem('item1', 'ci1', false);
-
-		expect(result).toBe('Error updating checklist item: string error');
+		await expect(updateChecklistItem('item1', 'ci1', false)).rejects.toThrow(
+			'Error updating checklist item: string error',
+		);
 	});
 });

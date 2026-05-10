@@ -9,6 +9,6 @@ export async function deleteChecklistItem(
 		return `Checklist item ${checkItemId} deleted from work item ${workItemId}`;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error deleting checklist item: ${message}`;
+		throw new Error(`Error deleting checklist item: ${message}`);
 	}
 }

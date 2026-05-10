@@ -20,19 +20,19 @@ describe('deleteChecklistItem', () => {
 		expect(result).toBe('Checklist item checkItem1 deleted from work item item1');
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.deleteChecklistItem.mockRejectedValue(new Error('API error'));
 
-		const result = await deleteChecklistItem('item1', 'checkItem1');
-
-		expect(result).toBe('Error deleting checklist item: API error');
+		await expect(deleteChecklistItem('item1', 'checkItem1')).rejects.toThrow(
+			'Error deleting checklist item: API error',
+		);
 	});
 
 	it('handles non-Error thrown value', async () => {
 		mockProvider.deleteChecklistItem.mockRejectedValue('string error');
 
-		const result = await deleteChecklistItem('item1', 'ci1');
-
-		expect(result).toBe('Error deleting checklist item: string error');
+		await expect(deleteChecklistItem('item1', 'ci1')).rejects.toThrow(
+			'Error deleting checklist item: string error',
+		);
 	});
 });

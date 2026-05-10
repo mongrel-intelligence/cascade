@@ -48,12 +48,12 @@ describe('postComment', () => {
 		expect(result).toBe('Comment posted successfully');
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.addComment.mockRejectedValue(new Error('Network error'));
 
-		const result = await postComment('item1', 'text');
-
-		expect(result).toBe('Error posting comment: Network error');
+		await expect(postComment('item1', 'text')).rejects.toThrow(
+			'Error posting comment: Network error',
+		);
 	});
 
 	it('passes multi-line text correctly', async () => {
@@ -68,9 +68,9 @@ describe('postComment', () => {
 	it('handles non-Error thrown value', async () => {
 		mockProvider.addComment.mockRejectedValue('string error');
 
-		const result = await postComment('item1', 'text');
-
-		expect(result).toBe('Error posting comment: string error');
+		await expect(postComment('item1', 'text')).rejects.toThrow(
+			'Error posting comment: string error',
+		);
 	});
 
 	describe('progress comment replacement', () => {

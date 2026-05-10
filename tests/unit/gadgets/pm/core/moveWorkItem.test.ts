@@ -23,26 +23,26 @@ describe('moveWorkItem', () => {
 		expect(result).toBe('Work item card1 moved to list2 successfully');
 	});
 
-	it('returns error string on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.moveWorkItem.mockRejectedValue(new Error('API error'));
 
-		const result = await moveWorkItem({
-			workItemId: 'card1',
-			destination: 'list2',
-		});
-
-		expect(result).toBe('Error moving work item: API error');
+		await expect(
+			moveWorkItem({
+				workItemId: 'card1',
+				destination: 'list2',
+			}),
+		).rejects.toThrow('Error moving work item: API error');
 	});
 
 	it('handles non-Error throws', async () => {
 		mockProvider.moveWorkItem.mockRejectedValue('network timeout');
 
-		const result = await moveWorkItem({
-			workItemId: 'card1',
-			destination: 'list2',
-		});
-
-		expect(result).toBe('Error moving work item: network timeout');
+		await expect(
+			moveWorkItem({
+				workItemId: 'card1',
+				destination: 'list2',
+			}),
+		).rejects.toThrow('Error moving work item: network timeout');
 	});
 
 	// ── expectedSourceState guard ────────────────────────────────────────────
@@ -144,17 +144,18 @@ describe('moveWorkItem', () => {
 			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('card1', 'list2');
 		});
 
-		it('returns a structured error if getWorkItem throws', async () => {
+		it('throws a structured error if getWorkItem throws', async () => {
 			mockProvider.getWorkItem.mockRejectedValue(new Error('API down'));
 
-			const result = await moveWorkItem({
-				workItemId: 'MNG-538',
-				destination: 'todo-state-id',
-				expectedSourceState: 'Backlog',
-			});
+			await expect(
+				moveWorkItem({
+					workItemId: 'MNG-538',
+					destination: 'todo-state-id',
+					expectedSourceState: 'Backlog',
+				}),
+			).rejects.toThrow('Error moving work item: API down');
 
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
-			expect(result).toContain('Error');
 		});
 	});
 });

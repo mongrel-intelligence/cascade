@@ -136,6 +136,8 @@ The `cascade-tools` binary uses a separate oclif config (`bin/cascade-tools.js`)
 
 New domain commands should not add branches in these helpers. They declare behavior through their `ToolDefinition` metadata (`cliAliases`, examples, file input alternatives, auto-resolution), and the shared generators consume it.
 
+Core functions passed to `createCLICommand()` own domain work only. On fatal runtime/API/provider failures they throw, and the shared factory converts that exception into the structured `{"success":false,"error":{"type":"runtime","message":"..."}}` stdout envelope plus exit code 1. A returned value is always serialized as successful `data`, so gadgets must not return sentinel error strings such as `Error reading work item: ...` for fatal failures. Non-fatal command states that are part of the contract, such as guarded PM move no-ops or friction retry queueing, remain successful returns.
+
 ## Session State
 
 `src/gadgets/sessionState.ts`

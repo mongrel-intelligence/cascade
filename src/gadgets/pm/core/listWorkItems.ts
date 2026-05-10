@@ -22,6 +22,6 @@ export async function listWorkItems(containerId: string): Promise<string> {
 		return result;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error listing work items: ${message}`;
+		throw new Error(`Error listing work items: ${message}`);
 	}
 }

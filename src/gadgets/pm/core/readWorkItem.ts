@@ -260,6 +260,6 @@ export async function readWorkItem(workItemId: string, includeComments = true): 
 		return augmented;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error reading work item: ${message}`;
+		throw new Error(`Error reading work item: ${message}`);
 	}
 }
