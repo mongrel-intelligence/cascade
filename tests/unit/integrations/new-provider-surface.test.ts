@@ -44,6 +44,16 @@ const SHARED_SURFACE_FILES = [
 	'src/api/routers/pm-discovery.ts',
 	'web/src/components/projects/pm-providers/generator.tsx',
 
+	// Shared PM wizard orchestration — provider picker, edit hydration
+	// dispatch, verification, save, and common save step are metadata-driven
+	// or provider-definition driven. New-provider frontend work belongs in
+	// web/src/components/projects/pm-providers/<provider>/, with
+	// pm-wizard-state.ts as the only deliberate shared dashboard exception
+	// while it composes provider state slices into the aggregate WizardState.
+	'web/src/components/projects/pm-wizard.tsx',
+	'web/src/components/projects/pm-wizard-hooks.ts',
+	'web/src/components/projects/pm-wizard-common-steps.tsx',
+
 	// Frontend PM provider barrel — new providers add one import here,
 	// just like the backend barrel at src/integrations/pm/index.ts.
 	// pm-wizard.tsx imports this barrel and never needs to change.
@@ -99,9 +109,14 @@ describe('new-provider-surface (plan 009/5 task 4, spec 009 AC #10)', () => {
 			'required for a new provider lives in:',
 			'  - src/integrations/pm/<provider>/',
 			'  - web/src/components/projects/pm-providers/<provider>/',
+			'    (wizard.ts, state.ts, hooks.ts, auth.ts, webhook-step.tsx, custom steps)',
 			'  - A single import line in src/integrations/pm/index.ts (backend barrel)',
 			'  - A single import line in web/src/components/projects/pm-providers/index.ts (frontend barrel)',
-			'If you need to edit one of the shared surface files above, ',
+			'Shared pm-wizard.tsx, pm-wizard-hooks.ts, and pm-wizard-common-steps.tsx',
+			'are intentionally provider-agnostic. The current explicit frontend',
+			'exception is pm-wizard-state.ts, which composes provider-owned state',
+			'slices from web/src/components/projects/pm-providers/<provider>/state.ts.',
+			'If you need to edit one of the guarded shared surface files above,',
 			'update this test with the justification and the new expected state.',
 		].join('\n');
 		expect(invariant.length).toBeGreaterThan(0);
