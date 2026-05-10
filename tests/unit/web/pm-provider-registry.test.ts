@@ -12,6 +12,14 @@ function makeStubWizard(id: string): ProviderWizardDefinition {
 		id,
 		label: id,
 		steps: [],
+		auth: {
+			rawCredentials: [{ role: 'api_key', stateField: 'linearApiKey' }],
+			storedCredentials: { fallbackWhenStateFieldEmpty: 'linearApiKey' },
+			missingCredentialsMessage: 'Missing credentials',
+		},
+		credentialPersistence: [
+			{ envVarKey: 'STUB_API_KEY', stateField: 'linearApiKey', label: 'Stub API Key' },
+		],
 		buildIntegrationConfig: () => ({}),
 		isSetupComplete: () => true,
 	};

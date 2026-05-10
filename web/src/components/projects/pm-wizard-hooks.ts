@@ -16,6 +16,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
+import type { ProviderAuthMetadata } from './pm-providers/types.js';
 import type {
 	LinearProjectOption,
 	LinearTeamDetails,
@@ -73,6 +74,30 @@ export function buildProviderAuthArg(
 			base_url: state.jiraBaseUrl,
 		},
 	};
+}
+
+export function buildProviderAuthArgFromMetadata(
+	state: WizardState,
+	projectId: string,
+	metadata: ProviderAuthMetadata,
+): { projectId: string } | { credentials: Record<string, string> } {
+	if (
+		shouldUseStoredCredentials(state) &&
+		!state[metadata.storedCredentials.fallbackWhenStateFieldEmpty]
+	) {
+		return { projectId };
+	}
+
+	const credentials: Record<string, string> = {};
+	for (const field of metadata.rawCredentials) {
+		const rawValue = state[field.stateField];
+		const value = typeof rawValue === 'string' ? rawValue : '';
+		if (!value) {
+			throw new Error(field.missingMessage ?? metadata.missingCredentialsMessage);
+		}
+		credentials[field.role] = value;
+	}
+	return { credentials };
 }
 
 // ============================================================================

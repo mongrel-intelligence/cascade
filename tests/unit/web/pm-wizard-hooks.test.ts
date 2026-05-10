@@ -6,8 +6,12 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { jiraProviderWizard } from '../../../web/src/components/projects/pm-providers/jira/wizard.js';
+import { linearProviderWizard } from '../../../web/src/components/projects/pm-providers/linear/wizard.js';
+import { trelloProviderWizard } from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
 import {
 	buildProviderAuthArg,
+	buildProviderAuthArgFromMetadata,
 	runPerLabelCreations,
 } from '../../../web/src/components/projects/pm-wizard-hooks.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
@@ -150,6 +154,135 @@ describe('buildProviderAuthArg', () => {
 		const state = linearState({ linearApiKey: '' });
 		expect(() => buildProviderAuthArg(state, 'proj-l')).toThrow(
 			'Enter your API key before verifying',
+		);
+	});
+});
+
+// ============================================================================
+// Provider-owned credential metadata
+// ============================================================================
+
+describe('provider credential metadata', () => {
+	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'trello', ...overrides };
+	}
+	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'jira', ...overrides };
+	}
+	function linearState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'linear', ...overrides };
+	}
+
+	it('builds stored credential fallback auth payloads from provider metadata', () => {
+		expect(
+			buildProviderAuthArgFromMetadata(
+				trelloState({ isEditing: true, hasStoredCredentials: true, trelloApiKey: '' }),
+				'proj-t',
+				trelloProviderWizard.auth,
+			),
+		).toEqual({ projectId: 'proj-t' });
+		expect(
+			buildProviderAuthArgFromMetadata(
+				jiraState({ isEditing: true, hasStoredCredentials: true, jiraEmail: '' }),
+				'proj-j',
+				jiraProviderWizard.auth,
+			),
+		).toEqual({ projectId: 'proj-j' });
+		expect(
+			buildProviderAuthArgFromMetadata(
+				linearState({ isEditing: true, hasStoredCredentials: true, linearApiKey: '' }),
+				'proj-l',
+				linearProviderWizard.auth,
+			),
+		).toEqual({ projectId: 'proj-l' });
+	});
+
+	it('builds raw credential auth payloads from provider metadata', () => {
+		expect(
+			buildProviderAuthArgFromMetadata(
+				trelloState({ trelloApiKey: 'key-abc', trelloToken: 'tok-xyz' }),
+				'proj-t',
+				trelloProviderWizard.auth,
+			),
+		).toEqual({ credentials: { api_key: 'key-abc', token: 'tok-xyz' } });
+		expect(
+			buildProviderAuthArgFromMetadata(
+				jiraState({
+					jiraEmail: 'user@example.com',
+					jiraApiToken: 'jira-tok',
+					jiraBaseUrl: 'https://example.atlassian.net',
+				}),
+				'proj-j',
+				jiraProviderWizard.auth,
+			),
+		).toEqual({
+			credentials: {
+				email: 'user@example.com',
+				api_token: 'jira-tok',
+				base_url: 'https://example.atlassian.net',
+			},
+		});
+		expect(
+			buildProviderAuthArgFromMetadata(
+				linearState({ linearApiKey: 'lin_abc' }),
+				'proj-l',
+				linearProviderWizard.auth,
+			),
+		).toEqual({ credentials: { api_key: 'lin_abc' } });
+	});
+
+	it('throws provider metadata errors when raw credentials are missing', () => {
+		expect(() =>
+			buildProviderAuthArgFromMetadata(
+				trelloState({ trelloApiKey: 'key', trelloToken: '' }),
+				'proj-t',
+				trelloProviderWizard.auth,
+			),
+		).toThrow('Enter both credentials before verifying');
+		expect(() =>
+			buildProviderAuthArgFromMetadata(
+				jiraState({ jiraEmail: 'user@example.com', jiraApiToken: 'tok', jiraBaseUrl: '' }),
+				'proj-j',
+				jiraProviderWizard.auth,
+			),
+		).toThrow('Enter both credentials before verifying');
+		expect(() =>
+			buildProviderAuthArgFromMetadata(
+				linearState({ linearApiKey: '' }),
+				'proj-l',
+				linearProviderWizard.auth,
+			),
+		).toThrow('Enter your API key before verifying');
+	});
+
+	it('declares complete normal credential persistence metadata for each provider', () => {
+		expect(trelloProviderWizard.credentialPersistence).toEqual([
+			{ envVarKey: 'TRELLO_API_KEY', stateField: 'trelloApiKey', label: 'Trello API Key' },
+			{ envVarKey: 'TRELLO_TOKEN', stateField: 'trelloToken', label: 'Trello Token' },
+		]);
+		expect(jiraProviderWizard.credentialPersistence).toEqual([
+			{ envVarKey: 'JIRA_EMAIL', stateField: 'jiraEmail', label: 'JIRA Email' },
+			{ envVarKey: 'JIRA_API_TOKEN', stateField: 'jiraApiToken', label: 'JIRA API Token' },
+		]);
+		expect(linearProviderWizard.credentialPersistence).toEqual([
+			{ envVarKey: 'LINEAR_API_KEY', stateField: 'linearApiKey', label: 'Linear API Key' },
+		]);
+	});
+
+	it('keeps config and webhook secrets out of normal credential persistence metadata', () => {
+		expect(jiraProviderWizard.auth.rawCredentials.map((c) => c.role)).toEqual([
+			'email',
+			'api_token',
+			'base_url',
+		]);
+		expect(jiraProviderWizard.credentialPersistence.map((c) => c.envVarKey)).not.toContain(
+			'JIRA_BASE_URL',
+		);
+		expect(jiraProviderWizard.credentialPersistence.map((c) => c.envVarKey)).not.toContain(
+			'JIRA_WEBHOOK_SECRET',
+		);
+		expect(linearProviderWizard.credentialPersistence.map((c) => c.envVarKey)).not.toContain(
+			'LINEAR_WEBHOOK_SECRET',
 		);
 	});
 });

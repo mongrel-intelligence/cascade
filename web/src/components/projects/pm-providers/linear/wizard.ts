@@ -231,6 +231,14 @@ function LinearProjectScopeAdapter({ providerHooks }: ProviderWizardStepProps): 
 export const linearProviderWizard: ProviderWizardDefinition = {
 	id: 'linear',
 	label: 'Linear',
+	auth: {
+		rawCredentials: [{ role: 'api_key', stateField: 'linearApiKey' }],
+		storedCredentials: { fallbackWhenStateFieldEmpty: 'linearApiKey' },
+		missingCredentialsMessage: 'Enter your API key before verifying',
+	},
+	credentialPersistence: [
+		{ envVarKey: 'LINEAR_API_KEY', stateField: 'linearApiKey', label: 'Linear API Key' },
+	],
 
 	steps: [
 		{

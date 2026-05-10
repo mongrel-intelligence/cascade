@@ -51,6 +51,41 @@ export interface ProviderHooksContext {
 	readonly advanceToStep: (step: number) => void;
 }
 
+export interface ProviderAuthCredentialMapping {
+	/** Provider API credential key sent to discovery endpoints. */
+	readonly role: string;
+	/** Wizard state field containing the raw credential/config value. */
+	readonly stateField: keyof WizardState;
+	/** Overrides the provider-level missing-credential message for this field. */
+	readonly missingMessage?: string;
+}
+
+export interface ProviderStoredCredentialAuth {
+	/**
+	 * In edit mode, an empty raw credential field means "use credentials already
+	 * saved on this project" and sends `{ projectId }` instead of raw secrets.
+	 */
+	readonly fallbackWhenStateFieldEmpty: keyof WizardState;
+}
+
+export interface ProviderAuthMetadata {
+	/** Raw credential payload shape for verification/discovery calls. */
+	readonly rawCredentials: readonly ProviderAuthCredentialMapping[];
+	/** Stored-project-credential fallback shape for edit mode. */
+	readonly storedCredentials: ProviderStoredCredentialAuth;
+	/** Default error when required raw credentials are missing. */
+	readonly missingCredentialsMessage: string;
+}
+
+export interface ProviderCredentialPersistenceMapping {
+	/** Environment variable key persisted to project_credentials. */
+	readonly envVarKey: string;
+	/** Wizard state field containing the value to persist. */
+	readonly stateField: keyof WizardState;
+	/** Human-readable name stored with the credential. */
+	readonly label: string;
+}
+
 export interface ProviderWizardDefinition {
 	/** Must match the backend manifest id (e.g. 'trello', 'linear'). */
 	readonly id: string;
@@ -58,6 +93,10 @@ export interface ProviderWizardDefinition {
 	readonly label: string;
 	/** Ordered list of wizard steps. */
 	readonly steps: readonly ProviderWizardStep[];
+	/** Provider-owned auth contract for raw credentials and stored fallback. */
+	readonly auth: ProviderAuthMetadata;
+	/** Normal provider credentials saved to project_credentials. */
+	readonly credentialPersistence: readonly ProviderCredentialPersistenceMapping[];
 	/**
 	 * Transforms wizard state into the integration config payload sent to the
 	 * save API. Mirrors the existing `buildXxxIntegrationConfig` functions.
