@@ -272,9 +272,15 @@ describe('buildExecutionPlan', () => {
 			engine,
 		);
 
-		expect(withFriction.systemPrompt).toContain('Friction Reporting');
-		expect(withFriction.systemPrompt).toContain('incidental papercuts');
-		expect(withFriction.systemPrompt).toContain('Keep working after reporting friction unless');
+		// 2026-05-10 rewrite: friction guidance is now action-trigger framed
+		// without negative scoping — assert by the new content. Section
+		// heading + the "when in doubt, report" calibration anchor + the
+		// non-blocking semantic.
+		expect(withFriction.systemPrompt).toContain('## Friction Reporting');
+		expect(withFriction.systemPrompt).toContain('When in doubt, report');
+		expect(withFriction.systemPrompt).toContain(
+			'only let friction block your task if it actually blocks it',
+		);
 
 		mockResolveEffectiveCapabilities.mockReturnValueOnce(['fs:read']);
 

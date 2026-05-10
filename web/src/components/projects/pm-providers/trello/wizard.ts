@@ -247,6 +247,18 @@ function TrelloCustomFieldMappingAdapter({
 export const trelloProviderWizard: ProviderWizardDefinition = {
 	id: 'trello',
 	label: 'Trello',
+	auth: {
+		rawCredentials: [
+			{ role: 'api_key', stateField: 'trelloApiKey' },
+			{ role: 'token', stateField: 'trelloToken' },
+		],
+		storedCredentials: { fallbackWhenStateFieldEmpty: 'trelloApiKey' },
+		missingCredentialsMessage: 'Enter both credentials before verifying',
+	},
+	credentialPersistence: [
+		{ envVarKey: 'TRELLO_API_KEY', stateField: 'trelloApiKey', label: 'Trello API Key' },
+		{ envVarKey: 'TRELLO_TOKEN', stateField: 'trelloToken', label: 'Trello Token' },
+	],
 
 	// Each step mirrors `trelloManifest.wizardSpec.steps` by id.
 	steps: [
