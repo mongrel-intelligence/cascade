@@ -19,6 +19,11 @@ const LINEAR_WIZARD_PATH = resolve(
 	REPO_ROOT,
 	'web/src/components/projects/pm-providers/linear/wizard.ts',
 );
+const LINEAR_HOOKS_PATH = resolve(
+	REPO_ROOT,
+	'web/src/components/projects/pm-providers/linear/hooks.ts',
+);
+const PM_WIZARD_HOOKS_PATH = resolve(REPO_ROOT, 'web/src/components/projects/pm-wizard-hooks.ts');
 
 import { linearManifest } from '../../../src/integrations/pm/linear/manifest.js';
 import {
@@ -112,5 +117,23 @@ describe('linearProviderWizard — webhook URL construction guard', () => {
 			source,
 			'/webhooks/{projectId}/linear must not appear — wrong path and wrong origin',
 		).not.toContain('/webhooks/');
+	});
+});
+
+describe('linearProviderWizard provider-owned hooks', () => {
+	it('imports Linear-specific hooks from the Linear provider folder', () => {
+		const source = readFileSync(LINEAR_WIZARD_PATH, 'utf8');
+		expect(source).toContain("} from './hooks.js'");
+		expect(source).not.toContain("} from '../../pm-wizard-hooks.js'");
+	});
+
+	it('keeps Linear-specific hook definitions out of the shared wizard hook module', () => {
+		const linearHooks = readFileSync(LINEAR_HOOKS_PATH, 'utf8');
+		const sharedHooks = readFileSync(PM_WIZARD_HOOKS_PATH, 'utf8');
+
+		for (const hookName of ['useLinearDiscovery', 'useLinearLabelCreation']) {
+			expect(linearHooks).toContain(`export function ${hookName}`);
+			expect(sharedHooks).not.toContain(`export function ${hookName}`);
+		}
 	});
 });

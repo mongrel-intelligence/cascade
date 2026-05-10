@@ -31,7 +31,32 @@ import { Config, run } from '@oclif/core';
 // runs commands lazily, and Spec 006/5 removed the legacy self-bootstrap
 // path, so side-effect imports have to fire at the entry point.
 // Without this, `cascade-tools pm <cmd>` throws `Unknown PM integration type`.
-await import('../dist/cli/bootstrap.js');
+//
+// 2026-05-10: agents in worker containers sometimes invoke this script as
+// `node bin/cascade-tools.js …` from a fresh repo checkout where dist/ is
+// not built (the installed `cascade-tools` binary in PATH is the right
+// invocation). The raw ERR_MODULE_NOT_FOUND stack trace hid the recovery
+// path from the agent on prod run ff6adf00. Trap that one specific case
+// and emit a one-line stderr explainer instead. Any other module-not-found
+// — e.g. a real missing dist file mid-bootstrap — propagates unchanged.
+try {
+	await import('../dist/cli/bootstrap.js');
+} catch (err) {
+	if (
+		err &&
+		err.code === 'ERR_MODULE_NOT_FOUND' &&
+		typeof err.message === 'string' &&
+		/dist\/cli\/bootstrap/.test(err.message)
+	) {
+		process.stderr.write(
+			'cascade-tools: dist/ is not built in this checkout. ' +
+				'Use the installed `cascade-tools` from PATH (already available in the worker container), ' +
+				'or run `npm run build` first if you need to invoke `node bin/cascade-tools.js` directly.\n',
+		);
+		process.exit(1);
+	}
+	throw err;
+}
 
 // cascade-tools uses its own oclif config independent of package.json,
 // which now points to the dashboard CLI (cascade binary).

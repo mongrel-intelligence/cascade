@@ -182,26 +182,14 @@ export const reportFrictionDef: ToolDefinition = {
 			required: true,
 		},
 		category: {
-			type: 'enum',
-			options: [
-				'tooling',
-				'environment',
-				'permissions',
-				'dependency',
-				'test-failure',
-				'pm-data',
-				'scm-data',
-				'other',
-			],
+			type: 'string',
 			describe:
-				'Friction category: tooling, environment, permissions, dependency, test-failure, pm-data, scm-data, or other',
+				'Friction category (e.g. tooling, environment, permissions, dependency, test-failure, pm-data, scm-data, other)',
 			required: true,
 		},
 		severity: {
-			type: 'enum',
-			options: ['low', 'medium', 'high', 'critical'],
-			describe:
-				'Severity: low annoyance, medium slowdown, high blocker risk, or critical hard blocker',
+			type: 'string',
+			describe: 'Severity (e.g. low, medium, high, critical)',
 			required: true,
 		},
 		whileDoing: {

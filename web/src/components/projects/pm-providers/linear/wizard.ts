@@ -23,7 +23,6 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactElement, useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc } from '@/lib/trpc.js';
-import { useLinearDiscovery, useLinearLabelCreation } from '../../pm-wizard-hooks.js';
 import { buildLinearIntegrationConfig } from '../../pm-wizard-state.js';
 import type { ProjectCredentialMeta } from '../../project-secret-field.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
@@ -32,6 +31,7 @@ import { LabelMappingStep } from '../steps/label-mapping.js';
 import { ProjectScopeStep } from '../steps/project-scope.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { useLinearDiscovery, useLinearLabelCreation } from './hooks.js';
 import { LinearWebhookAdapter } from './webhook-step.js';
 
 // CASCADE stage keys that map to Linear workflow state IDs (UUIDs —

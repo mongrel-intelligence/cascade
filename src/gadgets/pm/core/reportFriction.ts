@@ -4,11 +4,7 @@ import {
 	appendFiledFrictionReport,
 	appendQueuedFrictionReport,
 } from '../../../friction/sidecar.js';
-import type {
-	FrictionCategory,
-	FrictionReport,
-	FrictionSeverity,
-} from '../../../friction/types.js';
+import type { FrictionReport } from '../../../friction/types.js';
 import type { ProjectConfig } from '../../../types/index.js';
 import {
 	FRICTION_SIDECAR_ENV_VAR,
@@ -30,29 +26,18 @@ import {
 
 const DEFAULT_FRICTION_SIDECAR_PATH = '.cascade/friction-reports.jsonl';
 
-const CATEGORIES = [
-	'tooling',
-	'environment',
-	'permissions',
-	'dependency',
-	'test-failure',
-	'pm-data',
-	'scm-data',
-	'other',
-] as const satisfies readonly FrictionCategory[];
-
-const SEVERITIES = [
-	'low',
-	'medium',
-	'high',
-	'critical',
-] as const satisfies readonly FrictionSeverity[];
-
 export interface ReportFrictionParams {
 	summary: string;
 	details: string;
-	category: FrictionCategory;
-	severity: FrictionSeverity;
+	/**
+	 * Free-form category and severity. Originally validated against an
+	 * 8-member / 4-member enum, but loosened on 2026-05-10 (run ff6adf00)
+	 * after agents took the gadget describe text literally and oclif
+	 * rejected `--severity 'medium slowdown'`. Cluster + re-tighten later
+	 * once we have real usage data.
+	 */
+	category: string;
+	severity: string;
 	whileDoing?: string;
 	project?: ProjectConfig;
 	sidecarPath?: string;
@@ -130,11 +115,6 @@ function projectFromEnv(): ProjectConfig {
 	} as ProjectConfig;
 }
 
-function requireEnum<T extends string>(value: string, allowed: readonly T[], name: string): T {
-	if ((allowed as readonly string[]).includes(value)) return value as T;
-	throw new Error(`${name} must be one of: ${allowed.join(', ')}`);
-}
-
 function parseOptionalInt(value: string | undefined): number | undefined {
 	if (!value) return undefined;
 	const parsed = Number.parseInt(value, 10);
@@ -167,8 +147,8 @@ function buildReport(params: ReportFrictionParams, project: ProjectConfig): Fric
 		reportId: randomUUID(),
 		summary: params.summary,
 		details: params.details,
-		category: requireEnum(params.category, CATEGORIES, 'category'),
-		severity: requireEnum(params.severity, SEVERITIES, 'severity'),
+		category: params.category,
+		severity: params.severity,
 		whileDoing: params.whileDoing?.trim() || 'not specified',
 		createdAt: new Date().toISOString(),
 		context: {

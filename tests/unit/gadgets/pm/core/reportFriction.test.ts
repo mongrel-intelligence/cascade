@@ -149,17 +149,37 @@ describe('reportFriction', () => {
 		rmSync(path, { force: true });
 	});
 
-	it('validates category and severity in the core function', async () => {
-		await expect(
-			reportFriction({
-				project,
-				sidecarPath: sidecarPath(),
-				summary: 'Bad category',
-				details: 'Invalid classification.',
-				category: 'invalid' as never,
-				severity: 'medium',
-			}),
-		).rejects.toThrow('category must be one of');
+	it('accepts any string for category and severity (loosened 2026-05-10 — see plan)', async () => {
+		// Originally enforced an enum (8 categories × 4 severities) via
+		// `requireEnum`. Loosened after prod run `ff6adf00` showed an agent
+		// taking the gadget describe text literally and oclif rejecting
+		// `--severity 'medium slowdown'`. We now pass through whatever the
+		// agent provides; cluster + re-tighten once we have real usage data.
+		const path = sidecarPath();
+		const result = await reportFriction({
+			project,
+			sidecarPath: path,
+			summary: 'Quirky friction',
+			details: 'Agent invented a label that used to reject.',
+			category: 'something-not-in-the-old-enum',
+			severity: 'medium slowdown',
+		});
+
+		// Either filed (if materializer succeeds in this test setup) or
+		// queued_slot_missing (if the project under test lacks a friction
+		// slot). Both prove the validation gate no longer rejects.
+		expect(['filed', 'queued_slot_missing', 'queued_for_retry']).toContain(result.status);
+
+		// The queued sidecar event records the values verbatim — pin that
+		// the report stored what the agent passed.
+		const events = readFileSync(path, 'utf-8')
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line));
+		const queued = events.find((e) => e.event === 'queued');
+		expect(queued?.report.category).toBe('something-not-in-the-old-enum');
+		expect(queued?.report.severity).toBe('medium slowdown');
+		rmSync(path, { force: true });
 	});
 
 	it('uses SessionState for run/work-item/PR metadata when env vars are absent (LLMist in-process path)', async () => {

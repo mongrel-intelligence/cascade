@@ -20,7 +20,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { useJiraCustomFieldCreation, useJiraDiscovery } from '../../pm-wizard-hooks.js';
 import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
@@ -28,6 +27,7 @@ import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { useJiraCustomFieldCreation, useJiraDiscovery } from './hooks.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
 import { JiraWebhookAdapter } from './webhook-step.js';
 

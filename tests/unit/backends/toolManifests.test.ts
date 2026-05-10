@@ -48,7 +48,12 @@ describe('getToolManifests', () => {
 		expect(names).toContain('PMDeleteChecklistItem');
 	});
 
-	it('ReportFriction has enum category/severity and details-file support', () => {
+	it('ReportFriction has free-form string category/severity and details-file support', () => {
+		// 2026-05-10: category/severity were originally enum-typed but
+		// loosened to free-form strings after prod run `ff6adf00` showed
+		// agents misreading the gadget describe text. The manifest already
+		// emitted `type: 'string'` for these (manifest generator coerces
+		// enum → string); the underlying gadget def now matches.
 		const manifests = getToolManifests();
 		const reportFriction = manifests.find((m) => m.name === 'ReportFriction');
 		expect(reportFriction).toBeDefined();
@@ -60,6 +65,11 @@ describe('getToolManifests', () => {
 			severity: { type: 'string', required: true },
 			'details-file': { type: 'string' },
 		});
+		// Pin no `options` array on the manifest — proves the loosening
+		// reached the agent-facing surface.
+		const params = reportFriction?.parameters as Record<string, { options?: unknown }>;
+		expect(params.category.options).toBeUndefined();
+		expect(params.severity.options).toBeUndefined();
 	});
 
 	it('includes GitHub PR tools', () => {

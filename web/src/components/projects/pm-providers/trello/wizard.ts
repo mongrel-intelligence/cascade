@@ -21,17 +21,17 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import {
-	useTrelloCustomFieldCreation,
-	useTrelloDiscovery,
-	useTrelloLabelCreation,
-} from '../../pm-wizard-hooks.js';
 import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import {
+	useTrelloCustomFieldCreation,
+	useTrelloDiscovery,
+	useTrelloLabelCreation,
+} from './hooks.js';
 import { TrelloOAuthStep } from './oauth-step.js';
 import { TrelloWebhookAdapter } from './webhook-step.js';
 

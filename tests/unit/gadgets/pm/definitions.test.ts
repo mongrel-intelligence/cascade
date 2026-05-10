@@ -210,27 +210,31 @@ describe('PM gadget definitions', () => {
 			expect(reportFrictionDef.parameters.severity?.required).toBe(true);
 		});
 
-		it('category and severity are enums with expected options', () => {
+		it('category and severity accept any string with example values surfaced via describe', () => {
+			// 2026-05-10: deliberately loosened from `type: 'enum'` after prod run
+			// `ff6adf00` showed an agent recognizing a textbook friction but
+			// failing to file because oclif's enum gate rejected
+			// `--severity 'medium slowdown'` (the agent took the prior describe
+			// text "Severity: low annoyance, medium slowdown, ..." literally).
+			// Free-form for now; cluster + re-tighten once we have real usage data.
 			const category = reportFrictionDef.parameters.category;
 			const severity = reportFrictionDef.parameters.severity;
-			expect(category?.type).toBe('enum');
-			expect((category as { options?: string[] }).options).toEqual([
-				'tooling',
-				'environment',
-				'permissions',
-				'dependency',
-				'test-failure',
-				'pm-data',
-				'scm-data',
-				'other',
-			]);
-			expect(severity?.type).toBe('enum');
-			expect((severity as { options?: string[] }).options).toEqual([
-				'low',
-				'medium',
-				'high',
-				'critical',
-			]);
+
+			expect(category?.type).toBe('string');
+			expect(severity?.type).toBe('string');
+
+			// Pin the explicit absence of `options` so a future revert to enum
+			// fails this test loudly.
+			expect((category as { options?: unknown }).options).toBeUndefined();
+			expect((severity as { options?: unknown }).options).toBeUndefined();
+
+			// Pin the new describe text — values listed inside parentheses
+			// instead of mixed with prose, which is what made the agent take
+			// the description as the literal value.
+			expect(category?.describe).toBe(
+				'Friction category (e.g. tooling, environment, permissions, dependency, test-failure, pm-data, scm-data, other)',
+			);
+			expect(severity?.describe).toBe('Severity (e.g. low, medium, high, critical)');
 		});
 
 		it('has details file input alternative', () => {

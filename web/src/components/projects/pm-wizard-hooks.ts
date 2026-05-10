@@ -7,23 +7,14 @@
  *   - useProviderLabelCreation— parameterized label-creation hook (replaces 2 copies)
  *   - useProviderCustomFieldCreation — parameterized CF hook (replaces 2 copies)
  *   - useSaveMutation         — data-driven, no provider branching
- *
- * Per-provider thin wrappers (useTrelloDiscovery, etc.) remain exported for
- * backward-compatibility with existing wizard.ts imports.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import type { Dispatch } from 'react';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
 import type { ProviderAuthMetadata, ProviderWizardDefinition } from './pm-providers/types.js';
-import type {
-	LinearProjectOption,
-	LinearTeamDetails,
-	LinearTeamOption,
-	WizardAction,
-	WizardState,
-} from './pm-wizard-state.js';
+import type { WizardAction, WizardState } from './pm-wizard-state.js';
 import { shouldUseStoredCredentials } from './pm-wizard-state.js';
 
 // ============================================================================
@@ -151,7 +142,7 @@ interface LabelCreationConfig {
 function useProviderLabelCreation(
 	config: LabelCreationConfig,
 	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
+	dispatch: Dispatch<WizardAction>,
 	projectId: string,
 ) {
 	const createLabelMutation = useMutation({
@@ -234,7 +225,7 @@ interface CustomFieldCreationConfig {
 function useProviderCustomFieldCreation(
 	config: CustomFieldCreationConfig,
 	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
+	dispatch: Dispatch<WizardAction>,
 	projectId: string,
 ) {
 	const createCustomFieldMutation = useMutation({
@@ -271,353 +262,6 @@ function useProviderCustomFieldCreation(
 	});
 
 	return { createCustomFieldMutation };
-}
-
-// ============================================================================
-// Trello Discovery
-// ============================================================================
-
-export function useTrelloDiscovery(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	advanceToStep: (step: number) => void,
-	projectId: string,
-) {
-	const boardsMutation = useMutation({
-		mutationFn: async () => {
-			// Plan 010/2: routes through generic pm.discovery.discover.
-			// In edit mode with stored credentials, pass projectId — the
-			// endpoint resolves credentials from project_credentials.
-			// Otherwise pass raw credentials from wizard state.
-			if (state.isEditing && state.hasStoredCredentials && !state.trelloApiKey) {
-				return (await trpcClient.pm.discovery.discover.mutate({
-					providerId: 'trello',
-					capability: 'boards',
-					args: {},
-					projectId,
-				})) as Array<{ id: string; name: string; url?: string }>;
-			}
-			if (!state.trelloApiKey || !state.trelloToken) {
-				throw new Error('Enter both credentials before fetching boards');
-			}
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: 'trello',
-				capability: 'boards',
-				args: {},
-				credentials: { api_key: state.trelloApiKey, token: state.trelloToken },
-			})) as Array<{ id: string; name: string; url?: string }>;
-		},
-		onSuccess: (boards) =>
-			dispatch({
-				type: 'SET_TRELLO_BOARDS',
-				boards: boards.map((b) => ({ ...b, url: b.url ?? '' })),
-			}),
-	});
-
-	const boardDetailsMutation = useMutation({
-		mutationFn: (boardId: string) => {
-			if (state.isEditing && state.hasStoredCredentials && !state.trelloApiKey) {
-				return trpcClient.integrationsDiscovery.trelloBoardDetailsByProject.mutate({
-					projectId,
-					boardId,
-				});
-			}
-			if (!state.trelloApiKey || !state.trelloToken) {
-				throw new Error('Enter both credentials before fetching board details');
-			}
-			return trpcClient.integrationsDiscovery.trelloBoardDetails.mutate({
-				apiKey: state.trelloApiKey,
-				token: state.trelloToken,
-				boardId,
-			});
-		},
-		onSuccess: (details) => {
-			dispatch({ type: 'SET_TRELLO_BOARD_DETAILS', details });
-			advanceToStep(4);
-		},
-	});
-
-	const handleBoardSelect = (boardId: string) => {
-		dispatch({ type: 'SET_TRELLO_BOARD_ID', id: boardId });
-		if (boardId) {
-			boardDetailsMutation.mutate(boardId);
-		}
-	};
-
-	// Auto-fetch boards when verification result changes
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on verification result change
-	useEffect(() => {
-		if (!state.verificationResult || state.provider !== 'trello') return;
-		if (state.trelloBoards.length === 0 && !boardsMutation.isPending) {
-			boardsMutation.mutate();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.verificationResult]);
-
-	// In edit mode, auto-fetch board list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
-	useEffect(() => {
-		if (!state.isEditing || state.provider !== 'trello') return;
-		const canFetch = state.trelloApiKey ? !!state.trelloToken : state.hasStoredCredentials;
-		if (canFetch && state.trelloBoards.length === 0 && !boardsMutation.isPending) {
-			boardsMutation.mutate();
-		}
-		if (
-			state.trelloBoardId &&
-			!state.trelloBoardDetails &&
-			canFetch &&
-			!boardDetailsMutation.isPending
-		) {
-			boardDetailsMutation.mutate(state.trelloBoardId);
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.trelloBoardId, state.hasStoredCredentials]);
-
-	return { boardsMutation, boardDetailsMutation, handleBoardSelect };
-}
-
-// ============================================================================
-// JIRA Discovery
-// ============================================================================
-
-export function useJiraDiscovery(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	advanceToStep: (step: number) => void,
-	projectId: string,
-) {
-	const jiraProjectsMutation = useMutation({
-		mutationFn: async () => {
-			// Plan 010/2: routes through generic pm.discovery.discover.
-			if (state.isEditing && state.hasStoredCredentials && !state.jiraEmail) {
-				const projects = (await trpcClient.pm.discovery.discover.mutate({
-					providerId: 'jira',
-					capability: 'projects',
-					args: {},
-					projectId,
-				})) as Array<{ id: string; name: string }>;
-				// Legacy shape has `key` — pm.discover returns `id` containing
-				// the JIRA key. Normalize for downstream consumers.
-				return projects.map((p) => ({ key: p.id, name: p.name }));
-			}
-			if (!state.jiraEmail || !state.jiraApiToken) {
-				throw new Error('Enter both credentials before fetching projects');
-			}
-			const projects = (await trpcClient.pm.discovery.discover.mutate({
-				providerId: 'jira',
-				capability: 'projects',
-				args: {},
-				credentials: {
-					email: state.jiraEmail,
-					api_token: state.jiraApiToken,
-					base_url: state.jiraBaseUrl,
-				},
-			})) as Array<{ id: string; name: string }>;
-			return projects.map((p) => ({ key: p.id, name: p.name }));
-		},
-		onSuccess: (projects) => dispatch({ type: 'SET_JIRA_PROJECTS', projects }),
-	});
-
-	const jiraDetailsMutation = useMutation({
-		mutationFn: (projectKey: string) => {
-			if (state.isEditing && state.hasStoredCredentials && !state.jiraEmail) {
-				return trpcClient.integrationsDiscovery.jiraProjectDetailsByProject.mutate({
-					projectId,
-					projectKey,
-				});
-			}
-			if (!state.jiraEmail || !state.jiraApiToken) {
-				throw new Error('Enter both credentials before fetching project details');
-			}
-			return trpcClient.integrationsDiscovery.jiraProjectDetails.mutate({
-				email: state.jiraEmail,
-				apiToken: state.jiraApiToken,
-				baseUrl: state.jiraBaseUrl,
-				projectKey,
-			});
-		},
-		onSuccess: (details) => {
-			dispatch({ type: 'SET_JIRA_PROJECT_DETAILS', details });
-			advanceToStep(4);
-		},
-	});
-
-	const handleProjectSelect = (key: string) => {
-		dispatch({ type: 'SET_JIRA_PROJECT_KEY', key });
-		if (key) {
-			jiraDetailsMutation.mutate(key);
-		}
-	};
-
-	// Auto-fetch projects when verification result changes
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on verification result change
-	useEffect(() => {
-		if (!state.verificationResult || state.provider !== 'jira') return;
-		if (state.jiraProjects.length === 0 && !jiraProjectsMutation.isPending) {
-			jiraProjectsMutation.mutate();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.verificationResult]);
-
-	// In edit mode, auto-fetch project list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
-	useEffect(() => {
-		if (!state.isEditing || state.provider !== 'jira') return;
-		const canFetch = state.jiraEmail ? !!state.jiraApiToken : state.hasStoredCredentials;
-		if (canFetch && state.jiraProjects.length === 0 && !jiraProjectsMutation.isPending) {
-			jiraProjectsMutation.mutate();
-		}
-		if (
-			state.jiraProjectKey &&
-			!state.jiraProjectDetails &&
-			canFetch &&
-			!jiraDetailsMutation.isPending
-		) {
-			jiraDetailsMutation.mutate(state.jiraProjectKey);
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.jiraProjectKey, state.hasStoredCredentials]);
-
-	return { jiraProjectsMutation, jiraDetailsMutation, handleProjectSelect };
-}
-
-// ============================================================================
-// Linear Discovery
-// ============================================================================
-
-export function useLinearDiscovery(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	advanceToStep: (step: number) => void,
-	projectId: string,
-) {
-	const linearTeamsMutation = useMutation({
-		mutationFn: async () => {
-			// Plan 010/2: routes through generic pm.discovery.discover.
-			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
-				return (await trpcClient.pm.discovery.discover.mutate({
-					providerId: 'linear',
-					capability: 'teams',
-					args: {},
-					projectId,
-				})) as Array<{ id: string; name: string }>;
-			}
-			if (!state.linearApiKey) {
-				throw new Error('Enter your API key before fetching teams');
-			}
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: 'linear',
-				capability: 'teams',
-				args: {},
-				credentials: { api_key: state.linearApiKey },
-			})) as Array<{ id: string; name: string }>;
-		},
-		onSuccess: (teams) =>
-			dispatch({
-				type: 'SET_LINEAR_TEAMS',
-				teams: teams as LinearTeamOption[],
-			}),
-	});
-
-	const linearDetailsMutation = useMutation({
-		mutationFn: (teamId: string) => {
-			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
-				return trpcClient.integrationsDiscovery.linearTeamDetailsByProject.mutate({
-					projectId,
-					teamId,
-				});
-			}
-			if (!state.linearApiKey) {
-				throw new Error('Enter your API key before fetching team details');
-			}
-			return trpcClient.integrationsDiscovery.linearTeamDetails.mutate({
-				apiKey: state.linearApiKey,
-				teamId,
-			});
-		},
-		onSuccess: (details) => {
-			dispatch({
-				type: 'SET_LINEAR_TEAM_DETAILS',
-				details: details as LinearTeamDetails,
-			});
-			advanceToStep(4);
-		},
-	});
-
-	const linearProjectsMutation = useMutation({
-		mutationFn: async (teamId: string) => {
-			// Plan 010/2: routes through generic pm.discovery.discover.
-			if (state.isEditing && state.hasStoredCredentials && !state.linearApiKey) {
-				return (await trpcClient.pm.discovery.discover.mutate({
-					providerId: 'linear',
-					capability: 'projects',
-					args: { containerId: teamId },
-					projectId,
-				})) as Array<{ id: string; name: string }>;
-			}
-			if (!state.linearApiKey) {
-				throw new Error('Enter your API key before fetching projects');
-			}
-			return (await trpcClient.pm.discovery.discover.mutate({
-				providerId: 'linear',
-				capability: 'projects',
-				args: { containerId: teamId },
-				credentials: { api_key: state.linearApiKey },
-			})) as Array<{ id: string; name: string }>;
-		},
-		onSuccess: (projects) =>
-			dispatch({
-				type: 'SET_LINEAR_PROJECTS',
-				projects: projects as LinearProjectOption[],
-			}),
-	});
-
-	const handleTeamSelect = (teamId: string) => {
-		dispatch({ type: 'SET_LINEAR_TEAM_ID', id: teamId });
-		if (teamId) {
-			linearDetailsMutation.mutate(teamId);
-			linearProjectsMutation.mutate(teamId);
-		}
-	};
-
-	// Auto-fetch teams when verification result changes
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger only on verification result change
-	useEffect(() => {
-		if (!state.verificationResult || state.provider !== 'linear') return;
-		if (state.linearTeams.length === 0 && !linearTeamsMutation.isPending) {
-			linearTeamsMutation.mutate();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.verificationResult]);
-
-	// In edit mode, auto-fetch team list and details
-	// biome-ignore lint/correctness/useExhaustiveDependencies: intentionally trigger on edit mode and stored creds
-	useEffect(() => {
-		if (!state.isEditing || state.provider !== 'linear') return;
-		const canFetch = state.linearApiKey ? true : state.hasStoredCredentials;
-		if (canFetch && state.linearTeams.length === 0 && !linearTeamsMutation.isPending) {
-			linearTeamsMutation.mutate();
-		}
-		if (
-			state.linearTeamId &&
-			!state.linearTeamDetails &&
-			canFetch &&
-			!linearDetailsMutation.isPending
-		) {
-			linearDetailsMutation.mutate(state.linearTeamId);
-		}
-		if (
-			state.linearTeamId &&
-			state.linearProjects.length === 0 &&
-			canFetch &&
-			!linearProjectsMutation.isPending
-		) {
-			linearProjectsMutation.mutate(state.linearTeamId);
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [state.isEditing, state.linearTeamId, state.hasStoredCredentials]);
-
-	return { linearTeamsMutation, linearDetailsMutation, linearProjectsMutation, handleTeamSelect };
 }
 
 // ============================================================================
@@ -660,7 +304,7 @@ export function formatVerificationDisplay(
 
 export function useVerification(
 	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
+	dispatch: Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
 	projectId: string,
 	manifestDef: ProviderWizardDefinition,
@@ -707,102 +351,6 @@ export function useVerification(
 // Each provider's `useProviderHooks` now inlines the webhook plumbing
 // (`webhooks.list/create/delete` + `callbackBaseUrl` formula) —
 // see `./pm-providers/{trello,jira,linear}/wizard.ts`.
-
-// ============================================================================
-// Trello Label Creation
-// ============================================================================
-
-export function useTrelloLabelCreation(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	projectId: string,
-) {
-	return useProviderLabelCreation(
-		{
-			providerId: 'trello',
-			getContainerId: (s) => s.trelloBoardId,
-			containerError: 'Board must be selected before creating a label',
-			addLabel: (label) => ({ type: 'ADD_TRELLO_BOARD_LABEL', label }),
-			setLabelMapping: (slot, id) => ({ type: 'SET_TRELLO_LABEL_MAPPING', key: slot, value: id }),
-		},
-		state,
-		dispatch,
-		projectId,
-	);
-}
-
-// ============================================================================
-// Trello Custom Field Creation
-// ============================================================================
-
-export function useTrelloCustomFieldCreation(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	projectId: string,
-) {
-	return useProviderCustomFieldCreation(
-		{
-			providerId: 'trello',
-			getContainerId: (s) => s.trelloBoardId,
-			containerError: 'Board must be selected before creating a custom field',
-			addCustomField: (f) => ({ type: 'ADD_TRELLO_BOARD_CUSTOM_FIELD', customField: f }),
-			setCostField: (id) => ({ type: 'SET_TRELLO_COST_FIELD', id }),
-			onError: (error) => {
-				console.error('Failed to create custom field:', error);
-				const message = error instanceof Error ? error.message : String(error);
-				if (message.includes('403')) {
-					alert(
-						'Failed to create custom field: The Trello Custom Fields power-up is required. Please enable it on your Trello board and try again.',
-					);
-				} else {
-					alert(`Failed to create custom field: ${message}`);
-				}
-			},
-		},
-		state,
-		dispatch,
-		projectId,
-	);
-}
-
-// ============================================================================
-// JIRA Custom Field Creation
-// ============================================================================
-
-export function useJiraCustomFieldCreation(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	projectId: string,
-) {
-	const inner = useProviderCustomFieldCreation(
-		{
-			providerId: 'jira',
-			// JIRA fields are global; containerId is sent as-is for uniform shape
-			getContainerId: (s) => s.jiraProjectKey || 'global',
-			addCustomField: (f) => ({
-				type: 'ADD_JIRA_PROJECT_CUSTOM_FIELD',
-				field: { ...f, custom: true },
-			}),
-			setCostField: (id) => ({ type: 'SET_JIRA_COST_FIELD', id }),
-			onError: (error) => {
-				console.error('Failed to create JIRA custom field:', error);
-				const message = error instanceof Error ? error.message : String(error);
-				if (message.includes('403') || message.toLowerCase().includes('admin')) {
-					alert(
-						'Failed to create custom field: JIRA admin permissions are required to create global custom fields. Please contact your JIRA administrator.',
-					);
-				} else {
-					alert(`Failed to create JIRA custom field: ${message}`);
-				}
-			},
-		},
-		state,
-		dispatch,
-		projectId,
-	);
-	// Preserve the legacy export name for JIRA callers
-	return { createJiraCustomFieldMutation: inner.createCustomFieldMutation };
-}
 
 // ============================================================================
 // Save Mutation — data-driven, no per-provider branching
@@ -893,29 +441,6 @@ export function useSaveMutation(
 	});
 
 	return { saveMutation };
-}
-
-// ============================================================================
-// Linear Label Creation
-// ============================================================================
-
-export function useLinearLabelCreation(
-	state: WizardState,
-	dispatch: React.Dispatch<WizardAction>,
-	projectId: string,
-) {
-	return useProviderLabelCreation(
-		{
-			providerId: 'linear',
-			getContainerId: (s) => s.linearTeamId,
-			containerError: 'Team must be selected before creating a label',
-			addLabel: (label) => ({ type: 'ADD_LINEAR_TEAM_LABEL', label }),
-			setLabelMapping: (slot, id) => ({ type: 'SET_LINEAR_LABEL', key: slot, value: id }),
-		},
-		state,
-		dispatch,
-		projectId,
-	);
 }
 
 export type { CustomFieldCreationConfig, LabelCreationConfig };
