@@ -171,6 +171,13 @@ describe('buildToolGuidance', () => {
 			expect(result).toContain('# example: --event APPROVE');
 			expect(result).not.toContain(`--event '"APPROVE"'`);
 		});
+
+		it('renders CreatePRReview body-file guidance from definition metadata', () => {
+			const result = buildToolGuidance([generateToolManifest(createPRReviewDef)]);
+
+			expect(result).toContain('[--body-file <string>]');
+			expect(result).toContain('Read review body from file (use - for stdin)');
+		});
 	});
 
 	describe('formatParam — optional string param', () => {

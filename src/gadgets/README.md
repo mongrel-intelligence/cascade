@@ -168,7 +168,7 @@ Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_
 
 ## Reference: `createPRReviewDef`
 
-`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, a `fileInputAlternatives` entry for `--comments-file`, and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
+`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, `fileInputAlternatives` entries for `--body-file` (long review summaries) and `--comments-file` (JSON inline comments), and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
 
 ## Reference: `ReportFriction`
 

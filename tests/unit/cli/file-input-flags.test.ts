@@ -39,6 +39,11 @@ vi.mock('../../../src/gadgets/pm/core/postComment.js', () => ({
 vi.mock('../../../src/gadgets/github/core/createPR.js', () => ({
 	createPR: vi.fn().mockResolvedValue({ url: 'https://github.com/o/r/pull/1' }),
 }));
+vi.mock('../../../src/gadgets/github/core/createPRReview.js', () => ({
+	createPRReview: vi
+		.fn()
+		.mockResolvedValue({ reviewUrl: 'https://github.com/o/r/pull/1#review', event: 'COMMENT' }),
+}));
 vi.mock('../../../src/gadgets/github/core/postPRComment.js', () => ({
 	postPRComment: vi.fn().mockResolvedValue({ id: 123 }),
 }));
@@ -48,8 +53,10 @@ import PostComment from '../../../src/cli/pm/post-comment.js';
 import ReportFriction from '../../../src/cli/pm/report-friction.js';
 import UpdateWorkItem from '../../../src/cli/pm/update-work-item.js';
 import CreatePR from '../../../src/cli/scm/create-pr.js';
+import CreatePRReview from '../../../src/cli/scm/create-pr-review.js';
 import PostPRComment from '../../../src/cli/scm/post-pr-comment.js';
 import { createPR } from '../../../src/gadgets/github/core/createPR.js';
+import { createPRReview } from '../../../src/gadgets/github/core/createPRReview.js';
 import { postPRComment } from '../../../src/gadgets/github/core/postPRComment.js';
 import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
 import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
@@ -349,6 +356,82 @@ describe('CreatePR --body-file', () => {
 		expect(output.success).toBe(false);
 		expect(output.error.type).toBe('missing-required');
 		expect(output.error.flag).toBe('body');
+	});
+});
+
+describe('CreatePRReview --body-file', () => {
+	const originalEnv = process.env;
+
+	beforeEach(() => {
+		process.env = {
+			...originalEnv,
+			CASCADE_REPO_OWNER: 'owner',
+			CASCADE_REPO_NAME: 'repo',
+		};
+	});
+
+	afterEach(() => {
+		process.env = originalEnv;
+	});
+
+	it('reads review body from file', async () => {
+		const filePath = writeTempFile('review.md', 'Review body from file');
+		const cmd = new CreatePRReview(
+			['--prNumber', '42', '--event', 'COMMENT', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(createPRReview).toHaveBeenCalledWith(
+			expect.objectContaining({
+				owner: 'owner',
+				repo: 'repo',
+				prNumber: 42,
+				event: 'COMMENT',
+				body: 'Review body from file',
+			}),
+		);
+	});
+
+	it('prefers --body-file over --body', async () => {
+		const filePath = writeTempFile('review.md', 'from file');
+		const cmd = new CreatePRReview(
+			['--prNumber', '42', '--event', 'APPROVE', '--body', 'from flag', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(createPRReview).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: 'from file',
+			}),
+		);
+	});
+
+	it('keeps inline comments JSON parsing when combined with --body-file', async () => {
+		const filePath = writeTempFile('review.md', 'Needs a small change');
+		const comments = [{ path: 'src/index.ts', line: 12, body: 'Please handle null here.' }];
+		const cmd = new CreatePRReview(
+			[
+				'--prNumber',
+				'42',
+				'--event',
+				'REQUEST_CHANGES',
+				'--body-file',
+				filePath,
+				'--comments',
+				JSON.stringify(comments),
+			],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(createPRReview).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: 'Needs a small change',
+				comments,
+			}),
+		);
 	});
 });
 

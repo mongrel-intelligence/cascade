@@ -238,6 +238,11 @@ export const createPRReviewDef: ToolDefinition = {
 		autoResolved: ownerRepoAutoResolved,
 		fileInputAlternatives: [
 			{
+				paramName: 'body',
+				fileFlag: 'body-file',
+				description: 'Read review body from file (use - for stdin)',
+			},
+			{
 				paramName: 'comments',
 				fileFlag: 'comments-file',
 				parseAs: 'json',

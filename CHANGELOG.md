@@ -12,6 +12,8 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ### Fixed
 
+- **`cascade-tools scm create-pr-review` now accepts `--body-file <path>` and `--body-file -`.** This matches the generated CreatePRReview guidance and the existing CreatePR / PostPRComment file-input pattern for long Markdown bodies. See Trello card [7kmo42o6](https://trello.com/c/7kmo42o6/691-friction-tooling-low-createprreview-docs-advertise-body-file-but-cli-rejects-it).
+
 - **PM `cascade-tools` runtime failures now exit non-zero with structured failure envelopes.** PM core commands now throw on fatal provider/API failures, letting `createCLICommand()` emit `{"success":false,"error":{"type":"runtime","message":"..."}}` instead of wrapping prose like `Error posting comment: ...` inside `success:true` data. Intentional non-fatal PM outcomes such as guarded move no-ops and friction retry queueing remain successful command results. See Trello card [lU9mHLJT](https://trello.com/c/lU9mHLJT/686-friction-tooling-low-pm-post-comment-returned-success-envelope-with-embedded-400-error).
 
 - **Native-tool prompt examples for enum, scalar, number, and primitive-array flags now render as runnable CLI syntax instead of JSON string literals.** Agent-facing guidance now shows forms such as `cascade-tools scm create-pr-review --event APPROVE` and repeatable primitive arrays as `--labels bug --labels docs`, while object and array-of-object flags continue to render shell-quoted JSON payloads. See Trello card [l9Sira7y](https://trello.com/c/l9Sira7y/685-friction-tooling-low-create-pr-review-docs-show-quoted-enum-but-cli-requires-raw-enum).
