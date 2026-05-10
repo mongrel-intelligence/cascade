@@ -3,12 +3,10 @@ import { CheckCircle, Globe, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { Label } from '@/components/ui/label.js';
 import { trpc } from '@/lib/trpc.js';
-// Side-effect imports register every PM provider's frontend wizard into
-// the provider registry. With Linear migrated (006/4), every PM provider
-// now renders via the manifest shell.
-import './pm-providers/trello/index.js';
-import './pm-providers/jira/index.js';
-import './pm-providers/linear/index.js';
+// Single barrel import registers every PM provider's frontend wizard into the
+// provider registry. New providers add one import to pm-providers/index.ts —
+// this file never needs to change for a new provider.
+import './pm-providers/index.js';
 import { ManifestProviderWizardSection } from './pm-providers/manifest-section.js';
 import { getProviderWizard } from './pm-providers/registry.js';
 import type { ProviderWizardDefinition } from './pm-providers/types.js';

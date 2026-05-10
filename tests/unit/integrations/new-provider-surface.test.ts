@@ -44,6 +44,11 @@ const SHARED_SURFACE_FILES = [
 	'src/api/routers/pm-discovery.ts',
 	'web/src/components/projects/pm-providers/generator.tsx',
 
+	// Frontend PM provider barrel — new providers add one import here,
+	// just like the backend barrel at src/integrations/pm/index.ts.
+	// pm-wizard.tsx imports this barrel and never needs to change.
+	'web/src/components/projects/pm-providers/index.ts',
+
 	// Shared wizard step components (plan 010/3 + plan 011/1) — real
 	// components for every StandardStepKind. A new provider with purely
 	// standard steps never touches these files; it declares
@@ -94,7 +99,8 @@ describe('new-provider-surface (plan 009/5 task 4, spec 009 AC #10)', () => {
 			'required for a new provider lives in:',
 			'  - src/integrations/pm/<provider>/',
 			'  - web/src/components/projects/pm-providers/<provider>/',
-			'  - A single import line in src/integrations/pm/index.ts',
+			'  - A single import line in src/integrations/pm/index.ts (backend barrel)',
+			'  - A single import line in web/src/components/projects/pm-providers/index.ts (frontend barrel)',
 			'If you need to edit one of the shared surface files above, ',
 			'update this test with the justification and the new expected state.',
 		].join('\n');
