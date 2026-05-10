@@ -63,11 +63,19 @@ cli: {
 
 A list of `{ params, comment, output? }` invocations. The first example that populates a given parameter becomes that parameter's **concrete example**, surfaced in three places:
 
-- The agent's system prompt renders a one-line `# example: --<flag> '<json>'` under the flag (when the param is array-of-object / object).
+- The agent's system prompt renders a one-line `# example: ...` under the flag. Object params and array-of-object params use a single shell-quoted JSON payload. Scalar, enum, number, and primitive-array params render as actual CLI syntax.
 - The `cascade-tools … --help` output lists every example as a runnable shell invocation under an `EXAMPLES` section.
 - JSON-parse failures include the example as the `expected` shape fragment in the structured error envelope.
 
 Write examples that a model could literally copy/paste. Use double-quoted JSON keys; do not rely on the agent to translate pseudo-JSON.
+
+Enum examples must be raw CLI values, not JSON strings. For example, the review action should render as:
+
+```bash
+cascade-tools scm create-pr-review --event APPROVE
+```
+
+not `--event '"APPROVE"'`. Primitive arrays should render as repeated flags (`--labels bug --labels docs`), while array-of-object examples like `comments` stay JSON (`--comments '[{"path":"src/x.ts","line":1,"body":"nit"}]'`).
 
 ```ts
 examples: [
