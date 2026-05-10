@@ -9,8 +9,13 @@
  * Adding a new PM provider? Add exactly one line here:
  *   import './<provider>/index.js';
  *
- * No other shared file needs to change — `pm-wizard.tsx` imports this barrel
- * and never needs to be edited for a new provider.
+ * Shared orchestration files (`pm-wizard.tsx`, `pm-wizard-hooks.ts`,
+ * `pm-wizard-common-steps.tsx`) need zero edits after this import.
+ * The one shared dashboard file that still requires manual edits is
+ * `pm-wizard-state.ts` — new providers must add their credential fields
+ * to `WizardState`, the corresponding action types to `WizardAction`, and
+ * `buildEditState` handling for their config shape.  See step 4 of
+ * "Adding a new PM provider" in src/integrations/README.md.
  */
 
 import './trello/index.js';
