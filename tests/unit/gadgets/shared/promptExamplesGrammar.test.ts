@@ -23,6 +23,7 @@ import { buildToolGuidance } from '../../../../src/backends/shared/nativeToolPro
 import * as githubDefs from '../../../../src/gadgets/github/definitions.js';
 import { createPRReviewDef } from '../../../../src/gadgets/github/definitions.js';
 import * as pmDefs from '../../../../src/gadgets/pm/definitions.js';
+import { readWorkItemDef } from '../../../../src/gadgets/pm/definitions.js';
 import * as sentryDefs from '../../../../src/gadgets/sentry/definitions.js';
 import * as sessionDefs from '../../../../src/gadgets/session/definitions.js';
 import { generateToolManifest } from '../../../../src/gadgets/shared/manifestGenerator.js';
@@ -93,6 +94,16 @@ describe('prompt-rendered examples — CLI grammar correctness', () => {
 		expect(rendered).not.toContain(`--event '"APPROVE"'`);
 		expect(rendered).not.toContain(`--event '"REQUEST_CHANGES"'`);
 		expect(rendered).not.toContain(`--event '"COMMENT"'`);
+	});
+
+	it('ReadWorkItem renders shell-safe PM IDs without literal quotes', () => {
+		const manifest = generateToolManifest(readWorkItemDef);
+		const rendered = buildToolGuidance([manifest]);
+
+		expect(rendered).toContain('# example: --workItemId abc123');
+		expect(rendered).not.toContain(`--workItemId '"abc123"'`);
+		expect(rendered).not.toContain(`--workItemId 'abc123'`);
+		expect(rendered).not.toContain(`--workItemId "abc123"`);
 	});
 
 	it('CreatePRReview keeps array-of-object comments as JSON payload examples', () => {

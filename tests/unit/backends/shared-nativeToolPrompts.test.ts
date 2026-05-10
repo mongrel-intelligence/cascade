@@ -26,6 +26,7 @@ import {
 	buildToolGuidance,
 } from '../../../src/backends/shared/nativeToolPrompts.js';
 import { createPRReviewDef } from '../../../src/gadgets/github/definitions.js';
+import { readWorkItemDef } from '../../../src/gadgets/pm/definitions.js';
 import { generateToolManifest } from '../../../src/gadgets/shared/manifestGenerator.js';
 
 // ───────── helper ─────────
@@ -170,6 +171,15 @@ describe('buildToolGuidance', () => {
 
 			expect(result).toContain('# example: --event APPROVE');
 			expect(result).not.toContain(`--event '"APPROVE"'`);
+		});
+
+		it('renders ReadWorkItem work item IDs as bare shell-safe values', () => {
+			const result = buildToolGuidance([generateToolManifest(readWorkItemDef)]);
+
+			expect(result).toContain('# example: --workItemId abc123');
+			expect(result).not.toContain(`--workItemId '"abc123"'`);
+			expect(result).not.toContain(`--workItemId 'abc123'`);
+			expect(result).not.toContain(`--workItemId "abc123"`);
 		});
 
 		it('renders CreatePRReview body-file guidance from definition metadata', () => {

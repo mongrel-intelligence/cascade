@@ -67,7 +67,7 @@ A list of `{ params, comment, output? }` invocations. The first example that pop
 - The `cascade-tools … --help` output lists every example as a runnable shell invocation under an `EXAMPLES` section.
 - JSON-parse failures include the example as the `expected` shape fragment in the structured error envelope.
 
-Write examples that a model could literally copy/paste. Use double-quoted JSON keys; do not rely on the agent to translate pseudo-JSON.
+Write examples that a model could literally copy/paste. Use double-quoted JSON keys; do not rely on the agent to translate pseudo-JSON. Shell-safe scalar IDs and names should stay bare (`--workItemId abc123`, `--owner acme`, `--prNumber 42`), not wrapped in quote characters. The shared renderer adds shell quotes only when a scalar contains spaces, shell metacharacters, or embedded quotes.
 
 Enum examples must be raw CLI values, not JSON strings. For example, the review action should render as:
 
@@ -133,7 +133,8 @@ Core gadget functions must throw for fatal runtime/API/provider failures. Do not
 | Helper | Responsibility |
 |---|---|
 | `commandNames.ts` | Kebab-case conversion and `cascade-tools <namespace> <command>` derivation shared with manifest generation |
-| `examples.ts` | Example lookup, shell quoting, oclif example rendering, and JSON expected-shape hints |
+| `examples.ts` | Example lookup, oclif example rendering, and JSON expected-shape hints |
+| `shellValues.ts` | Shared shell-safe scalar and JSON payload formatting for CLI help and native-tool prompts |
 | `flags.ts` | oclif flag construction plus candidate and boolean-flag metadata collection |
 | `booleanArgv.ts` | Natural boolean value forms such as `--flag true`, `--flag=false`, `yes/no`, and `1/0` |
 | `parseErrors.ts` | oclif parse-error classification and unknown-flag suggestions |

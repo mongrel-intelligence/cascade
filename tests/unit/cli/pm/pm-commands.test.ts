@@ -111,6 +111,23 @@ describe('ReadWorkItem command', () => {
 		expect(readWorkItem).toHaveBeenCalledWith('card-123', true);
 	});
 
+	it('normalizes one accidental outer quote layer around workItemId', async () => {
+		const doubleQuoted = new ReadWorkItem(
+			['--workItemId', '"card-123"'],
+			makeMockConfig() as never,
+		);
+		await doubleQuoted.run();
+
+		const singleQuoted = new ReadWorkItem(
+			['--workItemId', "'card-456'"],
+			makeMockConfig() as never,
+		);
+		await singleQuoted.run();
+
+		expect(readWorkItem).toHaveBeenNthCalledWith(1, 'card-123', true);
+		expect(readWorkItem).toHaveBeenNthCalledWith(2, 'card-456', true);
+	});
+
 	it('passes includeComments=true when --includeComments is set', async () => {
 		const cmd = new ReadWorkItem(
 			['--workItemId', 'card-123', '--includeComments'],

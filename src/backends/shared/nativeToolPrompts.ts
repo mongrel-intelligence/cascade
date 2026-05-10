@@ -1,3 +1,4 @@
+import { formatJsonExample, formatShellScalar } from '../../gadgets/shared/cli/shellValues.js';
 import type { ContextInjection, ToolManifest } from '../types.js';
 import { buildInlineContextSection, offloadLargeContext } from './contextFiles.js';
 
@@ -24,30 +25,6 @@ type PromptParamSchema = {
 	aliases?: readonly string[];
 	example?: unknown;
 };
-
-const SHELL_SAFE_VALUE_PATTERN = /^[A-Za-z0-9_./:@%+=,-]+$/;
-
-function shellQuote(value: string): string {
-	return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
-function formatShellScalar(value: unknown): string {
-	const rendered = String(value);
-	if (rendered.length > 0 && SHELL_SAFE_VALUE_PATTERN.test(rendered)) {
-		return rendered;
-	}
-	return shellQuote(rendered);
-}
-
-function formatJsonExample(value: unknown): string | undefined {
-	try {
-		return shellQuote(JSON.stringify(value));
-	} catch {
-		// JSON.stringify throws on cyclic refs — never in our tool definitions,
-		// but be defensive so a malformed example never crashes prompt building.
-		return undefined;
-	}
-}
 
 function formatExampleInvocation(key: string, schema: PromptParamSchema): string | undefined {
 	if (schema.example === undefined) return undefined;

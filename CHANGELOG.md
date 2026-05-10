@@ -12,6 +12,8 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ### Fixed
 
+- **`ReadWorkItem` examples now render PM IDs as runnable bare CLI values.** Native-tool prompt guidance and `cascade-tools pm read-work-item --help` now show `--workItemId abc123` instead of JSON-string-literal forms like `--workItemId '"abc123"'`. The CLI also strips one accidental outer quote layer for `ReadWorkItem` IDs only, so a copied bad example no longer sends literal quote characters to the PM provider. See Trello card [M5f9T1D7](https://trello.com/c/M5f9T1D7/673-frictionlow-readworkitem-example-quoting-produced-trello-card-id-with-literal-quotes).
+
 - **`cascade-tools scm create-pr-review` now accepts `--body-file <path>` and `--body-file -`.** This matches the generated CreatePRReview guidance and the existing CreatePR / PostPRComment file-input pattern for long Markdown bodies. See Trello card [7kmo42o6](https://trello.com/c/7kmo42o6/691-friction-tooling-low-createprreview-docs-advertise-body-file-but-cli-rejects-it).
 
 - **PM `cascade-tools` runtime failures now exit non-zero with structured failure envelopes.** PM core commands now throw on fatal provider/API failures, letting `createCLICommand()` emit `{"success":false,"error":{"type":"runtime","message":"..."}}` instead of wrapping prose like `Error posting comment: ...` inside `success:true` data. Intentional non-fatal PM outcomes such as guarded move no-ops and friction retry queueing remain successful command results. See Trello card [lU9mHLJT](https://trello.com/c/lU9mHLJT/686-friction-tooling-low-pm-post-comment-returned-success-envelope-with-embedded-400-error).

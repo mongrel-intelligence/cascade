@@ -72,5 +72,8 @@ describe('cascade-tools --help — topic summaries', () => {
 		expect(stdout).toContain('Read a work item');
 		expect(stdout).toContain('--workItemId');
 		expect(stdout).toContain('--[no-]includeComments');
+		expect(stdout).toContain('cascade-tools pm read-work-item --workItemId abc123');
+		expect(stdout).not.toContain(`--workItemId '"abc123"'`);
+		expect(stdout).not.toContain(`--workItemId 'abc123'`);
 	});
 });
