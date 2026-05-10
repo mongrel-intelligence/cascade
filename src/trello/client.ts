@@ -160,10 +160,14 @@ export const trelloClient = {
 
 	async updateCard(cardId: string, updates: { name?: string; desc?: string }): Promise<void> {
 		logger.debug('Updating card', { cardId, hasName: !!updates.name, hasDesc: !!updates.desc });
-		await getClient().cards.updateCard({
-			id: cardId,
-			name: updates.name,
-			desc: updates.desc,
+		const body: { name?: string; desc?: string } = {};
+		if (updates.name !== undefined) body.name = updates.name;
+		if (updates.desc !== undefined) body.desc = updates.desc;
+
+		await trelloFetch(`/cards/${cardId}`, {
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body,
 		});
 	},
 

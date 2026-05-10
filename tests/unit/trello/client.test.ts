@@ -355,16 +355,53 @@ describe('trelloClient', () => {
 	});
 
 	describe('updateCard', () => {
-		it('calls updateCard with name and desc', async () => {
-			mockCards.updateCard.mockResolvedValue({});
+		it('sends PUT with name and desc in the JSON body', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
 
 			await withTrelloCredentials(creds, () =>
 				trelloClient.updateCard('card-1', { name: 'New Title', desc: 'New desc' }),
 			);
 
-			expect(mockCards.updateCard).toHaveBeenCalledWith(
-				expect.objectContaining({ id: 'card-1', name: 'New Title', desc: 'New desc' }),
+			expect(fetchSpy).toHaveBeenCalledOnce();
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(url).toContain('/1/cards/card-1?');
+			expect(url).toContain('key=test-key');
+			expect(url).toContain('token=test-token');
+			expect(options?.method).toBe('PUT');
+			expect(options?.headers).toEqual({ 'Content-Type': 'application/json' });
+			expect(options?.body).toBe(JSON.stringify({ name: 'New Title', desc: 'New desc' }));
+			expect(mockCards.updateCard).not.toHaveBeenCalled();
+		});
+
+		it('keeps large descriptions out of the URL', async () => {
+			const distinctiveText = 'distinctive-long-description-marker';
+			const longDescription = `# Long update\n\n${distinctiveText}\n\n${'details '.repeat(2000)}`;
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+			await withTrelloCredentials(creds, () =>
+				trelloClient.updateCard('card-1', { name: 'New Title', desc: longDescription }),
 			);
+
+			const [url, options] = fetchSpy.mock.calls[0];
+			expect(String(url)).not.toContain('desc');
+			expect(String(url)).not.toContain('New Title');
+			expect(String(url)).not.toContain(distinctiveText);
+			expect(options?.body).toBe(JSON.stringify({ name: 'New Title', desc: longDescription }));
+		});
+
+		it('serializes an empty desc so card descriptions can be cleared', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
+
+			await withTrelloCredentials(creds, () => trelloClient.updateCard('card-1', { desc: '' }));
+
+			const [, options] = fetchSpy.mock.calls[0];
+			expect(options?.body).toBe(JSON.stringify({ desc: '' }));
 		});
 	});
 
