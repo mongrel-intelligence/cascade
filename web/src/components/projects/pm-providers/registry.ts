@@ -3,9 +3,9 @@
  *
  * Providers register their wizard definition at module-load time by
  * calling `registerProviderWizard(def)` from the provider's frontend
- * `index.ts`. The generic wizard renderer (`pm-wizard.tsx`) looks up the
- * current provider here and falls back to the legacy per-provider
- * branches when `getProviderWizard(id)` returns null.
+ * `index.ts`. The generic wizard renderer (`pm-wizard.tsx`) lists provider
+ * definitions from this registry for the picker and looks up the active
+ * provider here before rendering manifest-driven steps.
  */
 
 import type { ProviderWizardDefinition } from './types.js';

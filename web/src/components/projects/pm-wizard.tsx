@@ -39,9 +39,51 @@ import { WizardStep } from './wizard-shared.js';
 // (manifestDef.steps[i].title). Only step 1 (provider picker) and the
 // legacy Webhook + Save slots have fixed titles; rendered inline.
 
+export function buildProviderSwitchConfirmationMessage(fromLabel: string, toLabel: string): string {
+	return `Switch PM provider from ${fromLabel} to ${toLabel}?\n\nYou'll need to re-enter credentials and re-map fields for ${toLabel}. The old provider's credentials will be deleted when you save.`;
+}
+
 function confirmProviderSwitch(fromLabel: string, toLabel: string): boolean {
-	return window.confirm(
-		`Switch PM provider from ${fromLabel} to ${toLabel}?\n\nYou'll need to re-enter credentials and re-map fields for ${toLabel}. The old provider's credentials will be deleted when you save.`,
+	return window.confirm(buildProviderSwitchConfirmationMessage(fromLabel, toLabel));
+}
+
+export function ProviderPicker({
+	state,
+	dispatch,
+	advanceToStep,
+}: {
+	readonly state: WizardState;
+	readonly dispatch: React.Dispatch<WizardAction>;
+	readonly advanceToStep: (step: number) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<Label>Provider</Label>
+			<div className="flex gap-2">
+				{listProviderWizards().map((wizard) => (
+					<button
+						key={wizard.id}
+						type="button"
+						onClick={() => {
+							if (wizard.id === state.provider) return;
+							if (state.isEditing) {
+								const fromLabel = getProviderWizard(state.provider)?.label ?? state.provider;
+								if (!confirmProviderSwitch(fromLabel, wizard.label)) return;
+							}
+							dispatch({ type: 'SET_PROVIDER', provider: wizard.id });
+							advanceToStep(2);
+						}}
+						className={`flex-1 rounded-md border px-4 py-3 text-sm font-medium transition-colors ${
+							state.provider === wizard.id
+								? 'border-primary bg-primary/5 text-foreground'
+								: 'border-input text-muted-foreground hover:text-foreground hover:bg-accent/50'
+						}`}
+					>
+						{wizard.label}
+					</button>
+				))}
+			</div>
+		</div>
 	);
 }
 
@@ -221,10 +263,9 @@ export function PMWizard({
 
 	// ---- Custom hooks ----
 
-	// Is there a manifest-registered wizard for the active provider? If so,
-	// ManifestProviderWizardSection drives the rendering (and runs the
-	// provider's useProviderHooks internally). Unregistered providers fall
-	// through to the legacy per-provider branches.
+	// Every selectable provider must be registered in the frontend wizard
+	// registry. ManifestProviderWizardSection drives all provider-owned steps
+	// and runs the provider's useProviderHooks internally.
 	const manifestDef = getProviderWizard(state.provider);
 	if (!manifestDef) {
 		throw new Error(`No PM provider wizard registered for ${state.provider}`);
@@ -274,33 +315,7 @@ export function PMWizard({
 				isOpen={openSteps.has(1)}
 				onToggle={() => toggleStep(1)}
 			>
-				<div className="space-y-2">
-					<Label>Provider</Label>
-					<div className="flex gap-2">
-						{listProviderWizards().map((wizard) => (
-							<button
-								key={wizard.id}
-								type="button"
-								onClick={() => {
-									if (wizard.id === state.provider) return;
-									if (state.isEditing) {
-										const fromLabel = getProviderWizard(state.provider)?.label ?? state.provider;
-										if (!confirmProviderSwitch(fromLabel, wizard.label)) return;
-									}
-									dispatch({ type: 'SET_PROVIDER', provider: wizard.id });
-									advanceToStep(2);
-								}}
-								className={`flex-1 rounded-md border px-4 py-3 text-sm font-medium transition-colors ${
-									state.provider === wizard.id
-										? 'border-primary bg-primary/5 text-foreground'
-										: 'border-input text-muted-foreground hover:text-foreground hover:bg-accent/50'
-								}`}
-							>
-								{wizard.label}
-							</button>
-						))}
-					</div>
-				</div>
+				<ProviderPicker state={state} dispatch={dispatch} advanceToStep={advanceToStep} />
 			</WizardStep>
 
 			{/*
@@ -311,26 +326,24 @@ export function PMWizard({
 			 * the final Save step. ManifestStepsSection calls useProviderHooks
 			 * exactly once regardless of step count (storm fix).
 			 */}
-			{manifestDef && (
-				<ManifestStepsSection
-					key={manifestDef.id}
-					manifestDef={manifestDef}
-					state={state}
-					dispatch={dispatch}
-					projectId={projectId}
-					advanceToStep={advanceToStep}
-					getStatus={getStatus}
-					openSteps={openSteps}
-					toggleStep={toggleStep}
-					credsReady={credsReady}
-					verifyPending={verifyMutation.isPending}
-					onVerify={() => verifyMutation.mutate()}
-					verificationResult={state.verificationResult}
-					verifyError={state.verifyError}
-					hasStoredCredentials={state.hasStoredCredentials}
-					isEditing={state.isEditing}
-				/>
-			)}
+			<ManifestStepsSection
+				key={manifestDef.id}
+				manifestDef={manifestDef}
+				state={state}
+				dispatch={dispatch}
+				projectId={projectId}
+				advanceToStep={advanceToStep}
+				getStatus={getStatus}
+				openSteps={openSteps}
+				toggleStep={toggleStep}
+				credsReady={credsReady}
+				verifyPending={verifyMutation.isPending}
+				onVerify={() => verifyMutation.mutate()}
+				verificationResult={state.verificationResult}
+				verifyError={state.verifyError}
+				hasStoredCredentials={state.hasStoredCredentials}
+				isEditing={state.isEditing}
+			/>
 
 			{/* Save slot. */}
 			<WizardStep
