@@ -16,21 +16,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { getCredentialRoles } from '../../../../src/config/integrationRoles.js';
-import type { ProviderAuthMetadata } from './pm-providers/types.js';
+import type { ProviderAuthMetadata, ProviderWizardDefinition } from './pm-providers/types.js';
 import type {
 	LinearProjectOption,
 	LinearTeamDetails,
 	LinearTeamOption,
-	Provider,
 	WizardAction,
 	WizardState,
 } from './pm-wizard-state.js';
-import {
-	buildJiraIntegrationConfig,
-	buildLinearIntegrationConfig,
-	buildTrelloIntegrationConfig,
-	shouldUseStoredCredentials,
-} from './pm-wizard-state.js';
+import { shouldUseStoredCredentials } from './pm-wizard-state.js';
 
 // ============================================================================
 // Auth-arg builder — shared across all mutations
@@ -630,11 +624,46 @@ export function useLinearDiscovery(
 // Verification
 // ============================================================================
 
+export function buildCurrentUserDiscoveryRequest(
+	state: WizardState,
+	projectId: string,
+	manifestDef: ProviderWizardDefinition,
+): {
+	providerId: string;
+	capability: 'currentUser';
+	args: Record<string, never>;
+} & ({ projectId: string } | { credentials: Record<string, string> }) {
+	return {
+		providerId: manifestDef.id,
+		capability: 'currentUser',
+		args: {},
+		...buildProviderAuthArgFromMetadata(state, projectId, manifestDef.auth),
+	};
+}
+
+export function formatVerificationDisplay(
+	provider: string,
+	me: { id: string; name: string; displayName?: string },
+): string {
+	// Per-provider display formatting mirrors the pre-009/5 UX:
+	//   Trello: "@{username} ({fullName})"   — displayName is username
+	//   JIRA:   "{displayName} ({email})"     — displayName is email
+	//   Linear: "{displayName || name}"       — displayName is the preferred handle
+	if (provider === 'trello') {
+		return me.displayName ? `@${me.displayName} (${me.name})` : me.name;
+	}
+	if (provider === 'jira') {
+		return me.displayName ? `${me.name} (${me.displayName})` : me.name;
+	}
+	return me.displayName || me.name;
+}
+
 export function useVerification(
 	state: WizardState,
 	dispatch: React.Dispatch<WizardAction>,
 	advanceToStep: (step: number) => void,
 	projectId: string,
+	manifestDef: ProviderWizardDefinition,
 ) {
 	const verifyMutation = useMutation({
 		mutationFn: async () => {
@@ -642,38 +671,23 @@ export function useVerification(
 			// Calls the `currentUser` discovery capability; every provider
 			// maps its native `getMe()` response to `{ id, name, displayName? }`.
 			//
-			// Edit-mode fallback: `buildProviderAuthArg` returns `{ projectId }`
-			// when the user is editing with stored credentials but an empty
-			// API-key field, so the backend resolves the stored secret via
-			// `resolvePMCredentials` instead of requiring re-entry.
-			const provider = state.provider;
-			const authArg = buildProviderAuthArg(state, projectId);
-			const me = (await trpcClient.pm.discovery.discover.mutate({
-				providerId: provider,
-				capability: 'currentUser',
-				args: {},
-				...authArg,
-			})) as { id: string; name: string; displayName?: string };
-			return { provider, me };
+			// Edit-mode fallback comes from the provider-owned auth metadata:
+			// empty raw credential fields in edit mode send `{ projectId }`,
+			// letting the backend resolve stored project credentials.
+			const request = buildCurrentUserDiscoveryRequest(state, projectId, manifestDef);
+			const me = (await trpcClient.pm.discovery.discover.mutate(request)) as {
+				id: string;
+				name: string;
+				displayName?: string;
+			};
+			return { provider: manifestDef.id, me };
 		},
 		onSuccess: ({ provider, me }) => {
 			// Ignore if provider changed while we were verifying
 			if (provider !== state.provider) return;
-			// Per-provider display formatting mirrors the pre-009/5 UX:
-			//   Trello: "@{username} ({fullName})"   — displayName is username
-			//   JIRA:   "{displayName} ({email})"     — displayName is email
-			//   Linear: "{displayName || name}"       — displayName is the preferred handle
-			let display: string;
-			if (provider === 'trello') {
-				display = me.displayName ? `@${me.displayName} (${me.name})` : me.name;
-			} else if (provider === 'jira') {
-				display = me.displayName ? `${me.name} (${me.displayName})` : me.name;
-			} else {
-				display = me.displayName || me.name;
-			}
 			dispatch({
 				type: 'SET_VERIFICATION',
-				result: { provider, display },
+				result: { provider, display: formatVerificationDisplay(provider, me) },
 			});
 			advanceToStep(3);
 		},
@@ -794,63 +808,51 @@ export function useJiraCustomFieldCreation(
 // Save Mutation — data-driven, no per-provider branching
 // ============================================================================
 
-type CredentialEntry = { envVarKey: string; stateField: keyof WizardState; label: string };
+export function buildPersistedCredentialInputs(
+	state: WizardState,
+	manifestDef: ProviderWizardDefinition,
+): Array<{ envVarKey: string; value: string; name: string }> {
+	return manifestDef.credentialPersistence.flatMap((cred) => {
+		const rawValue = state[cred.stateField];
+		const value = typeof rawValue === 'string' ? rawValue : '';
+		return value ? [{ envVarKey: cred.envVarKey, value, name: cred.label }] : [];
+	});
+}
 
-const SAVE_CONFIGS: Record<
-	Provider,
-	{
-		buildConfig: (state: WizardState) => Record<string, unknown>;
-		credentials: CredentialEntry[];
-	}
-> = {
-	trello: {
-		buildConfig: buildTrelloIntegrationConfig,
-		credentials: [
-			{ envVarKey: 'TRELLO_API_KEY', stateField: 'trelloApiKey', label: 'Trello API Key' },
-			{ envVarKey: 'TRELLO_TOKEN', stateField: 'trelloToken', label: 'Trello Token' },
-		],
-	},
-	jira: {
-		buildConfig: buildJiraIntegrationConfig,
-		credentials: [
-			{ envVarKey: 'JIRA_EMAIL', stateField: 'jiraEmail', label: 'JIRA Email' },
-			{ envVarKey: 'JIRA_API_TOKEN', stateField: 'jiraApiToken', label: 'JIRA API Token' },
-		],
-	},
-	linear: {
-		buildConfig: buildLinearIntegrationConfig,
-		credentials: [
-			{ envVarKey: 'LINEAR_API_KEY', stateField: 'linearApiKey', label: 'Linear API Key' },
-		],
-	},
-};
+export function buildIntegrationUpsertInput(
+	projectId: string,
+	state: WizardState,
+	manifestDef: ProviderWizardDefinition,
+): {
+	projectId: string;
+	category: 'pm';
+	provider: string;
+	config: Record<string, unknown>;
+} {
+	return {
+		projectId,
+		category: 'pm',
+		provider: manifestDef.id,
+		config: manifestDef.buildIntegrationConfig(state),
+	};
+}
 
-export function useSaveMutation(projectId: string, state: WizardState) {
+export function useSaveMutation(
+	projectId: string,
+	state: WizardState,
+	manifestDef: ProviderWizardDefinition,
+) {
 	const queryClient = useQueryClient();
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
-			const providerCfg = SAVE_CONFIGS[state.provider];
-			const config = providerCfg.buildConfig(state);
-
-			const result = await trpcClient.projects.integrations.upsert.mutate({
-				projectId,
-				category: 'pm',
-				provider: state.provider,
-				config,
-			});
+			const result = await trpcClient.projects.integrations.upsert.mutate(
+				buildIntegrationUpsertInput(projectId, state, manifestDef),
+			);
 
 			// Persist credentials to project_credentials table
-			for (const cred of providerCfg.credentials) {
-				const value = state[cred.stateField] as string;
-				if (value) {
-					await trpcClient.projects.credentials.set.mutate({
-						projectId,
-						envVarKey: cred.envVarKey,
-						value,
-						name: cred.label,
-					});
-				}
+			for (const cred of buildPersistedCredentialInputs(state, manifestDef)) {
+				await trpcClient.projects.credentials.set.mutate({ projectId, ...cred });
 			}
 
 			// On first-time setup, auto-enable default PM triggers for the three main agents

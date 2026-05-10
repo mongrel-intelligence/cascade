@@ -10,8 +10,12 @@ import { jiraProviderWizard } from '../../../web/src/components/projects/pm-prov
 import { linearProviderWizard } from '../../../web/src/components/projects/pm-providers/linear/wizard.js';
 import { trelloProviderWizard } from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
 import {
+	buildCurrentUserDiscoveryRequest,
+	buildIntegrationUpsertInput,
+	buildPersistedCredentialInputs,
 	buildProviderAuthArg,
 	buildProviderAuthArgFromMetadata,
+	formatVerificationDisplay,
 	runPerLabelCreations,
 } from '../../../web/src/components/projects/pm-wizard-hooks.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
@@ -284,6 +288,160 @@ describe('provider credential metadata', () => {
 		expect(linearProviderWizard.credentialPersistence.map((c) => c.envVarKey)).not.toContain(
 			'LINEAR_WEBHOOK_SECRET',
 		);
+	});
+});
+
+// ============================================================================
+// Metadata-driven verification
+// ============================================================================
+
+describe('metadata-driven verification request', () => {
+	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'trello', ...overrides };
+	}
+	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'jira', ...overrides };
+	}
+	function linearState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'linear', ...overrides };
+	}
+
+	it('builds stored-credential currentUser discovery requests from provider metadata', () => {
+		expect(
+			buildCurrentUserDiscoveryRequest(
+				trelloState({ isEditing: true, hasStoredCredentials: true, trelloApiKey: '' }),
+				'proj-t',
+				trelloProviderWizard,
+			),
+		).toEqual({
+			providerId: 'trello',
+			capability: 'currentUser',
+			args: {},
+			projectId: 'proj-t',
+		});
+	});
+
+	it('builds raw-credential currentUser discovery requests from provider metadata', () => {
+		expect(
+			buildCurrentUserDiscoveryRequest(
+				jiraState({
+					jiraEmail: 'user@example.com',
+					jiraApiToken: 'jira-token',
+					jiraBaseUrl: 'https://example.atlassian.net',
+				}),
+				'proj-j',
+				jiraProviderWizard,
+			),
+		).toEqual({
+			providerId: 'jira',
+			capability: 'currentUser',
+			args: {},
+			credentials: {
+				email: 'user@example.com',
+				api_token: 'jira-token',
+				base_url: 'https://example.atlassian.net',
+			},
+		});
+		expect(
+			buildCurrentUserDiscoveryRequest(
+				linearState({ linearApiKey: 'lin-key' }),
+				'proj-l',
+				linearProviderWizard,
+			),
+		).toEqual({
+			providerId: 'linear',
+			capability: 'currentUser',
+			args: {},
+			credentials: { api_key: 'lin-key' },
+		});
+	});
+
+	it('preserves provider-specific verified-as display formatting', () => {
+		expect(
+			formatVerificationDisplay('trello', { id: '1', name: 'Full Name', displayName: 'user' }),
+		).toBe('@user (Full Name)');
+		expect(
+			formatVerificationDisplay('jira', {
+				id: '2',
+				name: 'Jira User',
+				displayName: 'user@example.com',
+			}),
+		).toBe('Jira User (user@example.com)');
+		expect(
+			formatVerificationDisplay('linear', { id: '3', name: 'Linear User', displayName: 'lin' }),
+		).toBe('lin');
+		expect(formatVerificationDisplay('linear', { id: '4', name: 'Linear User' })).toBe(
+			'Linear User',
+		);
+	});
+});
+
+// ============================================================================
+// Metadata-driven save
+// ============================================================================
+
+describe('metadata-driven save payloads', () => {
+	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
+		return {
+			...createInitialState(),
+			provider: 'trello',
+			trelloApiKey: 'key',
+			trelloToken: 'token',
+			trelloBoardId: 'board-1',
+			trelloListMappings: { todo: 'list-todo' },
+			...overrides,
+		};
+	}
+	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
+		return {
+			...createInitialState(),
+			provider: 'jira',
+			jiraEmail: 'user@example.com',
+			jiraApiToken: 'jira-token',
+			jiraBaseUrl: 'https://example.atlassian.net',
+			jiraProjectKey: 'PROJ',
+			jiraStatusMappings: { todo: 'To Do' },
+			...overrides,
+		};
+	}
+
+	it('persists integration config through manifestDef.buildIntegrationConfig', () => {
+		const state = trelloState();
+		expect(buildIntegrationUpsertInput('proj-1', state, trelloProviderWizard)).toEqual({
+			projectId: 'proj-1',
+			category: 'pm',
+			provider: 'trello',
+			config: {
+				boardId: 'board-1',
+				lists: { todo: 'list-todo' },
+				labels: {},
+			},
+		});
+	});
+
+	it('persists credential values through provider credential metadata', () => {
+		expect(buildPersistedCredentialInputs(trelloState(), trelloProviderWizard)).toEqual([
+			{ envVarKey: 'TRELLO_API_KEY', value: 'key', name: 'Trello API Key' },
+			{ envVarKey: 'TRELLO_TOKEN', value: 'token', name: 'Trello Token' },
+		]);
+		expect(buildPersistedCredentialInputs(jiraState(), jiraProviderWizard)).toEqual([
+			{ envVarKey: 'JIRA_EMAIL', value: 'user@example.com', name: 'JIRA Email' },
+			{ envVarKey: 'JIRA_API_TOKEN', value: 'jira-token', name: 'JIRA API Token' },
+		]);
+	});
+
+	it('skips empty credential values so stored credentials remain untouched on edit', () => {
+		expect(
+			buildPersistedCredentialInputs(
+				jiraState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					jiraEmail: '',
+					jiraApiToken: '',
+				}),
+				jiraProviderWizard,
+			),
+		).toEqual([]);
 	});
 });
 

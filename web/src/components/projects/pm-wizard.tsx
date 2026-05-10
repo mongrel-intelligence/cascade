@@ -234,13 +234,22 @@ export function PMWizard({
 	// provider's useProviderHooks internally). Unregistered providers fall
 	// through to the legacy per-provider branches.
 	const manifestDef = getProviderWizard(state.provider);
+	if (!manifestDef) {
+		throw new Error(`No PM provider wizard registered for ${state.provider}`);
+	}
 
-	const { verifyMutation } = useVerification(state, dispatch, advanceToStep, projectId);
+	const { verifyMutation } = useVerification(
+		state,
+		dispatch,
+		advanceToStep,
+		projectId,
+		manifestDef,
+	);
 	// Every PM provider (Trello 006/2, JIRA 006/3, Linear 006/4) composes its
 	// discovery / label / custom-field / webhook hooks inside its own
 	// useProviderHooks. The parent wizard no longer calls any provider-
 	// specific React hook.
-	const { saveMutation } = useSaveMutation(projectId, state);
+	const { saveMutation } = useSaveMutation(projectId, state, manifestDef);
 
 	// ---- Step status ----
 
