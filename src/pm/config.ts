@@ -31,6 +31,8 @@ export interface JiraConfig {
 		auto?: string;
 		/** JIRA label name applied to alert work items (spec 019). */
 		cascadeAlert?: string;
+		/** JIRA label name applied to friction work items (2026-05-10). */
+		cascadeFriction?: string;
 	};
 }
 
@@ -69,6 +71,8 @@ export interface LinearConfig {
 		auto?: string;
 		/** Linear label UUID applied to alert work items (spec 019). */
 		cascadeAlert?: string;
+		/** Linear label UUID applied to friction work items (2026-05-10). */
+		cascadeFriction?: string;
 	};
 	customFields?: { cost?: string };
 }
@@ -180,6 +184,31 @@ export function getAlertLabelId(project: ProjectConfig): string | undefined {
 	}
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.labels?.cascadeAlert;
+	}
+	return undefined;
+}
+
+/**
+ * Returns the label identifier to apply to a friction work item:
+ *   - Trello → `labels['cascade-friction']` (Trello label ID)
+ *   - JIRA   → `labels.cascadeFriction` (JIRA label name string)
+ *   - Linear → `labels.cascadeFriction` (Linear label UUID)
+ *
+ * Returns `undefined` when the label slot is not configured. Mirrors the
+ * `getAlertLabelId` opt-in pattern from spec 019: operators add the label
+ * to PM integration config when they want filtering/clustering on friction
+ * cards; absent config means cards file unlabeled and behavior is unchanged.
+ */
+export function getFrictionLabelId(project: ProjectConfig): string | undefined {
+	const pmType = project.pm?.type;
+	if (pmType === 'trello') {
+		return getTrelloConfig(project)?.labels?.['cascade-friction'];
+	}
+	if (pmType === 'jira') {
+		return getJiraConfig(project)?.labels?.cascadeFriction;
+	}
+	if (pmType === 'linear') {
+		return getLinearConfig(project)?.labels?.cascadeFriction;
 	}
 	return undefined;
 }

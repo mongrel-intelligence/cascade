@@ -1,4 +1,8 @@
-import { getFrictionContainerId, getFrictionStatusDestination } from '../pm/config.js';
+import {
+	getFrictionContainerId,
+	getFrictionLabelId,
+	getFrictionStatusDestination,
+} from '../pm/config.js';
 import { pmRegistry } from '../pm/registry.js';
 import type { ProjectConfig } from '../types/index.js';
 import { formatFrictionReport } from './format.js';
@@ -29,11 +33,18 @@ export async function materializeFrictionReport({
 
 	const provider = pmRegistry.createProvider(project);
 	const formatted = formatFrictionReport(report, now);
+	// Apply the optional `cascade-friction` label when configured. Mirrors
+	// the spec-019 `cascade-alert` opt-in pattern: operators add the label
+	// to PM integration config when they want filtering/clustering on
+	// friction cards; absent config means cards file unlabeled and behavior
+	// is unchanged from the prior release.
+	const labelId = getFrictionLabelId(project);
+	const labels = labelId ? [labelId] : [];
 	const workItem = await provider.createWorkItem({
 		containerId,
 		title: formatted.title,
 		description: formatted.descriptionMarkdown,
-		labels: [],
+		labels,
 	});
 
 	const destination = getFrictionStatusDestination(project);

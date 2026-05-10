@@ -48,6 +48,7 @@ export const jiraConfigSchema = z
 		 * is present in the input.
 		 *
 		 * `cascadeAlert` — recognized label for alert work items (spec 019).
+		 * `cascadeFriction` — recognized label for friction work items (2026-05-10).
 		 * `statuses.alerts` is the recognized status key for the alerts slot.
 		 * `statuses.friction` is the recognized status key for the friction report slot.
 		 */
@@ -58,6 +59,7 @@ export const jiraConfigSchema = z
 				error: z.string().default('cascade-error'),
 				readyToProcess: z.string().default('cascade-ready'),
 				cascadeAlert: z.string().optional(),
+				cascadeFriction: z.string().optional(),
 			})
 			.optional(),
 	})

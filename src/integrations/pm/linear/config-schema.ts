@@ -40,6 +40,7 @@ export const linearConfigSchema = z
 		 * optional to accommodate teams that only use a subset.
 		 *
 		 * `cascadeAlert` — recognized label UUID for alert work items (spec 019).
+		 * `cascadeFriction` — recognized label UUID for friction work items (2026-05-10).
 		 * `statuses.alerts` is the recognized status key for the alerts slot.
 		 * `statuses.friction` is the recognized status key for the friction report slot.
 		 */
@@ -51,6 +52,7 @@ export const linearConfigSchema = z
 				readyToProcess: z.string().optional(),
 				auto: z.string().optional(),
 				cascadeAlert: z.string().optional(),
+				cascadeFriction: z.string().optional(),
 			})
 			.optional(),
 

@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { jiraConfigSchema } from '../../../src/integrations/pm/jira/config-schema.js';
 import { linearConfigSchema } from '../../../src/integrations/pm/linear/config-schema.js';
 import { trelloConfigSchema } from '../../../src/integrations/pm/trello/config-schema.js';
-import { getFrictionContainerId, getFrictionStatusDestination } from '../../../src/pm/config.js';
+import {
+	getFrictionContainerId,
+	getFrictionLabelId,
+	getFrictionStatusDestination,
+} from '../../../src/pm/config.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
 function makeTrelloProject(overrides: Record<string, unknown> = {}): ProjectConfig {
@@ -110,6 +114,80 @@ describe('getFrictionStatusDestination', () => {
 		expect(getFrictionStatusDestination(trelloProject)).toBeUndefined();
 		expect(getFrictionStatusDestination(jiraProject)).toBeUndefined();
 		expect(getFrictionStatusDestination(linearProject)).toBeUndefined();
+	});
+});
+
+describe('getFrictionLabelId', () => {
+	// 2026-05-10: opt-in label applied at materialize time. Mirrors the
+	// `getAlertLabelId` pattern from spec 019. Operators add the label key
+	// to the PM integration config to enable filtering/clustering of
+	// friction cards in the PM UI; absent config means cards file unlabeled.
+	it('returns Trello label ID from labels[cascade-friction] when configured', () => {
+		const project = makeTrelloProject({
+			trello: {
+				boardId: 'board-1',
+				lists: { todo: 'list-todo', friction: 'list-friction' },
+				labels: { 'cascade-friction': 'trello-label-friction-id' },
+			},
+		});
+		expect(getFrictionLabelId(project)).toBe('trello-label-friction-id');
+	});
+
+	it('returns JIRA label name from labels.cascadeFriction when configured', () => {
+		const project = makeJiraProject({
+			jira: {
+				projectKey: 'PROJ',
+				baseUrl: 'https://acme.atlassian.net',
+				statuses: { todo: 'To Do', friction: 'Friction' },
+				labels: { cascadeFriction: 'cascade-friction' },
+			},
+		});
+		expect(getFrictionLabelId(project)).toBe('cascade-friction');
+	});
+
+	it('returns Linear label UUID from labels.cascadeFriction when configured', () => {
+		const project = makeLinearProject({
+			linear: {
+				teamId: 'team-1',
+				statuses: { todo: 'state-todo', friction: 'state-friction' },
+				labels: { cascadeFriction: 'linear-label-uuid-friction' },
+			},
+		});
+		expect(getFrictionLabelId(project)).toBe('linear-label-uuid-friction');
+	});
+
+	it('returns undefined when the cascade-friction label is unconfigured (back-compat)', () => {
+		// Reflects current production cascade & ucho config.
+		expect(getFrictionLabelId(makeTrelloProject())).toBeUndefined();
+		expect(getFrictionLabelId(makeJiraProject())).toBeUndefined();
+		expect(getFrictionLabelId(makeLinearProject())).toBeUndefined();
+	});
+
+	it('returns undefined for unknown PM provider types', () => {
+		expect(
+			getFrictionLabelId({ id: 'p1', pm: undefined } as unknown as ProjectConfig),
+		).toBeUndefined();
+	});
+});
+
+describe('PM config schemas — friction label', () => {
+	it('jiraConfigSchema accepts labels.cascadeFriction', () => {
+		const result = jiraConfigSchema.safeParse({
+			projectKey: 'P',
+			baseUrl: 'https://acme.atlassian.net',
+			statuses: { friction: 'Friction' },
+			labels: { cascadeFriction: 'cascade-friction' },
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('linearConfigSchema accepts labels.cascadeFriction', () => {
+		const result = linearConfigSchema.safeParse({
+			teamId: 'team-1',
+			statuses: { friction: 'state-uuid' },
+			labels: { cascadeFriction: 'linear-label-uuid' },
+		});
+		expect(result.success).toBe(true);
 	});
 });
 

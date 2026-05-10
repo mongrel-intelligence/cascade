@@ -95,11 +95,14 @@ describe('materializeFrictionReport', () => {
 		expect(mockCreateWorkItem).toHaveBeenCalledWith(
 			expect.objectContaining({
 				containerId: 'CAS',
-				title: '[Friction][low] Tool failed while reading logs',
+				// 2026-05-10: title surfaces all three classification facets
+				// inside a single bracket pair (was '[Friction][low] ...').
+				title: '[Friction · tooling · low] Tool failed while reading logs',
 				labels: [],
 			}),
 		);
-		expect(mockCreateWorkItem.mock.calls[0][0].description).toContain('## Context');
+		// Body now uses the compact Run context block (was '## Context').
+		expect(mockCreateWorkItem.mock.calls[0][0].description).toContain('## Run context');
 		expect(mockMoveWorkItem).toHaveBeenCalledWith('friction-card-1', 'Friction');
 	});
 
@@ -126,6 +129,44 @@ describe('materializeFrictionReport', () => {
 		});
 		expect(mockCreateWorkItem).not.toHaveBeenCalled();
 		expect(mockMoveWorkItem).not.toHaveBeenCalled();
+	});
+
+	// 2026-05-10: opt-in label is applied at materialize time when configured.
+	// Mirrors spec-019 cascade-alert pattern. Operators add labels.cascadeFriction
+	// (JIRA/Linear) or labels['cascade-friction'] (Trello) to enable filtering.
+	it('applies the cascade-friction label on Trello when labels[cascade-friction] is configured', async () => {
+		const project = makeTrelloProject();
+		(project.trello as { labels: Record<string, string> }).labels = {
+			'cascade-friction': 'trello-label-friction',
+		};
+
+		await materializeFrictionReport({ project, report: makeReport() });
+
+		expect(mockCreateWorkItem).toHaveBeenCalledWith(
+			expect.objectContaining({ labels: ['trello-label-friction'] }),
+		);
+	});
+
+	it('applies the cascade-friction label on JIRA when labels.cascadeFriction is configured', async () => {
+		const project = makeJiraProject();
+		(project.jira as { labels: Record<string, string> }).labels = {
+			cascadeFriction: 'cascade-friction',
+		};
+
+		await materializeFrictionReport({ project, report: makeReport() });
+
+		expect(mockCreateWorkItem).toHaveBeenCalledWith(
+			expect.objectContaining({ labels: ['cascade-friction'] }),
+		);
+	});
+
+	it('files unlabeled cards when the cascade-friction label is absent (back-compat)', async () => {
+		// Trello with friction list but NO cascade-friction label — current
+		// production cascade & ucho config. Pin labels:[] to guard against
+		// future regressions that would unexpectedly tag every card.
+		await materializeFrictionReport({ project: makeTrelloProject(), report: makeReport() });
+
+		expect(mockCreateWorkItem).toHaveBeenCalledWith(expect.objectContaining({ labels: [] }));
 	});
 
 	it('falls back to provider.getWorkItemUrl when createWorkItem returns no URL', async () => {
