@@ -1,4 +1,5 @@
 import type { FinishHookFlags } from '../agents/definitions/schema.js';
+import type { ProjectConfig } from '../types/index.js';
 
 /** Env var holding the temp file path for the review sidecar (written by CLI subprocess, read by adapter). */
 export const REVIEW_SIDECAR_ENV_VAR = 'CASCADE_REVIEW_SIDECAR_PATH';
@@ -8,6 +9,8 @@ export const PR_SIDECAR_ENV_VAR = 'CASCADE_PR_SIDECAR_PATH';
 export const PUSHED_CHANGES_SIDECAR_ENV_VAR = 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH';
 /** Env var holding the temp file path for PM write evidence (written by cascade-tools pm add-checklist). */
 export const PM_WRITE_SIDECAR_ENV_VAR = 'CASCADE_PM_WRITE_SIDECAR_PATH';
+/** Env var holding the JSONL outbox for incidental friction reports. */
+export const FRICTION_SIDECAR_ENV_VAR = 'CASCADE_FRICTION_SIDECAR_PATH';
 
 export type SessionHooks = FinishHookFlags;
 
@@ -19,7 +22,29 @@ export interface InitSessionStateOptions {
 	hooks?: SessionHooks;
 	workItemUrl?: string;
 	workItemTitle?: string;
+	frictionSidecarPath?: string;
 	initialHeadSha?: string;
+	/** Full project config for in-process gadgets (e.g. LLMist ReportFriction) that need project
+	 * context but cannot access it via process.env (projectSecrets are not exported in-process). */
+	project?: ProjectConfig;
+	/** Run ID for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_RUN_ID is not exported to process.env (e.g. LLMist runs). */
+	runId?: string;
+	/** PR number for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_PR_NUMBER is not exported to process.env (e.g. LLMist runs). */
+	prNumber?: number;
+	/** PR URL for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_PR_URL is not exported to process.env (e.g. LLMist runs). */
+	prUrl?: string;
+	/** PR title for the current agent execution. Used by in-process gadgets as a fallback
+	 * when CASCADE_PR_TITLE is not exported to process.env (e.g. LLMist runs). */
+	prTitle?: string;
+	/** Engine identifier for in-process gadgets (e.g. 'llmist'). Used as a fallback
+	 * when CASCADE_ENGINE_LABEL is not exported to process.env. */
+	engineLabel?: string;
+	/** Resolved AI model name for in-process gadgets (e.g. 'gpt-4o'). Used as a fallback
+	 * when CASCADE_MODEL is not exported to process.env. */
+	model?: string;
 	/**
 	 * The PR HEAD branch name. Threaded into Finish validation so that
 	 * `hasUnpushedCommits` can use ls-remote SHA comparison instead of the
@@ -34,14 +59,21 @@ interface SessionStateData {
 	baseBranch: string;
 	prBranch: string | null;
 	projectId: string | null;
+	project: ProjectConfig | null;
 	workItemId: string | null;
 	workItemUrl: string | null;
 	workItemTitle: string | null;
+	frictionSidecarPath: string | null;
 	initialHeadSha: string | null;
+	runId: string | null;
+	prNumber: number | null;
+	prUrl: string | null;
+	prTitle: string | null;
+	engineLabel: string | null;
+	model: string | null;
 	hooks: SessionHooks;
 	readOnlyFs: boolean;
 	prCreated: boolean;
-	prUrl: string | null;
 	reviewSubmitted: boolean;
 	reviewUrl: string | null;
 	reviewBody: string | null;
@@ -68,14 +100,21 @@ export class SessionState {
 		baseBranch: 'main',
 		prBranch: null,
 		projectId: null,
+		project: null,
 		workItemId: null,
 		workItemUrl: null,
 		workItemTitle: null,
+		frictionSidecarPath: null,
 		initialHeadSha: null,
+		runId: null,
+		prNumber: null,
+		prUrl: null,
+		prTitle: null,
+		engineLabel: null,
+		model: null,
 		hooks: {},
 		readOnlyFs: false,
 		prCreated: false,
-		prUrl: null,
 		reviewSubmitted: false,
 		reviewUrl: null,
 		reviewBody: null,
@@ -90,25 +129,40 @@ export class SessionState {
 			baseBranch,
 			prBranch,
 			projectId,
+			project,
 			workItemId,
 			hooks,
 			workItemUrl,
 			workItemTitle,
+			frictionSidecarPath,
 			initialHeadSha,
+			runId,
+			prNumber,
+			prUrl,
+			prTitle,
+			engineLabel,
+			model,
 		} = options;
 		this.state = {
 			agentType,
 			baseBranch: baseBranch ?? 'main',
 			prBranch: prBranch ?? null,
 			projectId: projectId ?? null,
+			project: project ?? null,
 			workItemId: workItemId ?? null,
 			workItemUrl: workItemUrl ?? null,
 			workItemTitle: workItemTitle ?? null,
+			frictionSidecarPath: frictionSidecarPath ?? null,
 			initialHeadSha: initialHeadSha ?? null,
+			runId: runId ?? null,
+			prNumber: prNumber ?? null,
+			prUrl: prUrl ?? null,
+			prTitle: prTitle ?? null,
+			engineLabel: engineLabel ?? null,
+			model: model ?? null,
 			hooks: hooks ?? {},
 			readOnlyFs: false,
 			prCreated: false,
-			prUrl: null,
 			reviewSubmitted: false,
 			reviewUrl: null,
 			reviewBody: null,
@@ -140,6 +194,50 @@ export class SessionState {
 
 	getWorkItemTitle(): string | null {
 		return this.state.workItemTitle;
+	}
+
+	getProject(): ProjectConfig | null {
+		return this.state.project;
+	}
+
+	getFrictionSidecarPath(): string | null {
+		return this.state.frictionSidecarPath;
+	}
+
+	getRunId(): string | null {
+		return this.state.runId;
+	}
+
+	getPrNumber(): number | null {
+		return this.state.prNumber;
+	}
+
+	getPrUrl(): string | null {
+		return this.state.prUrl;
+	}
+
+	getPrTitle(): string | null {
+		return this.state.prTitle;
+	}
+
+	getAgentType(): string | null {
+		return this.state.agentType;
+	}
+
+	getPrBranch(): string | null {
+		return this.state.prBranch;
+	}
+
+	getInitialHeadSha(): string | null {
+		return this.state.initialHeadSha;
+	}
+
+	getEngineLabel(): string | null {
+		return this.state.engineLabel;
+	}
+
+	getModel(): string | null {
+		return this.state.model;
 	}
 
 	recordPRCreation(prUrl: string): void {
@@ -258,6 +356,50 @@ export function getWorkItemUrl(): string | null {
 
 export function getWorkItemTitle(): string | null {
 	return _defaultInstance.getWorkItemTitle();
+}
+
+export function getProject(): ProjectConfig | null {
+	return _defaultInstance.getProject();
+}
+
+export function getFrictionSidecarPath(): string | null {
+	return _defaultInstance.getFrictionSidecarPath();
+}
+
+export function getRunId(): string | null {
+	return _defaultInstance.getRunId();
+}
+
+export function getPrNumber(): number | null {
+	return _defaultInstance.getPrNumber();
+}
+
+export function getPrUrl(): string | null {
+	return _defaultInstance.getPrUrl();
+}
+
+export function getPrTitle(): string | null {
+	return _defaultInstance.getPrTitle();
+}
+
+export function getAgentType(): string | null {
+	return _defaultInstance.getAgentType();
+}
+
+export function getPrBranch(): string | null {
+	return _defaultInstance.getPrBranch();
+}
+
+export function getInitialHeadSha(): string | null {
+	return _defaultInstance.getInitialHeadSha();
+}
+
+export function getEngineLabel(): string | null {
+	return _defaultInstance.getEngineLabel();
+}
+
+export function getModel(): string | null {
+	return _defaultInstance.getModel();
 }
 
 export function recordPRCreation(prUrl: string): void {

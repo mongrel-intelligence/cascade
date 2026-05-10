@@ -8,9 +8,9 @@ describe('getToolManifests', () => {
 		expect(manifests.length).toBeGreaterThan(0);
 	});
 
-	it('returns exactly 20 tools', () => {
+	it('returns exactly 21 tools', () => {
 		const manifests = getToolManifests();
-		expect(manifests).toHaveLength(20);
+		expect(manifests).toHaveLength(21);
 	});
 
 	it('every manifest has required fields: name, description, cliCommand, parameters', () => {
@@ -40,11 +40,26 @@ describe('getToolManifests', () => {
 		expect(names).toContain('PostComment');
 		expect(names).toContain('UpdateWorkItem');
 		expect(names).toContain('CreateWorkItem');
+		expect(names).toContain('ReportFriction');
 		expect(names).toContain('ListWorkItems');
 		expect(names).toContain('AddChecklist');
 		expect(names).toContain('MoveWorkItem');
 		expect(names).toContain('PMUpdateChecklistItem');
 		expect(names).toContain('PMDeleteChecklistItem');
+	});
+
+	it('ReportFriction has enum category/severity and details-file support', () => {
+		const manifests = getToolManifests();
+		const reportFriction = manifests.find((m) => m.name === 'ReportFriction');
+		expect(reportFriction).toBeDefined();
+		expect(reportFriction?.cliCommand).toBe('cascade-tools pm report-friction');
+		expect(reportFriction?.parameters).toMatchObject({
+			summary: { type: 'string', required: true },
+			details: { type: 'string', required: true },
+			category: { type: 'string', required: true },
+			severity: { type: 'string', required: true },
+			'details-file': { type: 'string' },
+		});
 	});
 
 	it('includes GitHub PR tools', () => {

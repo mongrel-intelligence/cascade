@@ -45,6 +45,7 @@ vi.mock('../../../../src/gadgets/pm/index.js', () => ({
 	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
 	PostComment: mockClass('PostComment'),
 	ReadWorkItem: mockClass('ReadWorkItem'),
+	ReportFriction: mockClass('ReportFriction'),
 	UpdateWorkItem: mockClass('UpdateWorkItem'),
 }));
 vi.mock('../../../../src/gadgets/tmux.js', () => ({ Tmux: mockClass('Tmux') }));
@@ -120,6 +121,13 @@ describe('buildGadgetsFromCapabilities', () => {
 			expect(gadgets).toContain('CreateWorkItem');
 			expect(gadgets).toContain('PostComment');
 			expect(gadgets).toContain('AddChecklist');
+			expect(gadgets).not.toContain('ReportFriction');
+		});
+
+		it('pm:friction includes only ReportFriction', () => {
+			const caps: Capability[] = ['pm:friction'];
+			const gadgets = names(buildGadgetsFromCapabilities(caps));
+			expect(gadgets).toEqual(['ReportFriction']);
 		});
 
 		it('pm:checklist includes checklist gadgets', () => {
@@ -171,6 +179,7 @@ describe('buildGadgetsFromCapabilities', () => {
 				'pm:read',
 				'pm:write',
 				'pm:checklist',
+				'pm:friction',
 				'scm:pr',
 			];
 			const gadgets = names(buildGadgetsFromCapabilities(caps));
@@ -183,6 +192,7 @@ describe('buildGadgetsFromCapabilities', () => {
 			// PM
 			expect(gadgets).toContain('ReadWorkItem');
 			expect(gadgets).toContain('PMUpdateChecklistItem');
+			expect(gadgets).toContain('ReportFriction');
 			// SCM
 			expect(gadgets).toContain('CreatePR');
 			// Session

@@ -1,8 +1,13 @@
+import {
+	createIntegrationChecker,
+	resolveEffectiveCapabilities,
+} from '../agents/capabilities/resolver.js';
 import { needsGitStateStopHooks } from '../agents/definitions/index.js';
 import { getAgentProfile } from '../agents/definitions/profiles.js';
 import { getToolManifests } from '../agents/definitions/toolManifests.js';
 import type { PromptContext } from '../agents/prompts/index.js';
 import type { LogWriter } from '../agents/shared/executionPipeline.js';
+import { appendFrictionGuidance } from '../agents/shared/frictionGuidance.js';
 import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { buildPromptContext } from '../agents/shared/promptContext.js';
 import type { createAgentLogger } from '../agents/utils/logging.js';
@@ -44,6 +49,7 @@ export async function buildExecutionPlan(
 		prSidecarPath?: string;
 		pushedChangesSidecarPath?: string;
 		pmWriteSidecarPath?: string;
+		frictionSidecarPath?: string;
 		nativeToolRuntimeCleanup?: () => void;
 	}
 > {
@@ -89,7 +95,7 @@ export async function buildExecutionPlan(
 		// DB not available — fall back to disk-only partials
 	}
 
-	const {
+	let {
 		systemPrompt,
 		taskPrompt: taskPromptOverride,
 		model: rawModel,
@@ -109,6 +115,13 @@ export async function buildExecutionPlan(
 	const model = engine.resolveModel ? engine.resolveModel(rawModel) : rawModel;
 
 	const profile = await getAgentProfile(agentType);
+	const integrationChecker = await createIntegrationChecker(project.id);
+	const effectiveCapabilities = resolveEffectiveCapabilities(
+		profile.capabilities.required,
+		profile.capabilities.optional,
+		integrationChecker,
+	);
+	systemPrompt = appendFrictionGuidance(systemPrompt, effectiveCapabilities);
 
 	// Use profile to fetch agent-specific context injections
 	const contextInjections = await profile.fetchContext({
@@ -140,8 +153,13 @@ export async function buildExecutionPlan(
 		isGitHubAck,
 	);
 
-	const { reviewSidecarPath, prSidecarPath, pushedChangesSidecarPath, pmWriteSidecarPath } =
-		createCompletionArtifacts(profile, agentType, needsNativeToolRuntime, input, projectSecrets);
+	const {
+		reviewSidecarPath,
+		prSidecarPath,
+		pushedChangesSidecarPath,
+		pmWriteSidecarPath,
+		frictionSidecarPath,
+	} = createCompletionArtifacts(profile, agentType, needsNativeToolRuntime, input, projectSecrets);
 
 	const completionRequirements = {
 		requiresPR: profile.finishHooks.requiresPR,
@@ -177,14 +195,14 @@ export async function buildExecutionPlan(
 		taskPrompt: taskPromptOverride ?? profile.buildTaskPrompt(input),
 		cliToolsDir,
 		nativeToolShimDir: nativeToolRuntime?.shimDir,
-		availableTools: profile.filterTools(getToolManifests()),
+		availableTools: profile.filterTools(getToolManifests(), integrationChecker),
 		contextInjections,
 		maxIterations,
 		budgetUsd: input.remainingBudgetUsd as number | undefined,
 		model,
 		logWriter,
 		agentInput: input,
-		nativeToolCapabilities: profile.allCapabilities,
+		nativeToolCapabilities: effectiveCapabilities,
 		completionRequirements,
 		enableStopHooks: needsGitStateStopHooks(profile.finishHooks),
 		blockGitPush: profile.finishHooks.blockGitPush,
@@ -194,6 +212,7 @@ export async function buildExecutionPlan(
 		prSidecarPath,
 		pushedChangesSidecarPath,
 		pmWriteSidecarPath,
+		frictionSidecarPath,
 		nativeToolRuntimeCleanup: nativeToolRuntime?.cleanup,
 	};
 }
@@ -244,14 +263,7 @@ export function injectRunLinkSecrets(
 	workItemId: string | undefined,
 	runId: string | undefined,
 ): void {
-	if (!project.runLinksEnabled) return;
-
-	const dashboardUrl = getDashboardUrl();
-	if (!dashboardUrl) return;
-
 	partialInput.projectSecrets ??= {};
-	partialInput.projectSecrets.CASCADE_RUN_LINKS_ENABLED = 'true';
-	partialInput.projectSecrets.CASCADE_DASHBOARD_URL = dashboardUrl;
 	partialInput.projectSecrets.CASCADE_ENGINE_LABEL = engineId;
 	partialInput.projectSecrets.CASCADE_MODEL = partialInput.model ?? '';
 	partialInput.projectSecrets.CASCADE_PROJECT_ID = project.id;
@@ -261,4 +273,12 @@ export function injectRunLinkSecrets(
 	if (runId) {
 		partialInput.projectSecrets.CASCADE_RUN_ID = runId;
 	}
+
+	if (!project.runLinksEnabled) return;
+
+	const dashboardUrl = getDashboardUrl();
+	if (!dashboardUrl) return;
+
+	partialInput.projectSecrets.CASCADE_RUN_LINKS_ENABLED = 'true';
+	partialInput.projectSecrets.CASCADE_DASHBOARD_URL = dashboardUrl;
 }

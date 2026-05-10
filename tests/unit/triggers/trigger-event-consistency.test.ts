@@ -131,6 +131,13 @@ function scanHandler(file: string): HandlerScan {
 	if (src.includes('buildRespondToCiResult')) {
 		emittedEvents.add('scm:check-suite-failure');
 	}
+	// `check-suite-failure.ts` returns the result of `dispatchRespondToCi(...)`,
+	// which itself uses `buildRespondToCiResult`. Treat the dispatch helper
+	// call as a local emission so the cross-file chain stays visible to the
+	// gating-vs-emitted drift guard.
+	if (src.includes('dispatchRespondToCi(')) {
+		emittedEvents.add('scm:check-suite-failure');
+	}
 	if (src.includes('buildResolveConflictsResult')) {
 		emittedEvents.add('scm:pr-conflict-detected');
 	}
@@ -153,6 +160,11 @@ const RAW_TRIGGER_LITERAL_EXEMPTIONS = new Set<string>([
 	"src/triggers/github/pr-conflict-detected.ts :: 'scm:pr-conflict-detected',",
 	"src/triggers/github/review-requested.ts :: 'scm:review-requested',",
 	"src/triggers/github/review-requested.ts :: triggerEvent: 'scm:review-requested',",
+	// Biome formatter reflowed the `checkTriggerEnabled(...)` call to a single
+	// line on 2026-05-09 (disabled-trigger-shadowing fix). The literal event
+	// string still references TRIGGER_EVENTS conceptually but the line content
+	// changed. Pin the new line so the static guard stays exact.
+	"src/triggers/github/review-requested.ts :: if (!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:review-requested', this.name))) {",
 	"src/triggers/github/pr-comment-mention.ts :: 'scm:pr-comment-mention',",
 	"src/triggers/github/pr-comment-mention.ts :: triggerEvent: 'scm:pr-comment-mention',",
 	"src/triggers/github/pr-opened.ts :: 'scm:pr-opened',",

@@ -144,19 +144,16 @@ export const mockTriggerCheckModule = {
 				triggerEvent,
 				handlerName,
 			);
+			// Disabled-at-config returns skipResult=null so the registry
+			// continues to the next matcher. Structured skips are reserved
+			// for "I claim this event but my preconditions failed" — being
+			// disabled-at-config means "I don't claim this event today".
+			// Mirrors the production contract in
+			// `src/triggers/shared/trigger-check.ts:checkTriggerEnablement`.
 			return {
 				enabled,
 				parameters: {},
-				skipResult: enabled
-					? null
-					: {
-							agentType: null,
-							agentInput: {},
-							skipReason: {
-								handler: handlerName,
-								message: `${agentType} trigger is disabled for this project`,
-							},
-						},
+				skipResult: null,
 			};
 		},
 	),

@@ -19,6 +19,7 @@ capabilities:
     - pm:read
     - pm:write
     - pm:checklist
+    - pm:friction
   optional: []
 
 # Supported triggers for this agent

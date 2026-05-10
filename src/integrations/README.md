@@ -240,6 +240,27 @@ SCM (GitHub) and alerting (Sentry) integrations retain the legacy `IntegrationMo
 
 ---
 
+## Friction report materialization
+
+Friction reports are PM-backed work items filed by the `ReportFriction` gadget. Providers do **not** add a new adapter method for this feature. The shared materializer at `src/friction/materialize.ts` uses the existing `PMProvider` CRUD surface:
+
+1. Resolve placement from project config with `getFrictionContainerId(project)`.
+2. Call `provider.createWorkItem({ containerId, title, description, labels: [] })`.
+3. Resolve an optional destination with `getFrictionStatusDestination(project)`.
+4. Call `provider.moveWorkItem(workItem.id, destination)` when a destination exists.
+
+That means a new provider only needs correct implementations of the existing `createWorkItem` and `moveWorkItem` methods plus the normal config schema fields:
+
+| Provider shape | Friction slot |
+|---|---|
+| Trello list-based config | `lists.friction` |
+| JIRA status-based config | `statuses.friction` |
+| Linear status-based config | `statuses.friction` |
+
+If the slot is missing, the materializer returns a skipped result with reason `friction_slot_missing` instead of throwing. The sidecar/outbox layer can then keep the agent run non-blocking while operators fix configuration.
+
+---
+
 ## Checklist implementation by provider
 
 Different PM providers have different native concepts of "checklist". The `PMProvider` interface exposes a uniform API (`getChecklists`, `createChecklist`, `addChecklistItem`, `updateChecklistItem`, `deleteChecklistItem`), but adapters implement them differently:

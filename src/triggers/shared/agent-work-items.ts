@@ -37,10 +37,28 @@ export async function prepareAgentWorkItem(
 	projectId: string,
 ): Promise<ResolvedAgentWorkItem> {
 	const workItemId = await resolveWorkItemId(result.workItemId, projectId, result.prNumber);
-	const agentInput =
+	let agentInput =
 		workItemId && result.agentInput.workItemId !== workItemId
 			? { ...result.agentInput, workItemId }
 			: result.agentInput;
+
+	// Merge top-level TriggerResult URL/title metadata into agentInput when absent.
+	// Several GitHub trigger handlers (PRReviewSubmittedTrigger, PROpenedTrigger,
+	// ReviewRequestedTrigger, PRCommentMentionTrigger) set prUrl/prTitle/workItemUrl/
+	// workItemTitle only at the TriggerResult top level without mirroring them into
+	// agentInput. Both injectAgentInputContext (secretBuilder.ts) and LlmistEngine read
+	// from agentInput, so we centralize the merge here before agent execution rather
+	// than patching every handler individually.
+	const extras: Partial<AgentInput> = {};
+	if (result.prUrl && !agentInput.prUrl) extras.prUrl = result.prUrl;
+	if (result.prTitle && !agentInput.prTitle) extras.prTitle = result.prTitle;
+	if (result.workItemUrl && !agentInput.workItemUrl) extras.workItemUrl = result.workItemUrl;
+	if (result.workItemTitle && !agentInput.workItemTitle)
+		extras.workItemTitle = result.workItemTitle;
+
+	if (Object.keys(extras).length > 0) {
+		agentInput = { ...agentInput, ...extras };
+	}
 
 	return { workItemId, agentInput };
 }

@@ -2,13 +2,9 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import {
-	gateBaseBranch,
-	gateCascadePersona,
-	gateTriggerEnabled,
-	requirePersonaIdentities,
-} from '../shared/gates.js';
+import { gateBaseBranch, gateCascadePersona, requirePersonaIdentities } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { decideCheckSuiteOutcome } from './check-suite-decision.js';
 import { resolveCheckSuitePRNumber } from './pr-resolution.js';
 import { dispatchRespondToCi, resetFixAttempts } from './respond-to-ci-dispatch.js';
@@ -40,13 +36,19 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// `dispatchRespondToCi` re-checks the same gate (it's the single source of
 		// truth for the success-handler's mixed-state fork too); the redundant call
 		// here is one DB lookup, which the trigger-enabled cache absorbs.
-		const enabled = await gateTriggerEnabled(
-			ctx.project.id,
-			'respond-to-ci',
-			'scm:check-suite-failure',
-			this.name,
-		);
-		if (enabled) return enabled;
+		// Disabled-at-config returns null so the registry's first-match loop
+		// continues to the next matcher — see `src/triggers/shared/trigger-check.ts`
+		// for the disabled-shadowing contract.
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-ci',
+				'scm:check-suite-failure',
+				this.name,
+			))
+		) {
+			return null;
+		}
 
 		const payload = ctx.payload as GitHubCheckSuitePayload;
 		const { owner, repo } = parseRepoFullName(payload.repository.full_name);

@@ -33,6 +33,7 @@ export const CAPABILITIES = [
 	'pm:read',
 	'pm:write',
 	'pm:checklist',
+	'pm:friction',
 
 	// SCM integration capabilities
 	'scm:read',
@@ -139,6 +140,14 @@ export const CAPABILITY_REGISTRY: Record<Capability, CapabilityDefinition> = {
 		integration: 'pm',
 		description: 'Update and delete checklist items',
 		gadgetNames: ['PMUpdateChecklistItem', 'PMDeleteChecklistItem'],
+		sdkToolNames: [],
+		cliToolNames: [],
+	},
+
+	'pm:friction': {
+		integration: 'pm',
+		description: 'Report incidental PM-backed friction without general PM write access',
+		gadgetNames: ['ReportFriction'],
 		sdkToolNames: [],
 		cliToolNames: [],
 	},

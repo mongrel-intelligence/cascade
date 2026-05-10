@@ -218,7 +218,13 @@ describe('PROpenedTrigger', () => {
 			expect(result?.workItemId).toBeUndefined();
 		});
 
-		it('returns null when trigger is disabled via checkTriggerEnabledWithParams', async () => {
+		it('returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
+			// Disabled-at-config returns bare null, not a structured skip,
+			// so the registry's first-match loop continues to the next
+			// matcher. Closes the prod regression on 2026-05-09 where this
+			// handler's structured skip on `review trigger is disabled`
+			// shadowed PRConflictDetectedTrigger for `pull_request: opened`
+			// events on `zbigniewsobiecki/ucho` PR #367.
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: false,
 				parameters: {},
@@ -247,7 +253,7 @@ describe('PROpenedTrigger', () => {
 				},
 			};
 
-			expectSkip(await trigger.handle(ctx));
+			expect(await trigger.handle(ctx)).toBeNull();
 			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test',
 				'review',

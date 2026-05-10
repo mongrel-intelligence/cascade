@@ -8,7 +8,6 @@
 import type { TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { getResolvedTriggerConfig } from '../config-resolver.js';
-import { skip } from './skip.js';
 
 export interface TriggerEnablementCheck {
 	enabled: boolean;
@@ -33,8 +32,27 @@ function logDisabledTrigger(
 }
 
 /**
- * Resolve trigger enablement, merged parameters, and structured disabled-skip
- * output in one config lookup. This is the canonical path for handler gates.
+ * Resolve trigger enablement and merged parameters in one config lookup.
+ * Canonical path for handler gates.
+ *
+ * **Disabled-at-config returns `skipResult: null`, NOT a structured skip.**
+ * The registry's `dispatch` loop is first-match-wins on non-null results
+ * (see `src/triggers/registry.ts`). A handler whose trigger is disabled is
+ * NOT claiming the event — so it returns null and the registry continues
+ * to the next matcher. Closes the prod regression on 2026-05-09 where
+ * `PROpenedTrigger`'s structured skip on `review trigger is disabled`
+ * shadowed `PRConflictDetectedTrigger` for `pull_request: opened` events
+ * on `zbigniewsobiecki/ucho` PR #367 (the conflict-resolution agent never
+ * fired because review was disabled).
+ *
+ * The `enabled: false` flag is still returned so callers' explicit branches
+ * (`if (!result.enabled) return null;`) keep working unchanged.
+ *
+ * Operator visibility is preserved via the INFO-level
+ * `Trigger disabled by config, skipping` log emitted at every disabled
+ * lookup; webhook-log decisionReasons just shift from a per-handler
+ * structured message to the registry-level `No trigger matched` (which
+ * accurately describes the dispatch outcome when no handler claimed).
  */
 export async function checkTriggerEnablement(
 	projectId: string,
@@ -48,7 +66,7 @@ export async function checkTriggerEnablement(
 		return {
 			enabled: false,
 			parameters: config?.parameters ?? {},
-			skipResult: skip(handlerName, `${agentType} trigger is disabled for this project`),
+			skipResult: null,
 		};
 	}
 

@@ -304,6 +304,7 @@ describe('YAML agent definitions loader', () => {
 			expect(allCaps.includes('fs:write')).toBe(true);
 			expect(allCaps.includes('scm:pr')).toBe(true);
 			expect(allCaps.includes('pm:checklist')).toBe(true);
+			expect(allCaps.includes('pm:friction')).toBe(true);
 			expect(def.hooks?.finish?.scm?.requiresPR).toBe(true);
 			expect(def.integrations?.required).toContain('scm');
 		});
@@ -389,6 +390,24 @@ describe('YAML agent definitions loader', () => {
 			}
 		});
 
+		it('requires pm:friction when PM is required and makes it optional when PM is optional', () => {
+			for (const agentType of ALL_AGENT_TYPES) {
+				const def = loadBuiltinDefinition(agentType);
+				const integrations = deriveIntegrations(
+					def.capabilities.required,
+					def.capabilities.optional,
+				);
+
+				if (integrations.required.includes('pm')) {
+					expect(def.capabilities.required, agentType).toContain('pm:friction');
+					expect(def.capabilities.optional, agentType).not.toContain('pm:friction');
+				} else if (integrations.optional.includes('pm')) {
+					expect(def.capabilities.required, agentType).not.toContain('pm:friction');
+					expect(def.capabilities.optional, agentType).toContain('pm:friction');
+				}
+			}
+		});
+
 		it('implementation agent requires scm and pm (derived from capabilities)', () => {
 			const def = loadBuiltinDefinition('implementation');
 			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
@@ -446,11 +465,11 @@ describe('YAML agent definitions loader', () => {
 			expect(integrations.optional).toEqual([]);
 		});
 
-		it('debug agent requires pm only', () => {
+		it('debug agent has pm optional (no required integrations)', () => {
 			const def = loadBuiltinDefinition('debug');
 			const integrations = deriveIntegrations(def.capabilities.required, def.capabilities.optional);
-			expect(integrations.required).toEqual(['pm']);
-			expect(integrations.optional).toEqual([]);
+			expect(integrations.required).toEqual([]);
+			expect(integrations.optional).toEqual(['pm']);
 		});
 
 		it('all derived integration categories are valid', () => {

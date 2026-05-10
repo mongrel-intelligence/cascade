@@ -194,6 +194,7 @@ describe('LlmistEngine.execute', () => {
 	it('reads prUrl from session state regardless of agent output text', async () => {
 		// Reproduces the false positive from run 1391506b: the CreatePR gadget
 		// recorded the URL in session state, but the LLM didn't echo it in output.
+		// prCreated must be true (set by recordPRCreation) to confirm CreatePR was called.
 		mockRunAgentLoop.mockResolvedValue({
 			output: 'All done, PR created successfully.',
 			iterations: 9,
@@ -202,6 +203,7 @@ describe('LlmistEngine.execute', () => {
 			loopTerminated: false,
 		});
 		mockGetSessionState.mockReturnValue({
+			prCreated: true,
 			prUrl: 'https://github.com/owner/repo/pull/42',
 		} as ReturnType<typeof getSessionState>);
 

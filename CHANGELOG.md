@@ -6,6 +6,8 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ### Documentation
 
+- **Friction reporting is now documented for operators and provider contributors.** Architecture docs cover the optional PM Friction slot (`lists.friction` for Trello, `statuses.friction` for JIRA/Linear), `ReportFriction`, and `cascade-tools pm report-friction --details-file -`. The integration guide explains that friction reports use existing provider `createWorkItem` plus optional `moveWorkItem`, so providers do not need a new adapter method or a DB-backed friction index. Resilience docs describe the JSONL sidecar/outbox retry path, missing-slot behavior, and non-blocking drain failures. See Trello card [Rvv7VVd5](https://trello.com/c/69ff6af3bc5c526cc5faa2d4).
+
 - **Trigger architecture docs now describe the migrated trigger contracts.** Added guidance for canonical `TRIGGER_EVENTS`, shared PM/GitHub result builders, first-match dispatch, structured skip vs bare `null`, no-agent results, deferred bare-job re-checks, router outcome decision reasons, PM coalescing, capacity scope, dispatch failure compensation, and wedged-lock diagnostics. Migration note for future trigger contributors: new handlers should import event constants, use the shared builders, return structured skips for claimed-but-non-dispatched events, and reserve bare `null` for "continue to later handlers." See Trello card [qUbPtALY](https://trello.com/c/69fe2a950699baaf91688a5b).
 
 ### Fixed

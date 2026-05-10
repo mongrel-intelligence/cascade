@@ -1,8 +1,9 @@
 import { getPersonaForLogin } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { gateTriggerEnabled, requirePersonaIdentities } from '../shared/gates.js';
+import { requirePersonaIdentities } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { type GitHubPullRequestReviewPayload, isGitHubPullRequestReviewPayload } from './types.js';
 import { resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
@@ -24,13 +25,19 @@ export class PRReviewSubmittedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		const enabled = await gateTriggerEnabled(
-			ctx.project.id,
-			'respond-to-review',
-			'scm:pr-review-submitted',
-			this.name,
-		);
-		if (enabled) return enabled;
+		// Disabled-at-config returns null so the registry's first-match loop
+		// continues to the next matcher — see `src/triggers/shared/trigger-check.ts`
+		// for the disabled-shadowing contract.
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-review',
+				'scm:pr-review-submitted',
+				this.name,
+			))
+		) {
+			return null;
+		}
 
 		// Type assertion since we validated in matches()
 		const reviewPayload = ctx.payload as GitHubPullRequestReviewPayload;

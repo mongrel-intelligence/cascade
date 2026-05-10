@@ -67,6 +67,18 @@ Rate limits are enforced by the LLMist SDK for `sdk`-archetype engines. Native-t
 
 ## Retry Strategy
 
+### Friction report outbox
+
+`ReportFriction` uses a JSONL sidecar as a small outbox so incidental agent issues do not block the main run. The gadget appends a queued event to `CASCADE_FRICTION_SIDECAR_PATH` before attempting PM materialization. Native-tool engines receive that path in their environment; in-process engines get the same value through session state.
+
+On successful immediate materialization, the gadget appends a filed event with the PM work item ID/URL. If the immediate PM write fails, the gadget returns `queued_for_retry` and the agent should keep working unless the underlying issue is a real blocker.
+
+The backend adapter drains pending sidecar events after the engine returns, including ordinary engine failures. Drain behavior is deliberately non-blocking:
+
+- A missing `lists.friction` / `statuses.friction` slot produces a skipped report with reason `friction_slot_missing`; operators should configure the Friction row in the PM wizard's Status Mapping step.
+- A PM API failure during drain logs a warning and captures Sentry with `source=friction_sidecar_drain_failed`, but it does not change a successful run into a failed run.
+- After drain, the sidecar is compacted/cleaned so filed reports are not retried indefinitely.
+
 ### Dispatch retries
 
 The router queues `cascade-jobs` and `cascade-dashboard-jobs` with `attempts: 4` and exponential backoff. Dispatch errors before a worker container starts are classified in `src/router/dispatch-error-classifier.ts`:

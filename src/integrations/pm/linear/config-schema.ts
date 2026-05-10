@@ -41,6 +41,7 @@ export const linearConfigSchema = z
 		 *
 		 * `cascadeAlert` — recognized label UUID for alert work items (spec 019).
 		 * `statuses.alerts` is the recognized status key for the alerts slot.
+		 * `statuses.friction` is the recognized status key for the friction report slot.
 		 */
 		labels: z
 			.object({

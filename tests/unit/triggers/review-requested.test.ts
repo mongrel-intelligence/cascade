@@ -263,7 +263,11 @@ describe('ReviewRequestedTrigger', () => {
 	});
 
 	describe('trigger config via checkTriggerEnabled', () => {
-		it('handle returns null when trigger is disabled', async () => {
+		it('handle returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
+			// Disabled-at-config returns bare null, not a structured skip,
+			// so the registry's first-match loop continues to the next
+			// matcher. See `src/triggers/shared/trigger-check.ts` for the
+			// disabled-shadowing contract.
 			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
@@ -273,7 +277,7 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expectSkip(result);
+			expect(result).toBeNull();
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'review',

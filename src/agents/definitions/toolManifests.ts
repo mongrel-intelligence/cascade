@@ -19,6 +19,7 @@ import {
 	pmUpdateChecklistItemDef,
 	postCommentDef,
 	readWorkItemDef,
+	reportFrictionDef,
 	updateWorkItemDef,
 } from '../../gadgets/pm/definitions.js';
 import { finishDef } from '../../gadgets/session/definitions.js';
@@ -35,6 +36,7 @@ const ALL_DEFINITIONS = [
 	postCommentDef,
 	updateWorkItemDef,
 	createWorkItemDef,
+	reportFrictionDef,
 	listWorkItemsDef,
 	addChecklistDef,
 	moveWorkItemDef,

@@ -47,6 +47,7 @@ export const TRELLO_LIST_SLOTS = [
 	{ key: 'merged', label: 'Merged' },
 	{ key: 'debug', label: 'Debug' },
 	{ key: 'alerts', label: 'Alerts' },
+	{ key: 'friction', label: 'Friction' },
 ] as const;
 
 // CASCADE labels that map to Trello labels. Defaults (name + color)

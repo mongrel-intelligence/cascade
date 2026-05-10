@@ -55,6 +55,18 @@ interface ProjectConfig {
 }
 ```
 
+### PM workflow slots
+
+PM provider config maps CASCADE lifecycle concepts onto provider-native lists or statuses. The friction-reporting slot is optional but recognized consistently across providers:
+
+| Provider | Config key | Meaning |
+|---|---|---|
+| Trello | `lists.friction` | Trello list ID where friction report cards are created and left |
+| JIRA | `statuses.friction` | JIRA status name/ID applied after the issue is created in `projectKey` |
+| Linear | `statuses.friction` | Linear workflow state UUID applied after the issue is created in `teamId` |
+
+If the slot is not configured, `ReportFriction` records the report in the sidecar and returns a non-fatal `queued_slot_missing` result with operator guidance. No run should fail solely because the friction slot is missing.
+
 `maxInFlightItems` is enforced at two points: (a) the `backlog-manager` chain
 gates (won't auto-pull from BACKLOG when at capacity) and (b) the PM
 `status-changed` triggers (won't fire `implementation` when a card is moved

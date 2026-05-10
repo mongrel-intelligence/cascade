@@ -362,6 +362,82 @@ describe('executeWithEngine', () => {
 		expect(result.error).toContain('Backend crashed');
 	});
 
+	it('drains and cleans the friction sidecar without changing a successful run', async () => {
+		setupMocks();
+		let sidecarPath: string | undefined;
+		const engine = makeMockBackend('opencode');
+		vi.mocked(engine.execute).mockImplementation(async (plan) => {
+			sidecarPath = plan.frictionSidecarPath;
+			writeFileSync(
+				plan.frictionSidecarPath as string,
+				`${JSON.stringify({
+					event: 'queued',
+					reportId: 'friction-1',
+					timestamp: '2026-05-09T00:00:00.000Z',
+					report: {
+						reportId: 'friction-1',
+						summary: 'Drain failure stays non-blocking',
+						details: 'Credential lookup is mocked away in this test.',
+						category: 'tooling',
+						severity: 'medium',
+						whileDoing: 'Testing adapter',
+						context: { project: { id: 'test' } },
+					},
+				})}\n`,
+			);
+			return { success: true, output: 'Done' };
+		});
+
+		const result = await executeWithEngine(
+			engine,
+			'implementation',
+			makeInput({
+				project: {
+					...makeProject(),
+					trello: { boardId: 'b1', lists: { friction: 'list-friction' }, labels: {} },
+				},
+			} as Partial<AgentInput>),
+		);
+
+		expect(result.success).toBe(true);
+		expect(sidecarPath).toBeTruthy();
+		expect(existsSync(sidecarPath as string)).toBe(false);
+	});
+
+	it('cleans the friction sidecar after an ordinary engine failure', async () => {
+		setupMocks();
+		let sidecarPath: string | undefined;
+		const engine = makeMockBackend('opencode');
+		vi.mocked(engine.execute).mockImplementation(async (plan) => {
+			sidecarPath = plan.frictionSidecarPath;
+			writeFileSync(
+				plan.frictionSidecarPath as string,
+				`${JSON.stringify({
+					event: 'queued',
+					reportId: 'friction-failure',
+					timestamp: '2026-05-09T00:00:00.000Z',
+					report: {
+						reportId: 'friction-failure',
+						summary: 'Engine failed after reporting friction',
+						details: 'The sidecar should still be drained before cleanup.',
+						category: 'tooling',
+						severity: 'medium',
+						whileDoing: 'Testing adapter failure cleanup',
+						context: { project: { id: 'test' } },
+					},
+				})}\n`,
+			);
+			throw new Error('Backend crashed after friction report');
+		});
+
+		const result = await executeWithEngine(engine, 'implementation', makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('Backend crashed after friction report');
+		expect(sidecarPath).toBeTruthy();
+		expect(existsSync(sidecarPath as string)).toBe(false);
+	});
+
 	it('reports engine errors to Sentry via captureException', async () => {
 		setupMocks();
 		const engine = makeMockBackend();
@@ -497,6 +573,7 @@ describe('executeWithEngine', () => {
 			makeMockProfile({
 				filterTools,
 				allCapabilities: ['fs:read', 'shell:exec'],
+				capabilities: { required: ['fs:read', 'shell:exec'], optional: [] },
 				finishHooks: {},
 			}),
 		);
@@ -669,12 +746,27 @@ describe('executeWithEngine', () => {
 		expect(backendInput.projectSecrets).toEqual({
 			GITHUB_TOKEN: 'proj-gh-token',
 			TRELLO_API_KEY: 'proj-trello-key',
+			CASCADE_PROJECT_ID: 'test',
+			CASCADE_PROJECT_NAME: 'Test',
+			CASCADE_ENGINE_LABEL: 'test-engine',
+			CASCADE_MODEL: 'test-model',
+			CASCADE_RUN_ID: 'run-uuid-123',
 			CASCADE_BASE_BRANCH: 'main',
+			CASCADE_WORK_ITEM_ID: 'card123',
 			CASCADE_REPO_OWNER: 'owner',
 			CASCADE_REPO_NAME: 'repo',
+			CASCADE_TRELLO_BOARD_ID: 'b1',
+			CASCADE_TRELLO_LISTS: '{}',
+			CASCADE_TRELLO_LABELS: '{}',
 			CASCADE_AGENT_TYPE: 'implementation',
 			CASCADE_PM_TYPE: 'trello',
+			CASCADE_FRICTION_SIDECAR_PATH: expect.stringMatching(
+				/cascade-friction-sidecar-\d+-\d+\.jsonl$/,
+			),
 		});
+		expect(backendInput.frictionSidecarPath).toBe(
+			backendInput.projectSecrets?.CASCADE_FRICTION_SIDECAR_PATH,
+		);
 	});
 
 	it('passes PR context fields to promptContext for respond-to-ci agent', async () => {
@@ -713,11 +805,23 @@ describe('executeWithEngine', () => {
 
 		const backendInput = vi.mocked(engine.execute).mock.calls[0][0];
 		expect(backendInput.projectSecrets).toEqual({
+			CASCADE_PROJECT_ID: 'test',
+			CASCADE_PROJECT_NAME: 'Test',
+			CASCADE_ENGINE_LABEL: 'test-engine',
+			CASCADE_MODEL: 'test-model',
+			CASCADE_RUN_ID: 'run-uuid-123',
 			CASCADE_BASE_BRANCH: 'main',
+			CASCADE_WORK_ITEM_ID: 'card123',
 			CASCADE_REPO_OWNER: 'owner',
 			CASCADE_REPO_NAME: 'repo',
+			CASCADE_TRELLO_BOARD_ID: 'b1',
+			CASCADE_TRELLO_LISTS: '{}',
+			CASCADE_TRELLO_LABELS: '{}',
 			CASCADE_AGENT_TYPE: 'implementation',
 			CASCADE_PM_TYPE: 'trello',
+			CASCADE_FRICTION_SIDECAR_PATH: expect.stringMatching(
+				/cascade-friction-sidecar-\d+-\d+\.jsonl$/,
+			),
 		});
 	});
 

@@ -135,6 +135,34 @@ export function getAlertsContainerId(project: ProjectConfig): string | undefined
 }
 
 /**
+ * Returns the container ID the PM adapter's `createWorkItem.containerId` expects
+ * for placing friction report work items:
+ *   - Trello → `lists.friction` (the list ID the card will be created in)
+ *   - JIRA   → `projectKey` when `statuses.friction` is configured
+ *   - Linear → `teamId` when `statuses.friction` is configured
+ *
+ * Returns `undefined` when the project has no PM config or the friction slot
+ * is not configured.
+ */
+export function getFrictionContainerId(project: ProjectConfig): string | undefined {
+	const pmType = project.pm?.type;
+	if (pmType === 'trello') {
+		return getTrelloConfig(project)?.lists?.friction;
+	}
+	if (pmType === 'jira') {
+		const jiraConfig = getJiraConfig(project);
+		if (!jiraConfig?.statuses?.friction) return undefined;
+		return jiraConfig.projectKey;
+	}
+	if (pmType === 'linear') {
+		const linearConfig = getLinearConfig(project);
+		if (!linearConfig?.statuses?.friction) return undefined;
+		return linearConfig.teamId;
+	}
+	return undefined;
+}
+
+/**
  * Returns the label identifier to apply to an alert work item:
  *   - Trello → `labels['cascade-alert']` (Trello label ID)
  *   - JIRA   → `labels.cascadeAlert` (JIRA label name string)
@@ -200,6 +228,29 @@ export function getAlertsStatusDestination(project: ProjectConfig): string | und
 	}
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.statuses?.alerts;
+	}
+	return undefined;
+}
+
+/**
+ * Returns the actual destination value to pass to `provider.moveWorkItem` for the
+ * friction slot:
+ *   - Trello  → `lists.friction`
+ *   - JIRA    → `statuses.friction`
+ *   - Linear  → `statuses.friction`
+ *
+ * Returns `undefined` when the friction slot is not configured.
+ */
+export function getFrictionStatusDestination(project: ProjectConfig): string | undefined {
+	const pmType = project.pm?.type;
+	if (pmType === 'trello') {
+		return getTrelloConfig(project)?.lists?.friction;
+	}
+	if (pmType === 'jira') {
+		return getJiraConfig(project)?.statuses?.friction;
+	}
+	if (pmType === 'linear') {
+		return getLinearConfig(project)?.statuses?.friction;
 	}
 	return undefined;
 }

@@ -1,17 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { mockTriggerCheckModule } from '../../../helpers/sharedMocks.js';
-
-vi.mock('../../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
+import { describe, expect, it } from 'vitest';
 
 import type { PersonaIdentities } from '../../../../src/github/personas.js';
 import {
 	gateAttemptLimit,
 	gateBaseBranch,
 	gateCascadePersona,
-	gateTriggerEnabled,
 	requirePersonaIdentities,
 } from '../../../../src/triggers/shared/gates.js';
-import { checkTriggerEnablement } from '../../../../src/triggers/shared/trigger-check.js';
 import type { ProjectConfig } from '../../../../src/types/index.js';
 import { createMockProject } from '../../../helpers/factories.js';
 
@@ -22,52 +17,11 @@ const mockPersonas: PersonaIdentities = {
 	reviewer: 'cascade-rev',
 };
 
-describe('gateTriggerEnabled', () => {
-	beforeEach(() => {
-		vi.mocked(checkTriggerEnablement).mockReset();
-	});
-
-	it('returns null when checkTriggerEnablement has no skip result', async () => {
-		vi.mocked(checkTriggerEnablement).mockResolvedValue({
-			enabled: true,
-			parameters: {},
-			skipResult: null,
-		});
-		const result = await gateTriggerEnabled(
-			'proj',
-			'respond-to-ci',
-			'scm:check-suite-failure',
-			'check-suite-failure',
-		);
-		expect(result).toBeNull();
-	});
-
-	it('returns the centralized structured skip when checkTriggerEnablement resolves disabled', async () => {
-		vi.mocked(checkTriggerEnablement).mockResolvedValue({
-			enabled: false,
-			parameters: {},
-			skipResult: {
-				agentType: null,
-				agentInput: {},
-				skipReason: {
-					handler: 'check-suite-failure',
-					message: 'respond-to-ci trigger is disabled for this project',
-				},
-			},
-		});
-		const result = await gateTriggerEnabled(
-			'proj',
-			'respond-to-ci',
-			'scm:check-suite-failure',
-			'check-suite-failure',
-		);
-		expect(result?.agentType).toBeNull();
-		expect(result?.skipReason).toEqual({
-			handler: 'check-suite-failure',
-			message: 'respond-to-ci trigger is disabled for this project',
-		});
-	});
-});
+// `gateTriggerEnabled` was deleted on 2026-05-09 as part of the disabled-trigger
+// shadowing fix. Handlers now call `checkTriggerEnabled` (boolean) directly:
+//   `if (!(await checkTriggerEnabled(...))) return null;`
+// — see `src/triggers/shared/trigger-check.ts` for the contract and
+// `tests/unit/triggers/shared/trigger-check.test.ts` for the assertions.
 
 describe('gateBaseBranch', () => {
 	it('returns null when prBaseRef matches project.baseBranch', () => {

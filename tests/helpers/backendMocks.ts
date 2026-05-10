@@ -124,11 +124,27 @@ export const mockSessionStateModule = {
 	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
 	PUSHED_CHANGES_SIDECAR_ENV_VAR: 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH',
 	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
+	PM_WRITE_SIDECAR_ENV_VAR: 'CASCADE_PM_WRITE_SIDECAR_PATH',
+	FRICTION_SIDECAR_ENV_VAR: 'CASCADE_FRICTION_SIDECAR_PATH',
 	// Record functions
 	recordInitialComment: vi.fn(),
 	recordPRCreation: vi.fn(),
 	recordReviewSubmission: vi.fn(),
 	clearInitialComment: vi.fn(),
+	getFrictionSidecarPath: vi.fn(() => null),
+	getRunId: vi.fn(() => null),
+	getPrNumber: vi.fn(() => null),
+	getPrUrl: vi.fn(() => null),
+	getPrTitle: vi.fn(() => null),
+	getWorkItemId: vi.fn(() => null),
+	getWorkItemUrl: vi.fn(() => null),
+	getWorkItemTitle: vi.fn(() => null),
+	getProject: vi.fn(() => null),
+	getAgentType: vi.fn(() => null),
+	getPrBranch: vi.fn(() => null),
+	getInitialHeadSha: vi.fn(() => null),
+	getEngineLabel: vi.fn(() => null),
+	getModel: vi.fn(() => null),
 };
 
 // ---------------------------------------------------------------------------

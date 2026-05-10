@@ -112,6 +112,20 @@ export class LlmistEngine implements AgentEngine {
 			workItemId: agentInput.workItemId,
 			workItemUrl: agentInput.workItemUrl as string | undefined,
 			workItemTitle: agentInput.workItemTitle as string | undefined,
+			frictionSidecarPath: input.frictionSidecarPath,
+			// Pass PR metadata so in-process gadgets (e.g. ReportFriction) can read it
+			// from SessionState as a fallback when CASCADE_PR_* env vars are not exported
+			// into process.env (which is the case for all in-process LLMist gadgets).
+			prNumber: agentInput.prNumber,
+			prUrl: agentInput.prUrl as string | undefined,
+			prTitle: agentInput.prTitle as string | undefined,
+			// Pass full project config so in-process gadgets (e.g. ReportFriction) can
+			// build accurate reports. In LLMist, projectSecrets are NOT exported into
+			// process.env, so projectFromEnv() would return 'unknown-project'/empty PM config.
+			project: input.project,
+			// Pass engine/model identifiers so ReportFriction context.agent is accurate
+			// for in-process runs (CASCADE_ENGINE_LABEL / CASCADE_MODEL are not exported).
+			engineLabel: this.definition.id,
 			// Pass resolved hook flags for finish validation (hook-driven instead of agent-type checks)
 			hooks: profile.finishHooks,
 			// Pass the progress monitor from the adapter so createObserverHooks can call
@@ -167,7 +181,12 @@ export class LlmistEngine implements AgentEngine {
 			loopTerminated: result.loopTerminated ?? false,
 		});
 
-		const prUrl = getSessionState().prUrl ?? undefined;
+		// Only return the prUrl as authoritative "PR created" evidence when CreatePR was actually
+		// called (prCreated === true). The prUrl field is also populated on init from incoming
+		// PR context (e.g. for review/respond-to-ci runs), so without this gate a PR-triggered
+		// run that never calls CreatePR would falsely report a "PR created" result.
+		const sessionState = getSessionState();
+		const prUrl = sessionState.prCreated ? (sessionState.prUrl ?? undefined) : undefined;
 		return {
 			success: !result.loopTerminated,
 			output: result.output,

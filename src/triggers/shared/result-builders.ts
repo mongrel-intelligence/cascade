@@ -43,17 +43,33 @@ interface DeferredRecheckOptions {
 	agentInput?: AgentInput;
 }
 
+interface AgentInputExtraContext {
+	workItemUrl?: string;
+	workItemTitle?: string;
+	prUrl?: string;
+	prTitle?: string;
+}
+
 function buildAgentInput(
 	agentInput: AgentInput | undefined,
 	triggerEvent: CanonicalTriggerEvent,
 	workItemId: string | undefined,
 	prNumber?: number,
+	extraContext?: AgentInputExtraContext,
 ): AgentInput {
 	return {
 		...agentInput,
 		triggerEvent,
 		...(workItemId ? { workItemId } : {}),
 		...(prNumber !== undefined ? { prNumber } : {}),
+		// Mirror URL/title fields into agentInput so injectAgentInputContext
+		// can inject them as CASCADE_WORK_ITEM_URL/TITLE/CASCADE_PR_URL/TITLE
+		// env vars into the subprocess. Without this, webhook-triggered native-tool
+		// runs receive IDs but miss the URL/title context.
+		...(extraContext?.workItemUrl ? { workItemUrl: extraContext.workItemUrl } : {}),
+		...(extraContext?.workItemTitle ? { workItemTitle: extraContext.workItemTitle } : {}),
+		...(extraContext?.prUrl ? { prUrl: extraContext.prUrl } : {}),
+		...(extraContext?.prTitle ? { prTitle: extraContext.prTitle } : {}),
 	};
 }
 
@@ -71,7 +87,10 @@ export function buildPMDispatchResult(options: PMDispatchOptions): TriggerResult
 
 	return {
 		agentType,
-		agentInput: buildAgentInput(agentInput, triggerEvent, workItemId),
+		agentInput: buildAgentInput(agentInput, triggerEvent, workItemId, undefined, {
+			workItemUrl,
+			workItemTitle,
+		}),
 		workItemId,
 		workItemUrl,
 		workItemTitle,
@@ -97,7 +116,12 @@ export function buildGitHubPRDispatchResult(options: GitHubPRDispatchOptions): T
 
 	return {
 		agentType,
-		agentInput: buildAgentInput(agentInput, triggerEvent, workItemId, prNumber),
+		agentInput: buildAgentInput(agentInput, triggerEvent, workItemId, prNumber, {
+			workItemUrl,
+			workItemTitle,
+			prUrl,
+			prTitle,
+		}),
 		prNumber,
 		prUrl,
 		prTitle,

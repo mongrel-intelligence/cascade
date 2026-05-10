@@ -6,11 +6,11 @@ import {
 	gateAttemptLimit,
 	gateBaseBranch,
 	gateCascadePersona,
-	gateTriggerEnabled,
 	requirePersonaIdentities,
 } from '../shared/gates.js';
 import { buildDeferredRecheckResult } from '../shared/result-builders.js';
 import { skip } from '../shared/skip.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { buildResolveConflictsResult } from './result-builders.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
@@ -64,13 +64,19 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		const enabled = await gateTriggerEnabled(
-			ctx.project.id,
-			'resolve-conflicts',
-			'scm:pr-conflict-detected',
-			this.name,
-		);
-		if (enabled) return enabled;
+		// Disabled-at-config returns null so the registry's first-match loop
+		// continues to the next matcher — see `src/triggers/shared/trigger-check.ts`
+		// for the disabled-shadowing contract.
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'resolve-conflicts',
+				'scm:pr-conflict-detected',
+				this.name,
+			))
+		) {
+			return null;
+		}
 
 		const payload = ctx.payload as GitHubPullRequestPayload;
 		const prNumber = payload.pull_request.number;

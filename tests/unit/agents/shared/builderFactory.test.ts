@@ -166,16 +166,19 @@ describe('createConfiguredBuilder', () => {
 	it('calls initSessionState when skipSessionState is not set', async () => {
 		const options = createBaseOptions();
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith({
-			agentType: 'implementation',
-			baseBranch: undefined,
-			projectId: undefined,
-			workItemId: undefined,
-			hooks: undefined,
-			workItemUrl: undefined,
-			workItemTitle: undefined,
-			initialHeadSha: 'abc123headsha',
-		});
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'implementation',
+				baseBranch: undefined,
+				projectId: undefined,
+				workItemId: undefined,
+				hooks: undefined,
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				frictionSidecarPath: undefined,
+				initialHeadSha: 'abc123headsha',
+			}),
+		);
 	});
 
 	it('skips initSessionState when skipSessionState is true', async () => {
@@ -191,16 +194,19 @@ describe('createConfiguredBuilder', () => {
 			workItemId: 'card-123',
 		});
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith({
-			agentType: 'implementation',
-			baseBranch: 'main',
-			projectId: 'project-1',
-			workItemId: 'card-123',
-			hooks: undefined,
-			workItemUrl: undefined,
-			workItemTitle: undefined,
-			initialHeadSha: 'abc123headsha',
-		});
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'implementation',
+				baseBranch: 'main',
+				projectId: 'project-1',
+				workItemId: 'card-123',
+				hooks: undefined,
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				frictionSidecarPath: undefined,
+				initialHeadSha: 'abc123headsha',
+			}),
+		);
 	});
 
 	it('passes workItemUrl and workItemTitle to initSessionState', async () => {
@@ -212,16 +218,49 @@ describe('createConfiguredBuilder', () => {
 			workItemTitle: 'My Feature Card',
 		});
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith({
-			agentType: 'implementation',
-			baseBranch: 'main',
-			projectId: 'project-1',
-			workItemId: 'card-123',
-			hooks: undefined,
-			workItemUrl: 'https://trello.com/c/abc123',
-			workItemTitle: 'My Feature Card',
-			initialHeadSha: 'abc123headsha',
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'implementation',
+				baseBranch: 'main',
+				projectId: 'project-1',
+				workItemId: 'card-123',
+				hooks: undefined,
+				workItemUrl: 'https://trello.com/c/abc123',
+				workItemTitle: 'My Feature Card',
+				frictionSidecarPath: undefined,
+				initialHeadSha: 'abc123headsha',
+			}),
+		);
+	});
+
+	it('passes frictionSidecarPath to initSessionState', async () => {
+		const options = createBaseOptions({
+			frictionSidecarPath: '/tmp/friction.jsonl',
 		});
+		await createConfiguredBuilder(options);
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				frictionSidecarPath: '/tmp/friction.jsonl',
+			}),
+		);
+	});
+
+	it('passes runId and PR context fields to initSessionState for in-process gadget fallback', async () => {
+		const options = createBaseOptions({
+			runId: 'run-abc',
+			prNumber: 42,
+			prUrl: 'https://github.com/o/r/pull/42',
+			prTitle: 'fix: runtime metadata',
+		});
+		await createConfiguredBuilder(options);
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				runId: 'run-abc',
+				prNumber: 42,
+				prUrl: 'https://github.com/o/r/pull/42',
+				prTitle: 'fix: runtime metadata',
+			}),
+		);
 	});
 
 	it('passes undefined initialHeadSha when git rev-parse fails', async () => {
@@ -230,16 +269,19 @@ describe('createConfiguredBuilder', () => {
 		});
 		const options = createBaseOptions();
 		await createConfiguredBuilder(options);
-		expect(mockInitSessionState).toHaveBeenCalledWith({
-			agentType: 'implementation',
-			baseBranch: undefined,
-			projectId: undefined,
-			workItemId: undefined,
-			hooks: undefined,
-			workItemUrl: undefined,
-			workItemTitle: undefined,
-			initialHeadSha: undefined,
-		});
+		expect(mockInitSessionState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'implementation',
+				baseBranch: undefined,
+				projectId: undefined,
+				workItemId: undefined,
+				hooks: undefined,
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				frictionSidecarPath: undefined,
+				initialHeadSha: undefined,
+			}),
+		);
 	});
 
 	it('calls withBudget when remainingBudgetUsd is positive', async () => {

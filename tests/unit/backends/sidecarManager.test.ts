@@ -1,17 +1,37 @@
-import { existsSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../src/gadgets/sessionState.js', () => ({
 	REVIEW_SIDECAR_ENV_VAR: 'CASCADE_REVIEW_SIDECAR_PATH',
 	PR_SIDECAR_ENV_VAR: 'CASCADE_PR_SIDECAR_PATH',
 	PUSHED_CHANGES_SIDECAR_ENV_VAR: 'CASCADE_PUSHED_CHANGES_SIDECAR_PATH',
 	PM_WRITE_SIDECAR_ENV_VAR: 'CASCADE_PM_WRITE_SIDECAR_PATH',
+	FRICTION_SIDECAR_ENV_VAR: 'CASCADE_FRICTION_SIDECAR_PATH',
 	clearInitialComment: vi.fn(),
 	recordPRCreation: vi.fn(),
 	recordReviewSubmission: vi.fn(),
+}));
+
+const mockMaterializeFrictionReport = vi.fn();
+const mockWithPMCredentials = vi.fn((_projectId: string, fn: () => Promise<unknown>) => fn());
+
+vi.mock('../../../src/friction/materialize.js', () => ({
+	materializeFrictionReport: (...args: unknown[]) => mockMaterializeFrictionReport(...args),
+}));
+
+vi.mock('../../../src/pm/registry.js', () => ({
+	pmRegistry: {
+		getOrNull: vi.fn(() => ({
+			withCredentials: mockWithPMCredentials,
+		})),
+	},
+}));
+
+vi.mock('../../../src/sentry.js', () => ({
+	captureException: vi.fn(),
 }));
 
 vi.mock('../../../src/utils/logging.js', () => ({
@@ -26,6 +46,7 @@ import type { AgentProfile } from '../../../src/agents/definitions/profiles.js';
 import {
 	cleanupTempFile,
 	createCompletionArtifacts,
+	drainFrictionSidecarReports,
 	hydrateNativeToolSidecars,
 	hydratePrSidecar,
 	hydrateReviewSidecar,
@@ -35,11 +56,20 @@ import {
 	recordPRCreation,
 	recordReviewSubmission,
 } from '../../../src/gadgets/sessionState.js';
-import type { AgentInput } from '../../../src/types/index.js';
+import { captureException } from '../../../src/sentry.js';
+import type { AgentInput, ProjectConfig } from '../../../src/types/index.js';
 
 const mockRecordPRCreation = vi.mocked(recordPRCreation);
 const mockRecordReviewSubmission = vi.mocked(recordReviewSubmission);
 const mockClearInitialComment = vi.mocked(clearInitialComment);
+const mockCaptureException = vi.mocked(captureException);
+
+beforeEach(() => {
+	vi.clearAllMocks();
+	mockWithPMCredentials.mockImplementation((_projectId: string, fn: () => Promise<unknown>) =>
+		fn(),
+	);
+});
 
 function makeProfile(overrides?: Partial<AgentProfile>): AgentProfile {
 	return {
@@ -58,7 +88,37 @@ function makeSidecarPath(name: string): string {
 	return join(tmpdir(), `test-${name}-${process.pid}-${Date.now()}.json`);
 }
 
+function makeFrictionSidecarPath(name: string): string {
+	return join(tmpdir(), `test-${name}-${process.pid}-${Date.now()}.jsonl`);
+}
+
+function makeProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
+	return {
+		id: 'project-1',
+		name: 'Project 1',
+		pm: { type: 'trello' },
+		trello: { boardId: 'board-1', lists: { friction: 'list-friction' }, labels: {} },
+		...overrides,
+	} as ProjectConfig;
+}
+
 describe('createCompletionArtifacts', () => {
+	it('always creates a friction sidecar path and injects CASCADE_FRICTION_SIDECAR_PATH', () => {
+		const profile = makeProfile({ finishHooks: {} });
+		const projectSecrets: Record<string, string> = {};
+
+		const result = createCompletionArtifacts(
+			profile,
+			'implementation',
+			false,
+			{} as AgentInput,
+			projectSecrets,
+		);
+
+		expect(result.frictionSidecarPath).toMatch(/cascade-friction-sidecar-\d+-\d+\.jsonl$/);
+		expect(projectSecrets.CASCADE_FRICTION_SIDECAR_PATH).toBe(result.frictionSidecarPath);
+	});
+
 	it('creates a review sidecar path when profile.finishHooks.requiresReview is true', () => {
 		const profile = makeProfile({ finishHooks: { requiresReview: true } });
 		const projectSecrets: Record<string, string> = {};
@@ -484,6 +544,154 @@ describe('hydrateNativeToolSidecars', () => {
 		expect(result.prUrl).toBe('existing-url');
 		expect(mockRecordPRCreation).not.toHaveBeenCalled();
 		expect(mockRecordReviewSubmission).not.toHaveBeenCalled();
+	});
+});
+
+describe('drainFrictionSidecarReports', () => {
+	it('materializes pending reports and appends filed events without throwing', async () => {
+		const sidecarPath = makeFrictionSidecarPath('friction-drain-success');
+		writeFileSync(
+			sidecarPath,
+			`${JSON.stringify({
+				event: 'queued',
+				reportId: 'friction-1',
+				timestamp: '2026-05-09T00:00:00.000Z',
+				report: {
+					reportId: 'friction-1',
+					summary: 'Missing hint',
+					details: 'Need better setup docs',
+					category: 'tooling',
+					severity: 'medium',
+					whileDoing: 'Running tests',
+					context: { project: { id: 'project-1' } },
+				},
+			})}\n`,
+		);
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'friction-1',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm/card-1',
+		});
+
+		await drainFrictionSidecarReports({
+			sidecarPath,
+			project: makeProject(),
+			agentType: 'implementation',
+			runId: 'run-1',
+			engineId: 'codex',
+		});
+
+		expect(mockWithPMCredentials).toHaveBeenCalledWith('project-1', expect.any(Function));
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({ id: 'project-1' }),
+				report: expect.objectContaining({ reportId: 'friction-1' }),
+			}),
+		);
+		const events = readFileSync(sidecarPath, 'utf-8')
+			.trim()
+			.split('\n')
+			.map((line) => JSON.parse(line));
+		expect(events.map((event) => event.event)).toEqual(['queued', 'filed']);
+		expect(events[1]).toMatchObject({
+			event: 'filed',
+			reportId: 'friction-1',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm/card-1',
+		});
+	});
+
+	it('does not re-materialize reports already marked filed', async () => {
+		const sidecarPath = makeFrictionSidecarPath('friction-drain-compact');
+		writeFileSync(
+			sidecarPath,
+			`${JSON.stringify({
+				event: 'queued',
+				reportId: 'friction-1',
+				timestamp: '2026-05-09T00:00:00.000Z',
+				report: {
+					reportId: 'friction-1',
+					summary: 'Already filed',
+					details: 'No retry needed',
+					category: 'tooling',
+					severity: 'low',
+					whileDoing: 'Review',
+					context: { project: { id: 'project-1' } },
+				},
+			})}\n${JSON.stringify({
+				event: 'filed',
+				reportId: 'friction-1',
+				workItemId: 'card-1',
+				timestamp: '2026-05-09T00:00:01.000Z',
+			})}\n`,
+		);
+
+		await drainFrictionSidecarReports({
+			sidecarPath,
+			project: makeProject(),
+			agentType: 'review',
+		});
+
+		expect(mockMaterializeFrictionReport).not.toHaveBeenCalled();
+		expect(readFileSync(sidecarPath, 'utf-8')).toBe('');
+	});
+
+	it('logs and captures materialization failures without throwing', async () => {
+		const { logger } = await import('../../../src/utils/logging.js');
+		const warnSpy = vi.mocked(logger.warn);
+		const sidecarPath = makeFrictionSidecarPath('friction-drain-failure');
+		writeFileSync(
+			sidecarPath,
+			`${JSON.stringify({
+				event: 'queued',
+				reportId: 'friction-err',
+				timestamp: '2026-05-09T00:00:00.000Z',
+				report: {
+					reportId: 'friction-err',
+					summary: 'PM unavailable',
+					details: 'Create failed',
+					category: 'pm-data',
+					severity: 'high',
+					whileDoing: 'Filing report',
+					context: { project: { id: 'project-1' } },
+				},
+			})}\n`,
+		);
+		mockMaterializeFrictionReport.mockRejectedValue(new Error('PM unavailable'));
+
+		await expect(
+			drainFrictionSidecarReports({
+				sidecarPath,
+				project: makeProject(),
+				agentType: 'implementation',
+				runId: 'run-err',
+				engineId: 'opencode',
+			}),
+		).resolves.not.toThrow();
+
+		expect(warnSpy).toHaveBeenCalledWith(
+			'Failed to drain friction sidecar report',
+			expect.objectContaining({
+				sidecarPath,
+				projectId: 'project-1',
+				agentType: 'implementation',
+				runId: 'run-err',
+				engine: 'opencode',
+				reportId: 'friction-err',
+				error: 'Error: PM unavailable',
+			}),
+		);
+		expect(mockCaptureException).toHaveBeenCalledWith(
+			expect.any(Error),
+			expect.objectContaining({
+				tags: expect.objectContaining({
+					source: 'friction_sidecar_drain_failed',
+					phase: 'materialize',
+					agentType: 'implementation',
+				}),
+			}),
+		);
 	});
 });
 

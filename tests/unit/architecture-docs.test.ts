@@ -238,5 +238,34 @@ describe('Architecture documentation', () => {
 			const claude = readDoc(path.join(REPO_ROOT, 'CLAUDE.md'));
 			expect(agents).toBe(claude);
 		});
+
+		it('documents friction reporting operator and provider contracts', () => {
+			const requiredFacts = [
+				'lists.friction',
+				'statuses.friction',
+				'ReportFriction',
+				'cascade-tools pm report-friction',
+				'--details-file -',
+				'createWorkItem',
+				'moveWorkItem',
+				'friction_slot_missing',
+				'friction_sidecar_drain_failed',
+			];
+			const docs = [
+				path.join(ARCH_DIR, '07-gadgets.md'),
+				path.join(ARCH_DIR, '08-config-credentials.md'),
+				path.join(ARCH_DIR, '10-resilience.md'),
+				path.join(REPO_ROOT, 'src/integrations/README.md'),
+				path.join(REPO_ROOT, 'src/gadgets/README.md'),
+				path.join(REPO_ROOT, 'CLAUDE.md'),
+				path.join(REPO_ROOT, 'AGENTS.md'),
+				path.join(REPO_ROOT, 'CHANGELOG.md'),
+			];
+			const combined = docs.map(readDoc).join('\n');
+
+			for (const fact of requiredFacts) {
+				expect(combined, `friction docs should mention ${fact}`).toContain(fact);
+			}
+		});
 	});
 });

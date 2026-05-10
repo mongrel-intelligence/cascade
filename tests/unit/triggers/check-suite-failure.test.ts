@@ -174,7 +174,9 @@ describe('CheckSuiteFailureTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('returns a structured skip when trigger is disabled', async () => {
+		it('returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
+			// Disabled-at-config returns null, not a structured skip — see
+			// `checkTriggerEnablement` contract for the shadowing-bug context.
 			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
@@ -185,7 +187,7 @@ describe('CheckSuiteFailureTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expectSkip(result, 'respond-to-ci trigger is disabled for this project');
+			expect(result).toBeNull();
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'respond-to-ci',
@@ -235,11 +237,17 @@ describe('CheckSuiteFailureTrigger', () => {
 					triggerType: 'check-failure',
 					workItemId: 'abc123',
 					triggerEvent: 'scm:check-suite-failure',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'Test PR',
 				},
 				prNumber: 42,
 				prUrl: 'https://github.com/owner/repo/pull/42',
 				prTitle: 'Test PR',
 				workItemId: 'abc123',
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				onBlocked: undefined,
+				coalesceKey: undefined,
 			});
 		});
 
@@ -553,11 +561,17 @@ describe('CheckSuiteFailureTrigger', () => {
 					triggerType: 'check-failure',
 					workItemId: 'abc123',
 					triggerEvent: 'scm:check-suite-failure',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'Test PR',
 				},
 				prNumber: 42,
 				prUrl: 'https://github.com/owner/repo/pull/42',
 				prTitle: 'Test PR',
 				workItemId: 'abc123',
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				onBlocked: undefined,
+				coalesceKey: undefined,
 			});
 		});
 

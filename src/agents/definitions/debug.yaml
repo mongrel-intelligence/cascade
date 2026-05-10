@@ -9,16 +9,17 @@ integrations:
   required: []
   optional: [pm]
 
-# Read-only FS access for log analysis, full PM access for creating debug cards.
+# FS/session access always available; PM access gated on configured integration.
 capabilities:
   required:
     - fs:read
     - shell:exec
     - session:ctrl
+  optional:
     - pm:read
     - pm:write
     - pm:checklist
-  optional: []
+    - pm:friction
 
 # Debug agent is triggered manually or via internal attachment upload detection.
 # No external event-based triggers are configured.

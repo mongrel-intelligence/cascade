@@ -54,7 +54,7 @@ All file gadgets validate paths against allowed directories (working directory +
 
 Todos are stored in `.claude/todos.json` within the repo working directory.
 
-### PM (`pm:read`, `pm:write`, `pm:checklist`)
+### PM (`pm:read`, `pm:write`, `pm:checklist`, `pm:friction`)
 
 | Gadget | Capability | Purpose |
 |--------|-----------|---------|
@@ -67,8 +67,22 @@ Todos are stored in `.claude/todos.json` within the repo working directory.
 | `AddChecklist` | `pm:write` | Add checklist to work item |
 | `PMUpdateChecklistItem` | `pm:checklist` | Update checklist item status |
 | `PMDeleteChecklistItem` | `pm:checklist` | Delete checklist item |
+| `ReportFriction` | `pm:friction` | Queue and file incidental friction reports |
 
 PM gadgets use the active `PMProvider` from `AsyncLocalStorage` context, making them provider-agnostic.
+
+`ReportFriction` is intentionally narrower than general PM write access. It lets agents file incidental papercuts in tooling, environment, permissions, dependencies, tests, PM data, or SCM data without exposing `CreateWorkItem` / `MoveWorkItem` directly. The CLI form is:
+
+```bash
+cascade-tools pm report-friction \
+  --summary "Typecheck requires undocumented Redis env var" \
+  --category environment \
+  --severity medium \
+  --whileDoing "Running pre-PR verification" \
+  --details-file -
+```
+
+`--details-file -` reads Markdown details from stdin; use it for multi-line reproduction notes or shell output. The command always appends a queued event to the friction sidecar before it tries to create the PM work item, so a failed immediate write can be retried by the backend drain.
 
 ### SCM (`scm:read`, `scm:ci-logs`, `scm:comment`, `scm:review`, `scm:pr`)
 
@@ -101,7 +115,7 @@ Native-tool engines cannot invoke gadget classes directly (they run as subproces
 
 | Category | Commands | Example |
 |----------|----------|---------|
-| PM | `cascade-tools pm read-work-item`, `list-work-items`, `update-work-item`, etc. | `cascade-tools pm read-work-item --workItemId abc123` |
+| PM | `cascade-tools pm read-work-item`, `list-work-items`, `update-work-item`, `report-friction`, etc. | `cascade-tools pm report-friction --summary "Missing setup hint" --details-file - --category tooling --severity medium` |
 | SCM | `cascade-tools scm get-pr-details`, `get-pr-diff`, `post-pr-comment`, etc. | `cascade-tools scm get-pr-details --prNumber 42` |
 | Alerting | `cascade-tools alerting get-alerting-issue`, `list-alerting-events`, etc. | `cascade-tools alerting get-alerting-issue --organizationId acme --issueId 12345` |
 | Session | `cascade-tools session finish` | `cascade-tools session finish --comment "Created PR and verified checks"` |

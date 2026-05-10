@@ -84,7 +84,11 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			this.name,
 		);
 		if (!triggerConfig.enabled) {
-			return skip(this.name, 'review trigger is disabled for this project');
+			// Disabled-at-config returns null (not a structured skip) so
+			// the registry's first-match loop can continue to the next
+			// matcher. See `src/triggers/shared/trigger-check.ts` for the
+			// disabled-shadowing contract.
+			return null;
 		}
 
 		const payload = ctx.payload as GitHubCheckSuitePayload;

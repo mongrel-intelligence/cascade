@@ -207,7 +207,11 @@ describe('PRReadyToMergeTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('should return null when trigger is disabled', async () => {
+		it('returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
+			// Disabled-at-config returns bare null, not a structured skip,
+			// so the registry's first-match loop continues to the next
+			// matcher. Mirror of the contract change in
+			// `src/triggers/shared/trigger-check.ts:checkTriggerEnablement`.
 			vi.mocked(isLifecycleTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
@@ -217,7 +221,7 @@ describe('PRReadyToMergeTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expectSkip(result);
+			expect(result).toBeNull();
 			expect(isLifecycleTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'prReadyToMerge',

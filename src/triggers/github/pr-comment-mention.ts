@@ -3,8 +3,9 @@ import { isCascadeBot } from '../../github/personas.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { gateTriggerEnabled, requirePersonaIdentities } from '../shared/gates.js';
+import { requirePersonaIdentities } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { isGitHubIssueCommentPayload, isGitHubPRReviewCommentPayload } from './types.js';
 import { resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
 
@@ -36,13 +37,19 @@ export class PRCommentMentionTrigger implements TriggerHandler {
 	}
 
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
-		const enabled = await gateTriggerEnabled(
-			ctx.project.id,
-			'respond-to-pr-comment',
-			'scm:pr-comment-mention',
-			this.name,
-		);
-		if (enabled) return enabled;
+		// Disabled-at-config returns null so the registry's first-match loop
+		// continues to the next matcher — see `src/triggers/shared/trigger-check.ts`
+		// for the disabled-shadowing contract.
+		if (
+			!(await checkTriggerEnabled(
+				ctx.project.id,
+				'respond-to-pr-comment',
+				'scm:pr-comment-mention',
+				this.name,
+			))
+		) {
+			return null;
+		}
 
 		// Pre-extract prNumber from whichever payload type matches so subsequent
 		// skip-reasons carry PR context (operator-friendly diagnostics).

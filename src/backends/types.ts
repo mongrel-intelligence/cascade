@@ -80,6 +80,8 @@ export interface AgentExecutionPlan
 	cliToolsDir: string;
 	nativeToolShimDir?: string;
 	completionRequirements?: CompletionRequirements;
+	/** JSONL outbox path for incidental friction reports. */
+	frictionSidecarPath?: string;
 }
 
 export type PrEvidenceSource = 'llmist-session' | 'native-tool-sidecar' | 'text';

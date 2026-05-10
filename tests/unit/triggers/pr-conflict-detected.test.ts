@@ -121,7 +121,11 @@ describe('PRConflictDetectedTrigger', () => {
 	});
 
 	describe('handle', () => {
-		it('should return null when trigger is disabled', async () => {
+		it('returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
+			// Disabled-at-config returns bare null, not a structured skip,
+			// so the registry's first-match loop continues to the next
+			// matcher. See `src/triggers/shared/trigger-check.ts` for the
+			// disabled-shadowing contract.
 			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
 
 			const ctx: TriggerContext = {
@@ -132,8 +136,7 @@ describe('PRConflictDetectedTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expect(result?.agentType).toBeNull();
-			expect(result?.skipReason?.handler).toBe('pr-conflict-detected');
+			expect(result).toBeNull();
 			expect(checkTriggerEnabled).toHaveBeenCalledWith(
 				'test',
 				'resolve-conflicts',
@@ -176,11 +179,17 @@ describe('PRConflictDetectedTrigger', () => {
 					triggerType: 'conflict-resolution',
 					workItemId: 'abc123',
 					triggerEvent: 'scm:pr-conflict-detected',
+					prUrl: 'https://github.com/owner/repo/pull/42',
+					prTitle: 'Test PR',
 				},
 				prNumber: 42,
 				prUrl: 'https://github.com/owner/repo/pull/42',
 				prTitle: 'Test PR',
 				workItemId: 'abc123',
+				workItemUrl: undefined,
+				workItemTitle: undefined,
+				onBlocked: undefined,
+				coalesceKey: undefined,
 			});
 		});
 

@@ -89,6 +89,27 @@ describe('augmentProjectSecrets', () => {
 		expect(secrets.CASCADE_AGENT_TYPE).toBe('review');
 	});
 
+	it('injects work item and PR runtime metadata from agent input', async () => {
+		const project = makeProject();
+		const secrets = await augmentProjectSecrets(project, 'review', {
+			workItemId: 'card-123',
+			workItemUrl: 'https://trello.com/c/card123',
+			workItemTitle: 'Fix runtime context',
+			prNumber: 42,
+			prUrl: 'https://github.com/acme/widgets/pull/42',
+			prTitle: 'fix: runtime context',
+		} as AgentInput);
+
+		expect(secrets).toMatchObject({
+			CASCADE_WORK_ITEM_ID: 'card-123',
+			CASCADE_WORK_ITEM_URL: 'https://trello.com/c/card123',
+			CASCADE_WORK_ITEM_TITLE: 'Fix runtime context',
+			CASCADE_PR_NUMBER: '42',
+			CASCADE_PR_URL: 'https://github.com/acme/widgets/pull/42',
+			CASCADE_PR_TITLE: 'fix: runtime context',
+		});
+	});
+
 	it('injects CASCADE_PM_TYPE defaulting to trello', async () => {
 		const project = makeProject();
 		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);

@@ -2,7 +2,8 @@ import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { gateAttemptLimit, gateTriggerEnabled } from '../shared/gates.js';
+import { gateAttemptLimit } from '../shared/gates.js';
+import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { buildRespondToCiResult } from './result-builders.js';
 import type { GitHubCheckSuitePayload } from './types.js';
 
@@ -30,8 +31,10 @@ export interface PRDetails {
  * a mixed-state SHA — see #1241) call this so the dispatch contract is
  * single-sourced.
  *
- * Returns either a respond-to-ci `TriggerResult` ready to enqueue, or a
- * structured skip when the trigger is disabled or the attempt limit is hit.
+ * Returns either a respond-to-ci `TriggerResult` ready to enqueue, `null`
+ * when the trigger is disabled at config (so the registry's first-match loop
+ * can continue to the next matcher), or a structured skip when the attempt
+ * limit is hit.
  */
 export async function dispatchRespondToCi(opts: {
 	ctx: TriggerContext;
@@ -43,14 +46,17 @@ export async function dispatchRespondToCi(opts: {
 	workItemTitle: string | undefined;
 	checkStatus: CheckSuiteStatus;
 	handlerName: string;
-}): Promise<TriggerResult> {
-	const enabled = await gateTriggerEnabled(
-		opts.ctx.project.id,
-		'respond-to-ci',
-		'scm:check-suite-failure',
-		opts.handlerName,
-	);
-	if (enabled) return enabled;
+}): Promise<TriggerResult | null> {
+	if (
+		!(await checkTriggerEnabled(
+			opts.ctx.project.id,
+			'respond-to-ci',
+			'scm:check-suite-failure',
+			opts.handlerName,
+		))
+	) {
+		return null;
+	}
 
 	const attempts = fixAttempts.get(opts.prNumber) ?? 0;
 	const limitSkip = gateAttemptLimit(attempts, MAX_ATTEMPTS, opts.prNumber, opts.handlerName);

@@ -30,6 +30,9 @@ vi.mock('../../../src/gadgets/pm/core/updateWorkItem.js', () => ({
 vi.mock('../../../src/gadgets/pm/core/createWorkItem.js', () => ({
 	createWorkItem: vi.fn().mockResolvedValue({ id: 'wi-2' }),
 }));
+vi.mock('../../../src/gadgets/pm/core/reportFriction.js', () => ({
+	reportFriction: vi.fn().mockResolvedValue({ status: 'filed' }),
+}));
 vi.mock('../../../src/gadgets/pm/core/postComment.js', () => ({
 	postComment: vi.fn().mockResolvedValue({ id: 'comment-1' }),
 }));
@@ -42,6 +45,7 @@ vi.mock('../../../src/gadgets/github/core/postPRComment.js', () => ({
 
 import CreateWorkItem from '../../../src/cli/pm/create-work-item.js';
 import PostComment from '../../../src/cli/pm/post-comment.js';
+import ReportFriction from '../../../src/cli/pm/report-friction.js';
 import UpdateWorkItem from '../../../src/cli/pm/update-work-item.js';
 import CreatePR from '../../../src/cli/scm/create-pr.js';
 import PostPRComment from '../../../src/cli/scm/post-pr-comment.js';
@@ -49,6 +53,7 @@ import { createPR } from '../../../src/gadgets/github/core/createPR.js';
 import { postPRComment } from '../../../src/gadgets/github/core/postPRComment.js';
 import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
 import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
+import { reportFriction } from '../../../src/gadgets/pm/core/reportFriction.js';
 import { updateWorkItem } from '../../../src/gadgets/pm/core/updateWorkItem.js';
 
 let tmpDir: string;
@@ -166,6 +171,57 @@ describe('CreateWorkItem --description-file', () => {
 				description: undefined,
 			}),
 		);
+	});
+});
+
+describe('ReportFriction --details-file', () => {
+	it('reads details from file', async () => {
+		const filePath = writeTempFile('friction.md', 'Friction details from file');
+		const cmd = new ReportFriction(
+			[
+				'--summary',
+				'Friction summary',
+				'--details-file',
+				filePath,
+				'--category',
+				'tooling',
+				'--severity',
+				'medium',
+			],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(reportFriction).toHaveBeenCalledWith(
+			expect.objectContaining({
+				summary: 'Friction summary',
+				details: 'Friction details from file',
+				category: 'tooling',
+				severity: 'medium',
+			}),
+		);
+	});
+
+	it('prefers --details-file over --details', async () => {
+		const filePath = writeTempFile('friction.md', 'from file');
+		const cmd = new ReportFriction(
+			[
+				'--summary',
+				'Friction summary',
+				'--details',
+				'from flag',
+				'--details-file',
+				filePath,
+				'--category',
+				'tooling',
+				'--severity',
+				'medium',
+			],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(reportFriction).toHaveBeenCalledWith(expect.objectContaining({ details: 'from file' }));
 	});
 });
 

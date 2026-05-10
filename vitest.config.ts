@@ -125,6 +125,7 @@ export default defineConfig({
 						'tests/unit/gadgets/**/*.test.ts',
 						'tests/unit/config/**/*.test.ts',
 						'tests/unit/db/**/*.test.ts',
+						'tests/unit/friction/**/*.test.ts',
 						'tests/unit/utils/**/*.test.ts',
 						'tests/unit/cli/**/*.test.ts',
 						'tests/unit/pm/**/*.test.ts',

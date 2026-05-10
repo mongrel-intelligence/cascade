@@ -43,6 +43,7 @@ export const JIRA_STATUS_SLOTS = [
 	{ key: 'done', label: 'Done' },
 	{ key: 'merged', label: 'Merged' },
 	{ key: 'alerts', label: 'Alerts' },
+	{ key: 'friction', label: 'Friction' },
 ] as const;
 
 // CASCADE labels that map to JIRA labels. JIRA labels are free-form

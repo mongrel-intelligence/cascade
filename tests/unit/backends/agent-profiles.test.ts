@@ -95,6 +95,7 @@ vi.mock('../../../src/gadgets/pm/index.js', () => ({
 	PMUpdateChecklistItem: mockClass('PMUpdateChecklistItem'),
 	PostComment: mockClass('PostComment'),
 	ReadWorkItem: mockClass('ReadWorkItem'),
+	ReportFriction: mockClass('ReportFriction'),
 	UpdateWorkItem: mockClass('UpdateWorkItem'),
 }));
 
@@ -238,6 +239,7 @@ describe('getAgentProfile', () => {
 					'pm:read',
 					'pm:write',
 					'pm:checklist',
+					'pm:friction',
 				]),
 			);
 		});
@@ -316,6 +318,7 @@ describe('getAgentProfile', () => {
 					'scm:comment',
 					'pm:read',
 					'pm:write',
+					'pm:friction',
 				]),
 			);
 		});
@@ -462,6 +465,39 @@ describe('AgentProfile.getLlmistGadgets', () => {
 		expect(names).not.toContain('WriteFile');
 		expect(names).not.toContain('CreatePR');
 		expect(names).toContain('Finish');
+	});
+
+	it('review exposes optional ReportFriction only when PM is configured', async () => {
+		const profile = await getAgentProfile('review');
+		const tools = [
+			{ name: 'CreatePRReview', description: '', cliCommand: '', parameters: {} },
+			{ name: 'ReportFriction', description: '', cliCommand: '', parameters: {} },
+		];
+
+		expect(profile.filterTools(tools, (category) => category !== 'pm').map((t) => t.name)).toEqual([
+			'CreatePRReview',
+		]);
+		expect(profile.filterTools(tools, (category) => category === 'pm').map((t) => t.name)).toEqual([
+			'CreatePRReview',
+			'ReportFriction',
+		]);
+	});
+
+	it('alerting exposes optional ReportFriction only when PM is configured', async () => {
+		const profile = await getAgentProfile('alerting');
+		const tools = [
+			{ name: 'GetAlertingIssue', description: '', cliCommand: '', parameters: {} },
+			{ name: 'ReportFriction', description: '', cliCommand: '', parameters: {} },
+		];
+
+		expect(
+			profile.filterTools(tools, (category) => category === 'alerting').map((t) => t.name),
+		).toEqual(['GetAlertingIssue']);
+		expect(
+			profile
+				.filterTools(tools, (category) => category === 'alerting' || category === 'pm')
+				.map((t) => t.name),
+		).toEqual(['GetAlertingIssue', 'ReportFriction']);
 	});
 
 	it('respond-to-review includes file editing and review comment tools', async () => {

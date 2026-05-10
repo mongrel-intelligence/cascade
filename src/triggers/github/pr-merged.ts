@@ -26,7 +26,11 @@ export class PRMergedTrigger implements TriggerHandler {
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		// Check lifecycle trigger config (stored in project_integrations.triggers)
 		if (!(await isLifecycleTriggerEnabled(ctx.project.id, 'prMerged', this.name))) {
-			return skip(this.name, 'prMerged lifecycle trigger is disabled for this project');
+			// Disabled-at-config returns null (not a structured skip) so
+			// the registry's first-match loop can continue to the next
+			// matcher. See `src/triggers/shared/trigger-check.ts` for
+			// the disabled-shadowing contract.
+			return null;
 		}
 
 		const payload = ctx.payload as GitHubPullRequestPayload;

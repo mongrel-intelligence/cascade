@@ -56,7 +56,13 @@ describe('checkTriggerEnablement', () => {
 		});
 	});
 
-	it('returns enabled=false, default parameters, and structured skip when config is disabled', async () => {
+	// Disabled-at-config returns skipResult=null so the registry's first-match
+	// loop continues to the next matcher. Structured skips are reserved for
+	// "I claim this event but my preconditions failed" (wrong base, wrong
+	// author, attempt limit). Closes the prod regression on 2026-05-09 where
+	// PROpenedTrigger's structured skip on `review trigger is disabled`
+	// shadowed PRConflictDetectedTrigger for `pull_request: opened` events.
+	it('returns enabled=false, default parameters, and skipResult=null when config is disabled', async () => {
 		mockGetResolvedTriggerConfig.mockResolvedValue({
 			event: TRIGGER_EVENT,
 			enabled: false,
@@ -73,14 +79,10 @@ describe('checkTriggerEnablement', () => {
 
 		expect(result.enabled).toBe(false);
 		expect(result.parameters).toEqual({ authorMode: 'own' });
-		expect(result.skipResult?.agentType).toBeNull();
-		expect(result.skipResult?.skipReason).toEqual({
-			handler: HANDLER_NAME,
-			message: `${AGENT_TYPE} trigger is disabled for this project`,
-		});
+		expect(result.skipResult).toBeNull();
 	});
 
-	it('returns enabled=false, empty parameters, and structured skip when config is missing', async () => {
+	it('returns enabled=false, empty parameters, and skipResult=null when config is missing', async () => {
 		mockGetResolvedTriggerConfig.mockResolvedValue(null);
 
 		const result = await checkTriggerEnablement(
@@ -92,9 +94,7 @@ describe('checkTriggerEnablement', () => {
 
 		expect(result.enabled).toBe(false);
 		expect(result.parameters).toEqual({});
-		expect(result.skipResult?.skipReason?.message).toBe(
-			`${AGENT_TYPE} trigger is disabled for this project`,
-		);
+		expect(result.skipResult).toBeNull();
 	});
 
 	it('logs skip message when trigger is disabled', async () => {

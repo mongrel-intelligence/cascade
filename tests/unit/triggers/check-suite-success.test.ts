@@ -216,7 +216,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result).toEqual(
 				expect.objectContaining({
 					agentType: 'review',
-					agentInput: {
+					agentInput: expect.objectContaining({
 						prNumber: 42,
 						prBranch: 'feature/test',
 						repoFullName: 'owner/repo',
@@ -224,7 +224,9 @@ describe('CheckSuiteSuccessTrigger', () => {
 						triggerType: 'ci-success',
 						workItemId: 'abc123',
 						triggerEvent: 'scm:check-suite-success',
-					},
+						prUrl: 'https://github.com/owner/repo/pull/42',
+						prTitle: 'Test PR',
+					}),
 					prNumber: 42,
 					workItemId: 'abc123',
 				}),
@@ -1031,7 +1033,11 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 
 	describe('authorMode-aware behavior via trigger parameters', () => {
-		it('handle returns null when trigger is disabled via checkTriggerEnabledWithParams', async () => {
+		it('handle returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
+			// Disabled-at-config returns bare null, not a structured skip,
+			// so the registry's first-match loop continues to the next
+			// matcher. Mirror of the contract change in
+			// `src/triggers/shared/trigger-check.ts:checkTriggerEnablement`.
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: false,
 				parameters: {},
@@ -1045,7 +1051,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
-			expectSkip(result);
+			expect(result).toBeNull();
 			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test',
 				'review',

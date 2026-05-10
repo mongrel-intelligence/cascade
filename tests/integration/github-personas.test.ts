@@ -274,7 +274,7 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				triggers: { prReviewSubmitted: true },
 			});
 			// Agent + trigger configs must both be seeded so the
-			// gateTriggerEnabled gate passes and we can exercise the
+			// checkTriggerEnabled gate passes and we can exercise the
 			// loop-prevention persona check.
 			await seedAgentConfig({ agentType: 'respond-to-review' });
 			await seedTriggerConfig({
@@ -364,7 +364,7 @@ describe('GitHub Dual-Persona System (integration)', () => {
 			// scm:review-requested has defaultEnabled: false in definition
 			expect(trigger.matches(ctx)).toBe(true);
 			const result = await trigger.handle(ctx);
-			expectSkip(result, 'review-requested', /trigger is disabled/);
+			expect(result).toBeNull();
 		});
 
 		it('triggers review when enabled via DB and persona is requested', async () => {
