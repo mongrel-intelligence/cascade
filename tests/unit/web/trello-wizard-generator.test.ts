@@ -8,6 +8,9 @@
  * at render time. This test locks in both paths.
  */
 
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { trelloManifest } from '../../../src/integrations/pm/trello/manifest.js';
 import {
@@ -16,6 +19,19 @@ import {
 } from '../../../web/src/components/projects/pm-providers/generator.js';
 import { TrelloOAuthStep } from '../../../web/src/components/projects/pm-providers/trello/oauth-step.js';
 import { trelloProviderWizard } from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const REPO_ROOT = resolve(__dirname, '..', '..', '..');
+const TRELLO_HOOKS_PATH = resolve(
+	REPO_ROOT,
+	'web/src/components/projects/pm-providers/trello/hooks.ts',
+);
+const TRELLO_WIZARD_PATH = resolve(
+	REPO_ROOT,
+	'web/src/components/projects/pm-providers/trello/wizard.ts',
+);
+const PM_WIZARD_HOOKS_PATH = resolve(REPO_ROOT, 'web/src/components/projects/pm-wizard-hooks.ts');
 
 describe('Trello wizardSpec through the shared generator (post plan 011/2)', () => {
 	it('each declared standard step dispatches to the corresponding real shared component', () => {
@@ -72,5 +88,27 @@ describe('trelloProviderWizard (post plan 011/2)', () => {
 	it('exposes TrelloOAuthStep as the first step Component (custom credentials)', () => {
 		// The first step resolves to the custom OAuth component. Identity check.
 		expect(trelloProviderWizard.steps[0]?.Component).toBe(TrelloOAuthStep);
+	});
+});
+
+describe('trelloProviderWizard provider-owned hooks', () => {
+	it('imports Trello-specific hooks from the Trello provider folder', () => {
+		const source = readFileSync(TRELLO_WIZARD_PATH, 'utf8');
+		expect(source).toContain("} from './hooks.js'");
+		expect(source).not.toContain("} from '../../pm-wizard-hooks.js'");
+	});
+
+	it('keeps Trello-specific hook definitions out of the shared wizard hook module', () => {
+		const trelloHooks = readFileSync(TRELLO_HOOKS_PATH, 'utf8');
+		const sharedHooks = readFileSync(PM_WIZARD_HOOKS_PATH, 'utf8');
+
+		for (const hookName of [
+			'useTrelloDiscovery',
+			'useTrelloLabelCreation',
+			'useTrelloCustomFieldCreation',
+		]) {
+			expect(trelloHooks).toContain(`export function ${hookName}`);
+			expect(sharedHooks).not.toContain(`export function ${hookName}`);
+		}
 	});
 });
