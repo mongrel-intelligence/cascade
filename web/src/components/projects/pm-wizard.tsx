@@ -22,7 +22,6 @@ import {
 // Plan 012/4: `WebhookStep` + `LinearWebhookInfoPanel` + supporting hooks
 // deleted; every provider owns its webhook UX via the manifest path.
 import {
-	buildEditState,
 	createInitialState,
 	isStep1Complete,
 	type WizardAction,
@@ -45,6 +44,18 @@ export function buildProviderSwitchConfirmationMessage(fromLabel: string, toLabe
 
 function confirmProviderSwitch(fromLabel: string, toLabel: string): boolean {
 	return window.confirm(buildProviderSwitchConfirmationMessage(fromLabel, toLabel));
+}
+
+export function buildEditStateFromProviderWizard(
+	provider: string,
+	initialConfig: Record<string, unknown>,
+	configuredKeys: ReadonlySet<string>,
+): Partial<WizardState> {
+	const manifestDef = getProviderWizard(provider);
+	if (!manifestDef) {
+		throw new Error(`No PM provider wizard registered for ${provider}`);
+	}
+	return manifestDef.buildEditState(initialConfig, configuredKeys);
 }
 
 export function ProviderPicker({
@@ -261,7 +272,11 @@ export function PMWizard({
 		if (initializedRef.current) return;
 		initializedRef.current = true;
 		const configuredKeys = new Set(credentialsQuery.data.map((c) => c.envVarKey));
-		const editState = buildEditState(initialProvider, initialConfig, configuredKeys);
+		const editState = buildEditStateFromProviderWizard(
+			initialProvider,
+			initialConfig,
+			configuredKeys,
+		);
 		dispatch({ type: 'INIT_EDIT', state: editState });
 		// Plan 011/4: open all steps up to a comfortable ceiling; actual
 		// step count is provider-dependent (Trello 7, JIRA 8, Linear 7).

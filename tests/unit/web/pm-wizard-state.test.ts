@@ -4,22 +4,24 @@ import {
 	INITIAL_JIRA_LABELS as PROVIDER_INITIAL_JIRA_LABELS,
 	resetJiraProjectState,
 } from '../../../web/src/components/projects/pm-providers/jira/state.js';
+import { jiraProviderWizard } from '../../../web/src/components/projects/pm-providers/jira/wizard.js';
 import {
 	createInitialLinearState,
 	INITIAL_LINEAR_LABELS,
 	resetLinearTeamState,
 } from '../../../web/src/components/projects/pm-providers/linear/state.js';
+import { linearProviderWizard } from '../../../web/src/components/projects/pm-providers/linear/wizard.js';
 import {
 	createInitialTrelloState,
 	resetTrelloBoardState,
 } from '../../../web/src/components/projects/pm-providers/trello/state.js';
+import { trelloProviderWizard } from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
 import type {
 	WizardAction,
 	WizardState,
 } from '../../../web/src/components/projects/pm-wizard-state.js';
 import {
 	areCredentialsReady,
-	buildEditState,
 	buildLinearIntegrationConfig,
 	createInitialState,
 	deriveActiveWebhooks,
@@ -819,10 +821,10 @@ describe('shouldUseStoredCredentials', () => {
 });
 
 // ============================================================================
-// buildEditState
+// ProviderWizardDefinition.buildEditState
 // ============================================================================
 
-describe('buildEditState', () => {
+describe('provider-owned edit hydration', () => {
 	it('builds trello edit state from config', () => {
 		const config = {
 			boardId: 'board-abc',
@@ -830,7 +832,7 @@ describe('buildEditState', () => {
 			labels: { processing: 'label-x' },
 			customFields: { cost: 'cf-cost-1' },
 		};
-		const result = buildEditState('trello', config, new Set<string>());
+		const result = trelloProviderWizard.buildEditState(config, new Set<string>());
 		expect(result.provider).toBe('trello');
 		// Raw credential values are NOT pre-populated for security
 		expect(result.trelloApiKey).toBeUndefined();
@@ -843,17 +845,20 @@ describe('buildEditState', () => {
 
 	it('sets hasStoredCredentials true for trello when both keys present', () => {
 		const config = { boardId: 'board-abc' };
-		const result = buildEditState('trello', config, new Set(['TRELLO_API_KEY', 'TRELLO_TOKEN']));
+		const result = trelloProviderWizard.buildEditState(
+			config,
+			new Set(['TRELLO_API_KEY', 'TRELLO_TOKEN']),
+		);
 		expect(result.hasStoredCredentials).toBe(true);
 	});
 
 	it('sets hasStoredCredentials false for trello when only one key present', () => {
-		const result = buildEditState('trello', {}, new Set(['TRELLO_API_KEY']));
+		const result = trelloProviderWizard.buildEditState({}, new Set(['TRELLO_API_KEY']));
 		expect(result.hasStoredCredentials).toBe(false);
 	});
 
 	it('sets hasStoredCredentials false for trello when no keys present', () => {
-		const result = buildEditState('trello', {}, new Set<string>());
+		const result = trelloProviderWizard.buildEditState({}, new Set<string>());
 		expect(result.hasStoredCredentials).toBe(false);
 	});
 
@@ -866,7 +871,7 @@ describe('buildEditState', () => {
 			labels: { processing: 'cascade-processing' },
 			customFields: { cost: 'customfield_10042' },
 		};
-		const result = buildEditState('jira', config, new Set<string>());
+		const result = jiraProviderWizard.buildEditState(config, new Set<string>());
 		expect(result.provider).toBe('jira');
 		// Raw credential values are NOT pre-populated for security
 		expect(result.jiraEmail).toBeUndefined();
@@ -880,8 +885,7 @@ describe('buildEditState', () => {
 	});
 
 	it('sets hasStoredCredentials true for jira when both keys present', () => {
-		const result = buildEditState(
-			'jira',
+		const result = jiraProviderWizard.buildEditState(
 			{ baseUrl: 'https://example.atlassian.net', projectKey: 'PROJ' },
 			new Set(['JIRA_EMAIL', 'JIRA_API_TOKEN']),
 		);
@@ -889,22 +893,16 @@ describe('buildEditState', () => {
 	});
 
 	it('sets hasStoredCredentials false for jira when only one key present', () => {
-		const result = buildEditState('jira', {}, new Set(['JIRA_EMAIL']));
+		const result = jiraProviderWizard.buildEditState({}, new Set(['JIRA_EMAIL']));
 		expect(result.hasStoredCredentials).toBe(false);
 	});
 
 	it('handles missing optional config fields gracefully', () => {
 		const config = { boardId: 'board-1' };
-		const result = buildEditState('trello', config, new Set<string>());
+		const result = trelloProviderWizard.buildEditState(config, new Set<string>());
 		expect(result.trelloBoardId).toBe('board-1');
 		expect(result.trelloListMappings).toBeUndefined();
 		expect(result.trelloCostFieldId).toBe('');
-	});
-
-	it('returns only provider for unknown provider', () => {
-		const result = buildEditState('unknown', {}, new Set<string>());
-		expect(result.provider).toBe('unknown');
-		expect(Object.keys(result).length).toBe(1);
 	});
 });
 
@@ -983,8 +981,7 @@ describe('Linear project scope — wizardReducer', () => {
 
 describe('Linear project scope — buildEditState hydration', () => {
 	it('hydrates linearProjectId from initialConfig.projectId when present', () => {
-		const result = buildEditState(
-			'linear',
+		const result = linearProviderWizard.buildEditState(
 			{ teamId: 'T1', projectId: 'P1', statuses: {} },
 			new Set(['LINEAR_API_KEY']),
 		);
@@ -992,8 +989,7 @@ describe('Linear project scope — buildEditState hydration', () => {
 	});
 
 	it('leaves linearProjectId unset when initialConfig has no projectId', () => {
-		const result = buildEditState(
-			'linear',
+		const result = linearProviderWizard.buildEditState(
 			{ teamId: 'T1', statuses: {} },
 			new Set(['LINEAR_API_KEY']),
 		);

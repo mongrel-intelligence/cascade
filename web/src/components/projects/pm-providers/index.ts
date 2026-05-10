@@ -13,9 +13,10 @@
  * `pm-wizard-common-steps.tsx`) need zero edits after this import.
  * The one shared dashboard file that still requires manual edits is
  * `pm-wizard-state.ts` — new providers must add their credential fields
- * to `WizardState`, the corresponding action types to `WizardAction`, and
- * `buildEditState` handling for their config shape.  See step 4 of
- * "Adding a new PM provider" in src/integrations/README.md.
+ * to `WizardState` and the corresponding action types to `WizardAction`.
+ * Provider-specific edit hydration belongs on the provider's
+ * `ProviderWizardDefinition.buildEditState`. See step 4 of "Adding a new PM
+ * provider" in src/integrations/README.md.
  */
 
 import './trello/index.js';

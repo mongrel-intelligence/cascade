@@ -277,6 +277,20 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 
 	buildIntegrationConfig: buildLinearIntegrationConfig,
 
+	buildEditState: (initialConfig, configuredKeys) => {
+		const statuses = initialConfig.statuses as Record<string, string> | undefined;
+		const labels = initialConfig.labels as Record<string, string> | undefined;
+
+		return {
+			provider: 'linear',
+			linearTeamId: (initialConfig.teamId as string) ?? '',
+			linearProjectId: (initialConfig.projectId as string) ?? '',
+			...(statuses ? { linearStatusMappings: statuses } : {}),
+			...(labels ? { linearLabels: labels } : {}),
+			hasStoredCredentials: configuredKeys.has('LINEAR_API_KEY'),
+		};
+	},
+
 	isSetupComplete: (state) => {
 		if (!state.linearTeamId) return false;
 		if (Object.keys(state.linearStatusMappings).length === 0) return false;

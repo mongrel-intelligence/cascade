@@ -307,6 +307,25 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		...(state.jiraCostFieldId ? { customFields: { cost: state.jiraCostFieldId } } : {}),
 	}),
 
+	buildEditState: (initialConfig, configuredKeys) => {
+		const statuses = initialConfig.statuses as Record<string, string> | undefined;
+		const issueTypes = initialConfig.issueTypes as Record<string, string> | undefined;
+		const labels = initialConfig.labels as Record<string, string> | undefined;
+
+		return {
+			provider: 'jira',
+			jiraBaseUrl: (initialConfig.baseUrl as string) ?? '',
+			jiraProjectKey: (initialConfig.projectKey as string) ?? '',
+			...(statuses ? { jiraStatusMappings: statuses } : {}),
+			...(issueTypes ? { jiraIssueTypes: issueTypes } : {}),
+			...(labels ? { jiraLabels: labels } : {}),
+			jiraCostFieldId:
+				(initialConfig.customFields as Record<string, string> | undefined)?.cost ?? '',
+			hasStoredCredentials:
+				configuredKeys.has('JIRA_EMAIL') && configuredKeys.has('JIRA_API_TOKEN'),
+		};
+	},
+
 	isSetupComplete: (state) => {
 		if (!state.jiraProjectKey) return false;
 		if (Object.keys(state.jiraStatusMappings).length === 0) return false;

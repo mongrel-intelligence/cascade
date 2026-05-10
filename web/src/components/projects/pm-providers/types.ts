@@ -110,6 +110,15 @@ export interface ProviderWizardDefinition {
 	 * save API. Mirrors the existing `buildXxxIntegrationConfig` functions.
 	 */
 	readonly buildIntegrationConfig: (state: WizardState) => Record<string, unknown>;
+	/**
+	 * Hydrates provider-owned edit-mode wizard state from a saved integration
+	 * config plus the project credential keys currently configured on the server.
+	 * Raw credential values must not be returned.
+	 */
+	readonly buildEditState: (
+		initialConfig: Record<string, unknown>,
+		configuredKeys: ReadonlySet<string>,
+	) => Partial<WizardState>;
 	/** True when all required steps report complete. */
 	readonly isSetupComplete: (state: WizardState) => boolean;
 	/**

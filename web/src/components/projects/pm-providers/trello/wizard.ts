@@ -21,7 +21,7 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
+import { deriveActiveWebhooks, type WizardState } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
@@ -298,6 +298,26 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		labels: state.trelloLabelMappings,
 		...(state.trelloCostFieldId ? { customFields: { cost: state.trelloCostFieldId } } : {}),
 	}),
+
+	buildEditState: (initialConfig, configuredKeys) => {
+		const editState = {
+			provider: 'trello',
+			trelloBoardId: (initialConfig.boardId as string) ?? '',
+			trelloCostFieldId:
+				(initialConfig.customFields as Record<string, string> | undefined)?.cost ?? '',
+			hasStoredCredentials:
+				configuredKeys.has('TRELLO_API_KEY') && configuredKeys.has('TRELLO_TOKEN'),
+		} satisfies Partial<WizardState>;
+
+		const lists = initialConfig.lists as Record<string, string> | undefined;
+		const labels = initialConfig.labels as Record<string, string> | undefined;
+
+		return {
+			...editState,
+			...(lists ? { trelloListMappings: lists } : {}),
+			...(labels ? { trelloLabelMappings: labels } : {}),
+		};
+	},
 
 	isSetupComplete: (state) => {
 		if (!state.trelloBoardId) return false;

@@ -8,12 +8,14 @@ import {
 import type { ProviderWizardDefinition } from '../../../web/src/components/projects/pm-providers/types.js';
 import type {
 	buildProviderSwitchConfirmationMessage as BuildConfirmationMessage,
+	buildEditStateFromProviderWizard as BuildEditStateFromProviderWizard,
 	ProviderPicker as ProviderPickerComponent,
 } from '../../../web/src/components/projects/pm-wizard.js';
 import { createInitialState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 let ProviderPicker: typeof ProviderPickerComponent;
 let buildProviderSwitchConfirmationMessage: typeof BuildConfirmationMessage;
+let buildEditStateFromProviderWizard: typeof BuildEditStateFromProviderWizard;
 
 function StubStep({ state }: { state: { provider: string } }) {
 	return createElement(
@@ -40,6 +42,10 @@ function makeStubWizard(id: string, label: string): ProviderWizardDefinition {
 			{ envVarKey: 'STUB_API_KEY', stateField: 'linearApiKey', label: 'Stub API Key' },
 		],
 		buildIntegrationConfig: () => ({}),
+		buildEditState: (_initialConfig, configuredKeys) => ({
+			provider: id,
+			hasStoredCredentials: configuredKeys.has('STUB_API_KEY'),
+		}),
 		isSetupComplete: () => true,
 	};
 }
@@ -56,9 +62,8 @@ function renderProviderPicker() {
 
 describe('PMWizard provider picker', () => {
 	beforeAll(async () => {
-		({ ProviderPicker, buildProviderSwitchConfirmationMessage } = await import(
-			'../../../web/src/components/projects/pm-wizard.js'
-		));
+		({ ProviderPicker, buildProviderSwitchConfirmationMessage, buildEditStateFromProviderWizard } =
+			await import('../../../web/src/components/projects/pm-wizard.js'));
 	});
 
 	beforeEach(() => {
@@ -86,6 +91,24 @@ describe('PMWizard provider picker', () => {
 	it('builds provider switch confirmation copy from provider definition labels', () => {
 		expect(buildProviderSwitchConfirmationMessage('Trello', 'Acme PM')).toBe(
 			"Switch PM provider from Trello to Acme PM?\n\nYou'll need to re-enter credentials and re-map fields for Acme PM. The old provider's credentials will be deleted when you save.",
+		);
+	});
+
+	it('builds edit state through the registered provider wizard definition', () => {
+		registerProviderWizard(makeStubWizard('acme', 'Acme PM'));
+
+		const result = buildEditStateFromProviderWizard(
+			'acme',
+			{ ignored: true },
+			new Set(['STUB_API_KEY']),
+		);
+
+		expect(result).toEqual({ provider: 'acme', hasStoredCredentials: true });
+	});
+
+	it('throws explicitly when edit state is requested for an unknown provider', () => {
+		expect(() => buildEditStateFromProviderWizard('unknown', {}, new Set<string>())).toThrowError(
+			'No PM provider wizard registered for unknown',
 		);
 	});
 });

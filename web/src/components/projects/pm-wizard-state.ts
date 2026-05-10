@@ -46,9 +46,10 @@ export { INITIAL_JIRA_LABELS, INITIAL_LINEAR_LABELS };
  * be dispatched without adding to a closed union here.
  *
  * Note: adding a new PM provider still requires updating `WizardState` with
- * the provider's credential fields (e.g. `asanaApiKey: string`), the reducer
- * with the corresponding action types, and `buildEditState` with the new
- * provider's config-shape handling. The credential-readiness path
+ * the provider's credential fields (e.g. `asanaApiKey: string`) and the
+ * reducer with the corresponding action types. Provider config-shape hydration
+ * belongs on that provider's `ProviderWizardDefinition.buildEditState`.
+ * The credential-readiness path
  * (`areCredentialsReadyFromMetadata` in `pm-wizard-hooks.ts`) and the
  * mutation auth path (`buildProviderAuthArgFromMetadata`) are metadata-driven
  * and do NOT require changes.
@@ -333,75 +334,6 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 };
 
 // ============================================================================
-// Edit-mode state builder
-// ============================================================================
-
-/**
- * Build a partial WizardState from an existing integration's config.
- * Called when editing an existing PM integration.
- * Note: Raw credential values are NOT pre-populated for security. When stored credentials
- * exist in project_credentials, `hasStoredCredentials` is set true so the wizard can
- * operate without re-entry.
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: restoring state from two provider config shapes
-export function buildEditState(
-	provider: string,
-	initialConfig: Record<string, unknown>,
-	configuredKeys: Set<string>,
-): Partial<WizardState> {
-	const editState: Partial<WizardState> = {
-		provider: provider as Provider,
-	};
-
-	if (provider === 'trello') {
-		editState.trelloBoardId = (initialConfig.boardId as string) ?? '';
-
-		const lists = initialConfig.lists as Record<string, string> | undefined;
-		if (lists) editState.trelloListMappings = lists;
-
-		const labels = initialConfig.labels as Record<string, string> | undefined;
-		if (labels) editState.trelloLabelMappings = labels;
-
-		const cf = initialConfig.customFields as Record<string, string> | undefined;
-		editState.trelloCostFieldId = cf?.cost ?? '';
-
-		editState.hasStoredCredentials =
-			configuredKeys.has('TRELLO_API_KEY') && configuredKeys.has('TRELLO_TOKEN');
-	} else if (provider === 'jira') {
-		editState.jiraBaseUrl = (initialConfig.baseUrl as string) ?? '';
-		editState.jiraProjectKey = (initialConfig.projectKey as string) ?? '';
-
-		const statuses = initialConfig.statuses as Record<string, string> | undefined;
-		if (statuses) editState.jiraStatusMappings = statuses;
-
-		const issueTypes = initialConfig.issueTypes as Record<string, string> | undefined;
-		if (issueTypes) editState.jiraIssueTypes = issueTypes;
-
-		const labels = initialConfig.labels as Record<string, string> | undefined;
-		if (labels) editState.jiraLabels = labels;
-
-		const cf = initialConfig.customFields as Record<string, string> | undefined;
-		editState.jiraCostFieldId = cf?.cost ?? '';
-
-		editState.hasStoredCredentials =
-			configuredKeys.has('JIRA_EMAIL') && configuredKeys.has('JIRA_API_TOKEN');
-	} else if (provider === 'linear') {
-		editState.linearTeamId = (initialConfig.teamId as string) ?? '';
-		editState.linearProjectId = (initialConfig.projectId as string) ?? '';
-
-		const statuses = initialConfig.statuses as Record<string, string> | undefined;
-		if (statuses) editState.linearStatusMappings = statuses;
-
-		const labels = initialConfig.labels as Record<string, string> | undefined;
-		if (labels) editState.linearLabels = labels;
-
-		editState.hasStoredCredentials = configuredKeys.has('LINEAR_API_KEY');
-	}
-
-	return editState;
-}
-
-// ============================================================================
 // Step-completion helpers (pure functions)
 // ============================================================================
 
@@ -443,8 +375,8 @@ export function areCredentialsReady(state: WizardState): boolean {
  * Returns `true` when a wizard mutation (verify, createLabel, createCustomField)
  * should pass `projectId` to the backend — meaning: edit mode is active, the
  * provider has stored credentials in `project_credentials`, and the user has
- * NOT re-typed the primary API key in the form (because `buildEditState`
- * intentionally leaves raw credentials blank for security).
+ * NOT re-typed the primary API key in the form (because provider-owned edit
+ * hydration intentionally leaves raw credentials blank for security).
  *
  * `resolvePMCredentials` on the backend (`src/api/routers/pm-discovery.ts`)
  * resolves stored credentials when `projectId` is supplied, so this check
