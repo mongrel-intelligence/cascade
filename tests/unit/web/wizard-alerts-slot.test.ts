@@ -12,21 +12,19 @@ import { describe, expect, it } from 'vitest';
 import {
 	JIRA_LABEL_SLOTS,
 	JIRA_STATUS_SLOTS,
+	jiraProviderWizard,
 } from '../../../web/src/components/projects/pm-providers/jira/wizard.js';
 import {
 	LINEAR_LABEL_SLOTS,
 	LINEAR_STATUS_SLOTS,
+	linearProviderWizard,
 } from '../../../web/src/components/projects/pm-providers/linear/wizard.js';
 import {
 	TRELLO_LABEL_SLOTS,
 	TRELLO_LIST_SLOTS,
+	trelloProviderWizard,
 } from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
-import {
-	buildJiraIntegrationConfig,
-	buildLinearIntegrationConfig,
-	buildTrelloIntegrationConfig,
-	createInitialState,
-} from '../../../web/src/components/projects/pm-wizard-state.js';
+import { createInitialState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 // ============================================================================
 // 1. Slot-array membership
@@ -70,7 +68,7 @@ describe('alerts status slot round-trips through buildIntegrationConfig', () => 
 			...createInitialState(),
 			trelloListMappings: { alerts: 'list-id-alerts-123' },
 		};
-		const config = buildTrelloIntegrationConfig(state);
+		const config = trelloProviderWizard.buildIntegrationConfig(state);
 		expect((config.lists as Record<string, string>).alerts).toBe('list-id-alerts-123');
 	});
 
@@ -79,7 +77,7 @@ describe('alerts status slot round-trips through buildIntegrationConfig', () => 
 			...createInitialState(),
 			jiraStatusMappings: { alerts: 'Alerts Status' },
 		};
-		const config = buildJiraIntegrationConfig(state);
+		const config = jiraProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).alerts).toBe('Alerts Status');
 	});
 
@@ -88,7 +86,7 @@ describe('alerts status slot round-trips through buildIntegrationConfig', () => 
 			...createInitialState(),
 			linearStatusMappings: { alerts: 'state-uuid-abc' },
 		};
-		const config = buildLinearIntegrationConfig(state);
+		const config = linearProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).alerts).toBe('state-uuid-abc');
 	});
 });
@@ -99,7 +97,7 @@ describe('cascade-alert label slot round-trips through buildIntegrationConfig', 
 			...createInitialState(),
 			trelloLabelMappings: { 'cascade-alert': 'label-id-789' },
 		};
-		const config = buildTrelloIntegrationConfig(state);
+		const config = trelloProviderWizard.buildIntegrationConfig(state);
 		expect((config.labels as Record<string, string>)['cascade-alert']).toBe('label-id-789');
 	});
 
@@ -108,7 +106,7 @@ describe('cascade-alert label slot round-trips through buildIntegrationConfig', 
 			...createInitialState(),
 			jiraLabels: { cascadeAlert: 'cascade-alert-label' },
 		};
-		const config = buildJiraIntegrationConfig(state);
+		const config = jiraProviderWizard.buildIntegrationConfig(state);
 		expect((config.labels as Record<string, string>).cascadeAlert).toBe('cascade-alert-label');
 	});
 
@@ -117,7 +115,7 @@ describe('cascade-alert label slot round-trips through buildIntegrationConfig', 
 			...createInitialState(),
 			linearLabels: { cascadeAlert: 'label-uuid-xyz' },
 		};
-		const config = buildLinearIntegrationConfig(state);
+		const config = linearProviderWizard.buildIntegrationConfig(state);
 		expect((config.labels as Record<string, string>).cascadeAlert).toBe('label-uuid-xyz');
 	});
 });
@@ -127,30 +125,30 @@ describe('cascade-alert label slot round-trips through buildIntegrationConfig', 
 // ============================================================================
 
 describe('alerts slot is optional — wizard does not require it', () => {
-	it('Trello: buildTrelloIntegrationConfig produces no alerts entry when not mapped', () => {
+	it('Trello: provider buildIntegrationConfig produces no alerts entry when not mapped', () => {
 		const state = {
 			...createInitialState(),
 			trelloListMappings: { todo: 'list-id-todo' },
 		};
-		const config = buildTrelloIntegrationConfig(state);
+		const config = trelloProviderWizard.buildIntegrationConfig(state);
 		expect((config.lists as Record<string, string>).alerts).toBeUndefined();
 	});
 
-	it('JIRA: buildJiraIntegrationConfig produces no alerts entry when not mapped', () => {
+	it('JIRA: provider buildIntegrationConfig produces no alerts entry when not mapped', () => {
 		const state = {
 			...createInitialState(),
 			jiraStatusMappings: { todo: 'To Do' },
 		};
-		const config = buildJiraIntegrationConfig(state);
+		const config = jiraProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).alerts).toBeUndefined();
 	});
 
-	it('Linear: buildLinearIntegrationConfig produces no alerts entry when not mapped', () => {
+	it('Linear: provider buildIntegrationConfig produces no alerts entry when not mapped', () => {
 		const state = {
 			...createInitialState(),
 			linearStatusMappings: { todo: 'state-uuid-todo' },
 		};
-		const config = buildLinearIntegrationConfig(state);
+		const config = linearProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).alerts).toBeUndefined();
 	});
 });

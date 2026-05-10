@@ -23,7 +23,6 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactElement, useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc } from '@/lib/trpc.js';
-import { buildLinearIntegrationConfig } from '../../pm-wizard-state.js';
 import type { ProjectCredentialMeta } from '../../project-secret-field.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
@@ -275,7 +274,12 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		},
 	],
 
-	buildIntegrationConfig: buildLinearIntegrationConfig,
+	buildIntegrationConfig: (state) => ({
+		teamId: state.linearTeamId,
+		...(state.linearProjectId ? { projectId: state.linearProjectId } : {}),
+		statuses: state.linearStatusMappings,
+		...(Object.keys(state.linearLabels).length > 0 ? { labels: state.linearLabels } : {}),
+	}),
 
 	buildEditState: (initialConfig, configuredKeys) => {
 		const statuses = initialConfig.statuses as Record<string, string> | undefined;

@@ -22,7 +22,6 @@ import type {
 } from '../../../web/src/components/projects/pm-wizard-state.js';
 import {
 	areCredentialsReady,
-	buildLinearIntegrationConfig,
 	createInitialState,
 	INITIAL_JIRA_LABELS,
 	isStep1Complete,
@@ -996,7 +995,7 @@ describe('Linear project scope — buildEditState hydration', () => {
 	});
 });
 
-describe('buildLinearIntegrationConfig — save payload', () => {
+describe('linearProviderWizard.buildIntegrationConfig — save payload', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -1009,13 +1008,13 @@ describe('buildLinearIntegrationConfig — save payload', () => {
 	}
 
 	it('omits projectId when linearProjectId is empty', () => {
-		const config = buildLinearIntegrationConfig(seed({ linearProjectId: '' }));
+		const config = linearProviderWizard.buildIntegrationConfig(seed({ linearProjectId: '' }));
 		expect(config).not.toHaveProperty('projectId');
 		expect(config.teamId).toBe('T1');
 	});
 
 	it('includes projectId when linearProjectId is set', () => {
-		const config = buildLinearIntegrationConfig(seed({ linearProjectId: 'P1' }));
+		const config = linearProviderWizard.buildIntegrationConfig(seed({ linearProjectId: 'P1' }));
 		expect(config.projectId).toBe('P1');
 		expect(config.teamId).toBe('T1');
 	});
@@ -1023,14 +1022,14 @@ describe('buildLinearIntegrationConfig — save payload', () => {
 	it('clearing a previously-set projectId yields a config without projectId', () => {
 		// Simulate edit mode: start with projectId set, user clears, we save.
 		const state = seed({ linearProjectId: '' }); // after clear
-		const config = buildLinearIntegrationConfig(state);
+		const config = linearProviderWizard.buildIntegrationConfig(state);
 		expect(config).not.toHaveProperty('projectId');
 	});
 
 	it('omits labels when linearLabels is empty; includes when populated', () => {
-		const bare = buildLinearIntegrationConfig(seed());
+		const bare = linearProviderWizard.buildIntegrationConfig(seed());
 		expect(bare).not.toHaveProperty('labels');
-		const withLabels = buildLinearIntegrationConfig(
+		const withLabels = linearProviderWizard.buildIntegrationConfig(
 			// Linear labels are stored as UUIDs (the Linear API rejects names for
 			// issueUpdate.labelIds). Wizard dropdowns populate from the team's labels.
 			seed({ linearLabels: { processing: '11111111-1111-4111-8111-111111111111' } }),

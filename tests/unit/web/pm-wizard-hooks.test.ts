@@ -1,7 +1,7 @@
 /**
  * Unit tests for pure functions extracted in the pm-wizard-hooks refactor:
  *   - runPerLabelCreations (batch label creator with per-item error handling)
- *   - buildTrelloIntegrationConfig / buildJiraIntegrationConfig (pure config builders)
+ *   - provider-owned buildIntegrationConfig implementations
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,12 +18,7 @@ import {
 	runPerLabelCreations,
 } from '../../../web/src/components/projects/pm-wizard-hooks.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
-import {
-	buildJiraIntegrationConfig,
-	buildLinearIntegrationConfig,
-	buildTrelloIntegrationConfig,
-	createInitialState,
-} from '../../../web/src/components/projects/pm-wizard-state.js';
+import { createInitialState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 // ============================================================================
 // Provider-owned credential metadata
@@ -520,10 +515,10 @@ describe('metadata-driven save payloads', () => {
 });
 
 // ============================================================================
-// buildTrelloIntegrationConfig
+// trelloProviderWizard.buildIntegrationConfig
 // ============================================================================
 
-describe('buildTrelloIntegrationConfig', () => {
+describe('trelloProviderWizard.buildIntegrationConfig', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -536,7 +531,7 @@ describe('buildTrelloIntegrationConfig', () => {
 	}
 
 	it('produces the expected config shape', () => {
-		const config = buildTrelloIntegrationConfig(seed());
+		const config = trelloProviderWizard.buildIntegrationConfig(seed());
 		expect(config).toEqual({
 			boardId: 'board-abc',
 			lists: { todo: 'list-1', done: 'list-2' },
@@ -545,17 +540,19 @@ describe('buildTrelloIntegrationConfig', () => {
 	});
 
 	it('includes customFields when trelloCostFieldId is set', () => {
-		const config = buildTrelloIntegrationConfig(seed({ trelloCostFieldId: 'cf-cost' }));
+		const config = trelloProviderWizard.buildIntegrationConfig(
+			seed({ trelloCostFieldId: 'cf-cost' }),
+		);
 		expect(config.customFields).toEqual({ cost: 'cf-cost' });
 	});
 
 	it('omits customFields when trelloCostFieldId is empty', () => {
-		const config = buildTrelloIntegrationConfig(seed({ trelloCostFieldId: '' }));
+		const config = trelloProviderWizard.buildIntegrationConfig(seed({ trelloCostFieldId: '' }));
 		expect(config).not.toHaveProperty('customFields');
 	});
 
 	it('passes through empty mappings', () => {
-		const config = buildTrelloIntegrationConfig(
+		const config = trelloProviderWizard.buildIntegrationConfig(
 			seed({ trelloListMappings: {}, trelloLabelMappings: {} }),
 		);
 		expect(config.lists).toEqual({});
@@ -564,10 +561,10 @@ describe('buildTrelloIntegrationConfig', () => {
 });
 
 // ============================================================================
-// buildJiraIntegrationConfig
+// jiraProviderWizard.buildIntegrationConfig
 // ============================================================================
 
-describe('buildJiraIntegrationConfig', () => {
+describe('jiraProviderWizard.buildIntegrationConfig', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -581,7 +578,7 @@ describe('buildJiraIntegrationConfig', () => {
 	}
 
 	it('produces the expected config shape', () => {
-		const config = buildJiraIntegrationConfig(seed());
+		const config = jiraProviderWizard.buildIntegrationConfig(seed());
 		expect(config).toEqual({
 			projectKey: 'PROJ',
 			baseUrl: 'https://example.atlassian.net',
@@ -591,39 +588,40 @@ describe('buildJiraIntegrationConfig', () => {
 	});
 
 	it('includes issueTypes when jiraIssueTypes non-empty', () => {
-		const config = buildJiraIntegrationConfig(
+		const config = jiraProviderWizard.buildIntegrationConfig(
 			seed({ jiraIssueTypes: { task: 'Task', subtask: 'Sub-task' } }),
 		);
 		expect(config.issueTypes).toEqual({ task: 'Task', subtask: 'Sub-task' });
 	});
 
 	it('omits issueTypes when jiraIssueTypes is empty', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraIssueTypes: {} }));
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraIssueTypes: {} }));
 		expect(config).not.toHaveProperty('issueTypes');
 	});
 
 	it('omits labels when jiraLabels is empty', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraLabels: {} }));
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraLabels: {} }));
 		expect(config).not.toHaveProperty('labels');
 	});
 
 	it('includes customFields when jiraCostFieldId set', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraCostFieldId: 'customfield_10042' }));
+		const config = jiraProviderWizard.buildIntegrationConfig(
+			seed({ jiraCostFieldId: 'customfield_10042' }),
+		);
 		expect(config.customFields).toEqual({ cost: 'customfield_10042' });
 	});
 
 	it('omits customFields when jiraCostFieldId is empty', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraCostFieldId: '' }));
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraCostFieldId: '' }));
 		expect(config).not.toHaveProperty('customFields');
 	});
 });
 
 // ============================================================================
-// buildLinearIntegrationConfig (already tested in pm-wizard-state.test.ts;
-// added here for cross-reference completeness)
+// linearProviderWizard.buildIntegrationConfig
 // ============================================================================
 
-describe('buildLinearIntegrationConfig', () => {
+describe('linearProviderWizard.buildIntegrationConfig', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -636,17 +634,17 @@ describe('buildLinearIntegrationConfig', () => {
 	}
 
 	it('produces the expected config shape', () => {
-		const config = buildLinearIntegrationConfig(seed());
+		const config = linearProviderWizard.buildIntegrationConfig(seed());
 		expect(config).toEqual({ teamId: 'T1', statuses: { todo: 'S-TD' } });
 	});
 
 	it('includes projectId when linearProjectId is set', () => {
-		const config = buildLinearIntegrationConfig(seed({ linearProjectId: 'P1' }));
+		const config = linearProviderWizard.buildIntegrationConfig(seed({ linearProjectId: 'P1' }));
 		expect(config.projectId).toBe('P1');
 	});
 
 	it('omits projectId when linearProjectId is empty', () => {
-		const config = buildLinearIntegrationConfig(seed({ linearProjectId: '' }));
+		const config = linearProviderWizard.buildIntegrationConfig(seed({ linearProjectId: '' }));
 		expect(config).not.toHaveProperty('projectId');
 	});
 });
