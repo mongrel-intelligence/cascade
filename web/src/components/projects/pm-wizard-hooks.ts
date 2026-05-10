@@ -53,7 +53,7 @@ export function buildProviderAuthArgFromMetadata(
  */
 export async function runPerLabelCreations(opts: {
 	labelsToCreate: Array<{ slot: string; name: string; color?: string }>;
-	providerId: 'trello' | 'linear';
+	providerId: string;
 	containerId: string;
 	authArg: { projectId: string } | { credentials: Record<string, string> };
 }): Promise<{
@@ -84,7 +84,7 @@ export async function runPerLabelCreations(opts: {
 // ============================================================================
 
 interface LabelCreationConfig {
-	providerId: 'trello' | 'linear';
+	providerId: string;
 	/** Provider-owned auth contract for raw credentials and stored fallback */
 	auth: ProviderAuthMetadata;
 	/** Returns the container ID (board / team) from state */
@@ -167,7 +167,7 @@ function useProviderLabelCreation(
 // ============================================================================
 
 interface CustomFieldCreationConfig {
-	providerId: 'trello' | 'jira';
+	providerId: string;
 	/** Provider-owned auth contract for raw credentials and stored fallback */
 	auth: ProviderAuthMetadata;
 	/** Returns the container ID from state (boardId / projectKey) */

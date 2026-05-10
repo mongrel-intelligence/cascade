@@ -68,4 +68,19 @@ describe('pm-wizard-hooks architecture boundary', () => {
 			'Provider-specific verified-as display formatting belongs on ProviderWizardDefinition.formatVerificationDisplay.',
 		).not.toMatch(/\bexport\s+function\s+formatVerificationDisplay\b/);
 	});
+
+	it('does not hard-code provider ids in shared config type declarations', () => {
+		const source = readSharedHooks();
+
+		// LabelCreationConfig and CustomFieldCreationConfig must accept any provider id
+		// so that new providers can use the shared factories without editing this file.
+		expect(
+			source,
+			"LabelCreationConfig.providerId must be 'string', not a literal union — new providers must not need to edit pm-wizard-hooks.ts",
+		).not.toMatch(/providerId:\s*'(?:trello|jira|linear)'\s*\|/);
+		expect(
+			source,
+			"runPerLabelCreations opts.providerId must be 'string', not a literal union",
+		).not.toMatch(/providerId:\s*'(?:trello|jira|linear)'\s*\|/);
+	});
 });
