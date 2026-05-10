@@ -1,4 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import {
+	createInitialJiraState,
+	INITIAL_JIRA_LABELS as PROVIDER_INITIAL_JIRA_LABELS,
+	resetJiraProjectState,
+} from '../../../web/src/components/projects/pm-providers/jira/state.js';
+import {
+	createInitialLinearState,
+	INITIAL_LINEAR_LABELS,
+	resetLinearTeamState,
+} from '../../../web/src/components/projects/pm-providers/linear/state.js';
+import {
+	createInitialTrelloState,
+	resetTrelloBoardState,
+} from '../../../web/src/components/projects/pm-providers/trello/state.js';
 import type {
 	WizardAction,
 	WizardState,
@@ -48,6 +62,92 @@ describe('createInitialState', () => {
 		expect(state.jiraCostFieldId).toBe('');
 		expect(state.isEditing).toBe(false);
 		expect(state.previousProvider).toBeUndefined();
+	});
+
+	it('composes provider-owned initial state slices', () => {
+		const state = createInitialState();
+		expect(state).toMatchObject({
+			...createInitialTrelloState(),
+			...createInitialJiraState(),
+			...createInitialLinearState(),
+		});
+	});
+});
+
+// ============================================================================
+// Provider state slices
+// ============================================================================
+
+describe('provider state slices', () => {
+	it('owns the Trello initial state defaults', () => {
+		expect(createInitialTrelloState()).toEqual({
+			trelloApiKey: '',
+			trelloToken: '',
+			trelloBoardId: '',
+			trelloBoards: [],
+			trelloBoardDetails: null,
+			trelloListMappings: {},
+			trelloLabelMappings: {},
+			trelloCostFieldId: '',
+		});
+	});
+
+	it('owns the JIRA initial state defaults', () => {
+		expect(createInitialJiraState()).toEqual({
+			jiraEmail: '',
+			jiraApiToken: '',
+			jiraBaseUrl: '',
+			jiraProjectKey: '',
+			jiraProjects: [],
+			jiraProjectDetails: null,
+			jiraStatusMappings: {},
+			jiraIssueTypes: {},
+			jiraLabels: PROVIDER_INITIAL_JIRA_LABELS,
+			jiraCostFieldId: '',
+		});
+	});
+
+	it('owns the Linear initial state defaults', () => {
+		expect(createInitialLinearState()).toEqual({
+			linearApiKey: '',
+			linearTeamId: '',
+			linearTeams: [],
+			linearProjectId: '',
+			linearProjects: [],
+			linearTeamDetails: null,
+			linearStatusMappings: {},
+			linearLabels: INITIAL_LINEAR_LABELS,
+		});
+	});
+
+	it('captures Trello board-change reset behavior', () => {
+		expect(resetTrelloBoardState('board-2')).toEqual({
+			trelloBoardId: 'board-2',
+			trelloBoardDetails: null,
+			trelloListMappings: {},
+			trelloLabelMappings: {},
+			trelloCostFieldId: '',
+		});
+	});
+
+	it('captures JIRA project-change reset behavior', () => {
+		expect(resetJiraProjectState('NEXT')).toEqual({
+			jiraProjectKey: 'NEXT',
+			jiraProjectDetails: null,
+			jiraStatusMappings: {},
+			jiraIssueTypes: {},
+			jiraCostFieldId: '',
+		});
+	});
+
+	it('captures Linear team-change reset behavior, including project scope', () => {
+		expect(resetLinearTeamState('team-2')).toEqual({
+			linearTeamId: 'team-2',
+			linearTeamDetails: null,
+			linearStatusMappings: {},
+			linearProjectId: '',
+			linearProjects: [],
+		});
 	});
 });
 

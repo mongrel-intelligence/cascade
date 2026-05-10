@@ -3,51 +3,42 @@
  * Has zero imports from other pm-wizard files to avoid circular dependencies.
  */
 import type { Reducer } from 'react';
+import {
+	createInitialJiraState,
+	INITIAL_JIRA_LABELS,
+	type JiraProjectDetails,
+	type JiraProjectOption,
+	resetJiraProjectState,
+} from './pm-providers/jira/state.js';
+import {
+	createInitialLinearState,
+	INITIAL_LINEAR_LABELS,
+	type LinearProjectOption,
+	type LinearTeamDetails,
+	type LinearTeamOption,
+	resetLinearTeamState,
+} from './pm-providers/linear/state.js';
+import {
+	createInitialTrelloState,
+	resetTrelloBoardState,
+	type TrelloBoardDetails,
+	type TrelloBoardOption,
+} from './pm-providers/trello/state.js';
+
+export type {
+	JiraProjectDetails,
+	JiraProjectOption,
+	LinearProjectOption,
+	LinearTeamDetails,
+	LinearTeamOption,
+	TrelloBoardDetails,
+	TrelloBoardOption,
+};
+export { INITIAL_JIRA_LABELS, INITIAL_LINEAR_LABELS };
 
 // ============================================================================
 // Types
 // ============================================================================
-
-export interface TrelloBoardOption {
-	id: string;
-	name: string;
-	url: string;
-}
-
-export interface TrelloBoardDetails {
-	lists: Array<{ id: string; name: string }>;
-	labels: Array<{ id: string; name: string; color: string }>;
-	customFields: Array<{ id: string; name: string; type: string }>;
-}
-
-export interface JiraProjectOption {
-	key: string;
-	name: string;
-}
-
-export interface JiraProjectDetails {
-	statuses: Array<{ name: string; id: string }>;
-	issueTypes: Array<{ name: string; subtask: boolean }>;
-	fields: Array<{ id: string; name: string; custom: boolean }>;
-}
-
-export interface LinearTeamOption {
-	id: string;
-	name: string;
-	key: string;
-}
-
-export interface LinearProjectOption {
-	id: string;
-	name: string;
-	icon: string | null;
-	color: string | null;
-}
-
-export interface LinearTeamDetails {
-	states: Array<{ id: string; name: string; type: string }>;
-	labels: Array<{ id: string; name: string; color: string }>;
-}
 
 /**
  * Provider identifier — an open string so new providers registered via the
@@ -157,53 +148,14 @@ export type WizardAction =
 // Initial state and constants
 // ============================================================================
 
-export const INITIAL_JIRA_LABELS: Record<string, string> = {
-	processing: 'cascade-processing',
-	processed: 'cascade-processed',
-	error: 'cascade-error',
-	readyToProcess: 'cascade-ready',
-	auto: 'cascade-auto',
-};
-
-/**
- * Linear label mappings store workflow-label **UUIDs**, not names, because
- * Linear's GraphQL API rejects names for issueUpdate.labelIds. The wizard
- * populates these from the team's existing labels or via the create-label
- * button. Initial state is therefore empty — operators pick or create.
- */
-export const INITIAL_LINEAR_LABELS: Record<string, string> = {};
-
 export function createInitialState(): WizardState {
 	return {
 		provider: 'trello',
-		trelloApiKey: '',
-		trelloToken: '',
-		jiraEmail: '',
-		jiraApiToken: '',
-		jiraBaseUrl: '',
-		linearApiKey: '',
 		verificationResult: null,
 		verifyError: null,
-		trelloBoardId: '',
-		trelloBoards: [],
-		jiraProjectKey: '',
-		jiraProjects: [],
-		linearTeamId: '',
-		linearTeams: [],
-		linearProjectId: '',
-		linearProjects: [],
-		trelloBoardDetails: null,
-		jiraProjectDetails: null,
-		linearTeamDetails: null,
-		trelloListMappings: {},
-		trelloLabelMappings: {},
-		trelloCostFieldId: '',
-		jiraStatusMappings: {},
-		jiraIssueTypes: {},
-		jiraLabels: { ...INITIAL_JIRA_LABELS },
-		jiraCostFieldId: '',
-		linearStatusMappings: {},
-		linearLabels: { ...INITIAL_LINEAR_LABELS },
+		...createInitialTrelloState(),
+		...createInitialJiraState(),
+		...createInitialLinearState(),
 		isEditing: false,
 		hasStoredCredentials: false,
 	};
@@ -268,36 +220,21 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 		case 'SET_TRELLO_BOARD_ID':
 			return {
 				...state,
-				trelloBoardId: action.id,
-				trelloBoardDetails: null,
-				trelloListMappings: {},
-				trelloLabelMappings: {},
-				trelloCostFieldId: '',
+				...resetTrelloBoardState(action.id),
 			};
 		case 'SET_JIRA_PROJECTS':
 			return { ...state, jiraProjects: action.projects };
 		case 'SET_JIRA_PROJECT_KEY':
 			return {
 				...state,
-				jiraProjectKey: action.key,
-				jiraProjectDetails: null,
-				jiraStatusMappings: {},
-				jiraIssueTypes: {},
-				jiraCostFieldId: '',
+				...resetJiraProjectState(action.key),
 			};
 		case 'SET_LINEAR_TEAMS':
 			return { ...state, linearTeams: action.teams };
 		case 'SET_LINEAR_TEAM_ID':
 			return {
 				...state,
-				linearTeamId: action.id,
-				linearTeamDetails: null,
-				linearStatusMappings: {},
-				// A new team invalidates the project list and any chosen project —
-				// Linear projects are team-scoped, so the previous selection is
-				// not guaranteed to belong to the new team.
-				linearProjectId: '',
-				linearProjects: [],
+				...resetLinearTeamState(action.id),
 			};
 		case 'SET_LINEAR_PROJECTS':
 			return { ...state, linearProjects: action.projects };
