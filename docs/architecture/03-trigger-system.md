@@ -172,9 +172,14 @@ The router preserves structured skips in webhook logs with `Trigger <handler> sk
 
 ### Deferred re-checks
 
-Handlers that cannot make a final decision yet can return `deferredRecheck: { delayMs, coalesceKey }` with `agentType: null`. The router schedules a coalesced delayed BullMQ job and exits without spawning an agent. GitHub mergeability checks use this path; the worker recognizes re-check jobs via `mergeabilityRecheckAttempt` and captures a Sentry diagnostic if the second pass still cannot resolve state.
+Handlers that cannot make a final decision yet can return `deferredRecheck: { delayMs, coalesceKey, recheckKind? }` with `agentType: null`. The router schedules a coalesced delayed BullMQ job and exits without spawning an agent.
 
-The bare re-dispatch on job fire is currently **GitHub-only**: `GitHubRouterAdapter.buildJob()` strips `triggerResult` and sets `mergeabilityRecheckAttempt: 1`, so the GitHub worker re-dispatches through the trigger registry to evaluate fresh provider state. Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed `triggerResult` in the job regardless of `deferredRecheck`; `resolveTriggerResult()` returns the pre-resolved result directly, skipping registry dispatch. A non-GitHub handler returning `buildDeferredRecheckResult` would therefore schedule a job that reuses the same `agentType: null` result rather than re-evaluating provider state. See `src/triggers/README.md` for the full authoring contract. Workers do not schedule another re-check after exhaustion.
+The bare re-dispatch on job fire is currently **GitHub-only**: `GitHubRouterAdapter.buildJob()` strips `triggerResult` and stamps the right re-check field based on the optional `recheckKind` discriminator. Two re-check kinds exist:
+
+- **Mergeability re-check** (`recheckKind` absent) — `mergeabilityRecheckAttempt: 1` is set on the job. The GitHub worker re-dispatches through the registry for fresh provider state. If the re-check still cannot resolve state, the worker Sentry-captures under `mergeability_recheck_exhausted` and stops (one-shot — no further rescheduling).
+- **Check-suite re-check** (`recheckKind: 'check-suite'`) — `checkSuiteRecheckAttempt: 1` is set on the job. If the Actions API is still stale when the job fires, the worker reschedules another coalesced delayed job instead of exhausting, so review/respond-to-ci dispatch stays alive until the API catches up. Used by `check-suite-success` and `check-suite-failure` for the Actions-API-lag case (ucho PR #394/MNG-683, 2026-05-11).
+
+Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed `triggerResult` in the job regardless of `deferredRecheck`; `resolveTriggerResult()` returns the pre-resolved result directly, skipping registry dispatch. A non-GitHub handler returning `buildDeferredRecheckResult` would therefore schedule a job that reuses the same `agentType: null` result rather than re-evaluating provider state. See `src/triggers/README.md` for the full authoring contract.
 
 ### Config resolution
 

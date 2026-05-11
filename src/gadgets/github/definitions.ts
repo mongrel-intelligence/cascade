@@ -545,6 +545,13 @@ export const updatePRCommentDef: ToolDefinition = {
 	],
 	cli: {
 		autoResolved: ownerRepoAutoResolved,
+		fileInputAlternatives: [
+			{
+				paramName: 'body',
+				fileFlag: 'body-file',
+				description: 'Read comment body from file (use - for stdin)',
+			},
+		],
 	},
 };
 

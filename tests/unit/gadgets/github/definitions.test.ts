@@ -266,6 +266,15 @@ describe('GitHub SCM gadget definitions', () => {
 		it('does not have prNumber (comment ID is enough)', () => {
 			expect(updatePRCommentDef.parameters.prNumber).toBeUndefined();
 		});
+
+		it('has body file input alternative', () => {
+			const bodyAlt = updatePRCommentDef.cli?.fileInputAlternatives?.find(
+				(a) => a.paramName === 'body',
+			);
+			expect(bodyAlt).toBeDefined();
+			expect(bodyAlt?.fileFlag).toBe('body-file');
+			expect(bodyAlt?.description).toBeTruthy();
+		});
 	});
 });
 

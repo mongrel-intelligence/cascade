@@ -297,7 +297,7 @@ describe('parseCodexEvent', () => {
 			inputTokens: 100,
 			outputTokens: 50,
 			cachedTokens: 80,
-			costUsd: undefined,
+			reasoningTokens: undefined,
 		});
 		expect(result.textParts).toEqual([]);
 		expect(result.toolCall).toBeNull();
@@ -313,7 +313,20 @@ describe('parseCodexEvent', () => {
 			inputTokens: 42,
 			outputTokens: 7,
 			cachedTokens: undefined,
-			costUsd: undefined,
+			reasoningTokens: undefined,
+		});
+	});
+
+	it('parses a turn.completed event with reasoning_output_tokens', () => {
+		const result = parseCodexEvent({
+			type: 'turn.completed',
+			usage: { input_tokens: 100, output_tokens: 200, reasoning_output_tokens: 800 },
+		});
+		expect(result.usage).toEqual({
+			inputTokens: 100,
+			outputTokens: 200,
+			cachedTokens: undefined,
+			reasoningTokens: 800,
 		});
 	});
 
@@ -403,17 +416,23 @@ describe('parseCodexEvent', () => {
 		expect(result.toolCall).toBeNull();
 	});
 
-	it('parses event with total_cost_usd', () => {
+	it('ignores any cost_usd / total_cost_usd field on the event (cost is computed CASCADE-side from tokens)', () => {
+		// codex exec --json does not emit cost fields upstream (openai/codex#17539).
+		// If a future version smuggles one in, the parser must NOT surface it —
+		// cost is computed by the engine from token deltas × pricing table.
 		const result = parseCodexEvent({
 			usage: { input_tokens: 10, output_tokens: 5 },
 			total_cost_usd: 0.0042,
+			cost_usd: 0.0042,
 		});
 		expect(result.usage).toEqual({
 			inputTokens: 10,
 			outputTokens: 5,
 			cachedTokens: undefined,
-			costUsd: 0.0042,
+			reasoningTokens: undefined,
 		});
+		// Sanity: no costUsd-shaped field leaks through.
+		expect(JSON.stringify(result.usage)).not.toContain('costUsd');
 	});
 
 	it('parses event with camelCase usage fields (inputTokens/outputTokens)', () => {
@@ -424,7 +443,7 @@ describe('parseCodexEvent', () => {
 			inputTokens: 200,
 			outputTokens: 80,
 			cachedTokens: undefined,
-			costUsd: undefined,
+			reasoningTokens: undefined,
 		});
 	});
 });

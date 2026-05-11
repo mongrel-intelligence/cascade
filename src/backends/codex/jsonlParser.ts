@@ -19,7 +19,12 @@ export type UsageSummary = {
 	inputTokens?: number;
 	outputTokens?: number;
 	cachedTokens?: number;
-	costUsd?: number;
+	/**
+	 * Reasoning-model output tokens (gpt-5-codex / o1 / o3-class). OpenAI bills
+	 * these as output tokens; CASCADE folds them into outputTokens for cost math
+	 * while keeping the breakdown visible in the stored response payload.
+	 */
+	reasoningTokens?: number;
 };
 
 export function extractTextFromContentParts(candidate: unknown): string[] {
@@ -161,17 +166,18 @@ export function extractUsage(event: JsonRecord): UsageSummary | null {
 				: undefined;
 	const cachedTokens =
 		typeof usage?.cached_input_tokens === 'number' ? usage.cached_input_tokens : undefined;
-	const costUsd =
-		typeof event.total_cost_usd === 'number'
-			? event.total_cost_usd
-			: typeof event.cost_usd === 'number'
-				? event.cost_usd
-				: typeof usage?.cost_usd === 'number'
-					? usage.cost_usd
-					: undefined;
+	const reasoningTokens =
+		typeof usage?.reasoning_output_tokens === 'number' ? usage.reasoning_output_tokens : undefined;
 
-	return inputTokens !== undefined || outputTokens !== undefined || costUsd !== undefined
-		? { inputTokens, outputTokens, cachedTokens, costUsd }
+	// `codex exec --json` does not emit any cost field today (see openai/codex#17539).
+	// Cost is computed CASCADE-side from token deltas × the pricing table; any
+	// cost-shaped fields on the event are intentionally ignored.
+
+	return inputTokens !== undefined ||
+		outputTokens !== undefined ||
+		cachedTokens !== undefined ||
+		reasoningTokens !== undefined
+		? { inputTokens, outputTokens, cachedTokens, reasoningTokens }
 		: null;
 }
 

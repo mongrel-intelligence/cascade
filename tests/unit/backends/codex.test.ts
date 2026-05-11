@@ -151,6 +151,23 @@ describe('resolveCodexModel', () => {
 			'not compatible with the Codex engine',
 		);
 	});
+
+	it('throws for openai: prefix with an unlisted model (no pricing row)', () => {
+		// Pins the constraint that openai:* only resolves when the bare ID is in
+		// CODEX_MODEL_IDS — prevents silent zero-cost runs on models with no
+		// pricing entry in MODEL_PRICING.
+		expect(() => resolveCodexModel('openai:gpt-5-codex')).toThrow(
+			'not compatible with the Codex engine',
+		);
+	});
+
+	it('throws for gpt-*codex* pattern not in CODEX_MODEL_IDS', () => {
+		// The old wildcard gpt-*codex* branch was removed; unrecognised model IDs
+		// must throw rather than silently pass through with zero cost.
+		expect(() => resolveCodexModel('gpt-5-turbo-codex')).toThrow(
+			'not compatible with the Codex engine',
+		);
+	});
 });
 
 describe('extractErrorMessage', () => {
@@ -335,7 +352,7 @@ describe('extractUsage', () => {
 			inputTokens: 100,
 			outputTokens: 50,
 			cachedTokens: undefined,
-			costUsd: undefined,
+			reasoningTokens: undefined,
 		});
 	});
 
@@ -348,11 +365,27 @@ describe('extractUsage', () => {
 			inputTokens: 500,
 			outputTokens: 30,
 			cachedTokens: 450,
-			costUsd: undefined,
+			reasoningTokens: undefined,
 		});
 	});
 
-	it('still extracts top-level usage field (backward compat)', () => {
+	it('extracts reasoning_output_tokens from turn.completed usage', () => {
+		const result = extractUsage({
+			type: 'turn.completed',
+			usage: { input_tokens: 100, output_tokens: 200, reasoning_output_tokens: 800 },
+		});
+		expect(result).toEqual({
+			inputTokens: 100,
+			outputTokens: 200,
+			cachedTokens: undefined,
+			reasoningTokens: 800,
+		});
+	});
+
+	it('ignores any cost_usd-shaped fields on the event (cost is computed CASCADE-side)', () => {
+		// Pins the "delete dead branches" decision — codex exec --json doesn't
+		// emit cost upstream (openai/codex#17539); the engine computes cost from
+		// token deltas via calculateCost, so cost fields must NOT leak through.
 		const result = extractUsage({
 			usage: { input_tokens: 10, output_tokens: 5 },
 			total_cost_usd: 0.01,
@@ -361,7 +394,7 @@ describe('extractUsage', () => {
 			inputTokens: 10,
 			outputTokens: 5,
 			cachedTokens: undefined,
-			costUsd: 0.01,
+			reasoningTokens: undefined,
 		});
 	});
 
@@ -495,15 +528,11 @@ describe('CodexEngine', () => {
 						tool_input: { command: 'cascade-tools session finish --comment done' },
 					}),
 					// Intermediate usage event — accumulates into turn, does NOT persist a row
-					JSON.stringify({
-						usage: { input_tokens: 11, output_tokens: 7 },
-						total_cost_usd: 0.42,
-					}),
+					JSON.stringify({ usage: { input_tokens: 11, output_tokens: 7 } }),
 					// turn.completed finalizes and persists the accumulated turn data
 					JSON.stringify({
 						type: 'turn.completed',
 						usage: { input_tokens: 11, output_tokens: 7 },
-						total_cost_usd: 0.42,
 					}),
 				],
 				onBeforeClose: () => {
@@ -528,7 +557,10 @@ describe('CodexEngine', () => {
 		expect(result.success).toBe(true);
 		expect(result.output).toContain('Finished work.');
 		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/123');
-		expect(result.cost).toBe(0.42);
+		// Cost is computed CASCADE-side from tokens × pricing table; the
+		// per-1M-token rate keeps the absolute number tiny for 11 in / 7 out.
+		expect(result.cost).toBeGreaterThan(0);
+		expect(result.cost).toBeLessThan(0.01);
 		expect(input.progressReporter.onIteration).toHaveBeenCalled();
 		expect(input.progressReporter.onToolCall).toHaveBeenCalledWith('Bash', {
 			command: 'cascade-tools session finish --comment done',
@@ -1011,14 +1043,15 @@ describe('CodexEngine', () => {
 		expect(result.success).toBe(true);
 		// Exactly two rows — one per completed turn
 		expect(mockStoreLlmCall).toHaveBeenCalledTimes(2);
-		// Stable, sequential callNumber values
+		// Codex emits CUMULATIVE session usage; rows must store per-turn DELTAS.
+		// Feeding cumulative {50,20} then {80,30} → deltas {50,20} and {30,10}.
 		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
 			1,
 			expect.objectContaining({ callNumber: 1, inputTokens: 50, outputTokens: 20 }),
 		);
 		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
 			2,
-			expect.objectContaining({ callNumber: 2, inputTokens: 80, outputTokens: 30 }),
+			expect.objectContaining({ callNumber: 2, inputTokens: 30, outputTokens: 10 }),
 		);
 	});
 
@@ -1224,13 +1257,21 @@ describe('Codex subscription auth', () => {
 	// with `ERROR codex_core::tools::router: error=write_stdin failed: stdin
 	// is closed for this session`. Once that signal fires, every subsequent
 	// command in the session inherits a corrupted stdout buffer (lint output
-	// from one command bleeding into the next, sidecar writes racing). We
-	// observed this leading to silent run failures with PR-creation evidence
-	// missing despite a real PR existing on GitHub. Fail loudly: when the
-	// signal appears in stderr, surface it as a run failure rather than
-	// continuing in a corrupted state.
+	// from one command bleeding into the next, sidecar writes racing).
+	//
+	// Originally we failed the run on ANY occurrence of this signal. That
+	// turned out to over-correct: the signal can fire LATE (at session-close,
+	// after all real work was captured). MNG-718 (run f801342b, 2026-05-11)
+	// opened a valid PR #1350 and ran a full verification suite, then was
+	// marked failed because the signal fired during cleanup. The fix below
+	// splits the two cases: late signal with success evidence (prUrl +
+	// finalOutput) → WARN + success; early signal with no evidence → fail.
 	describe('shell-state corruption (write_stdin closed)', () => {
-		it('marks the run as failed when stderr contains the persistent-shell stdin-closed signal', async () => {
+		// EARLY-corruption variant: signal fires mid-work, no PR URL extracted,
+		// no meaningful finalOutput. The corruption likely masked the agent's
+		// real work, so we must fail loudly. Note the empty finalOutput — that's
+		// the discriminator from the late-corruption path below.
+		it('marks the run as failed when the signal fires with no success evidence (no PR URL, no output)', async () => {
 			mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
 				const outputPath = args[args.indexOf('-o') + 1];
 				return createMockChild({
@@ -1244,7 +1285,8 @@ describe('Codex subscription auth', () => {
 					stderr:
 						'2026-05-09T15:36:59.079680Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n',
 					onBeforeClose: () => {
-						writeFileSync(outputPath, 'PR created at https://github.com/o/r/pull/1', 'utf-8');
+						// No PR URL, no meaningful output — this is the early-corruption case.
+						writeFileSync(outputPath, '', 'utf-8');
 					},
 					exitCode: 0, // <-- exit code 0 — codex itself doesn't fail; the shell-state signal is the only evidence
 				});
@@ -1261,6 +1303,58 @@ describe('Codex subscription auth', () => {
 				expect.stringContaining('shell-state corrupted'),
 				expect.objectContaining({
 					stderr: expect.stringContaining('write_stdin failed'),
+				}),
+			);
+		});
+
+		// LATE-corruption regression net: MNG-718 (run f801342b-1129-4502-a4b0-
+		// b7808e9b2a2e, project=cascade, 2026-05-11). The agent opened PR #1350
+		// AND ran a full verification suite AND filed a follow-up friction
+		// ticket — all of which made it into finalOutput. The corruption signal
+		// fired during/after session close. Marking the run failed cost cascade
+		// the post-completion review dispatch and surfaced a misleading
+		// "agent failed" comment via aaight42. The fix preserves success when
+		// the evidence is real.
+		it('treats late-arriving signal as success-with-warning when a PR URL was extracted (MNG-718 regression)', async () => {
+			mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({ type: 'turn.started' }),
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 5, output_tokens: 3 },
+						}),
+					],
+					stderr:
+						'2026-05-11T19:21:55.000000Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open\n',
+					onBeforeClose: () => {
+						// PR URL extracted + non-empty final output = real work was captured
+						// before the signal fired.
+						writeFileSync(
+							outputPath,
+							'PR https://github.com/o/r/pull/1 created. Verification passed.',
+							'utf-8',
+						);
+					},
+					exitCode: 0,
+				});
+			});
+
+			const engine = new CodexEngine();
+			const input = makeInput({ repoDir: workspaceDir });
+			const result = await engine.execute(input);
+
+			// Despite the signal, success evidence was captured before the corruption.
+			expect(result.success).toBe(true);
+			expect(result.error).toBeUndefined();
+			expect(result.prUrl).toBe('https://github.com/o/r/pull/1');
+			// And we logged loudly so operators can spot-check the PR.
+			expect(input.logWriter).toHaveBeenCalledWith(
+				'WARN',
+				expect.stringContaining('success-with-warning'),
+				expect.objectContaining({
+					prUrl: 'https://github.com/o/r/pull/1',
 				}),
 			);
 		});

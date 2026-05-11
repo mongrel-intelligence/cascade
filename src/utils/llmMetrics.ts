@@ -23,8 +23,22 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput
 	'gemini:gemini-2.5-flash': { input: 0.15, output: 0.6 },
 	'gemini:gemini-2.5-pro': { input: 1.25, output: 5.0 },
 
-	// OpenAI
-	'openai:gpt-5.5': { input: 5.0, output: 30.0 },
+	// OpenAI — Codex CLI models (per developers.openai.com/codex/pricing, 2026-05-11).
+	// Rates are public metered API prices; we display API-equivalent cost regardless of
+	// subscription plan, consistent with how Anthropic Pro/Max users see costs for claude-code.
+	'openai:gpt-5.5': { input: 5.0, output: 30.0, cachedInput: 0.5 },
+	'openai:gpt-5.4': { input: 2.5, output: 15.0, cachedInput: 0.25 },
+	// gpt-5.4-mini: rates from developers.openai.com/api/docs/models/gpt-5.4-mini (2026-05-11).
+	'openai:gpt-5.4-mini': { input: 0.75, output: 4.5, cachedInput: 0.075 },
+	'openai:gpt-5.3-codex': { input: 1.75, output: 14.0, cachedInput: 0.175 },
+	// gpt-5.3-codex-spark is a ChatGPT Pro research preview with no metered API listing;
+	// we proxy to gpt-5.3-codex rates so cost figures stay populated. Update if OpenAI
+	// publishes a separate metered rate.
+	'openai:gpt-5.3-codex-spark': { input: 1.75, output: 14.0, cachedInput: 0.175 },
+	// codex-mini-latest: cachedInput is 25% of input (verified against the OpenAI model
+	// doc page), not the standard 10%. Do not "normalise" this row.
+	'openai:codex-mini-latest': { input: 1.5, output: 6.0, cachedInput: 0.375 },
+	// Non-Codex OpenAI models — kept for completeness of metered LLM coverage.
 	'openai:gpt-4o': { input: 2.5, output: 10.0, cachedInput: 1.25 },
 	'openai:gpt-4o-mini': { input: 0.15, output: 0.6, cachedInput: 0.075 },
 

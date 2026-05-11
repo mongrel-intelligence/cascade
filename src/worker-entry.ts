@@ -77,6 +77,12 @@ export interface GitHubJobData {
 	ackMessage?: string;
 	triggerResult?: TriggerResult;
 	mergeabilityRecheckAttempt?: number;
+	/**
+	 * Set to 1 when this job is a check-suite deferred re-check.
+	 * Unlike mergeabilityRecheckAttempt, a second deferredRecheck result
+	 * causes processGitHubWebhook to reschedule rather than exhaust.
+	 */
+	checkSuiteRecheckAttempt?: number;
 }
 
 export interface JiraJobData {
@@ -329,6 +335,7 @@ export async function dispatchJob(
 				jobData.ackMessage,
 				jobData.triggerResult,
 				!!jobData.mergeabilityRecheckAttempt,
+				!!jobData.checkSuiteRecheckAttempt,
 			);
 			break;
 		case 'jira': {

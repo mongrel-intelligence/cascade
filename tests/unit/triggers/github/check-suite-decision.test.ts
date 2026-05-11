@@ -87,17 +87,68 @@ describe('decideCheckSuiteOutcome', () => {
 		});
 	});
 
-	it('returns base-branch skip before aggregate decisions', () => {
+	it('returns base-branch skip for non-cascade-authored PR targeting a non-canonical branch', () => {
+		// Non-cascade authors hitting an unrelated branch are still rejected —
+		// the gate exists to filter human-authored / third-party-bot drive-bys
+		// against random branches in the repo.
 		const decision = decideCheckSuiteGates({
 			...baseOptions,
+			prAuthorLogin: 'random-contributor',
 			prBaseRef: 'develop',
-			mode: { kind: 'review', parameters: {} },
+			mode: { kind: 'review', parameters: { authorMode: 'all' } },
 		});
 
 		expect(decision).toEqual({
 			action: 'skip',
 			message: 'PR #42 targets develop, not project base branch main',
 		});
+	});
+
+	// Bug 2 (2026-05-11 prod incident on ucho PR #393, MNG-691):
+	// stacked PRs targeting a feature branch (MNG-691 → MNG-690's branch)
+	// were rejected by the base-branch gate even though the PR was opened
+	// by the cascade implementer. The persona check upstream already trusts
+	// these — the base-branch check adds no value for that case.
+	it('allows cascade-authored stacked PR through the base-branch gate (Bug 2)', () => {
+		const decision = decideCheckSuiteGates({
+			...baseOptions,
+			prAuthorLogin: 'cascade-impl', // matches mockPersonaIdentities.implementer
+			prBaseRef: 'feature/MNG-690-calendar-event-context-tables',
+			mode: { kind: 'review', parameters: {} },
+		});
+
+		expect(decision).toBeNull();
+	});
+
+	it('preserves the existing pass-through for cascade-authored canonical PRs', () => {
+		const decision = decideCheckSuiteGates({
+			...baseOptions,
+			prAuthorLogin: 'cascade-impl',
+			prBaseRef: 'main', // canonical base
+			mode: { kind: 'review', parameters: {} },
+		});
+
+		expect(decision).toBeNull();
+	});
+
+	it('rejects cascade-authored stacked PR if persona identities cannot be resolved', () => {
+		// Defense in depth: with no personaIdentities, isCascadeBot is unreliable.
+		// The author-mode gate already returns its own skip in that case (see
+		// cascadePersonaDecision); this assertion pins that we never grant the
+		// stacked-PR bypass on a degraded identity path.
+		const decision = decideCheckSuiteGates({
+			...baseOptions,
+			prAuthorLogin: 'cascade-impl',
+			prBaseRef: 'feature/MNG-690-x',
+			personaIdentities: undefined,
+			mode: { kind: 'review', parameters: {} },
+		});
+
+		// The persona-failure skip from authorModeDecision takes precedence.
+		expect(decision?.action).toBe('skip');
+		expect((decision as { action: 'skip'; message: string }).message).toMatch(
+			/Cascade persona identities could not be resolved/,
+		);
 	});
 });
 

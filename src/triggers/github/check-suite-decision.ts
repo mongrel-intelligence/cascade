@@ -91,7 +91,17 @@ export function decideCheckSuiteGates(
 			: cascadePersonaDecision(prAuthorLogin, personaIdentities, prNumber);
 	if (authorSkip) return authorSkip;
 
-	if (prBaseRef !== project.baseBranch) {
+	// Bug 2 (2026-05-11 prod incident on ucho PR #393, MNG-691):
+	// the base-branch gate was rejecting stacked PRs (MNG-691 → MNG-690
+	// feature branch) even though the PR was opened by the cascade
+	// implementer persona. The gate exists to filter human-authored /
+	// third-party-bot drive-bys against random branches in the repo; that
+	// case is already covered by the upstream persona check. Cascade-
+	// authored PRs targeting any base branch are legitimate work product.
+	const authorIsCascade = personaIdentities
+		? isCascadeBot(prAuthorLogin, personaIdentities)
+		: false;
+	if (!authorIsCascade && prBaseRef !== project.baseBranch) {
 		return {
 			action: 'skip',
 			message: `PR #${prNumber} targets ${prBaseRef}, not project base branch ${project.baseBranch}`,

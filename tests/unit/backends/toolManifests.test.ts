@@ -148,4 +148,14 @@ describe('getToolManifests', () => {
 			head: { type: 'string', required: true },
 		});
 	});
+
+	it('UpdatePRComment has body-file support', () => {
+		const manifests = getToolManifests();
+		const updatePRComment = manifests.find((m) => m.name === 'UpdatePRComment');
+		expect(updatePRComment).toBeDefined();
+		expect(updatePRComment?.parameters).toMatchObject({
+			body: { type: 'string', required: true },
+			'body-file': { type: 'string' },
+		});
+	});
 });

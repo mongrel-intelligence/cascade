@@ -177,6 +177,18 @@ export interface TriggerResult {
 	deferredRecheck?: {
 		delayMs: number;
 		coalesceKey: string;
+		/**
+		 * Distinguishes the type of deferred re-check so the router adapter can
+		 * stamp the right job field and the worker can apply the right retry policy.
+		 *
+		 * - `'check-suite'` — Actions API was stale at first dispatch; the job gets
+		 *   `checkSuiteRecheckAttempt: 1` and the worker reschedules safely on a
+		 *   still-stale response (coalesceKey deduplication prevents queue flooding).
+		 * - absent (undefined) — treated as a mergeability re-check; the job gets
+		 *   `mergeabilityRecheckAttempt: 1` and the worker emits
+		 *   `mergeability_recheck_exhausted` when the trigger is still indeterminate.
+		 */
+		recheckKind?: 'check-suite';
 	};
 }
 

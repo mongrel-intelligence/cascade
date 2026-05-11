@@ -15,6 +15,8 @@ import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
+import type { GitHubJob } from '../../router/queue.js';
+import { scheduleCoalescedJob } from '../../router/queue.js';
 import { captureException } from '../../sentry.js';
 import type { CascadeConfig, ProjectConfig, TriggerContext } from '../../types/index.js';
 import { logger, startWatchdog } from '../../utils/index.js';
@@ -197,6 +199,72 @@ async function runGitHubAgent(
 	}
 }
 
+/**
+ * Handles the case where a re-check job finds the trigger still returning
+ * `deferredRecheck`.  Returns `true` when the caller should return immediately.
+ *
+ * - Mergeability re-check (`isRecheckJob=true`): one-shot — fire Sentry and
+ *   give up.  A second deferred result means the mergeability flag is stuck
+ *   and we should not queue-flood.
+ * - Check-suite re-check (`isCheckSuiteRecheckJob=true`): safe rescheduling —
+ *   the Actions API is still stale; schedule another delayed job via the same
+ *   coalesceKey so the trigger re-evaluates when the API catches up.  Incoming
+ *   `check_suite.completed` webhooks for the same SHA coalesce with the
+ *   pending job, preventing queue flooding.
+ */
+async function handleRecheckResult(
+	result: TriggerResult | null,
+	isRecheckJob: boolean,
+	isCheckSuiteRecheckJob: boolean,
+	eventType: string,
+	payload: unknown,
+	projectIdentifier: string,
+): Promise<boolean> {
+	if (!result?.deferredRecheck) return false;
+
+	if (isRecheckJob) {
+		logger.warn('Mergeability still null after deferred re-check — giving up', { eventType });
+		captureException(
+			new Error('mergeability_recheck_exhausted: still null after deferred re-check'),
+			{ tags: { source: 'mergeability_recheck_exhausted' }, extra: { eventType } },
+		);
+		return true;
+	}
+
+	if (isCheckSuiteRecheckJob) {
+		const { coalesceKey, delayMs } = result.deferredRecheck;
+		logger.info('Check-suite state still stale after deferred re-check — rescheduling', {
+			eventType,
+			coalesceKey,
+			delayMs,
+		});
+		const recheckJob: GitHubJob = {
+			type: 'github',
+			source: 'github',
+			payload,
+			eventType,
+			repoFullName: projectIdentifier,
+			receivedAt: new Date().toISOString(),
+			checkSuiteRecheckAttempt: 1,
+		};
+		try {
+			await scheduleCoalescedJob(recheckJob, coalesceKey, delayMs);
+		} catch (err) {
+			captureException(err instanceof Error ? err : new Error(String(err)), {
+				tags: { source: 'check_suite_recheck_reschedule_failure' },
+				extra: { coalesceKey, eventType },
+			});
+			logger.error('Failed to reschedule check-suite recheck', {
+				error: String(err),
+				coalesceKey,
+			});
+		}
+		return true;
+	}
+
+	return false;
+}
+
 export async function processGitHubWebhook(
 	payload: unknown,
 	eventType: string,
@@ -205,6 +273,7 @@ export async function processGitHubWebhook(
 	ackMessage?: string,
 	triggerResult?: TriggerResult,
 	isRecheckJob?: boolean,
+	isCheckSuiteRecheckJob?: boolean,
 ): Promise<void> {
 	logger.info('Processing GitHub webhook', { eventType, hasTriggerResult: !!triggerResult });
 
@@ -238,17 +307,15 @@ export async function processGitHubWebhook(
 	});
 
 	if (!triggerResult) {
-		if (result?.deferredRecheck && isRecheckJob) {
-			logger.warn('Mergeability still null after deferred re-check — giving up', { eventType });
-			captureException(
-				new Error('mergeability_recheck_exhausted: still null after deferred re-check'),
-				{
-					tags: { source: 'mergeability_recheck_exhausted' },
-					extra: { eventType },
-				},
-			);
-			return;
-		}
+		const recheckHandled = await handleRecheckResult(
+			result,
+			!!isRecheckJob,
+			!!isCheckSuiteRecheckJob,
+			eventType,
+			payload,
+			event.projectIdentifier,
+		);
+		if (recheckHandled) return;
 	}
 
 	if (!result) {

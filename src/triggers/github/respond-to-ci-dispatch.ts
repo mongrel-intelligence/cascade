@@ -3,7 +3,13 @@ import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { gateAttemptLimit } from '../shared/gates.js';
+import { skip } from '../shared/skip.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import {
+	buildRespondToCiDispatchKey,
+	claimRespondToCiDispatch,
+	releaseRespondToCiDispatch,
+} from './respond-to-ci-dedup.js';
 import { buildRespondToCiResult } from './result-builders.js';
 import type { GitHubCheckSuitePayload } from './types.js';
 
@@ -58,10 +64,29 @@ export async function dispatchRespondToCi(opts: {
 		return null;
 	}
 
+	const { owner, repo } = parseRepoFullName(opts.payload.repository.full_name);
+	const headSha = opts.payload.check_suite.head_sha;
+
+	// Cross-process dedup: the success handler's 30 s deferred recheck fires
+	// in a fresh worker container with an empty in-process Map — it has no
+	// memory of what the router dispatched earlier.  Claim the Redis slot here;
+	// the recheck finds it taken and skips, preventing duplicate fix agents for
+	// the same PR+SHA.  Mirrors the review-dispatch-dedup pattern.
+	const dedupKey = buildRespondToCiDispatchKey(owner, repo, opts.prNumber, headSha);
+	const claimed = await claimRespondToCiDispatch(dedupKey, opts.handlerName, {
+		prNumber: opts.prNumber,
+		headSha,
+	});
+	if (!claimed) {
+		return skip(
+			opts.handlerName,
+			`Respond-to-ci already dispatched for PR #${opts.prNumber}@${headSha} (dedup)`,
+		);
+	}
+
 	const attempts = fixAttempts.get(opts.prNumber) ?? 0;
 	const limitSkip = gateAttemptLimit(attempts, MAX_ATTEMPTS, opts.prNumber, opts.handlerName);
 	if (limitSkip) {
-		const { owner, repo } = parseRepoFullName(opts.payload.repository.full_name);
 		await githubClient.createPRComment(
 			owner,
 			repo,
@@ -94,10 +119,14 @@ export async function dispatchRespondToCi(opts: {
 			prNumber: opts.prNumber,
 			prDetails: opts.prDetails,
 			repoFullName: opts.payload.repository.full_name,
-			headSha: opts.payload.check_suite.head_sha,
+			headSha,
 			workItemId: opts.workItemId,
 			workItemUrl: opts.workItemUrl,
 			workItemTitle: opts.workItemTitle,
 		}),
+		onBlocked: () => {
+			// Fire-and-forget — release is best-effort, TTL is the safety net.
+			void releaseRespondToCiDispatch(dedupKey);
+		},
 	};
 }

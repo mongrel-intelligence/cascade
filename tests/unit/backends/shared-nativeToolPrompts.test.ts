@@ -25,7 +25,7 @@ import {
 	buildTaskPrompt,
 	buildToolGuidance,
 } from '../../../src/backends/shared/nativeToolPrompts.js';
-import { createPRReviewDef } from '../../../src/gadgets/github/definitions.js';
+import { createPRReviewDef, updatePRCommentDef } from '../../../src/gadgets/github/definitions.js';
 import { readWorkItemDef } from '../../../src/gadgets/pm/definitions.js';
 import { generateToolManifest } from '../../../src/gadgets/shared/manifestGenerator.js';
 
@@ -187,6 +187,13 @@ describe('buildToolGuidance', () => {
 
 			expect(result).toContain('[--body-file <string>]');
 			expect(result).toContain('Read review body from file (use - for stdin)');
+		});
+
+		it('renders UpdatePRComment body-file guidance from definition metadata', () => {
+			const result = buildToolGuidance([generateToolManifest(updatePRCommentDef)]);
+
+			expect(result).toContain('[--body-file <string>]');
+			expect(result).toContain('Read comment body from file (use - for stdin)');
 		});
 	});
 

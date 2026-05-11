@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { writeProjectCredential } from '../../db/repositories/credentialsRepository.js';
+import { calculateCost } from '../../utils/llmMetrics.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
 import { appendEngineLog } from '../shared/engineLog.js';
@@ -53,6 +54,24 @@ type CodexTurnAccumulator = {
 	usage: UsageSummary | null;
 };
 
+/**
+ * Run-level cumulative usage high-water mark.
+ *
+ * `codex exec --json` emits `usage` on every `turn.completed` as the CUMULATIVE
+ * session total — NOT a per-turn delta (upstream openai/codex#17539). We track
+ * the previous cumulative here so each turn persists its DELTA, not the running
+ * total. Without this, a 10-turn run with 100k tokens each would persist
+ * {100k, 200k, 300k, ...} = 5.5M summed instead of the true 1M.
+ *
+ * Reset/init: all zeros at the start of a run. Never reset per-turn.
+ */
+type CodexCumulativeUsage = {
+	inputTokens: number;
+	outputTokens: number;
+	cachedTokens: number;
+	reasoningTokens: number;
+};
+
 type CodexLineContext = {
 	input: AgentExecutionPlan;
 	model: string;
@@ -64,6 +83,8 @@ type CodexLineContext = {
 	finalError?: string;
 	/** Accumulator for the turn currently in progress. Reset on turn.started/thread.started. */
 	currentTurn: CodexTurnAccumulator;
+	/** Previous turn's cumulative usage — used to compute per-turn deltas. */
+	cumulativeUsage: CodexCumulativeUsage;
 };
 
 function tomlString(value: string): string {
@@ -99,39 +120,118 @@ function accumulateTurnUsage(context: CodexLineContext, usage: UsageSummary): vo
 		if (usage.inputTokens !== undefined) acc.usage.inputTokens = usage.inputTokens;
 		if (usage.outputTokens !== undefined) acc.usage.outputTokens = usage.outputTokens;
 		if (usage.cachedTokens !== undefined) acc.usage.cachedTokens = usage.cachedTokens;
-		if (usage.costUsd !== undefined) acc.usage.costUsd = usage.costUsd;
+		if (usage.reasoningTokens !== undefined) acc.usage.reasoningTokens = usage.reasoningTokens;
 	}
+}
+
+/**
+ * Compute the per-turn delta against the run-level cumulative high-water mark,
+ * then advance the high-water mark. Returns the delta. Clamps to 0 on out-of-order
+ * events (cumulative goes backwards) and logs a WARN.
+ *
+ * Upstream codex emits the SESSION-WIDE cumulative on every turn.completed (see
+ * openai/codex#17539). The delta is what we want to persist per-turn-row so that
+ * dashboard aggregations sum correctly.
+ */
+function computeTurnDelta(context: CodexLineContext, usage: UsageSummary): CodexCumulativeUsage {
+	const prev = context.cumulativeUsage;
+	const curr: CodexCumulativeUsage = {
+		inputTokens: usage.inputTokens ?? prev.inputTokens,
+		outputTokens: usage.outputTokens ?? prev.outputTokens,
+		cachedTokens: usage.cachedTokens ?? prev.cachedTokens,
+		reasoningTokens: usage.reasoningTokens ?? prev.reasoningTokens,
+	};
+	const delta: CodexCumulativeUsage = {
+		inputTokens: Math.max(0, curr.inputTokens - prev.inputTokens),
+		outputTokens: Math.max(0, curr.outputTokens - prev.outputTokens),
+		cachedTokens: Math.max(0, curr.cachedTokens - prev.cachedTokens),
+		reasoningTokens: Math.max(0, curr.reasoningTokens - prev.reasoningTokens),
+	};
+
+	if (
+		curr.inputTokens < prev.inputTokens ||
+		curr.outputTokens < prev.outputTokens ||
+		curr.cachedTokens < prev.cachedTokens ||
+		curr.reasoningTokens < prev.reasoningTokens
+	) {
+		context.input.logWriter(
+			'WARN',
+			'Codex turn.completed reported lower cumulative usage than previous turn — clamping delta to 0',
+			{ prev, curr },
+		);
+		// Return all-zero delta — discard the entire backwards event rather than
+		// persisting partial positive fields (e.g. outputTokens increased while
+		// inputTokens went backwards). The high-water mark stays at `prev` so
+		// the next valid cumulative is correctly subtracted from the last known
+		// good baseline; without this, any positive per-field delta from the
+		// discarded event would be double-counted on the following valid event.
+		return { inputTokens: 0, outputTokens: 0, cachedTokens: 0, reasoningTokens: 0 };
+	}
+
+	context.cumulativeUsage = curr;
+	return delta;
 }
 
 /**
  * Persist exactly one storeLlmCall row for the completed turn, then reset the accumulator.
  * Called only from turn.completed to guarantee one row per turn, never from intermediate events.
+ *
+ * Cost = calculateCost('openai:<model>', delta) — Codex never emits cost_usd
+ * upstream (openai/codex#17539), so cost is always computed CASCADE-side from
+ * the per-turn token DELTA × the pricing table at src/utils/llmMetrics.ts.
+ *
+ * Reasoning tokens: OpenAI/Codex treats `reasoning_output_tokens` as a
+ * breakdown/subset of `output_tokens` — NOT an additional counter. A turn
+ * with `output_tokens: 47, reasoning_output_tokens: 41` has 47 total output
+ * tokens (41 of which are reasoning). We store the reasoning count separately
+ * in the response payload for observability, but billing always uses
+ * `delta.outputTokens` as-is (it already includes reasoning).
  */
 function persistTurnLlmCall(context: CodexLineContext): void {
 	const acc = context.currentTurn;
 	const usage = acc.usage;
-	if (usage) {
-		context.cost = usage.costUsd ?? context.cost;
-	}
 	context.llmCallCount += 1;
 
-	// Build a compact turn-scoped payload: text summary + tool names + usage.
-	// Storing this instead of the raw event JSONL keeps the payload small and readable.
+	let delta: CodexCumulativeUsage | null = null;
+	let costUsd: number | undefined;
+	let outputForRow: number | undefined;
+
+	if (usage) {
+		delta = computeTurnDelta(context, usage);
+		// Use delta.outputTokens directly — reasoning_output_tokens is already
+		// counted within output_tokens (it is a breakdown, not an extra counter).
+		outputForRow = delta.outputTokens;
+		const turnCost = calculateCost(`openai:${context.model}`, {
+			inputTokens: delta.inputTokens,
+			outputTokens: delta.outputTokens,
+			totalTokens: delta.inputTokens + delta.outputTokens,
+			cachedInputTokens: delta.cachedTokens,
+		});
+		if (turnCost > 0) {
+			costUsd = turnCost;
+			context.cost = (context.cost ?? 0) + turnCost;
+		}
+	}
+
 	const turnPayload = JSON.stringify({
 		turn: context.llmCallCount,
 		text: acc.textSummary.join(' ').slice(0, 500) || undefined,
 		tools: acc.toolNames.length > 0 ? acc.toolNames : undefined,
 		usage: usage ?? undefined,
+		delta: delta ?? undefined,
+		// Reasoning breakdown preserved for observability; it is already counted
+		// within outputTokens above and must NOT be added to it for billing.
+		reasoning: delta && delta.reasoningTokens > 0 ? delta.reasoningTokens : undefined,
 	});
 
 	logLlmCall({
 		runId: context.input.runId,
 		callNumber: context.llmCallCount,
 		model: context.model,
-		inputTokens: usage?.inputTokens,
-		outputTokens: usage?.outputTokens,
-		cachedTokens: usage?.cachedTokens,
-		costUsd: usage?.costUsd,
+		inputTokens: delta?.inputTokens,
+		outputTokens: outputForRow,
+		cachedTokens: delta?.cachedTokens,
+		costUsd,
 		response: turnPayload,
 		engineLabel: 'Codex',
 	});
@@ -242,8 +342,16 @@ async function processStdoutLine(context: CodexLineContext, line: string): Promi
 
 function resolveCodexModel(cascadeModel: string): string {
 	if (CODEX_MODEL_IDS.includes(cascadeModel)) return cascadeModel;
-	if (cascadeModel.startsWith('openai:')) return cascadeModel.replace('openai:', '');
-	if (cascadeModel.startsWith('gpt-') && cascadeModel.includes('codex')) return cascadeModel;
+	// Accept openai: prefix as a convenience shorthand (e.g. "openai:gpt-5.4").
+	// Only resolve to a known Codex model ID — the old gpt-*codex* wildcard was
+	// removed because unrecognised model IDs have no pricing row in MODEL_PRICING
+	// and would silently persist zero cost. Add new models to CODEX_MODEL_IDS in
+	// src/backends/codex/models.ts AND add a pricing row to MODEL_PRICING in
+	// src/utils/llmMetrics.ts before accepting them here.
+	if (cascadeModel.startsWith('openai:')) {
+		const bareId = cascadeModel.replace('openai:', '');
+		if (CODEX_MODEL_IDS.includes(bareId)) return bareId;
+	}
 
 	throw new Error(
 		`Model "${cascadeModel}" is not compatible with the Codex engine. Configure a Codex-compatible model (e.g. "${DEFAULT_CODEX_MODEL}") or switch to a different engine.`,
@@ -342,6 +450,59 @@ async function captureRefreshedToken(
 	} catch (error) {
 		logWriter('WARN', 'Failed to capture refreshed Codex auth token', { error: String(error) });
 	}
+}
+
+/**
+ * Inspect stderr for the SHELL_CORRUPTED signal and decide the outcome.
+ *
+ * The signal can fire mid-work (corruption masks real output → fail) or
+ * at session-close (real work already captured → success-with-warning).
+ * Discriminator: if `prUrl` is set and `finalOutput` is non-empty, the
+ * agent emitted real artifacts before the signal fired. See MNG-718
+ * (run f801342b, 2026-05-11) for the late-corruption prod case.
+ *
+ * Returns the failure `AgentEngineResult` to surface, or `null` when
+ * the run should continue through the normal success path (either no
+ * signal present, or signal fired after success evidence was captured).
+ */
+function classifyShellCorruption(
+	stderrOutput: string,
+	exitCode: number,
+	prUrl: string | undefined,
+	prEvidence: ReturnType<typeof extractAndBuildPrEvidence>['prEvidence'],
+	finalOutput: string,
+	cost: number | undefined,
+	logWriter: LogWriter,
+): AgentEngineResult | null {
+	if (exitCode !== 0 || !SHELL_CORRUPTED_RE.test(stderrOutput)) return null;
+
+	const hasSuccessEvidence = !!prUrl && finalOutput.length > 0;
+	if (hasSuccessEvidence) {
+		logWriter(
+			'WARN',
+			'Codex shell-state corruption signal fired after success evidence captured — treating as success-with-warning',
+			{
+				stderr: stderrOutput.slice(-500),
+				prUrl,
+				finalOutputLength: finalOutput.length,
+				hint: 'PR was created and final output captured before the corruption signal; verify the PR manually if anything looks off',
+			},
+		);
+		return null;
+	}
+
+	logWriter('ERROR', 'Codex shell-state corrupted (write_stdin closed) — failing run', {
+		stderr: stderrOutput,
+		hint: 'codex_core::tools::router lost its persistent bash session; subsequent commands may have inherited stale state',
+	});
+	return buildEngineResult({
+		success: false,
+		output: finalOutput,
+		error: 'codex shell-state corrupted: write_stdin failed (stdin closed for session)',
+		cost,
+		prUrl,
+		prEvidence,
+	});
 }
 
 /**
@@ -516,6 +677,12 @@ export class CodexEngine extends NativeToolEngine {
 					cost,
 					finalError,
 					currentTurn: { textSummary: [], toolNames: [], usage: null },
+					cumulativeUsage: {
+						inputTokens: 0,
+						outputTokens: 0,
+						cachedTokens: 0,
+						reasoningTokens: 0,
+					},
 				};
 
 				child.once('error', (error) => {
@@ -595,22 +762,26 @@ export class CodexEngine extends NativeToolEngine {
 			// failures with PR-creation evidence missing despite a real PR
 			// existing on GitHub. Codex itself exits cleanly (exit=0) — the
 			// stderr signal is the only evidence the session was corrupted.
-			// Surface it as a run failure so ops can retry against a fresh
-			// session rather than continuing in a corrupted state.
-			if (exitCode === 0 && SHELL_CORRUPTED_RE.test(stderrOutput)) {
-				input.logWriter('ERROR', 'Codex shell-state corrupted (write_stdin closed) — failing run', {
-					stderr: stderrOutput,
-					hint: 'codex_core::tools::router lost its persistent bash session; subsequent commands may have inherited stale state',
-				});
-				return buildEngineResult({
-					success: false,
-					output: finalOutput,
-					error: 'codex shell-state corrupted: write_stdin failed (stdin closed for session)',
-					cost,
-					prUrl,
-					prEvidence,
-				});
-			}
+			//
+			// MNG-718 follow-up (run f801342b, 2026-05-11): the signal can
+			// also fire LATE, at session-close, after all real work has been
+			// captured. That run opened PR #1350, ran the full verification
+			// suite, and filed a follow-up friction ticket — yet was marked
+			// failed, costing cascade the post-completion review dispatch
+			// and surfacing a misleading "agent failed" comment. Split the
+			// two cases by whether success evidence (prUrl + finalOutput)
+			// was captured before the signal: late → WARN + success, early
+			// → ERROR + fail.
+			const shellCorruptionResult = classifyShellCorruption(
+				stderrOutput,
+				exitCode,
+				prUrl,
+				prEvidence,
+				finalOutput,
+				cost,
+				input.logWriter,
+			);
+			if (shellCorruptionResult) return shellCorruptionResult;
 
 			if (exitCode !== 0) {
 				return buildEngineResult({

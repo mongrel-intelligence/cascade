@@ -47,6 +47,9 @@ vi.mock('../../../src/gadgets/github/core/createPRReview.js', () => ({
 vi.mock('../../../src/gadgets/github/core/postPRComment.js', () => ({
 	postPRComment: vi.fn().mockResolvedValue({ id: 123 }),
 }));
+vi.mock('../../../src/gadgets/github/core/updatePRComment.js', () => ({
+	updatePRComment: vi.fn().mockResolvedValue({ id: 456 }),
+}));
 
 import CreateWorkItem from '../../../src/cli/pm/create-work-item.js';
 import PostComment from '../../../src/cli/pm/post-comment.js';
@@ -55,9 +58,11 @@ import UpdateWorkItem from '../../../src/cli/pm/update-work-item.js';
 import CreatePR from '../../../src/cli/scm/create-pr.js';
 import CreatePRReview from '../../../src/cli/scm/create-pr-review.js';
 import PostPRComment from '../../../src/cli/scm/post-pr-comment.js';
+import UpdatePRComment from '../../../src/cli/scm/update-pr-comment.js';
 import { createPR } from '../../../src/gadgets/github/core/createPR.js';
 import { createPRReview } from '../../../src/gadgets/github/core/createPRReview.js';
 import { postPRComment } from '../../../src/gadgets/github/core/postPRComment.js';
+import { updatePRComment } from '../../../src/gadgets/github/core/updatePRComment.js';
 import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
 import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
 import { reportFriction } from '../../../src/gadgets/pm/core/reportFriction.js';
@@ -69,6 +74,7 @@ let tmpDir: string;
 const mockConfig = { runHook: vi.fn().mockResolvedValue({ successes: [], failures: [] }) };
 
 beforeEach(() => {
+	vi.clearAllMocks();
 	tmpDir = mkdtempSync(join(tmpdir(), 'cascade-cli-test-'));
 });
 
@@ -484,6 +490,72 @@ describe('PostPRComment --body-file', () => {
 
 	it('errors when neither --body nor --body-file is provided (spec 014 envelope)', async () => {
 		const cmd = new PostPRComment(['--prNumber', '42'], mockConfig as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('body');
+	});
+});
+
+describe('UpdatePRComment --body-file', () => {
+	const originalEnv = process.env;
+
+	beforeEach(() => {
+		process.env = {
+			...originalEnv,
+			CASCADE_REPO_OWNER: 'owner',
+			CASCADE_REPO_NAME: 'repo',
+		};
+	});
+
+	afterEach(() => {
+		process.env = originalEnv;
+	});
+
+	it('reads comment body from file', async () => {
+		const filePath = writeTempFile('comment.md', 'Updated PR comment from file');
+		const cmd = new UpdatePRComment(
+			['--commentId', '456', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(updatePRComment).toHaveBeenCalledWith(
+			'owner',
+			'repo',
+			456,
+			'Updated PR comment from file',
+		);
+	});
+
+	it('prefers --body-file over --body', async () => {
+		const filePath = writeTempFile('comment.md', 'from file');
+		const cmd = new UpdatePRComment(
+			['--commentId', '456', '--body', 'from flag', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(updatePRComment).toHaveBeenCalledWith('owner', 'repo', 456, 'from file');
+	});
+
+	it('still works with inline --body flag', async () => {
+		const cmd = new UpdatePRComment(
+			['--commentId', '456', '--body', 'inline body'],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(updatePRComment).toHaveBeenCalledWith('owner', 'repo', 456, 'inline body');
+	});
+
+	it('errors when neither --body nor --body-file is provided (spec 014 envelope)', async () => {
+		const cmd = new UpdatePRComment(['--commentId', '456'], mockConfig as never);
 		const logSpy = vi.spyOn(cmd, 'log');
 		await expect(cmd.run()).rejects.toThrow();
 		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {

@@ -374,6 +374,9 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		ackResult?: AckResult,
 	): CascadeJob {
 		const isDeferredRecheck = !!result.deferredRecheck;
+		const isCheckSuiteRecheck =
+			isDeferredRecheck && result.deferredRecheck?.recheckKind === 'check-suite';
+		const isMergeabilityRecheck = isDeferredRecheck && !isCheckSuiteRecheck;
 		const job: GitHubJob = {
 			type: 'github',
 			source: 'github',
@@ -384,7 +387,8 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			triggerResult: isDeferredRecheck ? undefined : result,
 			ackCommentId: ackResult?.commentId as number | undefined,
 			ackMessage: ackResult?.message,
-			...(isDeferredRecheck ? { mergeabilityRecheckAttempt: 1 } : {}),
+			...(isMergeabilityRecheck ? { mergeabilityRecheckAttempt: 1 } : {}),
+			...(isCheckSuiteRecheck ? { checkSuiteRecheckAttempt: 1 } : {}),
 		};
 		return job;
 	}

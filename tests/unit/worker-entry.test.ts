@@ -185,6 +185,7 @@ describe('dispatchJob routing', () => {
 			'Starting implementation...',
 			triggerResult,
 			false,
+			false,
 		);
 	});
 
@@ -212,6 +213,7 @@ describe('dispatchJob routing', () => {
 			undefined,
 			undefined,
 			true,
+			false,
 		);
 	});
 

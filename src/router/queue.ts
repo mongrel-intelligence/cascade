@@ -49,6 +49,15 @@ export interface GitHubJob {
 	 * mergeability.
 	 */
 	mergeabilityRecheckAttempt?: number;
+	/**
+	 * Set to 1 when this job is a deferred check-suite re-check (router side).
+	 * Unlike `mergeabilityRecheckAttempt`, a still-stale response from the
+	 * trigger reschedules another delayed job (coalesceKey deduplicates) instead
+	 * of emitting a Sentry capture and giving up. This handles the Actions API
+	 * lag case where the final `check_suite.completed` webhook arrives while the
+	 * API still reports the suite as in-progress.
+	 */
+	checkSuiteRecheckAttempt?: number;
 }
 
 export interface JiraJob {

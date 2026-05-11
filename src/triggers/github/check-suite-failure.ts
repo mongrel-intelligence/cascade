@@ -2,7 +2,8 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { gateBaseBranch, gateCascadePersona, requirePersonaIdentities } from '../shared/gates.js';
+import { gateCascadePersona, requirePersonaIdentities } from '../shared/gates.js';
+import { buildDeferredRecheckResult } from '../shared/result-builders.js';
 import { skip } from '../shared/skip.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import { decideCheckSuiteOutcome } from './check-suite-decision.js';
@@ -74,10 +75,17 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumber, this.name);
 		if (!personasResult.ok) return personasResult.skip;
 
-		const gateChainSkip =
-			gateCascadePersona(prDetails.user.login, prNumber, personasResult.value, this.name) ??
-			gateBaseBranch(prDetails.baseRef, prNumber, ctx.project, this.name);
-		if (gateChainSkip) return gateChainSkip;
+		// Cascade-authored PRs bypass the base-branch gate — a cascade PR
+		// targeting a non-base branch is a stacked PR, not a drive-by.
+		// Non-cascade authors are filtered here and never reach the gate.
+		// Mirrors the authorIsCascade bypass in decideCheckSuiteGates (lines 101-109).
+		const cascadePersonaSkip = gateCascadePersona(
+			prDetails.user.login,
+			prNumber,
+			personasResult.value,
+			this.name,
+		);
+		if (cascadePersonaSkip) return cascadePersonaSkip;
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
@@ -96,12 +104,26 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		});
 
 		if (decision.action === 'defer') {
-			logger.info('Not all checks complete yet, waiting', {
+			// Same API-lag fix applied to check-suite-success (Bug 1, 2026-05-11):
+			// returning a plain skip() would rely on GitHub firing another
+			// check_suite.completed event, but when Actions API lags webhook
+			// delivery the API still shows a check as in_progress even after
+			// GitHub has already fired its final event. Schedule a deferred
+			// re-check so the trigger re-evaluates against fresh API state ~30s later.
+			const coalesceKey = `check-suite-failure:${owner}/${repo}:pr-${prNumber}:${headSha}`;
+			logger.info('Not all checks complete yet, scheduling deferred re-check', {
+				handler: this.name,
 				prNumber,
 				totalChecks: checkStatus.totalCount,
 				incompleteChecks: decision.incompleteChecks,
+				coalesceKey,
+				delayMs: 30_000,
 			});
-			return skip(this.name, decision.message);
+			return buildDeferredRecheckResult({
+				delayMs: 30_000,
+				coalesceKey,
+				recheckKind: 'check-suite',
+			});
 		}
 		if (decision.action === 'skip') {
 			if (decision.message.startsWith('All ')) {

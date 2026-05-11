@@ -7,6 +7,10 @@ vi.mock('../../../src/sentry.js', () => ({
 	flush: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../src/router/queue.js', () => ({
+	scheduleCoalescedJob: vi.fn().mockResolvedValue({ jobId: 'cj-1', superseded: false }),
+}));
+
 vi.mock('../../../src/triggers/github/integration.js', () => {
 	const mockIntegration = {
 		type: 'github',
@@ -97,6 +101,7 @@ vi.mock('../../../src/utils/index.js', () => ({
 
 // ── Imports ───────────────────────────────────────────────────────────────────
 
+import { scheduleCoalescedJob } from '../../../src/router/queue.js';
 import { captureException } from '../../../src/sentry.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
 import type { TriggerResult } from '../../../src/types/index.js';
@@ -107,6 +112,18 @@ const deferredRecheckResult: TriggerResult = {
 	agentType: null,
 	agentInput: {},
 	deferredRecheck: { delayMs: 45_000, coalesceKey: 'project-1:pr-conflict-recheck:42' },
+};
+
+// Fixture used to simulate the check-suite trigger still returning stale state
+// after a re-check dispatch.
+const checkSuiteDeferredRecheckResult: TriggerResult = {
+	agentType: null,
+	agentInput: {},
+	deferredRecheck: {
+		delayMs: 30_000,
+		coalesceKey: 'check-suite-success:owner/repo:pr-42:sha123',
+		recheckKind: 'check-suite',
+	},
 };
 
 const normalResult: TriggerResult = {
@@ -169,5 +186,78 @@ describe('processGitHubWebhook — re-check exhaustion detection', () => {
 		);
 		expect(captureException).not.toHaveBeenCalled();
 		expect(registry.dispatch).not.toHaveBeenCalled();
+	});
+});
+
+describe('processGitHubWebhook — check-suite re-check rescheduling', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('reschedules via scheduleCoalescedJob when isCheckSuiteRecheckJob=true and trigger returns deferredRecheck', async () => {
+		// This is the case where the worker fires a check-suite recheck but the
+		// Actions API is still stale (trigger returns another deferredRecheck).
+		// The fix: reschedule instead of treating as exhausted.
+		const registry = makeRegistry(checkSuiteDeferredRecheckResult);
+		await processGitHubWebhook(
+			{},
+			'check_suite',
+			registry,
+			undefined,
+			undefined,
+			undefined,
+			false, // isRecheckJob (mergeability) = false
+			true, // isCheckSuiteRecheckJob = true
+		);
+		// Must reschedule with checkSuiteRecheckAttempt: 1
+		expect(scheduleCoalescedJob).toHaveBeenCalledOnce();
+		expect(scheduleCoalescedJob).toHaveBeenCalledWith(
+			expect.objectContaining({ type: 'github', checkSuiteRecheckAttempt: 1 }),
+			'check-suite-success:owner/repo:pr-42:sha123',
+			30_000,
+		);
+		// Must NOT fire the mergeability_recheck_exhausted Sentry capture
+		expect(captureException).not.toHaveBeenCalled();
+	});
+
+	it('does NOT reschedule when isCheckSuiteRecheckJob=false (first-time dispatch falls through normally)', async () => {
+		// First-time dispatch where trigger returns deferredRecheck: handled by the
+		// router (handleDeferredRecheck); processGitHubWebhook exits via the
+		// no-agent path without calling scheduleCoalescedJob.
+		const registry = makeRegistry(checkSuiteDeferredRecheckResult);
+		await processGitHubWebhook(
+			{},
+			'check_suite',
+			registry,
+			undefined,
+			undefined,
+			undefined,
+			false, // isRecheckJob (mergeability) = false
+			false, // isCheckSuiteRecheckJob = false
+		);
+		expect(scheduleCoalescedJob).not.toHaveBeenCalled();
+		expect(captureException).not.toHaveBeenCalled();
+	});
+
+	it('Sentry-captures and keeps running when scheduleCoalescedJob throws on check-suite reschedule', async () => {
+		vi.mocked(scheduleCoalescedJob).mockRejectedValueOnce(new Error('Redis down'));
+		const registry = makeRegistry(checkSuiteDeferredRecheckResult);
+		// Should not throw even if Redis is down
+		await expect(
+			processGitHubWebhook(
+				{},
+				'check_suite',
+				registry,
+				undefined,
+				undefined,
+				undefined,
+				false,
+				true,
+			),
+		).resolves.toBeUndefined();
+		expect(captureException).toHaveBeenCalledWith(
+			expect.any(Error),
+			expect.objectContaining({ tags: { source: 'check_suite_recheck_reschedule_failure' } }),
+		);
 	});
 });

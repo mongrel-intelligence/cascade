@@ -2,6 +2,7 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
+import { buildDeferredRecheckResult } from '../shared/result-builders.js';
 import { skip } from '../shared/skip.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { decideCheckSuiteGates, decideCheckSuiteOutcome } from './check-suite-decision.js';
@@ -157,13 +158,28 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		});
 
 		if (decision.action === 'defer') {
-			logger.info('Not all checks complete yet, waiting for next check_suite event', {
+			// Bug 1 (2026-05-11 prod incident on ucho PR #394, MNG-683):
+			// returning a plain skip() relies on GitHub firing another
+			// check_suite event when the final suite completes. But when
+			// the Actions API lags webhook delivery, the API still shows
+			// the final suite as "in_progress" at query time AND no further
+			// webhook arrives (GitHub already fired its one event for that
+			// workflow). Schedule a deferred re-check so the trigger
+			// re-evaluates against fresh API state ~30s later.
+			const coalesceKey = `check-suite-success:${owner}/${repo}:pr-${prNumber}:${headSha}`;
+			logger.info('Not all checks complete yet, scheduling deferred re-check', {
 				handler: this.name,
 				prNumber,
 				totalChecks: checkStatus.totalCount,
 				incompleteChecks: decision.incompleteChecks,
+				coalesceKey,
+				delayMs: 30_000,
 			});
-			return skip(this.name, decision.message);
+			return buildDeferredRecheckResult({
+				delayMs: 30_000,
+				coalesceKey,
+				recheckKind: 'check-suite',
+			});
 		}
 
 		if (decision.action === 'skip') {

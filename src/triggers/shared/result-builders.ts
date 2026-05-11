@@ -41,6 +41,8 @@ interface DeferredRecheckOptions {
 	delayMs: number;
 	coalesceKey: string;
 	agentInput?: AgentInput;
+	/** See `TriggerResult.deferredRecheck.recheckKind` for semantics. */
+	recheckKind?: 'check-suite';
 }
 
 interface AgentInputExtraContext {
@@ -163,6 +165,7 @@ export function buildDeferredRecheckResult(options: DeferredRecheckOptions): Tri
 		deferredRecheck: {
 			delayMs: options.delayMs,
 			coalesceKey: options.coalesceKey,
+			...(options.recheckKind ? { recheckKind: options.recheckKind } : {}),
 		},
 	};
 }

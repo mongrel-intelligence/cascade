@@ -11,6 +11,18 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckM
 
 vi.mock('../../../src/github/client.js', () => mockGitHubClientModule);
 
+// Stub the Redis-backed dedup module so tests don't need a Redis connection.
+// Each `claim` resolves to true (success) by default; per-test overrides via
+// `mockClaimRespondToCiDispatch.mockResolvedValueOnce(false)` simulate a duplicate.
+const mockClaimRespondToCiDispatch = vi.fn().mockResolvedValue(true);
+const mockReleaseRespondToCiDispatch = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../src/triggers/github/respond-to-ci-dedup.js', () => ({
+	buildRespondToCiDispatchKey: (owner: string, repo: string, prNumber: number, headSha: string) =>
+		`${owner}/${repo}:${prNumber}:${headSha}`,
+	claimRespondToCiDispatch: (...args: unknown[]) => mockClaimRespondToCiDispatch(...args),
+	releaseRespondToCiDispatch: (...args: unknown[]) => mockReleaseRespondToCiDispatch(...args),
+}));
+
 import { githubClient } from '../../../src/github/client.js';
 import {
 	CheckSuiteFailureTrigger,
@@ -51,6 +63,8 @@ describe('CheckSuiteFailureTrigger', () => {
 	beforeEach(() => {
 		resetFixAttempts(42);
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
+		mockClaimRespondToCiDispatch.mockReset().mockResolvedValue(true);
+		mockReleaseRespondToCiDispatch.mockReset().mockResolvedValue(undefined);
 	});
 
 	describe('matches', () => {
@@ -246,12 +260,16 @@ describe('CheckSuiteFailureTrigger', () => {
 				workItemId: 'abc123',
 				workItemUrl: undefined,
 				workItemTitle: undefined,
-				onBlocked: undefined,
+				onBlocked: expect.any(Function),
 				coalesceKey: undefined,
 			});
 		});
 
-		it('returns a structured skip when PR targets non-base branch', async () => {
+		// Bug 2 fix (2026-05-11): cascade-authored stacked PRs bypass the base-branch
+		// gate — only non-cascade authors are filtered here. The base-branch gate
+		// used to be applied unconditionally via `??` which also blocked cascade-
+		// authored stacked PRs. Now only non-cascade authors hit the persona gate.
+		it('returns a structured skip when PR not authored by cascade but targets non-base branch', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -262,7 +280,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				headSha: 'sha123',
 				baseRef: 'develop',
 				merged: false,
-				user: { login: 'cascade-impl' },
+				user: { login: 'some-human' },
 			});
 
 			const ctx: TriggerContext = {
@@ -274,8 +292,41 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expectSkip(result, /targets develop, not project base branch main/);
+			expectSkip(result, /not authored by a cascade persona.*author: some-human/i);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+		});
+
+		it('dispatches respond-to-ci for cascade-authored stacked PR targeting non-base branch', async () => {
+			// Bug 2 fix: cascade-authored PRs bypass the base-branch gate.
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Stacked PR',
+				body: null,
+				state: 'open',
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				headRef: 'feature/stacked-child',
+				headSha: 'sha123',
+				baseRef: 'feature/stacked-parent',
+				merged: false,
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+				allPassing: false,
+				totalCount: 1,
+				checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+			});
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeFailurePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('respond-to-ci');
+			expect(result?.prNumber).toBe(42);
 		});
 
 		it('returns a structured skip when PR not authored by any cascade persona', async () => {
@@ -400,7 +451,12 @@ describe('CheckSuiteFailureTrigger', () => {
 			expect(result?.agentInput.workItemId).toBeUndefined();
 		});
 
-		it('returns a structured skip when not all checks are complete', async () => {
+		// API-lag fix (same as check-suite-success Bug 1, 2026-05-11):
+		// when the Actions API reports a check as in_progress even after the
+		// final check_suite.completed event, a plain skip would wait for a
+		// follow-up webhook that GitHub has already sent. The handler now
+		// schedules a deferred re-check so it re-evaluates against fresh state.
+		it('returns deferredRecheck (not plain skip) when not all checks are complete', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,
 				title: 'Test PR',
@@ -431,7 +487,20 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expectSkip(result, /Not all checks complete yet.*test/);
+			// No agent dispatch — wait for the deferred re-check.
+			expect(result?.agentType).toBeNull();
+			expect(result?.deferredRecheck).toBeDefined();
+			expect(result?.deferredRecheck?.delayMs).toBe(30_000);
+			// coalesceKey must include owner/repo + PR number + head SHA.
+			expect(result?.deferredRecheck?.coalesceKey).toBe(
+				'check-suite-failure:owner/repo:pr-42:sha123',
+			);
+			// recheckKind must be 'check-suite' so the router stamps
+			// checkSuiteRecheckAttempt (not mergeabilityRecheckAttempt) on the
+			// delayed job, enabling safe rescheduling if still stale.
+			expect(result?.deferredRecheck?.recheckKind).toBe('check-suite');
+			// Dedup must NOT be claimed for the deferred event.
+			expect(result?.onBlocked).toBeUndefined();
 		});
 
 		it('returns a structured skip when all checks actually passed (no failures)', async () => {
@@ -570,7 +639,7 @@ describe('CheckSuiteFailureTrigger', () => {
 				workItemId: 'abc123',
 				workItemUrl: undefined,
 				workItemTitle: undefined,
-				onBlocked: undefined,
+				onBlocked: expect.any(Function),
 				coalesceKey: undefined,
 			});
 		});

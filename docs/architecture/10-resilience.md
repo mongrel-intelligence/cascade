@@ -97,9 +97,12 @@ This split prevents both classes of failure from wedging a work item for the loc
 
 ### Deferred re-check exhaustion
 
-Some provider state is eventually consistent and has no follow-up webhook. A trigger can return `TriggerResult.deferredRecheck` with `agentType: null`; the router schedules a coalesced delayed bare job and does not take normal dispatch locks. The bare re-dispatch on job fire is currently **GitHub-only**: `GitHubRouterAdapter.buildJob()` strips `triggerResult` and sets `mergeabilityRecheckAttempt: 1`, so the GitHub worker re-dispatches through the registry to get fresh provider state. Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed `triggerResult` in the job; their workers return the pre-resolved `agentType: null` result directly without re-dispatching through the registry.
+Some provider state is eventually consistent and has no follow-up webhook. A trigger can return `TriggerResult.deferredRecheck` (with `agentType: null` and an optional `recheckKind`); the router schedules a coalesced delayed bare job and does not take normal dispatch locks. The bare re-dispatch on job fire is currently **GitHub-only**: `GitHubRouterAdapter.buildJob()` strips `triggerResult` and stamps the right re-check field. Two re-check kinds exist:
 
-GitHub mergeability uses this for `pull_request` events where `mergeable === null`. If the deferred job still gets another deferred result, workers do not schedule a second re-check. The GitHub worker emits a WARN and captures to Sentry with tag `mergeability_recheck_exhausted`, making pathological provider latency visible without creating an infinite retry loop.
+- **Mergeability re-check** (`recheckKind` absent, sets `mergeabilityRecheckAttempt: 1`) — used for `pull_request` events where `mergeable === null`. One-shot: if the deferred job still gets another deferred result, the worker does not schedule a second re-check; it emits a WARN and captures to Sentry with tag `mergeability_recheck_exhausted`.
+- **Check-suite re-check** (`recheckKind: 'check-suite'`, sets `checkSuiteRecheckAttempt: 1`) — used by `check-suite-success` and `check-suite-failure` when the Actions API lags webhook delivery. Safe rescheduling: if the deferred job still sees a stale result, the worker reschedules another coalesced delayed job instead of exhausting. This keeps review/respond-to-ci dispatch alive until the API catches up without risk of infinite loop (coalesceKey deduplicates concurrent rechecks).
+
+Non-GitHub adapters (Trello, JIRA, Linear, Sentry) embed `triggerResult` in the job; their workers return the pre-resolved `agentType: null` result directly without re-dispatching through the registry.
 
 ### Wedged-lock canary
 

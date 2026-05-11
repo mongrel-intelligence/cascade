@@ -174,6 +174,20 @@ describe('GitHubJob.mergeabilityRecheckAttempt type field', () => {
 		};
 		expect(job.mergeabilityRecheckAttempt).toBe(1);
 	});
+
+	it('accepts checkSuiteRecheckAttempt field', () => {
+		// TypeScript compile-time check for the new field.
+		const job: GitHubJob = {
+			type: 'github',
+			source: 'github',
+			payload: {},
+			eventType: 'check_suite',
+			repoFullName: 'owner/repo',
+			receivedAt: '',
+			checkSuiteRecheckAttempt: 1,
+		};
+		expect(job.checkSuiteRecheckAttempt).toBe(1);
+	});
 });
 
 describe('GitHubRouterAdapter.buildJob — deferred re-check behavior', () => {
@@ -235,6 +249,36 @@ describe('GitHubRouterAdapter.buildJob — deferred re-check behavior', () => {
 		};
 		const job = adapter.buildJob(event, {}, mockProject, normalResult, undefined) as GitHubJob;
 		expect(job.mergeabilityRecheckAttempt).toBeUndefined();
+	});
+
+	it('sets checkSuiteRecheckAttempt: 1 when recheckKind is check-suite', () => {
+		// Check-suite rechecks must NOT get mergeabilityRecheckAttempt — that field
+		// triggers the exhaustion path in processGitHubWebhook.
+		const checkSuiteResult: TriggerResult = {
+			agentType: null,
+			agentInput: {},
+			deferredRecheck: {
+				delayMs: 30_000,
+				coalesceKey: 'check-suite-success:owner/repo:pr-42:sha123',
+				recheckKind: 'check-suite',
+			},
+		};
+		const job = adapter.buildJob(event, {}, mockProject, checkSuiteResult, undefined) as GitHubJob;
+		expect(job.checkSuiteRecheckAttempt).toBe(1);
+		expect(job.mergeabilityRecheckAttempt).toBeUndefined();
+	});
+
+	it('sets mergeabilityRecheckAttempt: 1 when recheckKind is absent (backward-compat)', () => {
+		// The existing mergeability-recheck case: no recheckKind → mergeabilityRecheckAttempt.
+		const job = adapter.buildJob(
+			event,
+			{},
+			mockProject,
+			deferredRecheckResult,
+			undefined,
+		) as GitHubJob;
+		expect(job.mergeabilityRecheckAttempt).toBe(1);
+		expect(job.checkSuiteRecheckAttempt).toBeUndefined();
 	});
 });
 
