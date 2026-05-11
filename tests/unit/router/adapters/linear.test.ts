@@ -683,22 +683,63 @@ describe('LinearRouterAdapter', () => {
 	});
 
 	describe('resolveProject', () => {
-		it('returns project matching Linear teamId', async () => {
+		it('returns project matching the CASCADE projectId selected by parseWebhook', async () => {
 			const project = await adapter.resolveProject({
 				projectIdentifier: 'team-abc-123',
 				eventType: 'create/Issue',
 				isCommentEvent: false,
+				// @ts-expect-error extended field on LinearParsedEvent
+				projectId: 'p1',
 			});
 			expect(project?.id).toBe('p1');
 		});
 
-		it('returns null for unknown teamId', async () => {
+		it('returns null when CASCADE projectId in event has no match', async () => {
 			const project = await adapter.resolveProject({
-				projectIdentifier: 'unknown-team',
+				projectIdentifier: 'team-abc-123',
 				eventType: 'create/Issue',
 				isCommentEvent: false,
+				// @ts-expect-error extended field on LinearParsedEvent
+				projectId: 'unknown-project',
 			});
 			expect(project).toBeNull();
+		});
+
+		// Regression for MNG-638: parseWebhook correctly selects the right candidate
+		// (based on teamId + issue's Linear Project), but resolveProject must honour
+		// that selection. The old teamId-only find() would return `ucho` (first in
+		// array) even when parseWebhook set projectId='cascade'.
+		it('returns the right cascade project (not the first-team-match) when two cascade projects share the same Linear team', async () => {
+			const uchoProject: RouterProjectConfig = {
+				id: 'ucho',
+				repo: 'mongrel/ucho',
+				pmType: 'linear',
+				linear: { teamId: 'team-abc-123', projectId: 'P-ucho' },
+			};
+			const cascadeProject: RouterProjectConfig = {
+				id: 'cascade',
+				repo: 'mongrel/cascade',
+				pmType: 'linear',
+				linear: { teamId: 'team-abc-123', projectId: 'P-cascade' },
+			};
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [uchoProject, cascadeProject],
+				fullProjects: [{ id: 'ucho' } as never, { id: 'cascade' } as never],
+			});
+
+			// Simulate the event produced by parseWebhook after it selected 'cascade'
+			// based on the issue's Linear Project (P-cascade).
+			const project = await adapter.resolveProject({
+				projectIdentifier: 'team-abc-123',
+				eventType: 'create/Issue',
+				isCommentEvent: false,
+				// @ts-expect-error extended field on LinearParsedEvent
+				projectId: 'cascade',
+			});
+
+			// Must return 'cascade', not 'ucho' (which is first in the array and
+			// would be returned by the old teamId-only find).
+			expect(project?.id).toBe('cascade');
 		});
 	});
 

@@ -225,8 +225,15 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 	}
 
 	async resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null> {
+		const linearEvent = event as LinearParsedEvent;
 		const config = await loadProjectConfig();
-		return config.projects.find((p) => p.linear?.teamId === event.projectIdentifier) ?? null;
+		// Use the CASCADE project ID that parseWebhook already determined (via
+		// teamId + issue's Linear Project). A plain find() on teamId alone would
+		// return the first team-match and route to the wrong cascade project when
+		// multiple projects share the same Linear team (MNG-638 handoff gap:
+		// parseWebhook selected the right candidate but resolveProject discarded
+		// that selection and re-ran the teamId-only lookup).
+		return config.projects.find((p) => p.id === linearEvent.projectId) ?? null;
 	}
 
 	async dispatchWithCredentials(
