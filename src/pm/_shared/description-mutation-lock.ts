@@ -17,7 +17,7 @@ interface LockFileContents {
 	pid: number;
 }
 
-const DEFAULT_TIMEOUT_MS = 10_000;
+export const DEFAULT_DESCRIPTION_MUTATION_LOCK_TIMEOUT_MS = 45_000;
 const DEFAULT_STALE_MS = 120_000;
 const DEFAULT_POLL_MS = 25;
 const LOCK_DIR_ENV = 'CASCADE_DESCRIPTION_MUTATION_LOCK_DIR';
@@ -50,7 +50,7 @@ function resolveOptions(
 	return {
 		lockDir:
 			options.lockDir ?? process.env[LOCK_DIR_ENV] ?? join(tmpdir(), 'cascade-description-locks'),
-		timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+		timeoutMs: options.timeoutMs ?? DEFAULT_DESCRIPTION_MUTATION_LOCK_TIMEOUT_MS,
 		staleMs: options.staleMs ?? DEFAULT_STALE_MS,
 		pollMs: options.pollMs ?? DEFAULT_POLL_MS,
 	};

@@ -63,6 +63,14 @@ describe('LinearPMProvider.listWorkItems — project scope', () => {
 			expect.objectContaining({ teamId: 'T1', projectId: 'P1', stateId: 'S-BL' }),
 		);
 	});
+
+	it('returns [] when a canonical status key is not mapped', async () => {
+		const spy = vi.spyOn(linearClient, 'listIssues').mockResolvedValue([]);
+		const provider = new LinearPMProvider(configOf({ projectId: 'P1', statuses: {} }));
+		const result = await provider.listWorkItems('T1', { status: 'backlog' });
+		expect(result).toEqual([]);
+		expect(spy).not.toHaveBeenCalled();
+	});
 });
 
 describe('LinearPMProvider.listWorkItems — self-resolution from config', () => {

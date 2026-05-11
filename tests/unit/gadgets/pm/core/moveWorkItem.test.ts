@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockPMProvider } from '../../../../helpers/mockPMProvider.js';
 
@@ -11,6 +11,10 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 import { moveWorkItem } from '../../../../../src/gadgets/pm/core/moveWorkItem.js';
 
 describe('moveWorkItem', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it('calls provider.moveWorkItem with correct args and returns success message', async () => {
 		mockProvider.moveWorkItem.mockResolvedValue(undefined);
 
@@ -78,6 +82,24 @@ describe('moveWorkItem', () => {
 			expect(result).toContain('moved');
 		});
 
+		it('proceeds with move when current statusId matches expectedSourceState', async () => {
+			mockProvider.getWorkItem.mockResolvedValue({
+				...baseItem,
+				status: 'Ready',
+				statusId: 'state-backlog',
+			});
+			mockProvider.moveWorkItem.mockResolvedValue(undefined);
+
+			const result = await moveWorkItem({
+				workItemId: 'MNG-538',
+				destination: 'state-todo',
+				expectedSourceState: 'state-backlog',
+			});
+
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('MNG-538', 'state-todo');
+			expect(result).toContain('moved');
+		});
+
 		it('aborts move when current status differs from expectedSourceState', async () => {
 			mockProvider.getWorkItem.mockResolvedValue({
 				...baseItem,
@@ -94,6 +116,24 @@ describe('moveWorkItem', () => {
 			expect(result).toMatch(/Aborted|aborted|skipped/);
 			expect(result).toContain('In Progress');
 			expect(result).toContain('Backlog');
+		});
+
+		it('aborts move when Linear issue is in an unmapped Ideas statusId', async () => {
+			mockProvider.getWorkItem.mockResolvedValue({
+				...baseItem,
+				status: 'Ideas',
+				statusId: 'state-ideas',
+			});
+
+			const result = await moveWorkItem({
+				workItemId: 'MNG-700',
+				destination: 'state-todo',
+				expectedSourceState: 'state-backlog',
+			});
+
+			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
+			expect(result).toContain('Ideas (state-ideas)');
+			expect(result).toContain('state-backlog');
 		});
 
 		it('matches expectedSourceState case-insensitively (Linear vs Trello casing drift)', async () => {

@@ -12,6 +12,7 @@ import {
 	appendChecklistSection,
 	buildChecklistId,
 	findChecklistNameByHash,
+	hashChecklistItemId,
 	parseChecklistId,
 	parseInlineChecklists,
 	removeChecklistItem,
@@ -23,6 +24,7 @@ import { resolveJiraMediaUrls } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
+	ChecklistItemDraft,
 	CreateWorkItemConfig,
 	ListWorkItemsFilter,
 	PMProvider,
@@ -286,6 +288,31 @@ export class JiraPMProvider implements PMProvider {
 			name,
 			workItemId,
 			items: [],
+		};
+	}
+
+	async createChecklistWithItems(
+		workItemId: string,
+		name: string,
+		items: ChecklistItemDraft[],
+	): Promise<Checklist> {
+		await this.updateDescription(workItemId, (desc) =>
+			appendChecklistSection(
+				desc,
+				name,
+				items.map((item) => ({ name: item.name, checked: item.checked ?? false })),
+			),
+		);
+
+		return {
+			id: buildChecklistId(workItemId, name),
+			name,
+			workItemId,
+			items: items.map((item) => ({
+				id: hashChecklistItemId(name, item.name),
+				name: item.name,
+				complete: item.checked ?? false,
+			})),
 		};
 	}
 

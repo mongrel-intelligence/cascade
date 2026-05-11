@@ -285,7 +285,7 @@ If the slot is missing, the materializer returns a skipped result with reason `f
 
 ## Checklist implementation by provider
 
-Different PM providers have different native concepts of "checklist". The `PMProvider` interface exposes a uniform API (`getChecklists`, `createChecklist`, `addChecklistItem`, `updateChecklistItem`, `deleteChecklistItem`), but adapters implement them differently:
+Different PM providers have different native concepts of "checklist". The `PMProvider` interface exposes a uniform API (`getChecklists`, `createChecklist`, `addChecklistItem`, `updateChecklistItem`, `deleteChecklistItem`) plus an optional bulk creation path (`createChecklistWithItems`), but adapters implement them differently:
 
 | Provider | Implementation | Where items live |
 |---|---|---|
@@ -297,7 +297,9 @@ Different PM providers have different native concepts of "checklist". The `PMPro
 
 The shared engine that parses, appends, toggles, and removes inline checklist items lives at `src/pm/_shared/inline-checklist.ts` and is consumed by both the Linear and JIRA adapters.
 
-Because Linear and JIRA checklist mutations rewrite the whole description, their adapters serialize the full read/mutate/write operation with `withDescriptionMutationLock(provider, workItemId, fn)` from `src/pm/_shared/description-mutation-lock.ts`. Keep future inline-description mutations inside that guard; otherwise concurrent `cascade-tools pm update-checklist-item` processes can overwrite each other's description snapshots without a provider-side conflict error. Linear mutations must also keep the lock held until `linearClient.getIssue()` observes the markdown just written by `linearClient.updateIssue()`, because Linear can briefly serve stale descriptions after accepting a write. Releasing the lock before read-after-write convergence lets the next queued checklist mutation start from an old snapshot and miss a newly created `###` checklist heading.
+Because Linear and JIRA checklist mutations rewrite the whole description, their adapters serialize the full read/mutate/write operation with `withDescriptionMutationLock(provider, workItemId, fn)` from `src/pm/_shared/description-mutation-lock.ts`. Keep future inline-description mutations inside that guard; otherwise concurrent `cascade-tools pm update-checklist-item` processes can overwrite each other's description snapshots without a provider-side conflict error. Initial checklist creation for inline-description providers should implement `createChecklistWithItems` so `AddChecklist` can create the section and all starting rows in one locked description mutation instead of `createChecklist` plus one write per item. Linear mutations must also keep the lock held until `linearClient.getIssue()` observes the markdown just written by `linearClient.updateIssue()`, because Linear can briefly serve stale descriptions after accepting a write. Releasing the lock before read-after-write convergence lets the next queued checklist mutation start from an old snapshot and miss a newly created `###` checklist heading.
+
+The default description-lock wait budget is intentionally lower than the checklist tool timeout: the lock waits up to 45s, while `AddChecklist`, `PMUpdateChecklistItem`, and `PMDeleteChecklistItem` allow 60s. Keep that relationship when adjusting either value so a queued, legitimate Linear/JIRA checklist mutation is not aborted by the outer tool runner before the lock wait can complete.
 
 ---
 

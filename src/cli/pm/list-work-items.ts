@@ -3,5 +3,8 @@ import { listWorkItemsDef } from '../../gadgets/pm/definitions.js';
 import { createCLICommand } from '../../gadgets/shared/cliCommandFactory.js';
 
 export default createCLICommand(listWorkItemsDef, async (params) => {
-	return listWorkItems(params.containerId as string);
+	return listWorkItems({
+		containerId: params.containerId as string | undefined,
+		status: params.status as string | undefined,
+	});
 });

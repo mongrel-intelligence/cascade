@@ -225,19 +225,29 @@ export const reportFrictionDef: ToolDefinition = {
 export const listWorkItemsDef: ToolDefinition = {
 	name: 'ListWorkItems',
 	description:
-		'List all work items in a container (Trello list or JIRA project). Use this to see items you created or to find items to update.',
+		'List work items in a container or by CASCADE status. Prefer status filtering for pipeline stages such as backlog.',
 	timeoutMs: 30000,
 	parameters: {
 		containerId: {
 			type: 'string',
-			describe: 'Container ID — Trello list ID or JIRA project key',
-			required: true,
+			describe: 'Container ID — Trello list ID, JIRA project key, or Linear team ID',
+			optional: true,
+		},
+		status: {
+			type: 'string',
+			describe:
+				'Optional CASCADE status key to filter by, e.g. backlog, todo, inProgress, inReview, done, merged',
+			optional: true,
 		},
 	},
 	examples: [
 		{
 			params: { containerId: 'abc123' },
 			comment: 'List all work items to find ones to update',
+		},
+		{
+			params: { status: 'backlog' },
+			comment: 'Safely list configured backlog items across providers',
 		},
 	],
 };
@@ -289,7 +299,7 @@ export const addChecklistDef: ToolDefinition = {
 	name: 'AddChecklist',
 	description:
 		'Add a checklist with items to a work item. Use this to create interactive checklists for acceptance criteria or implementation steps.',
-	timeoutMs: 30000,
+	timeoutMs: 60000,
 	parameters: {
 		workItemId: {
 			type: 'string',
@@ -336,7 +346,7 @@ export const pmUpdateChecklistItemDef: ToolDefinition = {
 	name: 'PMUpdateChecklistItem',
 	description:
 		'Update a checklist item state on a work item. Use this to mark items as complete or incomplete.',
-	timeoutMs: 15000,
+	timeoutMs: 60000,
 	parameters: {
 		workItemId: {
 			type: 'string',
@@ -371,7 +381,7 @@ export const pmDeleteChecklistItemDef: ToolDefinition = {
 	name: 'PMDeleteChecklistItem',
 	description:
 		'Delete a checklist item from a work item. For JIRA this deletes the subtask issue. For Trello this removes the checklist item. Use this to remove descoped or invalid plan steps — do NOT mark items as "complete" if they were never done.',
-	timeoutMs: 15000,
+	timeoutMs: 60000,
 	parameters: {
 		workItemId: {
 			type: 'string',

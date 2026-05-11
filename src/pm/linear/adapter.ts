@@ -17,6 +17,7 @@ import {
 	appendChecklistSection,
 	buildChecklistId,
 	findChecklistNameByHash,
+	hashChecklistItemId,
 	parseChecklistId,
 	parseInlineChecklists,
 	removeChecklistItem,
@@ -28,6 +29,7 @@ import { extractMarkdownImages } from '../media.js';
 import type {
 	Attachment,
 	Checklist,
+	ChecklistItemDraft,
 	CreateWorkItemConfig,
 	ListWorkItemsFilter,
 	PMProvider,
@@ -38,6 +40,32 @@ import type {
 
 const DESCRIPTION_VISIBILITY_TIMEOUT_MS = 1_000;
 const DESCRIPTION_VISIBILITY_POLL_MS = 25;
+const CASCADE_STATUS_KEYS = new Set([
+	'backlog',
+	'todo',
+	'inProgress',
+	'inReview',
+	'done',
+	'merged',
+	'cancelled',
+	'canceled',
+	'splitting',
+	'planning',
+	'debug',
+	'friction',
+]);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function resolveLinearStatusFilter(
+	status: string | undefined,
+	configStatuses: LinearConfig['statuses'] | undefined,
+): string | null | undefined {
+	if (!status) return undefined;
+	const mapped = configStatuses?.[status];
+	if (mapped) return mapped;
+	if (CASCADE_STATUS_KEYS.has(status)) return null;
+	return UUID_RE.test(status) ? status : null;
+}
 
 export class LinearPMProvider implements PMProvider {
 	readonly type = 'linear' as const;
@@ -69,6 +97,7 @@ export class LinearPMProvider implements PMProvider {
 			description: issue.description ?? '',
 			url: issue.url,
 			status: issue.state?.name,
+			statusId: issue.state?.id,
 			labels: issue.labels.map(
 				(l): WorkItemLabel => ({
 					id: l.id,
@@ -150,14 +179,12 @@ export class LinearPMProvider implements PMProvider {
 		// containerId is the Linear team ID — defaults to config.teamId.
 		const teamId = containerId || this.config.teamId;
 		if (!teamId) return [];
+		const stateId = resolveLinearStatusFilter(filter?.status, this.config.statuses);
+		if (stateId === null) return [];
 		const issues = await linearClient.listIssues({
 			teamId,
 			...(this.config.projectId ? { projectId: this.config.projectId } : {}),
-			...(filter?.status
-				? {
-						stateId: this.config.statuses?.[filter.status] ?? filter.status,
-					}
-				: {}),
+			...(stateId ? { stateId } : {}),
 		});
 		return issues.map((issue) => ({
 			id: issue.identifier || issue.id,
@@ -165,6 +192,7 @@ export class LinearPMProvider implements PMProvider {
 			description: issue.description ?? '',
 			url: issue.url,
 			status: issue.state?.name,
+			statusId: issue.state?.id,
 			labels: issue.labels.map(
 				(l): WorkItemLabel => ({
 					id: l.id,
@@ -214,6 +242,31 @@ export class LinearPMProvider implements PMProvider {
 			name,
 			workItemId,
 			items: [],
+		};
+	}
+
+	async createChecklistWithItems(
+		workItemId: string,
+		name: string,
+		items: ChecklistItemDraft[],
+	): Promise<Checklist> {
+		await this.updateDescription(workItemId, (desc) =>
+			appendChecklistSection(
+				desc,
+				name,
+				items.map((item) => ({ name: item.name, checked: item.checked ?? false })),
+			),
+		);
+
+		return {
+			id: buildChecklistId(workItemId, name),
+			name,
+			workItemId,
+			items: items.map((item) => ({
+				id: hashChecklistItemId(name, item.name),
+				name: item.name,
+				complete: item.checked ?? false,
+			})),
 		};
 	}
 

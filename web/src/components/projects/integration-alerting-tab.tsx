@@ -32,7 +32,7 @@ interface ProviderPickerConfig {
 	/**
 	 * Which property of the returned discovery item to save as `resultsContainerId`.
 	 * - JIRA `states` → `name` (status name — the adapter matches transitions by name).
-	 * - Linear `teams` → `id` (team UUID used directly as `backlogListId`).
+	 * - Linear `teams` → `id` (team UUID used as the alert-created work item container).
 	 */
 	getOptionValue: (item: { id: string; name: string }) => string;
 }
@@ -42,9 +42,9 @@ interface ProviderPickerConfig {
  * dropdown picker is supported for that provider.
  *
  * - JIRA: `states` capability, scoped to the configured project key.
- *   `backlogListId` for JIRA = a status name (e.g. "Backlog"), so the picker
+ *   Sentry-created issues can be moved to a status by name, so the picker
  *   saves `item.name` not the numeric state ID.
- * - Linear: `teams` capability; team ID is correct for `backlogListId`.
+ * - Linear: `teams` capability; team ID is correct for creating alert work items.
  * - Trello: no `lists` discovery capability exists in the manifest
  *   (`boards` capability returns boards, not lists within a board).
  *   Trello users must enter the list ID manually.

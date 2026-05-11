@@ -16,7 +16,7 @@ export interface SentryIntegrationConfig {
 	organizationSlug: string;
 	/**
 	 * PM container ID where the alerting agent creates investigation work items.
-	 * Maps to `backlogListId` in the prompt context when no PM backlog is configured.
+	 * Maps to the prompt creation container when no PM backlog is configured.
 	 */
 	resultsContainerId?: string;
 }

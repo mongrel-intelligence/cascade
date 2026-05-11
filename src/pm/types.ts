@@ -94,7 +94,10 @@ export interface WorkItem {
 	title: string;
 	description: string;
 	url: string;
+	/** Human-readable provider status/list name when available. */
 	status?: string;
+	/** Provider-native workflow state/list ID when available. */
+	statusId?: string;
 	labels: WorkItemLabel[];
 	/** Inline media references parsed from the work item description */
 	inlineMedia?: MediaReference[];
@@ -132,6 +135,12 @@ export interface ChecklistItem {
 	complete: boolean;
 }
 
+export interface ChecklistItemDraft {
+	name: string;
+	checked?: boolean;
+	description?: string;
+}
+
 export interface Attachment {
 	id: string;
 	name: string;
@@ -157,7 +166,8 @@ export interface ListWorkItemsFilter {
 	 * - JIRA: looks up `config.statuses[status]` for the status name in JQL.
 	 * - Linear: looks up `config.statuses[status]` for the state UUID.
 	 *
-	 * Falls through to literal value when no mapping exists (backwards compat).
+	 * Providers may allow explicit native IDs as an escape hatch, but canonical
+	 * CASCADE keys must resolve through provider config.
 	 */
 	status?: string;
 }
@@ -191,6 +201,17 @@ export interface PMProvider {
 	// Checklists
 	getChecklists(workItemId: string): Promise<Checklist[]>;
 	createChecklist(workItemId: string, name: string): Promise<Checklist>;
+	/**
+	 * Optional bulk creation path for providers that rewrite an entire work-item
+	 * description to emulate checklists. Inline-description providers should use
+	 * this to create the checklist section and initial items in one provider-level
+	 * mutation instead of N+1 description rewrites.
+	 */
+	createChecklistWithItems?(
+		workItemId: string,
+		name: string,
+		items: ChecklistItemDraft[],
+	): Promise<Checklist>;
 	addChecklistItem(
 		checklistId: string,
 		name: string,

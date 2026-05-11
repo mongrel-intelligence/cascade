@@ -67,6 +67,16 @@ PM provider config maps CASCADE lifecycle concepts onto provider-native lists or
 
 If the slot is not configured, `ReportFriction` records the report in the sidecar and returns a non-fatal `queued_slot_missing` result with operator guidance. No run should fail solely because the friction slot is missing.
 
+Backlog selection and work-item creation use different native concepts:
+
+| Provider | Backlog selection | Work-item creation |
+|----------|-------------------|--------------------|
+| Trello | `lists.backlog` list ID | same backlog list ID |
+| JIRA | `statuses.backlog` status name/ID | `projectKey` |
+| Linear | `statuses.backlog` workflow state UUID | `teamId` |
+
+For Linear, `teamId` is not a backlog state. It is the container used when creating or searching issues, and unfiltered team listing may include unmapped workflow states such as Ideas. Pipeline snapshot and backlog-manager paths use status-aware listing (`ListWorkItems --status backlog`) so only the configured `linear.statuses.backlog` state is eligible for selection.
+
 `maxInFlightItems` is enforced at two points: (a) the `backlog-manager` chain
 gates (won't auto-pull from BACKLOG when at capacity) and (b) the PM
 `status-changed` triggers (won't fire `implementation` when a card is moved

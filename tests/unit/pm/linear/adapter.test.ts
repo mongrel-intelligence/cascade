@@ -125,6 +125,7 @@ describe('LinearPMProvider', () => {
 			expect(result.description).toBe('A description');
 			expect(result.url).toBe('https://linear.app/org/issue/TEAM-1');
 			expect(result.status).toBe('Backlog');
+			expect(result.statusId).toBe('state-backlog');
 			expect(result.labels).toHaveLength(1);
 			expect(result.labels[0]).toEqual({ id: 'label-1', name: 'Bug', color: '#f00' });
 		});
@@ -377,6 +378,38 @@ describe('LinearPMProvider', () => {
 
 			expect(mockListIssues).toHaveBeenCalledWith(expect.objectContaining({ teamId: 'team-abc' }));
 			expect(result).toHaveLength(2);
+			expect(result[0].status).toBe('Backlog');
+			expect(result[0].statusId).toBe('state-backlog');
+		});
+
+		it('returns [] for unmapped CASCADE status keys without falling through to Linear stateId', async () => {
+			const noBacklogProvider = new LinearPMProvider({
+				teamId: 'team-abc',
+				statuses: {},
+			});
+
+			const result = await noBacklogProvider.listWorkItems(undefined, { status: 'backlog' });
+
+			expect(result).toEqual([]);
+			expect(mockListIssues).not.toHaveBeenCalled();
+		});
+
+		it('allows UUID-shaped raw state IDs for explicit low-level callers', async () => {
+			mockListIssues.mockResolvedValue([]);
+			const rawStateId = '550e8400-e29b-41d4-a716-446655440000';
+
+			await provider.listWorkItems(undefined, { status: rawStateId });
+
+			expect(mockListIssues).toHaveBeenCalledWith(
+				expect.objectContaining({ teamId: 'team-abc', stateId: rawStateId }),
+			);
+		});
+
+		it('rejects non-UUID unmapped raw status values', async () => {
+			const result = await provider.listWorkItems(undefined, { status: 'Ideas' });
+
+			expect(result).toEqual([]);
+			expect(mockListIssues).not.toHaveBeenCalled();
 		});
 	});
 
@@ -500,6 +533,32 @@ describe('LinearPMProvider', () => {
 			expect(result.items).toEqual([]);
 		});
 
+		it('creates checklist with initial items in one description write', async () => {
+			mockIssueDescription('Existing.');
+
+			const result = await provider.createChecklistWithItems('issue-uuid', '✅ AC', [
+				{ name: 'First item', checked: false },
+				{ name: 'Done item', checked: true },
+			]);
+
+			expect(mockUpdateIssue).toHaveBeenCalledTimes(1);
+			expect(mockUpdateIssue).toHaveBeenCalledWith(
+				'issue-uuid',
+				expect.objectContaining({
+					description: 'Existing.\n\n### ✅ AC\n- [ ] First item\n- [x] Done item',
+				}),
+			);
+			expect(result).toMatchObject({
+				name: '✅ AC',
+				workItemId: 'issue-uuid',
+				items: [
+					{ name: 'First item', complete: false },
+					{ name: 'Done item', complete: true },
+				],
+			});
+			expect(result.items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
+		});
+
 		it('waits for Linear read-after-write visibility before the next checklist append', async () => {
 			let description = 'Existing.';
 			let staleDescription: string | null = null;
@@ -558,6 +617,42 @@ describe('LinearPMProvider', () => {
 			expect(description).toContain('- [ ] Ready to ship');
 			expect(description).toContain('### 🔗 Dependencies');
 			expect(description).toContain('- [ ] External API key');
+		});
+
+		it('preserves concurrent bulk-created checklist sections despite stale Linear reads', async () => {
+			let description = 'Existing.';
+			let staleDescription: string | null = null;
+			mockGetIssue.mockImplementation(async () => {
+				if (staleDescription !== null) {
+					const value = staleDescription;
+					staleDescription = null;
+					return makeIssue({ description: value });
+				}
+				return makeIssue({ description });
+			});
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				await sleep(5);
+				staleDescription = description;
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			const results = await Promise.allSettled([
+				provider.createChecklistWithItems('issue-uuid', '✅ Acceptance Criteria', [
+					{ name: 'Ready to ship' },
+				]),
+				provider.createChecklistWithItems('issue-uuid', '🔗 Dependencies', [
+					{ name: 'External API key' },
+					{ name: 'Vendor access', checked: true },
+				]),
+			]);
+
+			expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+			expect(description).toContain('### ✅ Acceptance Criteria');
+			expect(description).toContain('- [ ] Ready to ship');
+			expect(description).toContain('### 🔗 Dependencies');
+			expect(description).toContain('- [ ] External API key');
+			expect(description).toContain('- [x] Vendor access');
 		});
 	});
 

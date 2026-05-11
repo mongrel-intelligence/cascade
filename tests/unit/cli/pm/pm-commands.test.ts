@@ -188,7 +188,14 @@ describe('ListWorkItems command', () => {
 		const cmd = new ListWorkItems(['--containerId', 'list-456'], makeMockConfig() as never);
 		await cmd.run();
 
-		expect(listWorkItems).toHaveBeenCalledWith('list-456');
+		expect(listWorkItems).toHaveBeenCalledWith({ containerId: 'list-456', status: undefined });
+	});
+
+	it('passes status to listWorkItems', async () => {
+		const cmd = new ListWorkItems(['--status', 'backlog'], makeMockConfig() as never);
+		await cmd.run();
+
+		expect(listWorkItems).toHaveBeenCalledWith({ containerId: undefined, status: 'backlog' });
 	});
 
 	it('outputs JSON success result', async () => {

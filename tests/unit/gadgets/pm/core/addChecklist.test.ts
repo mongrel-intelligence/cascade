@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockPMProvider } from '../../../../helpers/mockPMProvider.js';
 
@@ -10,7 +10,40 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { addChecklist } from '../../../../../src/gadgets/pm/core/addChecklist.js';
 
+const providerWithBulk = mockProvider as typeof mockProvider & {
+	createChecklistWithItems?: ReturnType<typeof vi.fn>;
+};
+
 describe('addChecklist', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		delete providerWithBulk.createChecklistWithItems;
+	});
+
+	it('uses provider bulk creation when available', async () => {
+		providerWithBulk.createChecklistWithItems = vi.fn().mockResolvedValue({
+			id: 'cl1',
+			name: 'My Tasks',
+			workItemId: 'item1',
+			items: [],
+		});
+
+		const result = await addChecklist({
+			workItemId: 'item1',
+			checklistName: 'My Tasks',
+			items: ['Task A', { name: 'Task B', description: 'Details' }],
+		});
+
+		expect(providerWithBulk.createChecklistWithItems).toHaveBeenCalledTimes(1);
+		expect(providerWithBulk.createChecklistWithItems).toHaveBeenCalledWith('item1', 'My Tasks', [
+			{ name: 'Task A', checked: false },
+			{ name: 'Task B', checked: false, description: 'Details' },
+		]);
+		expect(mockProvider.createChecklist).not.toHaveBeenCalled();
+		expect(mockProvider.addChecklistItem).not.toHaveBeenCalled();
+		expect(result).toBe('Checklist "My Tasks" created with 2 items on work item item1');
+	});
+
 	it('creates checklist and adds string items', async () => {
 		mockProvider.createChecklist.mockResolvedValue({
 			id: 'cl1',

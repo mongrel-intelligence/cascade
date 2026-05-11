@@ -200,6 +200,18 @@ Managed via:
 - Dashboard: Settings > Prompts
 - CLI: `cascade prompts set-partial`, `cascade prompts reset-partial`
 
+### PM prompt context
+
+Pipeline prompts receive separate PM identifiers for selection and creation:
+
+| Variable | Purpose |
+|----------|---------|
+| `backlogStatusId` | Provider-native BACKLOG workflow state/list used for backlog selection and `MoveWorkItem.expectedSourceState` |
+| `workItemCreateContainerId` | Provider-native container used for `CreateWorkItem` |
+| `backlogListId` | Deprecated compatibility alias for older custom prompts |
+
+For Trello, BACKLOG is a list, so `backlogStatusId` and `workItemCreateContainerId` are both the backlog list ID. For JIRA, `backlogStatusId` is `jira.statuses.backlog` and creation uses `jira.projectKey`. For Linear, `backlogStatusId` is `linear.statuses.backlog` and creation uses `linear.teamId`; backlog-manager must not use the Linear team ID to discover candidate backlog issues.
+
 ## Hooks
 
 ### Trailing hooks

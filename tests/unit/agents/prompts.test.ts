@@ -64,16 +64,19 @@ describe('getSystemPrompt', () => {
 
 	it('renders context variables in splitting prompt', () => {
 		const prompt = getSystemPrompt('splitting', {
-			backlogListId: 'backlog-123',
+			workItemCreateContainerId: 'team-123',
+			backlogStatusId: 'state-backlog',
 			processedLabelId: 'label-456',
 		});
-		expect(prompt).toContain('BACKLOG_LIST_ID: backlog-123');
+		expect(prompt).toContain('WORK_ITEM_CREATE_CONTAINER_ID: team-123');
+		expect(prompt).toContain('BACKLOG_STATUS_ID: state-backlog');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: label-456');
 	});
 
 	it('uses default values when context is not provided', () => {
 		const prompt = getSystemPrompt('splitting');
-		expect(prompt).toContain('BACKLOG_LIST_ID: NOT_CONFIGURED');
+		expect(prompt).toContain('WORK_ITEM_CREATE_CONTAINER_ID: NOT_CONFIGURED');
+		expect(prompt).toContain('BACKLOG_STATUS_ID: NOT_CONFIGURED');
 		expect(prompt).toContain('PROCESSED_LABEL_ID: NOT_CONFIGURED');
 	});
 
@@ -184,6 +187,16 @@ describe('system prompts content', () => {
 		expect(prompt).not.toContain('RipGrep');
 	});
 
+	it('backlog-manager prompt uses status-aware backlog listing and state guard wording', () => {
+		const prompt = getSystemPrompt('backlog-manager', {
+			backlogStatusId: 'state-backlog',
+			backlogSourceLabel: 'state-backlog',
+		});
+		expect(prompt).toContain('BACKLOG_STATUS_ID: `state-backlog`');
+		expect(prompt).toContain('status: "backlog"');
+		expect(prompt).not.toContain('Use these EXACT IDs when calling `ListWorkItems`');
+	});
+
 	it('backlog-manager prompt uses template variables for PM terminology', () => {
 		const prompt = getSystemPrompt('backlog-manager');
 		// Default fallback values should be used
@@ -282,6 +295,8 @@ describe('system prompts content', () => {
 		const vars = getTemplateVariables();
 		const names = vars.map((v) => v.name);
 		expect(names).toContain('maxInFlightItems');
+		expect(names).toContain('backlogStatusId');
+		expect(names).toContain('workItemCreateContainerId');
 	});
 });
 
@@ -842,8 +857,10 @@ describe('alerting prompt (spec 018)', () => {
 		).not.toThrow();
 	});
 
-	it('renders without throwing when only a backlogListId is provided', () => {
-		expect(() => getSystemPrompt('alerting', { backlogListId: 'list-abc' })).not.toThrow();
+	it('renders without throwing when only a creation container is provided', () => {
+		expect(() =>
+			getSystemPrompt('alerting', { workItemCreateContainerId: 'container-abc' }),
+		).not.toThrow();
 	});
 
 	it('contains all three phase markers in order', () => {
@@ -881,10 +898,10 @@ describe('alerting prompt (spec 018)', () => {
 		expect(prompt).toContain('WI-1234');
 	});
 
-	it('directs creating a backlog work item when only backlogListId is provided', () => {
-		const prompt = getSystemPrompt('alerting', { backlogListId: 'list-abc' });
+	it('directs creating a backlog work item when only creation container is provided', () => {
+		const prompt = getSystemPrompt('alerting', { workItemCreateContainerId: 'container-abc' });
 		expect(prompt).toMatch(/create/i);
-		expect(prompt).toContain('list-abc');
+		expect(prompt).toContain('container-abc');
 	});
 
 	it('does not contain engine-specific tool-call syntax', () => {

@@ -1,4 +1,5 @@
 import { getPMProvider } from '../../../pm/index.js';
+import type { ChecklistItemDraft } from '../../../pm/types.js';
 
 export type ChecklistItemInput = string | { name: string; description?: string };
 
@@ -14,13 +15,27 @@ export async function addChecklist(params: AddChecklistParams): Promise<string> 
 	}
 
 	const provider = getPMProvider();
-	const checklist = await provider.createChecklist(params.workItemId, params.checklistName);
+	const items = params.items.map(normalizeChecklistItem);
 
-	for (const item of params.items) {
-		const name = typeof item === 'string' ? item : item.name;
-		const description = typeof item === 'string' ? undefined : item.description;
-		await provider.addChecklistItem(checklist.id, name, false, description);
+	if (typeof provider.createChecklistWithItems === 'function') {
+		await provider.createChecklistWithItems(params.workItemId, params.checklistName, items);
+		return successMessage(params.workItemId, params.checklistName, items.length);
 	}
 
-	return `Checklist "${params.checklistName}" created with ${params.items.length} items on work item ${params.workItemId}`;
+	const checklist = await provider.createChecklist(params.workItemId, params.checklistName);
+
+	for (const item of items) {
+		await provider.addChecklistItem(checklist.id, item.name, item.checked, item.description);
+	}
+
+	return successMessage(params.workItemId, params.checklistName, items.length);
+}
+
+function normalizeChecklistItem(item: ChecklistItemInput): ChecklistItemDraft {
+	if (typeof item === 'string') return { name: item, checked: false };
+	return { name: item.name, checked: false, description: item.description };
+}
+
+function successMessage(workItemId: string, checklistName: string, itemCount: number): string {
+	return `Checklist "${checklistName}" created with ${itemCount} items on work item ${workItemId}`;
 }
