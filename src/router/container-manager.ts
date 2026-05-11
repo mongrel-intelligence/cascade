@@ -18,12 +18,12 @@ import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { activeWorkers, cleanupWorker } from './active-workers.js';
 import { clearAllAgentTypeLocks } from './agent-type-lock.js';
-import { loadProjectConfig, routerConfig } from './config.js';
+import { routerConfig } from './config.js';
 import { ROUTER_INSTANCE_ID } from './instance-id.js';
 import { notifyTimeout } from './notifications.js';
 import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
-import { getSnapshot, invalidateSnapshot, registerSnapshot } from './snapshot-manager.js';
+import { invalidateSnapshot, registerSnapshot } from './snapshot-manager.js';
 import { clearAllWorkItemLocks } from './work-item-lock.js';
 import {
 	buildWorkerEnvWithProjectId,
@@ -31,6 +31,7 @@ import {
 	extractProjectIdFromJob,
 	extractWorkItemId,
 } from './worker-env.js';
+import { buildWorkerContainerName, resolveSpawnSettings } from './worker-spawn-settings.js';
 
 // Re-export from sub-modules so existing callers importing from container-manager.ts
 // continue to work without changes.
@@ -54,11 +55,13 @@ export {
 	buildWorkerEnv,
 	extractProjectIdFromJob,
 } from './worker-env.js';
+export {
+	buildWorkerContainerName,
+	ROUTER_KILL_BUFFER_MS,
+	resolveSpawnSettings,
+} from './worker-spawn-settings.js';
 
 const docker = new Docker();
-
-/** Buffer added on top of the in-container watchdog so the router kill is always a backstop. */
-const ROUTER_KILL_BUFFER_MS = 2 * 60 * 1000;
 
 /**
  * Build a stable Docker image name for a snapshot.
@@ -256,84 +259,6 @@ async function onWorkerExit(opts: {
 	cleanupWorker(jobId, result.StatusCode, { oomKilled, exitReason });
 }
 
-interface SpawnSettings {
-	snapshotEnabled: boolean;
-	workerImage: string;
-	containerTimeoutMs: number;
-	snapshotTtlMs: number;
-}
-
-/**
- * Resolve per-project spawn settings (snapshot flag, image, timeout).
- * Centralises all loadProjectConfig() calls so spawnWorker stays simple.
- *
- * @internal Exported for unit testing only — call `spawnWorker` from app code.
- */
-export async function resolveSpawnSettings(
-	projectId: string | null,
-	workItemId: string | undefined,
-	jobId: string,
-): Promise<SpawnSettings> {
-	let snapshotEnabled = false;
-	let workerImage = routerConfig.workerImage;
-	let containerTimeoutMs = routerConfig.workerTimeoutMs;
-	let snapshotTtlMs = routerConfig.snapshotDefaultTtlMs;
-
-	if (!projectId) return { snapshotEnabled, workerImage, containerTimeoutMs, snapshotTtlMs };
-
-	const { fullProjects } = await loadProjectConfig();
-	const projectCfg = fullProjects.find((p) => p.id === projectId);
-
-	// Project-level snapshotEnabled overrides the global default
-	snapshotEnabled = projectCfg?.snapshotEnabled ?? routerConfig.snapshotEnabled;
-
-	// Per-project TTL overrides the global default
-	snapshotTtlMs = projectCfg?.snapshotTtlMs ?? routerConfig.snapshotDefaultTtlMs;
-
-	if (snapshotEnabled && workItemId) {
-		const snapshot = getSnapshot(projectId, workItemId, snapshotTtlMs);
-		if (snapshot) {
-			logger.info('[WorkerManager] Snapshot hit — using snapshot image:', {
-				jobId,
-				imageName: snapshot.imageName,
-				projectId,
-				workItemId,
-			});
-			workerImage = snapshot.imageName;
-		} else {
-			logger.info('[WorkerManager] Snapshot miss — using base worker image:', {
-				jobId,
-				projectId,
-				workItemId,
-			});
-		}
-	}
-
-	// Determine container timeout: use project's watchdogTimeoutMs + buffer if available,
-	// falling back to the global workerTimeoutMs. This makes watchdogTimeoutMs the single source
-	// of truth — the in-container watchdog fires first, router kill is a backup.
-	if (projectCfg?.watchdogTimeoutMs) {
-		containerTimeoutMs = projectCfg.watchdogTimeoutMs + ROUTER_KILL_BUFFER_MS;
-	}
-
-	// Trace-log the actual values that will govern this worker's lifetime so a
-	// post-mortem can confirm whether the project's watchdogTimeoutMs override
-	// took effect or the global default leaked through.
-	logger.info('[WorkerManager] Resolved spawn settings:', {
-		jobId,
-		projectId,
-		workItemId,
-		workerImage,
-		snapshotEnabled,
-		containerTimeoutMs,
-		containerTimeoutMinutes: Math.round(containerTimeoutMs / 60_000),
-		projectWatchdogTimeoutMs: projectCfg?.watchdogTimeoutMs ?? null,
-		globalWorkerTimeoutMs: routerConfig.workerTimeoutMs,
-	});
-
-	return { snapshotEnabled, workerImage, containerTimeoutMs, snapshotTtlMs };
-}
-
 /**
  * Returns true when a Docker error indicates the requested image does not exist.
  * Uses the HTTP statusCode from dockerode's error objects as the primary signal,
@@ -480,13 +405,7 @@ async function createAndMonitorContainer(
  */
 export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	const jobId = job.id ?? `unknown-${Date.now()}`;
-	// Docker container names accept only `[a-zA-Z0-9][a-zA-Z0-9_.-]`. PR #1226
-	// introduced coalesced-job IDs shaped `coalesce:${projectId}:${workItemId}`
-	// where the colons crashed `createContainer` with HTTP 400 — every coalesced
-	// job that fired post-deploy failed to spawn. Sanitize disallowed chars to
-	// underscores; the original `jobId` stays intact in logs and dedup keys.
-	const containerSafeJobId = jobId.replace(/[^a-zA-Z0-9_.-]/g, '_');
-	const containerName = `cascade-worker-${containerSafeJobId}`;
+	const containerName = buildWorkerContainerName(jobId);
 
 	// Resolve projectId once — used for both credential env and work-item lock tracking
 	const projectId = await extractProjectIdFromJob(job.data);
