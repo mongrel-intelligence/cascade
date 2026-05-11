@@ -15,7 +15,14 @@ export async function processLinearWebhook(
 	registry: TriggerRegistry,
 	ackCommentId?: string,
 	triggerResult?: TriggerResult,
+	/**
+	 * Cascade project id chosen by the router. Forwarded to
+	 * `processPMWebhook` so the worker uses the router's selection instead
+	 * of re-looking up by Linear teamId — which would re-introduce the
+	 * `.find()` shadow when two cascade projects share one team.
+	 */
+	projectId?: string,
 ): Promise<void> {
 	const integration = pmRegistry.get('linear');
-	await processPMWebhook(integration, payload, registry, ackCommentId, triggerResult);
+	await processPMWebhook(integration, payload, registry, ackCommentId, triggerResult, projectId);
 }

@@ -154,6 +154,7 @@ describe('dispatchJob routing', () => {
 			mockRegistry,
 			'comment-123',
 			triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -238,6 +239,7 @@ describe('dispatchJob routing', () => {
 			mockRegistry,
 			'jira-comment-789',
 			triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -361,6 +363,7 @@ describe('dispatchJob routing', () => {
 			mockRegistry,
 			'lin-comment-789',
 			triggerResult,
+			'proj-1',
 		);
 		// Without pendingAck, the deferred-ack path is NOT taken
 		expect(dispatchPMAck).not.toHaveBeenCalled();
@@ -441,6 +444,7 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 			expect.anything(),
 			'trello-deferred-1',
 			jobData.triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -485,6 +489,7 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 			expect.anything(),
 			'jira-deferred-1',
 			jobData.triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -529,6 +534,7 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 			expect.anything(),
 			'linear-deferred-1',
 			jobData.triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -611,6 +617,7 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 			expect.anything(),
 			'pre-existing',
 			jobData.triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -638,6 +645,7 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 			expect.anything(),
 			'fallback-comment',
 			jobData.triggerResult,
+			'proj-1',
 		);
 	});
 
@@ -950,6 +958,7 @@ describe('main() - environment variable validation', () => {
 			expect.anything(),
 			'comment-123',
 			undefined,
+			'proj-1',
 		);
 		// flush is called before exit(0)
 		expect(flush).toHaveBeenCalled();

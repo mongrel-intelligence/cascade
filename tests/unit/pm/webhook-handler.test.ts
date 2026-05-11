@@ -51,6 +51,11 @@ vi.mock('../../../src/router/agent-type-lock.js', () => ({
 	markRecentlyDispatched: vi.fn(),
 }));
 
+vi.mock('../../../src/config/provider.js', () => ({
+	loadProjectConfigById: vi.fn(),
+}));
+
+import { loadProjectConfigById } from '../../../src/config/provider.js';
 import { processPMWebhook } from '../../../src/pm/webhook-handler.js';
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
@@ -235,5 +240,95 @@ describe('processPMWebhook', () => {
 		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
 
 		expect(integration.withCredentials).toHaveBeenCalled();
+	});
+
+	// 2026-05-11: preferredProjectId path. Closes the third bug in the
+	// chain (#1332, #1337 fixed the router; this fixes the worker-side
+	// re-resolution). When the router has already chosen the correct
+	// cascade project (e.g. two cascade projects share a Linear team and
+	// the issue's Linear Project determines which one) it forwards the
+	// chosen id through the job → webhook-handler → processPMWebhook.
+	// processPMWebhook must use the router's choice, NOT re-look-up by
+	// webhook identifier (which would re-introduce the `.find()` shadow).
+	describe('preferredProjectId (router-selected project)', () => {
+		const routerSelectedProject = {
+			id: 'ucho',
+			name: 'ucho project',
+			repo: 'zbigniewsobiecki/ucho',
+			baseBranch: 'main',
+			watchdogTimeoutMs: 120000,
+		};
+		const routerSelectedConfig = { projects: [] };
+
+		beforeEach(() => {
+			vi.mocked(loadProjectConfigById).mockResolvedValue({
+				project: routerSelectedProject,
+				config: routerSelectedConfig,
+			} as never);
+		});
+
+		it('uses loadProjectConfigById when preferredProjectId is set, NOT integration.lookupProject', async () => {
+			const integration = createMockIntegration();
+			const registry = createMockRegistry();
+
+			await processPMWebhook(
+				integration as never,
+				{ type: 'card_moved' },
+				registry as never,
+				undefined,
+				undefined,
+				'ucho',
+			);
+
+			expect(loadProjectConfigById).toHaveBeenCalledWith('ucho');
+			expect(integration.lookupProject).not.toHaveBeenCalled();
+		});
+
+		it('agent execution receives the router-selected project (ucho), not the lookupProject default', async () => {
+			const integration = createMockIntegration();
+			const registry = createMockRegistry();
+
+			await processPMWebhook(
+				integration as never,
+				{ type: 'card_moved' },
+				registry as never,
+				undefined,
+				undefined,
+				'ucho',
+			);
+
+			// withCredentials receives the project.id from the resolved config.
+			// Pre-fix this was the lookupProject default ('project-1' from
+			// the mock integration); post-fix it's the router's selection.
+			expect(integration.withCredentials).toHaveBeenCalledWith('ucho', expect.any(Function));
+		});
+
+		it('falls back to integration.lookupProject when preferredProjectId is undefined (legacy callers)', async () => {
+			const integration = createMockIntegration();
+			const registry = createMockRegistry();
+
+			await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
+
+			expect(loadProjectConfigById).not.toHaveBeenCalled();
+			expect(integration.lookupProject).toHaveBeenCalledWith('BOARD_123');
+		});
+
+		it('returns early when preferredProjectId resolves to no project (fail-closed)', async () => {
+			vi.mocked(loadProjectConfigById).mockResolvedValueOnce(undefined);
+			const integration = createMockIntegration();
+			const registry = createMockRegistry();
+
+			await processPMWebhook(
+				integration as never,
+				{ type: 'card_moved' },
+				registry as never,
+				undefined,
+				undefined,
+				'never-configured-project',
+			);
+
+			expect(registry.dispatch).not.toHaveBeenCalled();
+			expect(mockRunAgentExecutionPipeline).not.toHaveBeenCalled();
+		});
 	});
 });

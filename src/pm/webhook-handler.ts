@@ -7,6 +7,7 @@
  * ack comment management) is delegated to the PMIntegration interface.
  */
 
+import { loadProjectConfigById } from '../config/provider.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { withAgentTypeConcurrency } from '../triggers/shared/concurrency.js';
 import { resolveTriggerResult } from '../triggers/shared/trigger-resolution.js';
@@ -149,9 +150,25 @@ export async function processPMWebhook(
 	registry: TriggerRegistry,
 	ackCommentId?: string,
 	triggerResult?: TriggerResult,
+	/**
+	 * Optional cascade project id selected by the router. When set, looks
+	 * up the project by id (the router's choice) instead of re-resolving
+	 * by webhook identifier — which would re-introduce the `.find()`
+	 * first-match shadow when multiple cascade projects share one Linear
+	 * team. Closes the prod regression chain that started with #1332 and
+	 * #1337 in the Linear router adapter — fixing only those left a
+	 * matching shadow in the worker-side webhook handler.
+	 *
+	 * Trello / JIRA setups never had this active shadow (their
+	 * discriminators are naturally unique per cascade project), but
+	 * threading the id through here too is consistent and defensive
+	 * against future multi-cascade-project-per-discriminator configs.
+	 */
+	preferredProjectId?: string,
 ): Promise<void> {
 	logger.info(`Processing ${integration.type} webhook`, {
 		hasTriggerResult: !!triggerResult,
+		preferredProjectId,
 	});
 
 	const event = integration.parseWebhookPayload(payload);
@@ -166,12 +183,16 @@ export async function processPMWebhook(
 		projectIdentifier: event.projectIdentifier,
 		workItemId: event.workItemId,
 		eventType: event.eventType,
+		preferredProjectId,
 	});
 
-	const projectConfig = await integration.lookupProject(event.projectIdentifier);
+	const projectConfig = preferredProjectId
+		? await loadProjectConfigById(preferredProjectId)
+		: await integration.lookupProject(event.projectIdentifier);
 	if (!projectConfig) {
 		logger.warn(`No project configured for ${integration.type} identifier`, {
 			identifier: event.projectIdentifier,
+			preferredProjectId,
 		});
 		return;
 	}

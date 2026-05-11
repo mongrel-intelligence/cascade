@@ -309,6 +309,7 @@ export async function dispatchJob(
 				triggerRegistry,
 				trelloAckCommentId,
 				jobData.triggerResult,
+				jobData.projectId,
 			);
 			break;
 		}
@@ -357,6 +358,7 @@ export async function dispatchJob(
 				triggerRegistry,
 				jiraAckCommentId,
 				jobData.triggerResult,
+				jobData.projectId,
 			);
 			break;
 		}
@@ -402,6 +404,7 @@ export async function dispatchJob(
 				triggerRegistry,
 				linearAckCommentId,
 				jobData.triggerResult,
+				jobData.projectId,
 			);
 			break;
 		}
