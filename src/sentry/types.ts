@@ -72,6 +72,8 @@ export interface SentryRequest {
 	headers?: Record<string, string>;
 	query_string?: string;
 	queryString?: string;
+	/** REST issue-event shape: tuple pairs, a plain string, or a record */
+	query?: string | Array<[string, string]> | Record<string, string>;
 	data?: unknown;
 	cookies?: unknown;
 	env?: Record<string, unknown>;

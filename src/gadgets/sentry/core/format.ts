@@ -185,13 +185,33 @@ function appendEventTags(lines: string[], event: SentryEvent): void {
 	}
 }
 
+function normalizeRequestQuery(request: SentryRequest): string | undefined {
+	// Prefer the already-serialized query-string aliases
+	const qs = request.query_string ?? request.queryString;
+	if (qs) return qs;
+
+	// REST issue-event shape: `query` can be tuple pairs, a plain string, or a record
+	const q = request.query;
+	if (!q) return undefined;
+	if (typeof q === 'string') return q;
+	if (Array.isArray(q)) {
+		const pairs = q.map(([k, v]) => `${k}=${v}`).join('&');
+		return pairs || undefined;
+	}
+	// Record<string, string>
+	const pairs = Object.entries(q)
+		.map(([k, v]) => `${k}=${v}`)
+		.join('&');
+	return pairs || undefined;
+}
+
 function appendEventRequest(lines: string[], event: SentryEvent): void {
 	const request = getEventRequest(event);
 	if (!request?.url) return;
 	lines.push('');
 	lines.push('## Request');
 	lines.push(`${request.method ?? 'GET'} ${request.url}`);
-	const query = request.query_string ?? request.queryString;
+	const query = normalizeRequestQuery(request);
 	if (query) lines.push(`Query: ${query}`);
 	if (request.data !== undefined) lines.push(`Data: ${formatCompactValue(request.data)}`);
 }

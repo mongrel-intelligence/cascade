@@ -134,6 +134,62 @@ describe('formatSentryEvent', () => {
 
 		expect(result).toContain('Tags: environment=production, handled=false');
 	});
+
+	it('formats REST request query as tuple pairs', () => {
+		const result = formatSentryEvent({
+			title: 'REST query tuples',
+			entries: [
+				{
+					type: 'request',
+					data: {
+						method: 'GET',
+						url: 'https://example.com/api/items',
+						query: [
+							['page', '2'],
+							['limit', '50'],
+						],
+					},
+				},
+			],
+		});
+
+		expect(result).toContain('## Request');
+		expect(result).toContain('GET https://example.com/api/items');
+		expect(result).toContain('Query: page=2&limit=50');
+	});
+
+	it('formats REST request query as a record', () => {
+		const result = formatSentryEvent({
+			title: 'REST query record',
+			entries: [
+				{
+					type: 'request',
+					data: {
+						method: 'GET',
+						url: 'https://example.com/api/search',
+						query: { q: 'TypeError', sort: 'newest' },
+					},
+				},
+			],
+		});
+
+		expect(result).toContain('Query: q=TypeError&sort=newest');
+	});
+
+	it('prefers query_string over query tuple pairs', () => {
+		const result = formatSentryEvent({
+			title: 'query_string wins',
+			request: {
+				method: 'GET',
+				url: 'https://example.com/api',
+				query_string: 'already=serialized',
+				query: [['should', 'be-ignored']],
+			},
+		});
+
+		expect(result).toContain('Query: already=serialized');
+		expect(result).not.toContain('be-ignored');
+	});
 });
 
 describe('formatSentryEventList', () => {
