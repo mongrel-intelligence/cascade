@@ -104,8 +104,10 @@ cascade-tools pm report-friction \
 | Gadget | Capability | Purpose |
 |--------|-----------|---------|
 | `GetAlertingIssue` | `alerting:read` | Fetch Sentry issue details |
-| `GetAlertingEventDetail` | `alerting:read` | Fetch specific event with stacktrace |
+| `GetAlertingEventDetail` | `alerting:read` | Fetch Sentry issue-event details with stacktrace, tags, breadcrumbs, request data, and context |
 | `ListAlertingEvents` | `alerting:read` | List recent events for an issue |
+
+`GetAlertingEventDetail` accepts Sentry's issue-event response shape, including REST aliases from the [Retrieve an Issue Event API](https://docs.sentry.io/api/events/retrieve-an-issue-event/).
 
 ## cascade-tools CLI
 

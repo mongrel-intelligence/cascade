@@ -8,6 +8,7 @@ import type {
 	SentryEvent,
 	SentryException,
 	SentryIssue,
+	SentryRequest,
 	SentryStackFrame,
 } from '../../../sentry/types.js';
 
@@ -51,24 +52,28 @@ export function formatSentryIssue(issue: SentryIssue): string {
 
 function formatStackFrame(frame: SentryStackFrame, index: number): string {
 	const lines: string[] = [];
-	const location = [frame.filename ?? frame.abs_path, frame.lineno].filter(Boolean).join(':');
+	const lineno = frame.lineno ?? frame.lineNo;
+	const location = [frame.filename ?? frame.abs_path ?? frame.absPath, lineno]
+		.filter(Boolean)
+		.join(':');
 	const fn = frame.function ?? '<anonymous>';
-	const inApp = frame.in_app ? ' [in_app]' : '';
+	const inApp = (frame.in_app ?? frame.inApp) ? ' [in_app]' : '';
 
 	lines.push(`  Frame ${index}: ${fn}${inApp}`);
 	if (location) lines.push(`    at ${location}`);
 
 	// Source context
-	if (frame.pre_context?.length) {
-		for (const line of frame.pre_context) {
+	const sourceContext = normalizeFrameSourceContext(frame);
+	if (sourceContext.pre.length) {
+		for (const line of sourceContext.pre) {
 			lines.push(`    | ${line}`);
 		}
 	}
-	if (frame.context_line !== undefined) {
-		lines.push(`  > | ${frame.context_line}  ← error here`);
+	if (sourceContext.current !== undefined) {
+		lines.push(`  > | ${sourceContext.current}  ← error here`);
 	}
-	if (frame.post_context?.length) {
-		for (const line of frame.post_context) {
+	if (sourceContext.post.length) {
+		for (const line of sourceContext.post) {
 			lines.push(`    | ${line}`);
 		}
 	}
@@ -79,6 +84,39 @@ function formatStackFrame(frame: SentryStackFrame, index: number): string {
 	}
 
 	return lines.join('\n');
+}
+
+function normalizeFrameSourceContext(frame: SentryStackFrame): {
+	pre: string[];
+	current?: string;
+	post: string[];
+} {
+	if (frame.pre_context?.length || frame.context_line !== undefined || frame.post_context?.length) {
+		return {
+			pre: frame.pre_context ?? [],
+			current: frame.context_line,
+			post: frame.post_context ?? [],
+		};
+	}
+
+	if (!frame.context?.length) {
+		return { pre: [], post: [] };
+	}
+
+	const lineNo = frame.lineno ?? frame.lineNo;
+	const currentIndex =
+		lineNo === undefined
+			? -1
+			: frame.context.findIndex(([contextLineNo]) => contextLineNo === lineNo);
+	if (currentIndex < 0) {
+		return { pre: frame.context.map(([, line]) => line), post: [] };
+	}
+
+	return {
+		pre: frame.context.slice(0, currentIndex).map(([, line]) => line),
+		current: frame.context[currentIndex][1],
+		post: frame.context.slice(currentIndex + 1).map(([, line]) => line),
+	};
 }
 
 function formatException(exc: SentryException): string {
@@ -128,32 +166,54 @@ function formatBreadcrumbs(breadcrumbs: SentryBreadcrumb[]): string {
 // ============================================================================
 
 function appendEventMeta(lines: string[], event: SentryEvent): void {
-	if (event.event_id) lines.push(`Event ID: ${event.event_id}`);
-	if (event.timestamp) lines.push(`Timestamp: ${event.timestamp}`);
+	const eventId = getEventId(event);
+	const timestamp = getEventTimestamp(event);
+	const release = getReleaseValue(event.release);
+	if (eventId) lines.push(`Event ID: ${eventId}`);
+	if (timestamp) lines.push(`Timestamp: ${timestamp}`);
 	if (event.environment) lines.push(`Environment: ${event.environment}`);
-	if (event.release) lines.push(`Release: ${event.release}`);
+	if (release) lines.push(`Release: ${release}`);
 	if (event.platform) lines.push(`Platform: ${event.platform}`);
 	if (event.transaction) lines.push(`Transaction: ${event.transaction}`);
 	if (event.level) lines.push(`Level: ${event.level}`);
 }
 
 function appendEventTags(lines: string[], event: SentryEvent): void {
-	const tags = event.tags;
-	if (!tags) return;
-	const tagPairs = Array.isArray(tags)
-		? tags.map(([k, v]) => `${k}=${v}`)
-		: Object.entries(tags).map(([k, v]) => `${k}=${v}`);
+	const tagPairs = normalizeTagPairs(event.tags).map(([key, value]) => `${key}=${value}`);
 	if (tagPairs.length > 0) {
 		lines.push(`Tags: ${tagPairs.join(', ')}`);
 	}
 }
 
+function normalizeRequestQuery(request: SentryRequest): string | undefined {
+	// Prefer the already-serialized query-string aliases
+	const qs = request.query_string ?? request.queryString;
+	if (qs) return qs;
+
+	// REST issue-event shape: `query` can be tuple pairs, a plain string, or a record
+	const q = request.query;
+	if (!q) return undefined;
+	if (typeof q === 'string') return q;
+	if (Array.isArray(q)) {
+		const pairs = q.map(([k, v]) => `${k}=${v}`).join('&');
+		return pairs || undefined;
+	}
+	// Record<string, string>
+	const pairs = Object.entries(q)
+		.map(([k, v]) => `${k}=${v}`)
+		.join('&');
+	return pairs || undefined;
+}
+
 function appendEventRequest(lines: string[], event: SentryEvent): void {
-	if (!event.request?.url) return;
+	const request = getEventRequest(event);
+	if (!request?.url) return;
 	lines.push('');
 	lines.push('## Request');
-	lines.push(`${event.request.method ?? 'GET'} ${event.request.url}`);
-	if (event.request.query_string) lines.push(`Query: ${event.request.query_string}`);
+	lines.push(`${request.method ?? 'GET'} ${request.url}`);
+	const query = normalizeRequestQuery(request);
+	if (query) lines.push(`Query: ${query}`);
+	if (request.data !== undefined) lines.push(`Data: ${formatCompactValue(request.data)}`);
 }
 
 function appendEventUser(lines: string[], event: SentryEvent): void {
@@ -168,7 +228,7 @@ function appendEventUser(lines: string[], event: SentryEvent): void {
 }
 
 function appendEventStacktrace(lines: string[], event: SentryEvent): void {
-	const exceptions = event.exception?.values;
+	const exceptions = getEventExceptions(event);
 	if (exceptions?.length) {
 		lines.push('');
 		lines.push('## Exception');
@@ -188,6 +248,99 @@ function appendEventStacktrace(lines: string[], event: SentryEvent): void {
 	}
 }
 
+function appendEventContext(lines: string[], event: SentryEvent): void {
+	const contextLines: string[] = [];
+	for (const [key, value] of Object.entries(event.context ?? {})) {
+		contextLines.push(`${key}: ${formatCompactValue(value)}`);
+	}
+	for (const [key, value] of Object.entries(event.contexts ?? {})) {
+		if (value === undefined || value === null) continue;
+		contextLines.push(`${key}: ${formatCompactValue(value)}`);
+	}
+	if (contextLines.length === 0) return;
+
+	lines.push('');
+	lines.push('## Context');
+	for (const line of contextLines.slice(0, 20)) {
+		lines.push(line);
+	}
+}
+
+function normalizeTagPairs(
+	tags: SentryEvent['tags'],
+): Array<[string, string | number | boolean | null]> {
+	if (!tags) return [];
+	if (!Array.isArray(tags)) {
+		return Object.entries(tags).filter(([key, value]) => key && value !== undefined);
+	}
+
+	const pairs: Array<[string, string | number | boolean | null]> = [];
+	for (const tag of tags) {
+		if (Array.isArray(tag)) {
+			const [key, value] = tag;
+			if (key && value !== undefined) pairs.push([key, value]);
+			continue;
+		}
+		if (tag && typeof tag === 'object' && tag.key && tag.value !== undefined) {
+			pairs.push([tag.key, tag.value]);
+		}
+	}
+	return pairs;
+}
+
+function getEventId(event: SentryEvent): string | undefined {
+	return event.event_id ?? event.eventID ?? event.id;
+}
+
+function getEventTimestamp(event: SentryEvent): string | undefined {
+	return event.timestamp ?? event.dateCreated ?? event.dateReceived ?? event.received;
+}
+
+function getReleaseValue(release: SentryEvent['release']): string | undefined {
+	if (!release) return undefined;
+	if (typeof release === 'string') return release;
+	if (typeof release === 'object') {
+		const record = release as Record<string, unknown>;
+		const value = record.version ?? record.shortVersion ?? record.package;
+		return typeof value === 'string' ? value : undefined;
+	}
+	return undefined;
+}
+
+function findEntryData<T>(event: SentryEvent, type: string): T | undefined {
+	const entry = event.entries?.find((candidate) => candidate.type === type);
+	return entry?.data as T | undefined;
+}
+
+function getEventExceptions(event: SentryEvent): SentryException[] | undefined {
+	return (
+		event.exception?.values ??
+		findEntryData<{ values?: SentryException[] }>(event, 'exception')?.values
+	);
+}
+
+function getEventBreadcrumbs(event: SentryEvent): SentryBreadcrumb[] | undefined {
+	return (
+		event.breadcrumbs?.values ??
+		findEntryData<{ values?: SentryBreadcrumb[] }>(event, 'breadcrumbs')?.values
+	);
+}
+
+function getEventRequest(event: SentryEvent): SentryRequest | undefined {
+	return event.request ?? findEntryData<SentryRequest>(event, 'request');
+}
+
+function formatCompactValue(value: unknown): string {
+	if (typeof value === 'string') return value.slice(0, 200);
+	if (typeof value === 'number' || typeof value === 'boolean' || value === null)
+		return String(value);
+	try {
+		return JSON.stringify(value, null, 0).slice(0, 200);
+	} catch {
+		return String(value).slice(0, 200);
+	}
+}
+
 export function formatSentryEvent(event: SentryEvent): string {
 	const lines: string[] = [];
 
@@ -201,12 +354,13 @@ export function formatSentryEvent(event: SentryEvent): string {
 	appendEventUser(lines, event);
 	appendEventStacktrace(lines, event);
 
-	const breadcrumbs = event.breadcrumbs?.values;
+	const breadcrumbs = getEventBreadcrumbs(event);
 	if (breadcrumbs?.length) {
 		lines.push('');
 		lines.push('## Breadcrumbs');
 		lines.push(formatBreadcrumbs(breadcrumbs));
 	}
+	appendEventContext(lines, event);
 
 	if (event.web_url) {
 		lines.push('');
@@ -225,8 +379,9 @@ export function formatSentryEventList(events: SentryEvent[]): string {
 
 	const lines: string[] = [`${events.length} event(s):`];
 	for (const e of events) {
-		const ts = e.timestamp ?? e.received ?? '(unknown time)';
-		const id = e.event_id ? e.event_id.slice(0, 8) : '(no id)';
+		const ts = getEventTimestamp(e) ?? '(unknown time)';
+		const eventId = getEventId(e);
+		const id = eventId ? eventId.slice(0, 8) : '(no id)';
 		const tx = e.transaction ? ` — ${e.transaction}` : '';
 		lines.push(`  [${id}] ${ts}${tx}`);
 	}

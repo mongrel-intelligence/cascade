@@ -30,6 +30,11 @@ export interface SentryStackFrame {
 	vars?: Record<string, unknown>;
 	abs_path?: string;
 	module?: string;
+	lineNo?: number;
+	colNo?: number;
+	inApp?: boolean;
+	absPath?: string;
+	context?: Array<[number, string]>;
 }
 
 export interface SentryStackTrace {
@@ -56,27 +61,72 @@ export interface SentryBreadcrumb {
 	data?: Record<string, unknown>;
 }
 
+export interface SentryTag {
+	key?: string;
+	value?: string | number | boolean | null;
+}
+
+export interface SentryRequest {
+	url?: string;
+	method?: string;
+	headers?: Record<string, string>;
+	query_string?: string;
+	queryString?: string;
+	/** REST issue-event shape: tuple pairs, a plain string, or a record */
+	query?: string | Array<[string, string]> | Record<string, string>;
+	data?: unknown;
+	cookies?: unknown;
+	env?: Record<string, unknown>;
+}
+
+export type SentryEventEntry =
+	| {
+			type: 'exception';
+			data?: {
+				values?: SentryException[];
+			};
+	  }
+	| {
+			type: 'breadcrumbs';
+			data?: {
+				values?: SentryBreadcrumb[];
+			};
+	  }
+	| {
+			type: 'request';
+			data?: SentryRequest;
+	  }
+	| {
+			type?: string;
+			data?: unknown;
+	  };
+
 // ============================================================================
 // Sentry event (included in issue alert payloads and REST API responses)
 // ============================================================================
 
 export interface SentryEvent {
+	id?: string;
 	event_id?: string;
+	eventID?: string;
 	url?: string;
 	web_url?: string;
 	issue_id?: string;
 	issue_url?: string;
 	project?: string;
-	release?: string;
+	release?: string | Record<string, unknown>;
 	environment?: string;
 	platform?: string;
 	message?: string;
 	title?: string;
 	culprit?: string;
 	timestamp?: string;
+	dateCreated?: string;
+	dateReceived?: string;
 	received?: string;
 	level?: string;
 	transaction?: string;
+	metadata?: Record<string, unknown>;
 	exception?: {
 		values?: SentryException[];
 	};
@@ -84,14 +134,11 @@ export interface SentryEvent {
 	breadcrumbs?: {
 		values?: SentryBreadcrumb[];
 	};
-	tags?: Array<[string, string]> | Record<string, string>;
+	entries?: SentryEventEntry[];
+	tags?: Array<[string, string] | SentryTag> | Record<string, string | number | boolean | null>;
+	context?: Record<string, unknown>;
 	contexts?: Record<string, unknown>;
-	request?: {
-		url?: string;
-		method?: string;
-		headers?: Record<string, string>;
-		query_string?: string;
-	};
+	request?: SentryRequest;
 	user?: {
 		id?: string;
 		email?: string;

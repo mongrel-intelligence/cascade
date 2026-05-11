@@ -29,6 +29,7 @@ export function hashChecklistItemId(checklistName: string, itemText: string): st
 // ---------------------------------------------------------------------------
 
 const H3_REGEX = /^### (.+)$/;
+const HEADING_REGEX = /^#{1,6}\s+/;
 const CHECKBOX_REGEX = /^- \[([ x])\] (.+)$/;
 
 export function parseInlineChecklists(description: string): ParsedChecklist[] {
@@ -81,6 +82,8 @@ function classifyLine(line: string, current: { name: string } | null): LineClass
 	const h3Match = line.match(H3_REGEX);
 	if (h3Match) return { action: 'new-section', name: h3Match[1] };
 
+	if (current && HEADING_REGEX.test(line)) return { action: 'end-section' };
+
 	const cbMatch = line.match(CHECKBOX_REGEX);
 	if (cbMatch && current) {
 		const name = cbMatch[2].trim();
@@ -95,7 +98,7 @@ function classifyLine(line: string, current: { name: string } | null): LineClass
 	}
 
 	if (current && line.trim() === '') return { action: 'skip' };
-	if (current) return { action: 'end-section' };
+	if (current) return { action: 'skip' };
 	return { action: 'skip' };
 }
 
@@ -197,8 +200,12 @@ export function addItemToChecklist(
 		if (inSection) {
 			if (CHECKBOX_REGEX.test(lines[i])) {
 				insertIdx = i;
-			} else if (lines[i].trim() !== '') {
+			} else if (HEADING_REGEX.test(lines[i])) {
 				break;
+			} else if (lines[i].trim() !== '') {
+				// Non-empty detail/prose line — advance insertIdx so new items land
+				// after all trailing detail belonging to the previous item, not before it.
+				insertIdx = i;
 			}
 		}
 	}
@@ -245,9 +252,21 @@ export function removeChecklistItem(
 	if (scan.targetLineIdx === -1) throw new Error(`Checklist item line not found: ${itemId}`);
 
 	if (scan.itemCount === 1) {
-		removeSectionBlock(lines, scan.headingIdx, scan.targetLineIdx);
+		// Remove the entire section: use lastContentIdx so trailing detail lines
+		// after the only checkbox are included and not left orphaned.
+		const sectionEnd = scan.lastContentIdx !== -1 ? scan.lastContentIdx : scan.targetLineIdx;
+		removeSectionBlock(lines, scan.headingIdx, sectionEnd);
 	} else {
-		lines.splice(scan.targetLineIdx, 1);
+		// Also remove detail/prose lines immediately following the deleted checkbox
+		// (up to the next checkbox, heading, or blank line) so they aren't orphaned.
+		let deleteEnd = scan.targetLineIdx;
+		for (let i = scan.targetLineIdx + 1; i < lines.length; i++) {
+			if (HEADING_REGEX.test(lines[i]) || CHECKBOX_REGEX.test(lines[i]) || lines[i].trim() === '') {
+				break;
+			}
+			deleteEnd = i;
+		}
+		lines.splice(scan.targetLineIdx, deleteEnd - scan.targetLineIdx + 1);
 	}
 
 	return lines.join('\n').trimEnd();
@@ -292,6 +311,8 @@ interface SectionScan {
 	headingIdx: number;
 	targetLineIdx: number;
 	itemCount: number;
+	/** Index of the last non-empty line in the section (may be a detail line after the last checkbox). */
+	lastContentIdx: number;
 }
 
 function scanSection(lines: string[], checklistName: string, targetItemName: string): SectionScan {
@@ -300,6 +321,7 @@ function scanSection(lines: string[], checklistName: string, targetItemName: str
 	let targetLineIdx = -1;
 	let inSection = false;
 	let itemCount = 0;
+	let lastContentIdx = -1;
 
 	for (let i = 0; i < lines.length; i++) {
 		if (lines[i] === heading) {
@@ -308,16 +330,18 @@ function scanSection(lines: string[], checklistName: string, targetItemName: str
 			continue;
 		}
 		if (!inSection) continue;
+		if (HEADING_REGEX.test(lines[i])) break;
 		const cbMatch = lines[i].match(CHECKBOX_REGEX);
 		if (cbMatch) {
 			itemCount++;
 			if (cbMatch[2].trim() === targetItemName && targetLineIdx === -1) targetLineIdx = i;
-		} else if (lines[i].trim() !== '') {
-			break;
+		}
+		if (lines[i].trim() !== '') {
+			lastContentIdx = i;
 		}
 	}
 
-	return { headingIdx, targetLineIdx, itemCount };
+	return { headingIdx, targetLineIdx, itemCount, lastContentIdx };
 }
 
 function removeSectionBlock(lines: string[], headingIdx: number, lastItemIdx: number): void {

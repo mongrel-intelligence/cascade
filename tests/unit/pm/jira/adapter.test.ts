@@ -691,6 +691,28 @@ describe('JiraPMProvider', () => {
 
 			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
 		});
+
+		it('serializes concurrent ADF round-trips so all checklist rows are retained', async () => {
+			let description = '### ✅ AC\n- [ ] Item A\n- [ ] Item B\n- [ ] Item C';
+			mockJiraClient.getIssue.mockImplementation(async () => ({
+				fields: { description },
+			}));
+			mockAdfToPlainText.mockImplementation((value) => String(value));
+			mockMarkdownToAdf.mockImplementation((markdown) => markdown);
+			mockJiraClient.updateIssue.mockImplementation(
+				async (_issueKey: string, updates: { description?: unknown }) => {
+					await sleep(5);
+					description = String(updates.description ?? description);
+				},
+			);
+
+			const checklists = await provider.getChecklists('PROJ-1');
+			await Promise.all(
+				checklists[0].items.map((item) => provider.updateChecklistItem('PROJ-1', item.id, true)),
+			);
+
+			expect(description).toBe('### ✅ AC\n- [x] Item A\n- [x] Item B\n- [x] Item C');
+		});
 	});
 
 	describe('deleteChecklistItem (inline)', () => {
@@ -742,6 +764,20 @@ describe('JiraPMProvider', () => {
 			await provider.updateChecklistItem('PROJ-1', checklists[0].items[0].id, true);
 
 			expect(mockJiraClient.updateIssue).toHaveBeenCalledTimes(2);
+		});
+
+		it('does not retry local checklist mutation errors', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue('### ✅ AC\n- [ ] Item');
+
+			await expect(provider.updateChecklistItem('PROJ-1', 'cl-00000000', true)).rejects.toThrow(
+				'Checklist item not found',
+			);
+
+			expect(mockJiraClient.getIssue).toHaveBeenCalledTimes(1);
+			expect(mockJiraClient.updateIssue).not.toHaveBeenCalled();
 		});
 	});
 
@@ -867,3 +903,7 @@ describe('JiraPMProvider', () => {
 		});
 	});
 });
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}

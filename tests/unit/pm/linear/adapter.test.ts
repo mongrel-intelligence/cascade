@@ -558,6 +558,25 @@ describe('LinearPMProvider', () => {
 
 			expect(mockUpdateIssueState).not.toHaveBeenCalled();
 		});
+
+		it('serializes concurrent description rewrites so all checklist rows are retained', async () => {
+			let description = '### ✅ AC\n- [ ] Item A\n- [ ] Item B\n- [ ] Item C';
+			mockGetIssue.mockImplementation(async () => makeIssue({ description }));
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				await sleep(5);
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			const checklists = await provider.getChecklists('issue-uuid');
+			await Promise.all(
+				checklists[0].items.map((item) =>
+					provider.updateChecklistItem('issue-uuid', item.id, true),
+				),
+			);
+
+			expect(description).toBe('### ✅ AC\n- [x] Item A\n- [x] Item B\n- [x] Item C');
+		});
 	});
 
 	describe('deleteChecklistItem (inline)', () => {
@@ -587,6 +606,17 @@ describe('LinearPMProvider', () => {
 			await provider.updateChecklistItem('issue-uuid', checklists[0].items[0].id, true);
 
 			expect(mockUpdateIssue).toHaveBeenCalledTimes(2);
+		});
+
+		it('does not retry local checklist mutation errors', async () => {
+			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] Item' }));
+
+			await expect(provider.updateChecklistItem('issue-uuid', 'cl-00000000', true)).rejects.toThrow(
+				'Checklist item not found',
+			);
+
+			expect(mockGetIssue).toHaveBeenCalledTimes(1);
+			expect(mockUpdateIssue).not.toHaveBeenCalled();
 		});
 	});
 
@@ -706,3 +736,7 @@ describe('LinearPMProvider', () => {
 		});
 	});
 });
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}

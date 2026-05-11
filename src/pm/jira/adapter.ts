@@ -6,6 +6,7 @@
 
 import { jiraClient } from '../../jira/client.js';
 import { logger } from '../../utils/logging.js';
+import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
 	addItemToChecklist,
 	appendChecklistSection,
@@ -327,31 +328,57 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	/**
-	 * Read-modify-write the issue description as ADF round-trip.
-	 * ADF → markdown → mutate → ADF. Retries once on conflict.
+	 * Serialize and read-modify-write the issue description as ADF round-trip.
+	 * ADF → markdown → mutate → ADF. Retries once on provider failure.
 	 */
 	private async updateDescription(
 		issueKey: string,
 		mutate: (desc: string) => string,
 	): Promise<void> {
-		const apply = async () => {
-			const issue = await jiraClient.getIssue(issueKey);
+		await withDescriptionMutationLock('jira', issueKey, () =>
+			this.updateDescriptionWithProviderRetry(issueKey, mutate),
+		);
+	}
+
+	private async updateDescriptionWithProviderRetry(
+		issueKey: string,
+		mutate: (desc: string) => string,
+	): Promise<void> {
+		for (let attempt = 0; attempt < 2; attempt++) {
+			let issue: Awaited<ReturnType<typeof jiraClient.getIssue>>;
+			try {
+				issue = await jiraClient.getIssue(issueKey);
+			} catch (err) {
+				if (attempt === 0) {
+					this.logDescriptionRetry(issueKey, err);
+					continue;
+				}
+				throw err;
+			}
+
 			const adfDesc = (issue.fields as JiraSearchIssue['fields'])?.description;
 			const markdown = adfDesc ? adfToPlainText(adfDesc) : '';
 			const newMarkdown = mutate(markdown);
-			await jiraClient.updateIssue(issueKey, {
-				description: markdownToAdf(newMarkdown),
-			});
-		};
-		try {
-			await apply();
-		} catch (err) {
-			logger.warn('[JIRA] Description update failed; retrying once', {
-				issueKey,
-				error: String(err),
-			});
-			await apply();
+			try {
+				await jiraClient.updateIssue(issueKey, {
+					description: markdownToAdf(newMarkdown),
+				});
+				return;
+			} catch (err) {
+				if (attempt === 0) {
+					this.logDescriptionRetry(issueKey, err);
+					continue;
+				}
+				throw err;
+			}
 		}
+	}
+
+	private logDescriptionRetry(issueKey: string, err: unknown): void {
+		logger.warn('[JIRA] Description provider update failed; retrying once', {
+			issueKey,
+			error: String(err),
+		});
 	}
 
 	async getAttachments(workItemId: string): Promise<Attachment[]> {

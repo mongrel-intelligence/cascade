@@ -11,6 +11,7 @@
 import { resolveLabelId as sharedResolveLabelId } from '../../integrations/pm/_shared/label-id-resolver.js';
 import { linearClient } from '../../linear/client.js';
 import { logger } from '../../utils/logging.js';
+import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
 	addItemToChecklist,
 	appendChecklistSection,
@@ -256,26 +257,53 @@ export class LinearPMProvider implements PMProvider {
 	}
 
 	/**
-	 * Read-modify-write the issue description with one retry on conflict.
+	 * Serialize and read-modify-write the issue description with one retry on provider failure.
 	 * Used by all checklist mutation methods.
 	 */
 	private async updateDescription(
 		issueId: string,
 		mutate: (desc: string) => string,
 	): Promise<void> {
-		try {
-			const issue = await linearClient.getIssue(issueId);
+		await withDescriptionMutationLock('linear', issueId, () =>
+			this.updateDescriptionWithProviderRetry(issueId, mutate),
+		);
+	}
+
+	private async updateDescriptionWithProviderRetry(
+		issueId: string,
+		mutate: (desc: string) => string,
+	): Promise<void> {
+		for (let attempt = 0; attempt < 2; attempt++) {
+			let issue: Awaited<ReturnType<typeof linearClient.getIssue>>;
+			try {
+				issue = await linearClient.getIssue(issueId);
+			} catch (err) {
+				if (attempt === 0) {
+					this.logDescriptionRetry(issueId, err);
+					continue;
+				}
+				throw err;
+			}
+
 			const newDesc = mutate(issue.description ?? '');
-			await linearClient.updateIssue(issueId, { description: newDesc });
-		} catch (err) {
-			logger.warn('[Linear] Description update failed; retrying once', {
-				issueId,
-				error: String(err),
-			});
-			const issue = await linearClient.getIssue(issueId);
-			const newDesc = mutate(issue.description ?? '');
-			await linearClient.updateIssue(issueId, { description: newDesc });
+			try {
+				await linearClient.updateIssue(issueId, { description: newDesc });
+				return;
+			} catch (err) {
+				if (attempt === 0) {
+					this.logDescriptionRetry(issueId, err);
+					continue;
+				}
+				throw err;
+			}
 		}
+	}
+
+	private logDescriptionRetry(issueId: string, err: unknown): void {
+		logger.warn('[Linear] Description provider update failed; retrying once', {
+			issueId,
+			error: String(err),
+		});
 	}
 
 	async getAttachments(workItemId: string): Promise<Attachment[]> {

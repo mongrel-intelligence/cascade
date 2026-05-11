@@ -12,6 +12,8 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ### Fixed
 
+- **Linear and JIRA inline checklist updates no longer lose sibling checklist rows during concurrent updates.** Both providers rewrite the whole issue description for checklist mutations, so their read/mutate/write path is now serialized per provider/work item with a stale-safe temp-file lock and provider-only retry semantics. The shared inline checklist parser also keeps scanning through prose, indented detail lines, and bullet detail lines until the next heading, so `ReadWorkItem` reports every visible checkbox row under a checklist heading. See Linear issue [MNG-656](https://linear.app/issue/MNG-656).
+
 - **`ReadWorkItem` examples now render PM IDs as runnable bare CLI values.** Native-tool prompt guidance and `cascade-tools pm read-work-item --help` now show `--workItemId abc123` instead of JSON-string-literal forms like `--workItemId '"abc123"'`. The CLI also strips one accidental outer quote layer for `ReadWorkItem` IDs only, so a copied bad example no longer sends literal quote characters to the PM provider. See Trello card [M5f9T1D7](https://trello.com/c/M5f9T1D7/673-frictionlow-readworkitem-example-quoting-produced-trello-card-id-with-literal-quotes).
 
 - **`cascade-tools scm create-pr-review` now accepts `--body-file <path>` and `--body-file -`.** This matches the generated CreatePRReview guidance and the existing CreatePR / PostPRComment file-input pattern for long Markdown bodies. See Trello card [7kmo42o6](https://trello.com/c/7kmo42o6/691-friction-tooling-low-createprreview-docs-advertise-body-file-but-cli-rejects-it).

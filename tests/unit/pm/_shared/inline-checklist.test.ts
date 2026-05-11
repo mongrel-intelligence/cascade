@@ -113,6 +113,24 @@ This is just a paragraph.
 		expect(result).toHaveLength(1);
 		expect(result[0].name).toBe('H3 heading');
 	});
+
+	it('keeps parsing checklist items separated by rich markdown detail lines', () => {
+		const desc = `### AC
+- [ ] First
+  Indented detail for first item.
+
+Normal prose between rows.
+- bullet detail that is not a checkbox
+- [ ] Second
+
+### Other
+- [x] Third`;
+
+		const result = parseInlineChecklists(desc);
+		expect(result).toHaveLength(2);
+		expect(result[0].items.map((item) => item.name)).toEqual(['First', 'Second']);
+		expect(result[1].items.map((item) => item.name)).toEqual(['Third']);
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -178,6 +196,21 @@ describe('addItemToChecklist', () => {
 		const result = addItemToChecklist(desc, 'AC', 'Unchecked');
 		expect(result).toBe('### AC\n- [x] First\n- [ ] Unchecked');
 	});
+
+	it('adds after the last checkbox even when detail lines appear between rows', () => {
+		const desc = '### AC\n- [ ] First\n  Detail\n- [ ] Second\n\n### Next\n- [ ] Other';
+		const result = addItemToChecklist(desc, 'AC', 'Third');
+		expect(result).toBe(
+			'### AC\n- [ ] First\n  Detail\n- [ ] Second\n- [ ] Third\n\n### Next\n- [ ] Other',
+		);
+	});
+
+	it('adds after trailing detail lines that follow the last checkbox', () => {
+		// Regression: detail after the last checkbox must not be displaced under the new item.
+		const desc = '### AC\n- [ ] First\n  Detail line';
+		const result = addItemToChecklist(desc, 'AC', 'Second');
+		expect(result).toBe('### AC\n- [ ] First\n  Detail line\n- [ ] Second');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -214,6 +247,13 @@ describe('toggleChecklistItem', () => {
 		expect(result).toContain('### CL-A\n- [ ] Same');
 		expect(result).toContain('### CL-B\n- [x] Same');
 	});
+
+	it('toggles items after prose in the same checklist section', () => {
+		const rich = '### AC\n- [ ] First\nPlain detail\n- [ ] Second';
+		const checklists = parseInlineChecklists(rich);
+		const result = toggleChecklistItem(rich, checklists[0].items[1].id, true, checklists);
+		expect(result).toBe('### AC\n- [ ] First\nPlain detail\n- [x] Second');
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -241,6 +281,37 @@ describe('removeChecklistItem', () => {
 		const desc = '### AC\n- [ ] Item';
 		const checklists = parseInlineChecklists(desc);
 		expect(() => removeChecklistItem(desc, 'cl-00000000', checklists)).toThrow();
+	});
+
+	it('removes items after prose in the same checklist section', () => {
+		const desc = '### AC\n- [ ] Keep\nSome detail\n- [ ] Remove\n\n### Next\n- [ ] Other';
+		const checklists = parseInlineChecklists(desc);
+		const result = removeChecklistItem(desc, checklists[0].items[1].id, checklists);
+		expect(result).toBe('### AC\n- [ ] Keep\nSome detail\n\n### Next\n- [ ] Other');
+	});
+
+	it('removes the whole section including trailing detail when deleting the only item', () => {
+		// Regression: detail lines after the sole checkbox must not be left orphaned.
+		const desc = '### AC\n- [ ] Only\nDetail line\n\n### Next\n- [ ] Other';
+		const checklists = parseInlineChecklists(desc);
+		const result = removeChecklistItem(desc, checklists[0].items[0].id, checklists);
+		expect(result).toBe('### Next\n- [ ] Other');
+	});
+
+	it('removes trailing detail lines when deleting a non-last item in a multi-item section', () => {
+		// Regression: detail after a deleted checkbox in a multi-item section must not be left orphaned.
+		const desc = '### AC\n- [ ] Remove\n  Detail for remove\n- [ ] Keep';
+		const checklists = parseInlineChecklists(desc);
+		const result = removeChecklistItem(desc, checklists[0].items[0].id, checklists);
+		expect(result).toBe('### AC\n- [ ] Keep');
+	});
+
+	it('removes trailing detail lines when deleting the last item in a multi-item section', () => {
+		// Regression: trailing detail after the last checkbox must not become attached to the previous item.
+		const desc = '### AC\n- [ ] First\n- [ ] Last\n  Trailing detail';
+		const checklists = parseInlineChecklists(desc);
+		const result = removeChecklistItem(desc, checklists[0].items[1].id, checklists);
+		expect(result).toBe('### AC\n- [ ] First');
 	});
 });
 
