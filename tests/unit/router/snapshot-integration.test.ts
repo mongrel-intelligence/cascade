@@ -24,7 +24,7 @@ const {
 } = vi.hoisted(() => ({
 	mockDockerCreateContainer: vi.fn(),
 	mockDockerGetContainer: vi.fn(),
-	// commitContainerToSnapshot inspects the freshly committed image to
+	// commitWorkerSnapshot inspects the freshly committed image to
 	// populate imageSizeBytes; default to a fixed size so registerSnapshot
 	// receives a deterministic 4th argument.
 	mockDockerGetImage: vi.fn().mockReturnValue({
@@ -180,7 +180,7 @@ function setupMockContainer(exitCode = 0) {
 // ---------------------------------------------------------------------------
 // File-wide setup — vi.restoreAllMocks() in per-describe afterEach hooks wipes
 // mockReturnValue on hoisted mocks. Re-arm the docker getImage mock here so
-// commitContainerToSnapshot's image-size lookup always resolves to a known
+// commitWorkerSnapshot's image-size lookup always resolves to a known
 // value across every describe.
 // ---------------------------------------------------------------------------
 

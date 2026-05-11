@@ -9,6 +9,7 @@
  * - worker-env.ts        — Job data parsing + env building
  * - orphan-cleanup.ts    — Periodic orphan container cleanup
  * - snapshot-manager.ts  — Snapshot metadata registry
+ * - worker-snapshots.ts  — Docker snapshot commit/remove mechanics
  */
 
 import type { Job } from 'bullmq';
@@ -21,7 +22,7 @@ import { routerConfig } from './config.js';
 import { ROUTER_INSTANCE_ID } from './instance-id.js';
 import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
-import { invalidateSnapshot, registerSnapshot } from './snapshot-manager.js';
+import { invalidateSnapshot } from './snapshot-manager.js';
 import { clearAllWorkItemLocks } from './work-item-lock.js';
 import {
 	buildWorkerEnvWithProjectId,
@@ -29,6 +30,11 @@ import {
 	extractProjectIdFromJob,
 	extractWorkItemId,
 } from './worker-env.js';
+import {
+	commitWorkerSnapshot,
+	isImageNotFoundError,
+	removeWorkerContainerBestEffort,
+} from './worker-snapshots.js';
 import { buildWorkerContainerName, resolveSpawnSettings } from './worker-spawn-settings.js';
 import { killWorker } from './worker-timeouts.js';
 
@@ -55,6 +61,12 @@ export {
 	extractProjectIdFromJob,
 } from './worker-env.js';
 export {
+	buildWorkerSnapshotImageName,
+	commitWorkerSnapshot,
+	isImageNotFoundError,
+	removeWorkerContainerBestEffort,
+} from './worker-snapshots.js';
+export {
 	buildWorkerContainerName,
 	ROUTER_KILL_BUFFER_MS,
 	resolveSpawnSettings,
@@ -62,85 +74,6 @@ export {
 export { killWorker } from './worker-timeouts.js';
 
 const docker = new Docker();
-
-/**
- * Build a stable Docker image name for a snapshot.
- * Uses a sanitised project+workItem key so it's valid as a Docker image tag.
- */
-function buildSnapshotImageName(projectId: string, workItemId: string): string {
-	// Sanitise: lowercase, replace non-alphanumeric with '-', collapse runs
-	const sanitise = (s: string) =>
-		s
-			.toLowerCase()
-			.replace(/[^a-z0-9]/g, '-')
-			.replace(/-+/g, '-')
-			.replace(/^-|-$/g, '');
-	return `cascade-snapshot-${sanitise(projectId)}-${sanitise(workItemId)}:latest`;
-}
-
-/**
- * Commit a container to a snapshot image and register the metadata.
- * On failure the error is logged and swallowed — snapshot failure must not
- * break the normal post-run flow.
- */
-async function inspectImageSizeBestEffort(imageName: string): Promise<number | undefined> {
-	try {
-		const image = docker.getImage(imageName);
-		if (!image) return undefined;
-		const info = (await image.inspect()) as { Size?: number } | undefined;
-		return info?.Size;
-	} catch {
-		return undefined;
-	}
-}
-
-async function commitContainerToSnapshot(
-	containerId: string,
-	projectId: string,
-	workItemId: string,
-): Promise<void> {
-	const imageName = buildSnapshotImageName(projectId, workItemId);
-	try {
-		const container = docker.getContainer(containerId);
-		await container.commit({ repo: imageName.split(':')[0], tag: 'latest' });
-		// Populate the image size on the registered metadata so max-size
-		// eviction actually fires. Inspecting is best-effort — without size,
-		// the entry still gets TTL/max-count eviction.
-		const imageSize = await inspectImageSizeBestEffort(imageName);
-		registerSnapshot(projectId, workItemId, imageName, imageSize);
-		logger.info('[WorkerManager] Committed container to snapshot image:', {
-			containerId: containerId.slice(0, 12),
-			imageName,
-			projectId,
-			workItemId,
-			imageSizeBytes: imageSize,
-		});
-	} catch (err) {
-		logger.warn('[WorkerManager] Failed to commit container to snapshot (non-fatal):', {
-			containerId: containerId.slice(0, 12),
-			imageName,
-			error: String(err),
-		});
-		captureException(err, {
-			tags: { source: 'snapshot_commit' },
-			extra: { containerId, imageName, projectId, workItemId },
-			level: 'warning',
-		});
-	}
-}
-
-/**
- * Remove a container (used after manual snapshot commit to clean up).
- * Swallows errors — the container may already be removed.
- */
-async function removeContainer(containerId: string): Promise<void> {
-	try {
-		const container = docker.getContainer(containerId);
-		await container.remove({ force: true });
-	} catch {
-		// Container may already be removed — not an error
-	}
-}
 
 /**
  * Inspect a just-exited container and pull the diagnostic facts that explain
@@ -245,7 +178,7 @@ async function onWorkerExit(opts: {
 
 	if (snapshotEnabled) {
 		if (result.StatusCode === 0 && projectId && workItemId) {
-			await commitContainerToSnapshot(container.id, projectId, workItemId);
+			await commitWorkerSnapshot(container.id, projectId, workItemId);
 		} else if (result.StatusCode !== 0) {
 			logger.info('[WorkerManager] Skipping snapshot commit after non-zero exit:', {
 				jobId,
@@ -253,28 +186,10 @@ async function onWorkerExit(opts: {
 			});
 		}
 		// Always remove manually since AutoRemove is disabled for snapshot runs.
-		await removeContainer(container.id);
+		await removeWorkerContainerBestEffort(container.id);
 	}
 
 	cleanupWorker(jobId, result.StatusCode, { oomKilled, exitReason });
-}
-
-/**
- * Returns true when a Docker error indicates the requested image does not exist.
- * Uses the HTTP statusCode from dockerode's error objects as the primary signal,
- * with a substring check on the message as a secondary guard.
- *
- * Exported for the dispatch-error classifier (spec 015/2) so it can
- * recognise this terminal class and skip BullMQ retries for it.
- */
-export function isImageNotFoundError(err: unknown): boolean {
-	return (
-		err != null &&
-		typeof err === 'object' &&
-		'statusCode' in err &&
-		(err as { statusCode: unknown }).statusCode === 404 &&
-		String(err).toLowerCase().includes('no such image')
-	);
 }
 
 interface ContainerLaunchConfig {
@@ -385,7 +300,7 @@ async function createAndMonitorContainer(
 			});
 			// Ensure container is cleaned up even on wait error (snapshot runs only)
 			if (snapshotEnabled) {
-				removeContainer(container.id).catch(() => {});
+				removeWorkerContainerBestEffort(container.id).catch(() => {});
 			}
 			cleanupWorker(jobId);
 		});
