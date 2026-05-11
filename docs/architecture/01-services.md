@@ -73,7 +73,11 @@ Module-load phase (runs at import time, before `startRouter()`):
 | `webhook-processor.ts` | Generic 12-step pipeline (see [02-webhook-pipeline](./02-webhook-pipeline.md)) |
 | `platform-adapter.ts` | `RouterPlatformAdapter` interface |
 | `adapters/` | Per-provider adapter implementations |
-| `worker-manager.ts` | Spawns/monitors Docker worker containers |
+| `worker-manager.ts` | BullMQ worker processor orchestration, capacity-slot waiting, and dispatch retry classification |
+| `container-manager.ts` | Compatibility facade that assembles worker metadata/env and coordinates Docker worker spawn fallback |
+| `worker-container-launcher.ts` | Docker worker create/start/wait wiring, active-worker registration, and router timeout timer setup |
+| `worker-spawn-settings.ts` | Docker-free worker image, snapshot-reuse, timeout, and container-name resolution |
+| `worker-exit-handler.ts` / `worker-timeouts.ts` | Post-exit cleanup/diagnostics and router-side timeout cancellation internals |
 | `queue.ts` | BullMQ `addJob()`, queue stats |
 | `action-dedup.ts` | In-memory deduplication of webhook deliveries |
 | `work-item-lock.ts` | Prevents concurrent agents on the same work item |
