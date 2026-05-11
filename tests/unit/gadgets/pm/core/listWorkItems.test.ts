@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockPMProvider } from '../../../../helpers/mockPMProvider.js';
 
@@ -11,12 +11,55 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 import { listWorkItems } from '../../../../../src/gadgets/pm/core/listWorkItems.js';
 
 describe('listWorkItems', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	it('returns "No work items found." when list is empty', async () => {
 		mockProvider.listWorkItems.mockResolvedValue([]);
 
 		const result = await listWorkItems('list1');
 
+		expect(mockProvider.listWorkItems).toHaveBeenCalledWith('list1', {});
 		expect(result).toBe('No work items found.');
+	});
+
+	it('passes status filter without requiring a container ID', async () => {
+		mockProvider.listWorkItems.mockResolvedValue([]);
+
+		await listWorkItems({ status: 'backlog' });
+
+		expect(mockProvider.listWorkItems).toHaveBeenCalledWith(undefined, { status: 'backlog' });
+	});
+
+	it('passes both containerId and status when supplied', async () => {
+		mockProvider.listWorkItems.mockResolvedValue([]);
+
+		await listWorkItems({ containerId: 'team-1', status: 'todo' });
+
+		expect(mockProvider.listWorkItems).toHaveBeenCalledWith('team-1', { status: 'todo' });
+	});
+
+	it('rejects missing containerId and status', async () => {
+		await expect(listWorkItems({})).rejects.toThrow(
+			'Error listing work items: Either containerId or status is required.',
+		);
+	});
+
+	it('rejects unfiltered backlog-manager listing', async () => {
+		const originalAgentType = process.env.CASCADE_AGENT_TYPE;
+		process.env.CASCADE_AGENT_TYPE = 'backlog-manager';
+		try {
+			await expect(listWorkItems({ containerId: 'team-1' })).rejects.toThrow(
+				'Backlog-manager must list work items with a status filter',
+			);
+		} finally {
+			if (originalAgentType === undefined) {
+				delete process.env.CASCADE_AGENT_TYPE;
+			} else {
+				process.env.CASCADE_AGENT_TYPE = originalAgentType;
+			}
+		}
 	});
 
 	it('formats work items with title, id, url', async () => {

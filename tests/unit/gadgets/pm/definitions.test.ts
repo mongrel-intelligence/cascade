@@ -248,8 +248,10 @@ describe('PM gadget definitions', () => {
 
 	// ─── ListWorkItems specific ────────────────────────────────────────────────
 	describe('listWorkItemsDef', () => {
-		it('has required containerId parameter', () => {
-			expect(listWorkItemsDef.parameters.containerId?.required).toBe(true);
+		it('has optional containerId and status parameters', () => {
+			expect(listWorkItemsDef.parameters.containerId?.optional).toBe(true);
+			expect(listWorkItemsDef.parameters.status?.optional).toBe(true);
+			expect(listWorkItemsDef.parameters.status?.type).toBe('string');
 		});
 	});
 

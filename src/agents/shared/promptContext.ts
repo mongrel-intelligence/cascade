@@ -7,20 +7,24 @@ function getListIds(project: ProjectConfig) {
 	const trelloConfig = getTrelloConfig(project);
 	const jiraConfig = getJiraConfig(project);
 	const linearConfig = getLinearConfig(project);
+	const backlogStatusId =
+		trelloConfig?.lists?.backlog ??
+		jiraConfig?.statuses?.backlog ??
+		linearConfig?.statuses?.backlog;
+	const workItemCreateContainerId =
+		trelloConfig?.lists?.backlog ?? jiraConfig?.projectKey ?? linearConfig?.teamId;
 
 	return {
 		// Value the agent should pass as `expectedSourceState` when moving an
-		// item out of BACKLOG. Aligned with what `WorkItem.status` returns
-		// per provider:
-		//   - Trello: `WorkItem.status` is the list ID → pass list ID.
-		//   - JIRA:   `WorkItem.status` is the status name → pass status name.
-		//   - Linear: `WorkItem.status` is the workflow-state name → pass the
-		//             state name. Linear teams default to literal "Backlog";
-		//             customized teams can still pass it via the prompt path
-		//             since the gadget guard is case-insensitive.
-		backlogSourceLabel: trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog ?? 'Backlog',
-		backlogListId:
-			trelloConfig?.lists?.backlog ?? jiraConfig?.statuses?.backlog ?? linearConfig?.teamId,
+		// item out of BACKLOG. It is the provider-native source state/list ID
+		// where available, and is intentionally not Linear's team container.
+		backlogSourceLabel: backlogStatusId ?? 'Backlog',
+		backlogStatusId,
+		workItemCreateContainerId,
+		// Deprecated compatibility alias for older custom prompts. Built-in
+		// prompts use backlogStatusId for listing/move guards and
+		// workItemCreateContainerId for creation.
+		backlogListId: backlogStatusId,
 		todoListId:
 			trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo ?? linearConfig?.statuses?.todo,
 		inProgressListId:
@@ -63,7 +67,7 @@ function getPromptTerminology(pmType: string | undefined) {
  * building logic including PM-type normalization and work item noun i18n.
  *
  * @param alertingResultsContainerId - Optional PM container ID from Sentry integration config.
- *   Used as a fallback `backlogListId` when no PM backlog is configured on the project.
+ *   Used as a fallback creation container when no PM backlog is configured on the project.
  *   Populated by `secretOrchestrator` for alerting agent runs.
  */
 export function buildPromptContext(
@@ -84,8 +88,9 @@ export function buildPromptContext(
 	const listIds = getListIds(project);
 	const terminology = getPromptTerminology(pmProvider?.type);
 
-	// Fall back to the Sentry-configured results container when no PM backlog is set.
+	// Fall back to the Sentry-configured results container when no PM backlog/create container is set.
 	const backlogListId = listIds.backlogListId ?? alertingResultsContainerId;
+	const workItemCreateContainerId = listIds.workItemCreateContainerId ?? alertingResultsContainerId;
 
 	return {
 		workItemId,
@@ -94,6 +99,7 @@ export function buildPromptContext(
 		baseBranch: project.baseBranch,
 		...listIds,
 		backlogListId,
+		workItemCreateContainerId,
 		pmType: pmProvider?.type,
 		...terminology,
 		maxInFlightItems: project.maxInFlightItems ?? 1,

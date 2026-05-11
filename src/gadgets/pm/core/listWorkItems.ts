@@ -1,8 +1,33 @@
 import { getPMProvider } from '../../../pm/index.js';
 
-export async function listWorkItems(containerId: string): Promise<string> {
+export interface ListWorkItemsParams {
+	containerId?: string;
+	status?: string;
+}
+
+function normalizeListParams(params: string | ListWorkItemsParams): ListWorkItemsParams {
+	return typeof params === 'string' ? { containerId: params } : params;
+}
+
+function assertListParams(params: ListWorkItemsParams): void {
+	if (!params.containerId && !params.status) {
+		throw new Error('Either containerId or status is required.');
+	}
+	if (process.env.CASCADE_AGENT_TYPE === 'backlog-manager' && !params.status) {
+		throw new Error(
+			'Backlog-manager must list work items with a status filter, e.g. status: "backlog".',
+		);
+	}
+}
+
+export async function listWorkItems(params: string | ListWorkItemsParams): Promise<string> {
 	try {
-		const items = await getPMProvider().listWorkItems(containerId);
+		const normalized = normalizeListParams(params);
+		assertListParams(normalized);
+
+		const items = await getPMProvider().listWorkItems(normalized.containerId, {
+			...(normalized.status ? { status: normalized.status } : {}),
+		});
 
 		if (items.length === 0) {
 			return 'No work items found.';

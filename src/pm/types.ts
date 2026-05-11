@@ -94,7 +94,10 @@ export interface WorkItem {
 	title: string;
 	description: string;
 	url: string;
+	/** Human-readable provider status/list name when available. */
 	status?: string;
+	/** Provider-native workflow state/list ID when available. */
+	statusId?: string;
 	labels: WorkItemLabel[];
 	/** Inline media references parsed from the work item description */
 	inlineMedia?: MediaReference[];
@@ -157,7 +160,8 @@ export interface ListWorkItemsFilter {
 	 * - JIRA: looks up `config.statuses[status]` for the status name in JQL.
 	 * - Linear: looks up `config.statuses[status]` for the state UUID.
 	 *
-	 * Falls through to literal value when no mapping exists (backwards compat).
+	 * Providers may allow explicit native IDs as an escape hatch, but canonical
+	 * CASCADE keys must resolve through provider config.
 	 */
 	status?: string;
 }

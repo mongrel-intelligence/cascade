@@ -225,19 +225,29 @@ export const reportFrictionDef: ToolDefinition = {
 export const listWorkItemsDef: ToolDefinition = {
 	name: 'ListWorkItems',
 	description:
-		'List all work items in a container (Trello list or JIRA project). Use this to see items you created or to find items to update.',
+		'List work items in a container or by CASCADE status. Prefer status filtering for pipeline stages such as backlog.',
 	timeoutMs: 30000,
 	parameters: {
 		containerId: {
 			type: 'string',
-			describe: 'Container ID — Trello list ID or JIRA project key',
-			required: true,
+			describe: 'Container ID — Trello list ID, JIRA project key, or Linear team ID',
+			optional: true,
+		},
+		status: {
+			type: 'string',
+			describe:
+				'Optional CASCADE status key to filter by, e.g. backlog, todo, inProgress, inReview, done, merged',
+			optional: true,
 		},
 	},
 	examples: [
 		{
 			params: { containerId: 'abc123' },
 			comment: 'List all work items to find ones to update',
+		},
+		{
+			params: { status: 'backlog' },
+			comment: 'Safely list configured backlog items across providers',
 		},
 	],
 };

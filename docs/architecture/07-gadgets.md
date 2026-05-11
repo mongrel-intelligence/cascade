@@ -71,6 +71,14 @@ Todos are stored in `.claude/todos.json` within the repo working directory.
 
 PM gadgets use the active `PMProvider` from `AsyncLocalStorage` context, making them provider-agnostic.
 
+`ListWorkItems` accepts either a provider-native `containerId` or a CASCADE status filter. Prefer status filtering for pipeline stages:
+
+```bash
+cascade-tools pm list-work-items --status backlog
+```
+
+Status filtering calls `provider.listWorkItems(undefined, { status: "backlog" })`, so each provider resolves the configured native workflow state/list. This matters for Linear: `teamId` is a creation/search container and can include unmapped states, while `linear.statuses.backlog` is the only valid backlog selection state. Backlog-manager rejects unfiltered container-only listing to avoid selecting issues from unmapped Linear states such as Ideas.
+
 `ReportFriction` is intentionally narrower than general PM write access. It lets agents file incidental papercuts in tooling, environment, permissions, dependencies, tests, PM data, or SCM data without exposing `CreateWorkItem` / `MoveWorkItem` directly. The CLI form is:
 
 ```bash

@@ -48,7 +48,7 @@ If you can't confirm a root cause after a reasonable depth (typically 5-10 file 
 Decide where to report based on the trigger context:
 
 - If the trigger context provided an **existing work item** (`workItemId` is set, e.g. `<%= it.workItemId || 'NOT_SET' %>`), comment on that work item rather than creating a new one. Reason: the existing work item is presumably the bug's tracking issue, and a comment threads naturally with prior investigation. Use `PostComment` with the structure below.
-- Otherwise, if a **backlog list ID** is configured (`backlogListId` is set, e.g. `<%= it.backlogListId || 'NOT_SET' %>`), create a new bug investigation work item via `CreateWorkItem` in that backlog.
+- Otherwise, if a **work-item creation container** is configured (`workItemCreateContainerId` is set, e.g. `<%= it.workItemCreateContainerId || it.backlogListId || 'NOT_SET' %>`), create a new bug investigation work item via `CreateWorkItem` in that container.
 - If neither is configured, log the investigation summary in your final response and exit. The operator will see it in the run record.
 
 Then call `Finish` to terminate the run.
@@ -93,7 +93,7 @@ You are done when one of these is true:
 1. You have created a bug investigation work item OR commented on an existing work item with a root-cause summary, AND the response contains the `Sentry issue:` link.
 2. You have honestly determined the investigation cannot proceed (insufficient data, third-party-only stacktrace) and you have recorded that finding via the PM tool with a clear "needs further investigation" framing.
 
-Do **not** terminate without filing or commenting unless neither a work item id nor a backlog list id is available — in which case your final response IS the report.
+Do **not** terminate without filing or commenting unless neither a work item id nor a creation container is available — in which case your final response IS the report.
 
 After filing, call `Finish`.
 

@@ -67,7 +67,7 @@ export async function buildExecutionPlan(
 			: undefined;
 
 	// For alerting agents, look up Sentry `resultsContainerId` as a fallback
-	// backlogListId when no PM backlog status/list is configured on the project.
+	// creation container when no PM backlog/create target is configured on the project.
 	let alertingResultsContainerId: string | undefined;
 	if (agentType === 'alerting') {
 		try {

@@ -175,6 +175,8 @@ describe('buildPromptContext', () => {
 			});
 			const ctx = buildPromptContext('PROJ-1', jiraProject as never);
 			expect(ctx.backlogListId).toBe('Backlog');
+			expect(ctx.backlogStatusId).toBe('Backlog');
+			expect(ctx.workItemCreateContainerId).toBe('PROJ');
 			expect(ctx.todoListId).toBe('To Do');
 			expect(ctx.inProgressListId).toBe('In Progress');
 			expect(ctx.inReviewListId).toBe('In Review');
@@ -193,6 +195,8 @@ describe('buildPromptContext', () => {
 			});
 			const ctx = buildPromptContext('PROJ-1', jiraProject as never);
 			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.backlogStatusId).toBeUndefined();
+			expect(ctx.workItemCreateContainerId).toBe('PROJ');
 			expect(ctx.todoListId).toBeUndefined();
 			expect(ctx.inProgressListId).toBeUndefined();
 			expect(ctx.inReviewListId).toBeUndefined();
@@ -242,7 +246,7 @@ describe('buildPromptContext', () => {
 			expect(ctx.workItemUrl).toBe('https://linear.app/myorg/issue/TEAM-123');
 		});
 
-		it('sets backlogListId to teamId (containerId for CreateWorkItem)', () => {
+		it('separates Linear backlog status ID from creation team container', () => {
 			const linearProject = makeProject({
 				trello: undefined,
 				pm: { type: 'linear' },
@@ -252,7 +256,10 @@ describe('buildPromptContext', () => {
 				},
 			});
 			const ctx = buildPromptContext('TEAM-1', linearProject as never);
-			expect(ctx.backlogListId).toBe('team-abc');
+			expect(ctx.backlogListId).toBe('state-bl-uuid');
+			expect(ctx.backlogStatusId).toBe('state-bl-uuid');
+			expect(ctx.backlogSourceLabel).toBe('state-bl-uuid');
+			expect(ctx.workItemCreateContainerId).toBe('team-abc');
 		});
 
 		it('sets other pipeline list IDs from Linear statuses', () => {
@@ -272,6 +279,8 @@ describe('buildPromptContext', () => {
 				},
 			});
 			const ctx = buildPromptContext('TEAM-1', linearProject as never);
+			expect(ctx.backlogStatusId).toBe('Backlog');
+			expect(ctx.workItemCreateContainerId).toBe('team-abc');
 			expect(ctx.todoListId).toBe('Todo');
 			expect(ctx.inProgressListId).toBe('In Progress');
 			expect(ctx.inReviewListId).toBe('In Review');
@@ -288,7 +297,9 @@ describe('buildPromptContext', () => {
 				},
 			});
 			const ctx = buildPromptContext('TEAM-1', linearProject as never);
-			expect(ctx.backlogListId).toBe('team-abc');
+			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.backlogStatusId).toBeUndefined();
+			expect(ctx.workItemCreateContainerId).toBe('team-abc');
 			expect(ctx.todoListId).toBeUndefined();
 			expect(ctx.inProgressListId).toBeUndefined();
 			expect(ctx.inReviewListId).toBeUndefined();
@@ -500,6 +511,7 @@ describe('buildPromptContext', () => {
 				'sentry-container-id',
 			);
 			expect(ctx.backlogListId).toBe('sentry-container-id');
+			expect(ctx.workItemCreateContainerId).toBe('sentry-container-id');
 		});
 
 		it('PM backlogListId takes precedence over alertingResultsContainerId', () => {
@@ -513,6 +525,7 @@ describe('buildPromptContext', () => {
 			);
 			// makeProject has trello.lists.backlog = 'list-backlog'
 			expect(ctx.backlogListId).toBe('list-backlog');
+			expect(ctx.workItemCreateContainerId).toBe('list-backlog');
 		});
 
 		it('alertingResultsContainerId is ignored when it is undefined', () => {
@@ -526,6 +539,7 @@ describe('buildPromptContext', () => {
 			);
 			// still gets backlog from PM config
 			expect(ctx.backlogListId).toBe('list-backlog');
+			expect(ctx.workItemCreateContainerId).toBe('list-backlog');
 		});
 
 		it('backlogListId remains undefined when neither PM backlog nor alertingResultsContainerId is set', () => {
@@ -545,6 +559,7 @@ describe('buildPromptContext', () => {
 			});
 			const ctx = buildPromptContext('card123', projectWithoutBacklog as never);
 			expect(ctx.backlogListId).toBeUndefined();
+			expect(ctx.workItemCreateContainerId).toBeUndefined();
 		});
 	});
 

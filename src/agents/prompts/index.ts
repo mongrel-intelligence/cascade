@@ -41,14 +41,19 @@ export interface PromptContext {
 	workItemNounPluralCap?: string; // "Cards" or "Issues"
 	pmName?: string; // "Trello" or "JIRA"
 
-	// PM list/column IDs
+	// PM list/status/container IDs
+	/** @deprecated Use backlogStatusId for backlog selection and workItemCreateContainerId for creation. */
 	backlogListId?: string;
+	/** Provider-native workflow state/list ID for BACKLOG selection. */
+	backlogStatusId?: string;
+	/** Provider-native container ID for creating new work items. */
+	workItemCreateContainerId?: string;
 	/**
 	 * Value to pass as `expectedSourceState` to the MoveWorkItem gadget
 	 * when moving an item out of BACKLOG. Per-provider:
 	 *   - Trello: backlog list ID (matches `WorkItem.status: card.idList`)
 	 *   - JIRA:   "Backlog" status name
-	 *   - Linear: "Backlog" workflow-state name
+	 *   - Linear: backlog workflow-state ID
 	 */
 	backlogSourceLabel?: string;
 	todoListId?: string;
@@ -314,18 +319,33 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemId', group: 'Common', description: 'Work item ID' },
 		{ name: 'workItemUrl', group: 'Common', description: 'Work item URL' },
 		{ name: 'projectId', group: 'Common', description: 'Project identifier' },
-		{ name: 'pmType', group: 'PM', description: 'PM type: trello or jira' },
+		{ name: 'pmType', group: 'PM', description: 'PM type: trello, jira, or linear' },
 		{ name: 'workItemNoun', group: 'PM', description: 'card or issue' },
 		{ name: 'workItemNounPlural', group: 'PM', description: 'cards or issues' },
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },
 		{ name: 'workItemNounPluralCap', group: 'PM', description: 'Cards or Issues' },
-		{ name: 'pmName', group: 'PM', description: 'Trello or JIRA' },
-		{ name: 'backlogListId', group: 'PM Lists', description: 'Backlog list/column ID' },
+		{ name: 'pmName', group: 'PM', description: 'Trello, JIRA, or Linear' },
+		{
+			name: 'backlogListId',
+			group: 'PM Lists',
+			description:
+				'Deprecated backlog selector alias; use backlogStatusId or workItemCreateContainerId',
+		},
+		{
+			name: 'backlogStatusId',
+			group: 'PM Lists',
+			description: 'Provider-native BACKLOG workflow state/list ID for selection and listing',
+		},
+		{
+			name: 'workItemCreateContainerId',
+			group: 'PM Lists',
+			description: 'Provider-native container ID for CreateWorkItem',
+		},
 		{
 			name: 'backlogSourceLabel',
 			group: 'PM Lists',
 			description:
-				'Value to pass as MoveWorkItem `expectedSourceState` for items in BACKLOG (provider-correct: Trello list ID, JIRA/Linear status name).',
+				'Value to pass as MoveWorkItem `expectedSourceState` for items in BACKLOG (provider-correct: Trello list ID, JIRA status name, Linear status ID).',
 		},
 		{ name: 'todoListId', group: 'PM Lists', description: 'TODO list/column ID' },
 		{ name: 'inProgressListId', group: 'PM Lists', description: 'In Progress list/column ID' },
