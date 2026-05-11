@@ -36,6 +36,9 @@ import type {
 	WorkItemLabel,
 } from '../types.js';
 
+const DESCRIPTION_VISIBILITY_TIMEOUT_MS = 1_000;
+const DESCRIPTION_VISIBILITY_POLL_MS = 25;
+
 export class LinearPMProvider implements PMProvider {
 	readonly type = 'linear' as const;
 
@@ -288,6 +291,7 @@ export class LinearPMProvider implements PMProvider {
 			const newDesc = mutate(issue.description ?? '');
 			try {
 				await linearClient.updateIssue(issueId, { description: newDesc });
+				await this.waitForDescriptionVisibility(issueId, newDesc);
 				return;
 			} catch (err) {
 				if (attempt === 0) {
@@ -296,6 +300,30 @@ export class LinearPMProvider implements PMProvider {
 				}
 				throw err;
 			}
+		}
+	}
+
+	private async waitForDescriptionVisibility(
+		issueId: string,
+		expectedDescription: string,
+	): Promise<void> {
+		const startedAt = Date.now();
+		const deadline = startedAt + DESCRIPTION_VISIBILITY_TIMEOUT_MS;
+		const expected = normalizeDescriptionForVisibility(expectedDescription);
+
+		while (true) {
+			const issue = await linearClient.getIssue(issueId);
+			if (normalizeDescriptionForVisibility(issue.description ?? '') === expected) {
+				return;
+			}
+
+			if (Date.now() >= deadline) {
+				throw new Error(
+					`Linear description visibility timed out for issue ${issueId} after ${DESCRIPTION_VISIBILITY_TIMEOUT_MS}ms`,
+				);
+			}
+
+			await sleep(Math.min(DESCRIPTION_VISIBILITY_POLL_MS, Math.max(0, deadline - Date.now())));
 		}
 	}
 
@@ -373,4 +401,12 @@ export class LinearPMProvider implements PMProvider {
 			username: user.email,
 		};
 	}
+}
+
+function normalizeDescriptionForVisibility(description: string): string {
+	return description.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }

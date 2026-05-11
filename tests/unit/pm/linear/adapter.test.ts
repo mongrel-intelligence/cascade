@@ -76,6 +76,20 @@ function makeIssue(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function mockIssueDescription(initialDescription: string | null) {
+	let description = initialDescription;
+	mockGetIssue.mockImplementation(async () => makeIssue({ description }));
+	mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+		description = updates.description ?? description;
+		return makeIssue({ description });
+	});
+	return {
+		get description() {
+			return description;
+		},
+	};
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -472,8 +486,7 @@ describe('LinearPMProvider', () => {
 
 	describe('createChecklist (inline)', () => {
 		it('appends new checklist section to description and returns Checklist', async () => {
-			mockGetIssue.mockResolvedValue(makeIssue({ description: 'Existing.' }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription('Existing.');
 
 			const result = await provider.createChecklist('issue-uuid', '✅ AC');
 
@@ -486,13 +499,72 @@ describe('LinearPMProvider', () => {
 			expect(result.id).toMatch(/^inline-issue-uuid-[0-9a-f]{8}$/);
 			expect(result.items).toEqual([]);
 		});
+
+		it('waits for Linear read-after-write visibility before the next checklist append', async () => {
+			let description = 'Existing.';
+			let staleDescription: string | null = null;
+			mockGetIssue.mockImplementation(async () => {
+				if (staleDescription !== null) {
+					const value = staleDescription;
+					staleDescription = null;
+					return makeIssue({ description: value });
+				}
+				return makeIssue({ description });
+			});
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				staleDescription = description;
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'First item');
+
+			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
+		});
+
+		it('preserves multiple concurrently-created checklist sections despite stale Linear reads', async () => {
+			let description = 'Existing.';
+			let staleDescription: string | null = null;
+			mockGetIssue.mockImplementation(async () => {
+				if (staleDescription !== null) {
+					const value = staleDescription;
+					staleDescription = null;
+					return makeIssue({ description: value });
+				}
+				return makeIssue({ description });
+			});
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				await sleep(5);
+				staleDescription = description;
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			const results = await Promise.allSettled([
+				provider
+					.createChecklist('issue-uuid', '✅ Acceptance Criteria')
+					.then((checklist) => provider.addChecklistItem(checklist.id, 'Ready to ship')),
+				provider
+					.createChecklist('issue-uuid', '🔗 Dependencies')
+					.then((checklist) => provider.addChecklistItem(checklist.id, 'External API key')),
+			]);
+
+			expect(results).toEqual([
+				{ status: 'fulfilled', value: undefined },
+				{ status: 'fulfilled', value: undefined },
+			]);
+			expect(description).toContain('### ✅ Acceptance Criteria');
+			expect(description).toContain('- [ ] Ready to ship');
+			expect(description).toContain('### 🔗 Dependencies');
+			expect(description).toContain('- [ ] External API key');
+		});
 	});
 
 	describe('addChecklistItem (inline)', () => {
 		it('appends a markdown checkbox to the description', async () => {
 			// Pre-existing checklist section in description
-			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] Existing' }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription('### ✅ AC\n- [ ] Existing');
 
 			// Build the checklistId for this checklist (without calling createChecklist)
 			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
@@ -503,8 +575,7 @@ describe('LinearPMProvider', () => {
 		});
 
 		it('does NOT call createIssue (no sub-issue creation)', async () => {
-			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] Existing' }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription('### ✅ AC\n- [ ] Existing');
 
 			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
 			await provider.addChecklistItem(checklist.id, 'Item');
@@ -519,8 +590,7 @@ describe('LinearPMProvider', () => {
 		});
 
 		it('supports checked=true', async () => {
-			mockGetIssue.mockResolvedValue(makeIssue({ description: '### ✅ AC\n- [ ] First' }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription('### ✅ AC\n- [ ] First');
 
 			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
 			await provider.addChecklistItem(checklist.id, 'Done item', true);
@@ -533,8 +603,7 @@ describe('LinearPMProvider', () => {
 	describe('updateChecklistItem (inline)', () => {
 		it('toggles a checkbox in the description', async () => {
 			const desc = '### ✅ AC\n- [ ] Item A';
-			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription(desc);
 
 			const checklists = await provider.getChecklists('issue-uuid');
 			const itemId = checklists[0].items[0].id;
@@ -549,8 +618,7 @@ describe('LinearPMProvider', () => {
 
 		it('does NOT call updateIssueState (no transition)', async () => {
 			const desc = '### ✅ AC\n- [ ] Item A';
-			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription(desc);
 
 			const checklists = await provider.getChecklists('issue-uuid');
 			const itemId = checklists[0].items[0].id;
@@ -582,8 +650,7 @@ describe('LinearPMProvider', () => {
 	describe('deleteChecklistItem (inline)', () => {
 		it('removes the item line from the description', async () => {
 			const desc = '### ✅ AC\n- [ ] Keep\n- [ ] Remove';
-			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
-			mockUpdateIssue.mockResolvedValue(makeIssue());
+			mockIssueDescription(desc);
 
 			const checklists = await provider.getChecklists('issue-uuid');
 			const removeId = checklists[0].items[1].id;
@@ -599,8 +666,14 @@ describe('LinearPMProvider', () => {
 	describe('checklist update retry on conflict', () => {
 		it('retries description update once on failure', async () => {
 			const desc = '### ✅ AC\n- [ ] Item';
-			mockGetIssue.mockResolvedValue(makeIssue({ description: desc }));
-			mockUpdateIssue.mockRejectedValueOnce(new Error('stale')).mockResolvedValueOnce(makeIssue());
+			let description = desc;
+			mockGetIssue.mockImplementation(async () => makeIssue({ description }));
+			mockUpdateIssue
+				.mockRejectedValueOnce(new Error('stale'))
+				.mockImplementation(async (_id, updates: { description?: string }) => {
+					description = updates.description ?? description;
+					return makeIssue({ description });
+				});
 
 			const checklists = await provider.getChecklists('issue-uuid');
 			await provider.updateChecklistItem('issue-uuid', checklists[0].items[0].id, true);

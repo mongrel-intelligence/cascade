@@ -297,7 +297,7 @@ Different PM providers have different native concepts of "checklist". The `PMPro
 
 The shared engine that parses, appends, toggles, and removes inline checklist items lives at `src/pm/_shared/inline-checklist.ts` and is consumed by both the Linear and JIRA adapters.
 
-Because Linear and JIRA checklist mutations rewrite the whole description, their adapters serialize the full read/mutate/write operation with `withDescriptionMutationLock(provider, workItemId, fn)` from `src/pm/_shared/description-mutation-lock.ts`. Keep future inline-description mutations inside that guard; otherwise concurrent `cascade-tools pm update-checklist-item` processes can overwrite each other's description snapshots without a provider-side conflict error.
+Because Linear and JIRA checklist mutations rewrite the whole description, their adapters serialize the full read/mutate/write operation with `withDescriptionMutationLock(provider, workItemId, fn)` from `src/pm/_shared/description-mutation-lock.ts`. Keep future inline-description mutations inside that guard; otherwise concurrent `cascade-tools pm update-checklist-item` processes can overwrite each other's description snapshots without a provider-side conflict error. Linear mutations must also keep the lock held until `linearClient.getIssue()` observes the markdown just written by `linearClient.updateIssue()`, because Linear can briefly serve stale descriptions after accepting a write. Releasing the lock before read-after-write convergence lets the next queued checklist mutation start from an old snapshot and miss a newly created `###` checklist heading.
 
 ---
 
