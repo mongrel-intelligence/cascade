@@ -36,6 +36,6 @@ export async function updateWorkItem(params: UpdateWorkItemParams): Promise<stri
 		return `Work item updated: ${updated.join(', ')}`;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error updating work item: ${message}`;
+		throw new Error(`Error updating work item: ${message}`);
 	}
 }

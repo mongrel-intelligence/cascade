@@ -63,11 +63,19 @@ cli: {
 
 A list of `{ params, comment, output? }` invocations. The first example that populates a given parameter becomes that parameter's **concrete example**, surfaced in three places:
 
-- The agent's system prompt renders a one-line `# example: --<flag> '<json>'` under the flag (when the param is array-of-object / object).
+- The agent's system prompt renders a one-line `# example: ...` under the flag. Object params and array-of-object params use a single shell-quoted JSON payload. Scalar, enum, number, and primitive-array params render as actual CLI syntax.
 - The `cascade-tools … --help` output lists every example as a runnable shell invocation under an `EXAMPLES` section.
 - JSON-parse failures include the example as the `expected` shape fragment in the structured error envelope.
 
-Write examples that a model could literally copy/paste. Use double-quoted JSON keys; do not rely on the agent to translate pseudo-JSON.
+Write examples that a model could literally copy/paste. Use double-quoted JSON keys; do not rely on the agent to translate pseudo-JSON. Shell-safe scalar IDs and names should stay bare (`--workItemId abc123`, `--owner acme`, `--prNumber 42`), not wrapped in quote characters. The shared renderer adds shell quotes only when a scalar contains spaces, shell metacharacters, or embedded quotes.
+
+Enum examples must be raw CLI values, not JSON strings. For example, the review action should render as:
+
+```bash
+cascade-tools scm create-pr-review --event APPROVE
+```
+
+not `--event '"APPROVE"'`. Primitive arrays should render as repeated flags (`--labels bug --labels docs`), while array-of-object examples like `comments` stay JSON (`--comments '[{"path":"src/x.ts","line":1,"body":"nit"}]'`).
 
 ```ts
 examples: [
@@ -114,6 +122,8 @@ Envelope fields:
 
 You do not call `emitCliError` directly. The shared factory routes every failure through it automatically — your job is to make the declarative metadata (describe text, examples, aliases, file alternatives) rich enough that the auto-generated envelope is actually useful.
 
+Core gadget functions must throw for fatal runtime/API/provider failures. Do not return sentinel prose such as `Error posting comment: ...`; `createCLICommand()` treats returned values as successful `data`, and thrown errors as runtime failure envelopes. Intentional non-fatal outcomes may still return structured data or explicit status text when they are part of the command contract, such as guarded PM move no-ops or friction reports queued for retry.
+
 ---
 
 ## Shared CLI helper layout
@@ -123,7 +133,8 @@ You do not call `emitCliError` directly. The shared factory routes every failure
 | Helper | Responsibility |
 |---|---|
 | `commandNames.ts` | Kebab-case conversion and `cascade-tools <namespace> <command>` derivation shared with manifest generation |
-| `examples.ts` | Example lookup, shell quoting, oclif example rendering, and JSON expected-shape hints |
+| `examples.ts` | Example lookup, oclif example rendering, and JSON expected-shape hints |
+| `shellValues.ts` | Shared shell-safe scalar and JSON payload formatting for CLI help and native-tool prompts |
 | `flags.ts` | oclif flag construction plus candidate and boolean-flag metadata collection |
 | `booleanArgv.ts` | Natural boolean value forms such as `--flag true`, `--flag=false`, `yes/no`, and `1/0` |
 | `parseErrors.ts` | oclif parse-error classification and unknown-flag suggestions |
@@ -158,7 +169,7 @@ Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_
 
 ## Reference: `createPRReviewDef`
 
-`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, a `fileInputAlternatives` entry for `--comments-file`, and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
+`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, `fileInputAlternatives` entries for `--body-file` (long review summaries) and `--comments-file` (JSON inline comments), and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
 
 ## Reference: `ReportFriction`
 

@@ -9,15 +9,19 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { JIRA_STATUS_SLOTS } from '../../../web/src/components/projects/pm-providers/jira/wizard.js';
-import { LINEAR_STATUS_SLOTS } from '../../../web/src/components/projects/pm-providers/linear/wizard.js';
-import { TRELLO_LIST_SLOTS } from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
 import {
-	buildJiraIntegrationConfig,
-	buildLinearIntegrationConfig,
-	buildTrelloIntegrationConfig,
-	createInitialState,
-} from '../../../web/src/components/projects/pm-wizard-state.js';
+	JIRA_STATUS_SLOTS,
+	jiraProviderWizard,
+} from '../../../web/src/components/projects/pm-providers/jira/wizard.js';
+import {
+	LINEAR_STATUS_SLOTS,
+	linearProviderWizard,
+} from '../../../web/src/components/projects/pm-providers/linear/wizard.js';
+import {
+	TRELLO_LIST_SLOTS,
+	trelloProviderWizard,
+} from '../../../web/src/components/projects/pm-providers/trello/wizard.js';
+import { createInitialState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 // ============================================================================
 // 1. Slot-array membership
@@ -47,7 +51,7 @@ describe('friction status slot round-trips through buildIntegrationConfig', () =
 			...createInitialState(),
 			trelloListMappings: { friction: 'list-id-friction-123' },
 		};
-		const config = buildTrelloIntegrationConfig(state);
+		const config = trelloProviderWizard.buildIntegrationConfig(state);
 		expect((config.lists as Record<string, string>).friction).toBe('list-id-friction-123');
 	});
 
@@ -56,7 +60,7 @@ describe('friction status slot round-trips through buildIntegrationConfig', () =
 			...createInitialState(),
 			jiraStatusMappings: { friction: 'Friction Status' },
 		};
-		const config = buildJiraIntegrationConfig(state);
+		const config = jiraProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).friction).toBe('Friction Status');
 	});
 
@@ -65,7 +69,7 @@ describe('friction status slot round-trips through buildIntegrationConfig', () =
 			...createInitialState(),
 			linearStatusMappings: { friction: 'state-uuid-friction' },
 		};
-		const config = buildLinearIntegrationConfig(state);
+		const config = linearProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).friction).toBe('state-uuid-friction');
 	});
 });
@@ -75,30 +79,30 @@ describe('friction status slot round-trips through buildIntegrationConfig', () =
 // ============================================================================
 
 describe('friction slot is optional — wizard does not require it', () => {
-	it('Trello: buildTrelloIntegrationConfig produces no friction entry when not mapped', () => {
+	it('Trello: provider buildIntegrationConfig produces no friction entry when not mapped', () => {
 		const state = {
 			...createInitialState(),
 			trelloListMappings: { todo: 'list-id-todo' },
 		};
-		const config = buildTrelloIntegrationConfig(state);
+		const config = trelloProviderWizard.buildIntegrationConfig(state);
 		expect((config.lists as Record<string, string>).friction).toBeUndefined();
 	});
 
-	it('JIRA: buildJiraIntegrationConfig produces no friction entry when not mapped', () => {
+	it('JIRA: provider buildIntegrationConfig produces no friction entry when not mapped', () => {
 		const state = {
 			...createInitialState(),
 			jiraStatusMappings: { todo: 'To Do' },
 		};
-		const config = buildJiraIntegrationConfig(state);
+		const config = jiraProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).friction).toBeUndefined();
 	});
 
-	it('Linear: buildLinearIntegrationConfig produces no friction entry when not mapped', () => {
+	it('Linear: provider buildIntegrationConfig produces no friction entry when not mapped', () => {
 		const state = {
 			...createInitialState(),
 			linearStatusMappings: { todo: 'state-uuid-todo' },
 		};
-		const config = buildLinearIntegrationConfig(state);
+		const config = linearProviderWizard.buildIntegrationConfig(state);
 		expect((config.statuses as Record<string, string>).friction).toBeUndefined();
 	});
 });

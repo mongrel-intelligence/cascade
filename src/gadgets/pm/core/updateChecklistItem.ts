@@ -12,6 +12,6 @@ export async function updateChecklistItem(
 		return `Checklist item ${checkItemId} ${action} on work item ${workItemId}`;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error updating checklist item: ${message}`;
+		throw new Error(`Error updating checklist item: ${message}`);
 	}
 }

@@ -159,12 +159,10 @@ describe('readWorkItem', () => {
 		expect(mockProvider.getWorkItemComments).not.toHaveBeenCalled();
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.getWorkItem.mockRejectedValue(new Error('Network error'));
 
-		const result = await readWorkItem('item1');
-
-		expect(result).toContain('Error reading work item: Network error');
+		await expect(readWorkItem('item1')).rejects.toThrow('Error reading work item: Network error');
 	});
 
 	it('handles label without color', async () => {

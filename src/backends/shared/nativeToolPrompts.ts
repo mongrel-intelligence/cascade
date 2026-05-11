@@ -1,3 +1,4 @@
+import { formatJsonExample, formatShellScalar } from '../../gadgets/shared/cli/shellValues.js';
 import type { ContextInjection, ToolManifest } from '../types.js';
 import { buildInlineContextSection, offloadLargeContext } from './contextFiles.js';
 
@@ -13,6 +14,38 @@ You are operating in a native-tool environment, not a gadget/function-call envir
 - When the task instructions mention gadget names like \`CreatePR\`, \`PostComment\`, \`UpdateChecklistItem\`, \`Finish\`, \`ReadWorkItem\`, \`TodoUpsert\`, or \`TodoUpdateStatus\`, treat that as a request to run the equivalent real command or tool action, not to print the gadget name.
 - If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.
 - Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.`;
+
+type PromptParamSchema = {
+	type: string;
+	required?: boolean;
+	default?: unknown;
+	description?: string;
+	options?: string[];
+	items?: string;
+	aliases?: readonly string[];
+	example?: unknown;
+};
+
+function formatExampleInvocation(key: string, schema: PromptParamSchema): string | undefined {
+	if (schema.example === undefined) return undefined;
+
+	if (schema.type === 'boolean') {
+		return schema.example ? `--${key}` : `--no-${key}`;
+	}
+
+	if (schema.type === 'object' || (schema.type === 'array' && schema.items === 'object')) {
+		const json = formatJsonExample(schema.example);
+		return json ? `--${key} ${json}` : undefined;
+	}
+
+	if (schema.type === 'array') {
+		const examples = Array.isArray(schema.example) ? schema.example : [schema.example];
+		if (examples.length === 0) return undefined;
+		return examples.map((value) => `--${key} ${formatShellScalar(value)}`).join(' ');
+	}
+
+	return `--${key} ${formatShellScalar(schema.example)}`;
+}
 
 /**
  * Format a single CLI parameter for tool guidance documentation.
@@ -30,18 +63,7 @@ You are operating in a native-tool environment, not a gadget/function-call envir
  * - `type: 'object'` → renders as a single `'<json>'` blob.
  */
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: parameter-type taxonomy
-function formatParam(
-	key: string,
-	schema: {
-		type: string;
-		required?: boolean;
-		default?: unknown;
-		description?: string;
-		items?: string;
-		aliases?: readonly string[];
-		example?: unknown;
-	},
-): string {
+function formatParam(key: string, schema: PromptParamSchema): string {
 	const aliasSuffix = (schema.aliases ?? []).map((a) => `|--${a}`).join('');
 	const flagHead = `--${key}${aliasSuffix}`;
 
@@ -75,15 +97,9 @@ function formatParam(
 	// per-flag example said exactly that. The synopsis renders the toggle form;
 	// the example reinforces it concretely.
 	if (schema.example !== undefined) {
-		if (schema.type === 'boolean') {
-			result += schema.example ? `\n  # example: --${key}` : `\n  # example: --no-${key}`;
-		} else {
-			try {
-				result += `\n  # example: --${key} '${JSON.stringify(schema.example)}'`;
-			} catch {
-				// JSON.stringify throws on cyclic refs — never in our tool definitions,
-				// but be defensive so a malformed example never crashes prompt building.
-			}
+		const exampleInvocation = formatExampleInvocation(key, schema);
+		if (exampleInvocation) {
+			result += `\n  # example: ${exampleInvocation}`;
 		}
 	}
 
@@ -112,7 +128,7 @@ export function buildToolGuidance(tools: ToolManifest[]): string {
 		guidance += `\`\`\`bash\n${tool.cliCommand}`;
 
 		for (const [key, schema] of Object.entries(tool.parameters)) {
-			guidance += formatParam(key, schema as { type: string; required?: boolean });
+			guidance += formatParam(key, schema as PromptParamSchema);
 		}
 
 		guidance += '\n```\n\n';

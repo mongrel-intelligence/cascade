@@ -281,9 +281,16 @@ describe('createPRReviewDef — spec 014 opt-in', () => {
 		expect(comments.cliAliases).toEqual(['comment']);
 	});
 
-	it('cli.fileInputAlternatives includes a comments-file entry with parseAs:"json"', () => {
+	it('cli.fileInputAlternatives includes body-file and comments-file entries', () => {
 		const alts = createPRReviewDef.cli?.fileInputAlternatives ?? [];
+		const bodyFile = alts.find((a) => a.paramName === 'body');
 		const commentsFile = alts.find((a) => a.paramName === 'comments');
+
+		expect(bodyFile).toBeDefined();
+		expect(bodyFile?.fileFlag).toBe('body-file');
+		expect(bodyFile?.parseAs).toBeUndefined();
+		expect(bodyFile?.description).toBeTruthy();
+
 		expect(commentsFile).toBeDefined();
 		expect(commentsFile?.fileFlag).toBe('comments-file');
 		expect(commentsFile?.parseAs).toBe('json');

@@ -21,11 +21,21 @@ import {
 
 describe('config', () => {
 	const originalEnv = process.env;
+	const DASHBOARD_CONFIG_ENV_KEYS = [
+		'CASCADE_SERVER_URL',
+		'CASCADE_SESSION_TOKEN',
+		'CASCADE_ORG_ID',
+	] as const;
+
+	function clearDashboardConfigEnv() {
+		for (const key of DASHBOARD_CONFIG_ENV_KEYS) {
+			delete process.env[key];
+		}
+	}
 
 	beforeEach(() => {
 		process.env = { ...originalEnv };
-		delete process.env.CASCADE_SERVER_URL;
-		delete process.env.CASCADE_SESSION_TOKEN;
+		clearDashboardConfigEnv();
 	});
 
 	afterEach(() => {
@@ -44,6 +54,22 @@ describe('config', () => {
 				sessionToken: 'env-token',
 				cookieName: SESSION_COOKIE_NAME,
 				orgId: undefined,
+			});
+			expect(existsSync).not.toHaveBeenCalled();
+		});
+
+		it('returns env orgId when env config is complete', () => {
+			process.env.CASCADE_SERVER_URL = 'http://env-server:3000';
+			process.env.CASCADE_SESSION_TOKEN = 'env-token';
+			process.env.CASCADE_ORG_ID = 'env-org';
+
+			const config = loadConfig();
+
+			expect(config).toEqual({
+				serverUrl: 'http://env-server:3000',
+				sessionToken: 'env-token',
+				cookieName: SESSION_COOKIE_NAME,
+				orgId: 'env-org',
 			});
 			expect(existsSync).not.toHaveBeenCalled();
 		});
@@ -69,6 +95,26 @@ describe('config', () => {
 				orgId: undefined,
 			});
 			expect(readFileSync).toHaveBeenCalledWith(expect.stringContaining('cli.json'), 'utf-8');
+		});
+
+		it('reads stored orgId from file when no env override is set', () => {
+			vi.mocked(existsSync).mockReturnValue(true);
+			vi.mocked(readFileSync).mockReturnValue(
+				JSON.stringify({
+					serverUrl: 'http://localhost:3000',
+					sessionToken: 'file-token',
+					orgId: 'file-org',
+				}),
+			);
+
+			const config = loadConfig();
+
+			expect(config).toEqual({
+				serverUrl: 'http://localhost:3000',
+				sessionToken: 'file-token',
+				cookieName: SESSION_COOKIE_NAME,
+				orgId: 'file-org',
+			});
 		});
 
 		it('returns null when file has incomplete config', () => {
@@ -116,6 +162,27 @@ describe('config', () => {
 				sessionToken: 'env-token-override',
 				cookieName: SESSION_COOKIE_NAME,
 				orgId: undefined,
+			});
+		});
+
+		it('env orgId overrides stored orgId while preserving file server and token', () => {
+			process.env.CASCADE_ORG_ID = 'env-org';
+			vi.mocked(existsSync).mockReturnValue(true);
+			vi.mocked(readFileSync).mockReturnValue(
+				JSON.stringify({
+					serverUrl: 'http://file:3000',
+					sessionToken: 'file-token',
+					orgId: 'file-org',
+				}),
+			);
+
+			const config = loadConfig();
+
+			expect(config).toEqual({
+				serverUrl: 'http://file:3000',
+				sessionToken: 'file-token',
+				cookieName: SESSION_COOKIE_NAME,
+				orgId: 'env-org',
 			});
 		});
 

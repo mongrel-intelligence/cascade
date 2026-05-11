@@ -20,10 +20,28 @@ import type { DataProps } from '@/lib/data-props.js';
 import { WebhookUrlDisplayStep } from '../steps/webhook-url-display.js';
 import type { ProviderWizardStepProps } from '../types.js';
 
-interface ActiveWebhook {
+export interface ActiveWebhook {
 	readonly id: string;
 	readonly url: string;
 	readonly active: boolean;
+}
+
+export interface TrelloWebhookListData {
+	readonly trello?: ReadonlyArray<{
+		readonly id: string | number;
+		readonly callbackURL: string;
+		readonly active: boolean;
+	}>;
+}
+
+export function normalizeTrelloActiveWebhooks(
+	webhooksData: TrelloWebhookListData | undefined,
+): ActiveWebhook[] {
+	return (webhooksData?.trello ?? []).map((webhook) => ({
+		id: String(webhook.id),
+		url: webhook.callbackURL,
+		active: webhook.active,
+	}));
 }
 
 interface TrelloWebhookProviderHooks {

@@ -20,7 +20,9 @@ function makeStubWizard(id: string): ProviderWizardDefinition {
 		credentialPersistence: [
 			{ envVarKey: 'STUB_API_KEY', stateField: 'linearApiKey', label: 'Stub API Key' },
 		],
+		formatVerificationDisplay: (me) => me.displayName ?? me.name,
 		buildIntegrationConfig: () => ({}),
+		buildEditState: () => ({ provider: id }),
 		isSetupComplete: () => true,
 	};
 }

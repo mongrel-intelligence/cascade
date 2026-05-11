@@ -23,7 +23,6 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactElement, useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc } from '@/lib/trpc.js';
-import { buildLinearIntegrationConfig } from '../../pm-wizard-state.js';
 import type { ProjectCredentialMeta } from '../../project-secret-field.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
@@ -31,6 +30,7 @@ import { LabelMappingStep } from '../steps/label-mapping.js';
 import { ProjectScopeStep } from '../steps/project-scope.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { linearAuthMetadata, linearCredentialPersistence } from './auth.js';
 import { useLinearDiscovery, useLinearLabelCreation } from './hooks.js';
 import { LinearWebhookAdapter } from './webhook-step.js';
 
@@ -231,14 +231,9 @@ function LinearProjectScopeAdapter({ providerHooks }: ProviderWizardStepProps): 
 export const linearProviderWizard: ProviderWizardDefinition = {
 	id: 'linear',
 	label: 'Linear',
-	auth: {
-		rawCredentials: [{ role: 'api_key', stateField: 'linearApiKey' }],
-		storedCredentials: { fallbackWhenStateFieldEmpty: 'linearApiKey' },
-		missingCredentialsMessage: 'Enter your API key before verifying',
-	},
-	credentialPersistence: [
-		{ envVarKey: 'LINEAR_API_KEY', stateField: 'linearApiKey', label: 'Linear API Key' },
-	],
+	auth: linearAuthMetadata,
+	formatVerificationDisplay: (me) => me.displayName || me.name,
+	credentialPersistence: linearCredentialPersistence,
 
 	steps: [
 		{
@@ -279,7 +274,26 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		},
 	],
 
-	buildIntegrationConfig: buildLinearIntegrationConfig,
+	buildIntegrationConfig: (state) => ({
+		teamId: state.linearTeamId,
+		...(state.linearProjectId ? { projectId: state.linearProjectId } : {}),
+		statuses: state.linearStatusMappings,
+		...(Object.keys(state.linearLabels).length > 0 ? { labels: state.linearLabels } : {}),
+	}),
+
+	buildEditState: (initialConfig, configuredKeys) => {
+		const statuses = initialConfig.statuses as Record<string, string> | undefined;
+		const labels = initialConfig.labels as Record<string, string> | undefined;
+
+		return {
+			provider: 'linear',
+			linearTeamId: (initialConfig.teamId as string) ?? '',
+			linearProjectId: (initialConfig.projectId as string) ?? '',
+			...(statuses ? { linearStatusMappings: statuses } : {}),
+			...(labels ? { linearLabels: labels } : {}),
+			hasStoredCredentials: configuredKeys.has('LINEAR_API_KEY'),
+		};
+	},
 
 	isSetupComplete: (state) => {
 		if (!state.linearTeamId) return false;
@@ -287,9 +301,9 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		return isCredentialsComplete(state);
 	},
 
-	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
+	useProviderHooks: ({ providerId, auth, state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useLinearDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const labels = useLinearLabelCreation(state, dispatch, projectId ?? '');
+		const labels = useLinearLabelCreation(providerId, auth, state, dispatch, projectId ?? '');
 		// Lift the LINEAR_WEBHOOK_SECRET credential lookup from the parent
 		// wizard (`pm-wizard.tsx`) into the provider hooks so the Linear
 		// webhook step adapter can compose the shared `WebhookUrlDisplayStep`

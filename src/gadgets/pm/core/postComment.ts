@@ -33,6 +33,6 @@ export async function postComment(workItemId: string, text: string): Promise<str
 		return 'Comment posted successfully';
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error posting comment: ${message}`;
+		throw new Error(`Error posting comment: ${message}`);
 	}
 }

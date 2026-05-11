@@ -3,25 +3,25 @@ import { CheckCircle, Globe, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useReducer, useRef, useState } from 'react';
 import { Label } from '@/components/ui/label.js';
 import { trpc } from '@/lib/trpc.js';
-// Side-effect imports register every PM provider's frontend wizard into
-// the provider registry. With Linear migrated (006/4), every PM provider
-// now renders via the manifest shell.
-import './pm-providers/trello/index.js';
-import './pm-providers/jira/index.js';
-import './pm-providers/linear/index.js';
+// Single barrel import registers every PM provider's frontend wizard into the
+// provider registry. New providers add one import to pm-providers/index.ts —
+// this file never needs to change for a new provider.
+import './pm-providers/index.js';
 import { ManifestProviderWizardSection } from './pm-providers/manifest-section.js';
-import { getProviderWizard } from './pm-providers/registry.js';
+import { getProviderWizard, listProviderWizards } from './pm-providers/registry.js';
 import type { ProviderWizardDefinition } from './pm-providers/types.js';
 import { SaveStep } from './pm-wizard-common-steps.js';
-import { useSaveMutation, useVerification } from './pm-wizard-hooks.js';
+import {
+	areCredentialsReadyFromMetadata,
+	useSaveMutation,
+	useVerification,
+} from './pm-wizard-hooks.js';
 // Plan 011/5: the three legacy `pm-wizard-{trello,jira,linear}-steps.tsx`
 // files were deleted; all three providers now render exclusively through
 // the manifest path (see `./pm-providers/<provider>/wizard.ts`).
 // Plan 012/4: `WebhookStep` + `LinearWebhookInfoPanel` + supporting hooks
 // deleted; every provider owns its webhook UX via the manifest path.
 import {
-	areCredentialsReady,
-	buildEditState,
 	createInitialState,
 	isStep1Complete,
 	type WizardAction,
@@ -38,18 +38,63 @@ import { WizardStep } from './wizard-shared.js';
 // (manifestDef.steps[i].title). Only step 1 (provider picker) and the
 // legacy Webhook + Save slots have fixed titles; rendered inline.
 
-const PROVIDER_LABELS: Record<'trello' | 'jira' | 'linear', string> = {
-	trello: 'Trello',
-	jira: 'JIRA',
-	linear: 'Linear',
-};
+export function buildProviderSwitchConfirmationMessage(fromLabel: string, toLabel: string): string {
+	return `Switch PM provider from ${fromLabel} to ${toLabel}?\n\nYou'll need to re-enter credentials and re-map fields for ${toLabel}. The old provider's credentials will be deleted when you save.`;
+}
 
-function confirmProviderSwitch(
-	from: 'trello' | 'jira' | 'linear',
-	to: 'trello' | 'jira' | 'linear',
-): boolean {
-	return window.confirm(
-		`Switch PM provider from ${PROVIDER_LABELS[from]} to ${PROVIDER_LABELS[to]}?\n\nYou'll need to re-enter credentials and re-map fields for ${PROVIDER_LABELS[to]}. The old provider's credentials will be deleted when you save.`,
+function confirmProviderSwitch(fromLabel: string, toLabel: string): boolean {
+	return window.confirm(buildProviderSwitchConfirmationMessage(fromLabel, toLabel));
+}
+
+export function buildEditStateFromProviderWizard(
+	provider: string,
+	initialConfig: Record<string, unknown>,
+	configuredKeys: ReadonlySet<string>,
+): Partial<WizardState> {
+	const manifestDef = getProviderWizard(provider);
+	if (!manifestDef) {
+		throw new Error(`No PM provider wizard registered for ${provider}`);
+	}
+	return manifestDef.buildEditState(initialConfig, configuredKeys);
+}
+
+export function ProviderPicker({
+	state,
+	dispatch,
+	advanceToStep,
+}: {
+	readonly state: WizardState;
+	readonly dispatch: React.Dispatch<WizardAction>;
+	readonly advanceToStep: (step: number) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<Label>Provider</Label>
+			<div className="flex gap-2">
+				{listProviderWizards().map((wizard) => (
+					<button
+						key={wizard.id}
+						type="button"
+						onClick={() => {
+							if (wizard.id === state.provider) return;
+							if (state.isEditing) {
+								const fromLabel = getProviderWizard(state.provider)?.label ?? state.provider;
+								if (!confirmProviderSwitch(fromLabel, wizard.label)) return;
+							}
+							dispatch({ type: 'SET_PROVIDER', provider: wizard.id });
+							advanceToStep(2);
+						}}
+						className={`flex-1 rounded-md border px-4 py-3 text-sm font-medium transition-colors ${
+							state.provider === wizard.id
+								? 'border-primary bg-primary/5 text-foreground'
+								: 'border-input text-muted-foreground hover:text-foreground hover:bg-accent/50'
+						}`}
+					>
+						{wizard.label}
+					</button>
+				))}
+			</div>
+		</div>
 	);
 }
 
@@ -105,7 +150,14 @@ function ManifestStepsSection({
 }: ManifestStepsSectionProps) {
 	// Called exactly once — the whole point of this wrapper component.
 	const providerHooks =
-		manifestDef.useProviderHooks?.({ state, dispatch, projectId, advanceToStep }) ?? {};
+		manifestDef.useProviderHooks?.({
+			providerId: manifestDef.id,
+			auth: manifestDef.auth,
+			state,
+			dispatch,
+			projectId,
+			advanceToStep,
+		}) ?? {};
 
 	return (
 		<>
@@ -220,7 +272,11 @@ export function PMWizard({
 		if (initializedRef.current) return;
 		initializedRef.current = true;
 		const configuredKeys = new Set(credentialsQuery.data.map((c) => c.envVarKey));
-		const editState = buildEditState(initialProvider, initialConfig, configuredKeys);
+		const editState = buildEditStateFromProviderWizard(
+			initialProvider,
+			initialConfig,
+			configuredKeys,
+		);
 		dispatch({ type: 'INIT_EDIT', state: editState });
 		// Plan 011/4: open all steps up to a comfortable ceiling; actual
 		// step count is provider-dependent (Trello 7, JIRA 8, Linear 7).
@@ -229,10 +285,9 @@ export function PMWizard({
 
 	// ---- Custom hooks ----
 
-	// Is there a manifest-registered wizard for the active provider? If so,
-	// ManifestProviderWizardSection drives the rendering (and runs the
-	// provider's useProviderHooks internally). Unregistered providers fall
-	// through to the legacy per-provider branches.
+	// Every selectable provider must be registered in the frontend wizard
+	// registry. ManifestProviderWizardSection drives all provider-owned steps
+	// and runs the provider's useProviderHooks internally.
 	const manifestDef = getProviderWizard(state.provider);
 	if (!manifestDef) {
 		throw new Error(`No PM provider wizard registered for ${state.provider}`);
@@ -253,7 +308,9 @@ export function PMWizard({
 
 	// ---- Step status ----
 
-	const credsReady = areCredentialsReady(state);
+	// Metadata-driven: reads rawCredentials from the provider's auth spec so
+	// no shared file needs to change when a new provider is added.
+	const credsReady = areCredentialsReadyFromMetadata(state, manifestDef.auth);
 
 	function getStatus(
 		stepNum: number,
@@ -280,30 +337,7 @@ export function PMWizard({
 				isOpen={openSteps.has(1)}
 				onToggle={() => toggleStep(1)}
 			>
-				<div className="space-y-2">
-					<Label>Provider</Label>
-					<div className="flex gap-2">
-						{(['trello', 'jira', 'linear'] as const).map((p) => (
-							<button
-								key={p}
-								type="button"
-								onClick={() => {
-									if (p === state.provider) return;
-									if (state.isEditing && !confirmProviderSwitch(state.provider, p)) return;
-									dispatch({ type: 'SET_PROVIDER', provider: p });
-									advanceToStep(2);
-								}}
-								className={`flex-1 rounded-md border px-4 py-3 text-sm font-medium transition-colors ${
-									state.provider === p
-										? 'border-primary bg-primary/5 text-foreground'
-										: 'border-input text-muted-foreground hover:text-foreground hover:bg-accent/50'
-								}`}
-							>
-								{PROVIDER_LABELS[p]}
-							</button>
-						))}
-					</div>
-				</div>
+				<ProviderPicker state={state} dispatch={dispatch} advanceToStep={advanceToStep} />
 			</WizardStep>
 
 			{/*
@@ -314,26 +348,24 @@ export function PMWizard({
 			 * the final Save step. ManifestStepsSection calls useProviderHooks
 			 * exactly once regardless of step count (storm fix).
 			 */}
-			{manifestDef && (
-				<ManifestStepsSection
-					key={manifestDef.id}
-					manifestDef={manifestDef}
-					state={state}
-					dispatch={dispatch}
-					projectId={projectId}
-					advanceToStep={advanceToStep}
-					getStatus={getStatus}
-					openSteps={openSteps}
-					toggleStep={toggleStep}
-					credsReady={credsReady}
-					verifyPending={verifyMutation.isPending}
-					onVerify={() => verifyMutation.mutate()}
-					verificationResult={state.verificationResult}
-					verifyError={state.verifyError}
-					hasStoredCredentials={state.hasStoredCredentials}
-					isEditing={state.isEditing}
-				/>
-			)}
+			<ManifestStepsSection
+				key={manifestDef.id}
+				manifestDef={manifestDef}
+				state={state}
+				dispatch={dispatch}
+				projectId={projectId}
+				advanceToStep={advanceToStep}
+				getStatus={getStatus}
+				openSteps={openSteps}
+				toggleStep={toggleStep}
+				credsReady={credsReady}
+				verifyPending={verifyMutation.isPending}
+				onVerify={() => verifyMutation.mutate()}
+				verificationResult={state.verificationResult}
+				verifyError={state.verifyError}
+				hasStoredCredentials={state.hasStoredCredentials}
+				isEditing={state.isEditing}
+			/>
 
 			{/* Save slot. */}
 			<WizardStep

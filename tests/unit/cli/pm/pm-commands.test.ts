@@ -87,6 +87,14 @@ function makeMockConfig() {
 	return { runHook: vi.fn().mockResolvedValue({ successes: [], failures: [] }) };
 }
 
+async function runExpectingExit(cmd: { run: () => Promise<unknown> }): Promise<void> {
+	try {
+		await cmd.run();
+	} catch {
+		// emitCliError exits with code 1; oclif throws in the test environment.
+	}
+}
+
 afterEach(() => {
 	vi.restoreAllMocks();
 });
@@ -101,6 +109,23 @@ describe('ReadWorkItem command', () => {
 		await cmd.run();
 
 		expect(readWorkItem).toHaveBeenCalledWith('card-123', true);
+	});
+
+	it('normalizes one accidental outer quote layer around workItemId', async () => {
+		const doubleQuoted = new ReadWorkItem(
+			['--workItemId', '"card-123"'],
+			makeMockConfig() as never,
+		);
+		await doubleQuoted.run();
+
+		const singleQuoted = new ReadWorkItem(
+			['--workItemId', "'card-456'"],
+			makeMockConfig() as never,
+		);
+		await singleQuoted.run();
+
+		expect(readWorkItem).toHaveBeenNthCalledWith(1, 'card-123', true);
+		expect(readWorkItem).toHaveBeenNthCalledWith(2, 'card-456', true);
 	});
 
 	it('passes includeComments=true when --includeComments is set', async () => {
@@ -133,6 +158,25 @@ describe('ReadWorkItem command', () => {
 		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
 		expect(output.success).toBe(true);
 		expect(output.data).toEqual({ id: 'card-123', title: 'Test Card' });
+	});
+
+	it('outputs a runtime failure envelope when readWorkItem rejects', async () => {
+		vi.mocked(readWorkItem).mockRejectedValue(new Error('Request failed with status code 400'));
+		const cmd = new ReadWorkItem(['--workItemId', 'card-123'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output).toEqual({
+			success: false,
+			error: {
+				type: 'runtime',
+				message: 'Request failed with status code 400',
+			},
+		});
 	});
 });
 
@@ -398,5 +442,27 @@ describe('PostComment command (basic params)', () => {
 		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
 		expect(output.success).toBe(true);
 		expect(output.data).toEqual({ id: 'comment-new' });
+	});
+
+	it('outputs a runtime failure envelope when postComment rejects', async () => {
+		vi.mocked(postComment).mockRejectedValue(new Error('Request failed with status code 400'));
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hello world'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output).toEqual({
+			success: false,
+			error: {
+				type: 'runtime',
+				message: 'Request failed with status code 400',
+			},
+		});
 	});
 });

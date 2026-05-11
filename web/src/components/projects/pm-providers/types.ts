@@ -45,6 +45,8 @@ export interface ProviderWizardStepProps {
  * provider-specific discovery / label-creation hooks.
  */
 export interface ProviderHooksContext {
+	readonly providerId: string;
+	readonly auth: ProviderAuthMetadata;
 	readonly state: WizardState;
 	readonly dispatch: React.Dispatch<WizardAction>;
 	readonly projectId: string | undefined;
@@ -95,6 +97,12 @@ export interface ProviderWizardDefinition {
 	readonly steps: readonly ProviderWizardStep[];
 	/** Provider-owned auth contract for raw credentials and stored fallback. */
 	readonly auth: ProviderAuthMetadata;
+	/** Formats the provider's normalized current-user discovery response. */
+	readonly formatVerificationDisplay: (me: {
+		readonly id: string;
+		readonly name: string;
+		readonly displayName?: string;
+	}) => string;
 	/** Normal provider credentials saved to project_credentials. */
 	readonly credentialPersistence: readonly ProviderCredentialPersistenceMapping[];
 	/**
@@ -102,6 +110,15 @@ export interface ProviderWizardDefinition {
 	 * save API. Mirrors the existing `buildXxxIntegrationConfig` functions.
 	 */
 	readonly buildIntegrationConfig: (state: WizardState) => Record<string, unknown>;
+	/**
+	 * Hydrates provider-owned edit-mode wizard state from a saved integration
+	 * config plus the project credential keys currently configured on the server.
+	 * Raw credential values must not be returned.
+	 */
+	readonly buildEditState: (
+		initialConfig: Record<string, unknown>,
+		configuredKeys: ReadonlySet<string>,
+	) => Partial<WizardState>;
 	/** True when all required steps report complete. */
 	readonly isSetupComplete: (state: WizardState) => boolean;
 	/**

@@ -25,6 +25,9 @@ import {
 	buildTaskPrompt,
 	buildToolGuidance,
 } from '../../../src/backends/shared/nativeToolPrompts.js';
+import { createPRReviewDef } from '../../../src/gadgets/github/definitions.js';
+import { readWorkItemDef } from '../../../src/gadgets/pm/definitions.js';
+import { generateToolManifest } from '../../../src/gadgets/shared/manifestGenerator.js';
 
 // ───────── helper ─────────
 function makeManifest(overrides: Partial<ToolManifest> = {}): ToolManifest {
@@ -114,6 +117,79 @@ describe('buildToolGuidance', () => {
 		});
 	});
 
+	describe('formatParam — enum/scalar examples', () => {
+		it('renders enum examples as raw CLI values instead of JSON string literals', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						event: {
+							type: 'string',
+							options: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'],
+							required: true,
+							example: 'APPROVE',
+						},
+					},
+				}),
+			]);
+
+			expect(result).toContain('# example: --event APPROVE');
+			expect(result).not.toContain(`--event '"APPROVE"'`);
+			expect(result).not.toContain(`--event '"REQUEST_CHANGES"'`);
+		});
+
+		it('renders number examples as raw CLI values', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						prNumber: { type: 'number', required: true, example: 42 },
+					},
+				}),
+			]);
+
+			expect(result).toContain('# example: --prNumber 42');
+			expect(result).not.toContain(`--prNumber '42'`);
+		});
+
+		it('shell-quotes scalar string examples only when needed', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						body: {
+							type: 'string',
+							required: true,
+							example: 'LGTM after CI passes',
+						},
+					},
+				}),
+			]);
+
+			expect(result).toContain("# example: --body 'LGTM after CI passes'");
+		});
+
+		it('renders CreatePRReview event guidance without JSON string quotes', () => {
+			const result = buildToolGuidance([generateToolManifest(createPRReviewDef)]);
+
+			expect(result).toContain('# example: --event APPROVE');
+			expect(result).not.toContain(`--event '"APPROVE"'`);
+		});
+
+		it('renders ReadWorkItem work item IDs as bare shell-safe values', () => {
+			const result = buildToolGuidance([generateToolManifest(readWorkItemDef)]);
+
+			expect(result).toContain('# example: --workItemId abc123');
+			expect(result).not.toContain(`--workItemId '"abc123"'`);
+			expect(result).not.toContain(`--workItemId 'abc123'`);
+			expect(result).not.toContain(`--workItemId "abc123"`);
+		});
+
+		it('renders CreatePRReview body-file guidance from definition metadata', () => {
+			const result = buildToolGuidance([generateToolManifest(createPRReviewDef)]);
+
+			expect(result).toContain('[--body-file <string>]');
+			expect(result).toContain('Read review body from file (use - for stdin)');
+		});
+	});
+
 	describe('formatParam — optional string param', () => {
 		it('formats optional string param with brackets', () => {
 			const result = buildToolGuidance([
@@ -155,6 +231,24 @@ describe('buildToolGuidance', () => {
 			]);
 			expect(result).toContain('[--labels <string> (repeatable)]');
 			expect(result).not.toContain('--label <string>'); // old bug
+		});
+
+		it('renders primitive-array examples as repeated flags instead of a JSON blob', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						labels: {
+							type: 'array',
+							items: 'string',
+							required: false,
+							example: ['bug', 'docs'],
+						},
+					},
+				}),
+			]);
+
+			expect(result).toContain('# example: --labels bug --labels docs');
+			expect(result).not.toContain(`--labels '["bug","docs"]'`);
 		});
 	});
 
@@ -226,6 +320,18 @@ describe('buildToolGuidance', () => {
 			]);
 			expect(result).toContain("--config '<json>'");
 			expect(result).not.toContain('<object>'); // shouldn't leak the bare type
+		});
+
+		it('renders object examples as a single JSON payload', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						config: { type: 'object', required: true, example: { mode: 'strict' } },
+					},
+				}),
+			]);
+
+			expect(result).toContain(`# example: --config '${JSON.stringify({ mode: 'strict' })}'`);
 		});
 	});
 

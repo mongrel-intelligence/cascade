@@ -45,6 +45,6 @@ export async function moveWorkItem(params: MoveWorkItemParams): Promise<string> 
 		return `Work item ${params.workItemId} moved to ${params.destination} successfully`;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		return `Error moving work item: ${message}`;
+		throw new Error(`Error moving work item: ${message}`);
 	}
 }

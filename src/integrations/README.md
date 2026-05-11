@@ -31,12 +31,14 @@ A new PM provider is ONE manifest backed by ONE provider folder + ONE wizard fol
 
   web/src/components/projects/pm-providers/<provider>/
     index.ts          // registerProviderWizard(<provider>ProviderWizard) on module load
-    wizard.ts         // ProviderWizardDefinition (steps, save transform, completion predicates)
-    adapters.tsx      // step-component adapters that bridge providerHooks → existing step props
-    steps.tsx         // React components for each wizard step (or re-export from pm-wizard-<provider>-steps.tsx)
+    wizard.ts         // ProviderWizardDefinition (steps, save transform, edit hydration)
+    state.ts          // provider-owned WizardState slice, actions, reducer, defaults
+    hooks.ts          // provider-owned discovery/mutation/webhook hooks + auth wrappers
+    webhook-step.tsx  // optional provider webhook UX composition around shared steps
+    steps.tsx         // optional custom-step components only
 ```
 
-Nothing outside those two folders needs to change when you add a provider. The registries are the only surface the rest of the codebase sees.
+The registries are the only surface the rest of the codebase sees. A new provider wires itself through the backend PM barrel and the frontend PM-provider barrel; it does not edit shared wizard orchestration (`pm-wizard.tsx`, `pm-wizard-hooks.ts`, or `pm-wizard-common-steps.tsx`). The shared dashboard state file only composes provider-owned state slices and remains the temporary explicit exception documented in step 4 below.
 
 ---
 
@@ -85,10 +87,19 @@ See [`web/src/components/projects/pm-providers/types.ts`](../../web/src/componen
 | `label` | Shown in the provider-select dropdown. |
 | `steps` | Array of `{ id, title, Component, isComplete }`. The generic wizard renders them in order. |
 | `buildIntegrationConfig` | Transforms wizard state into the integration config payload sent at save time. |
+| `buildEditState` | Hydrates edit-mode state from saved config + configured credential keys. This is provider-owned and must never return raw credential values. |
 | `isSetupComplete` | `(state) => boolean`. True when the wizard can be saved. |
 | `useProviderHooks?` | Optional — composes the provider's React hooks (discovery, label creation, custom-field creation) inside a shell component. Return value flows into each step's `providerHooks` prop. |
 
 `ManifestProviderWizardSection` (`web/src/components/projects/pm-providers/manifest-section.tsx`) is the shell component that hosts the unconditional `useProviderHooks` call — it's only mounted when a manifest is registered for the active provider, so React's rules-of-hooks hold.
+
+Frontend provider ownership is intentionally broad:
+
+- **State slice** — provider credential/config fields, action types, reducer cases, defaults, and provider-specific selectors live in `pm-providers/<provider>/state.ts`. `pm-wizard-state.ts` composes those slices and is the only shared dashboard state surface that may need a new-provider edit while the shared state type still aggregates all provider fields.
+- **Config serialization** — `ProviderWizardDefinition.buildIntegrationConfig` in `pm-providers/<provider>/wizard.ts` is the only save-payload transform for that provider.
+- **Edit hydration** — `ProviderWizardDefinition.buildEditState` restores saved provider config into wizard state and sets stored-credential flags from configured credential keys; shared `pm-wizard.tsx` only dispatches the returned partial state.
+- **Auth metadata** — `auth`, `credentialPersistence`, and `formatVerificationDisplay` live in the provider wizard definition. Shared verification, credential readiness, mutation auth, and save code read this metadata instead of branching by provider.
+- **Hooks and webhook UX** — discovery, label/custom-field creation, webhook list normalization, webhook create/delete controls, signing-secret fields, and provider-specific mutation wrappers live under `pm-providers/<provider>/hooks.ts` and provider step adapters such as `webhook-step.tsx`. Shared `pm-wizard-hooks.ts` stays provider-agnostic.
 
 ---
 
@@ -204,13 +215,13 @@ All three real providers are now on the hardened contracts. Plan 009/4 also ship
 | Webhook-UX migration complete | Every PM wizard step, without exception, renders via the manifest path. Trello, JIRA, and Linear each own their webhook step via a per-provider adapter (`pm-providers/<provider>/webhook-step.tsx`) — Fragment composition around the shared `WebhookUrlDisplayStep`. Trello + JIRA compose with programmatic "Create Webhook" button + active-webhooks list + delete + curl fallback (via existing `webhooks.create/list/delete({trelloOnly|jiraOnly:true})` tRPC endpoints). Linear composes with info banner + `ProjectSecretField` (`LINEAR_WEBHOOK_SECRET`) + 5-step manual setup instructions. |
 | Legacy deletions | `WebhookStep` + `LinearWebhookInfoPanel` + `useWebhookManagement` + `useLinearWebhookInfo` all deleted. `pm-wizard-common-steps.tsx` now only exports `SaveStep`. Legacy test file `pm-wizard-webhooks-step.test.ts` deleted — assertions moved into per-provider adapter tests. |
 | Parent-wizard filter | The `-webhook` id-skip filter (stopgap from plan 011/4) is gone. `renderedManifestSteps = manifestDef.steps.map(...)` — no filter. |
-| New-provider guarantee | Adding a PM provider requires zero edits to `pm-wizard.tsx`, `pm-wizard-common-steps.tsx`, or `pm-wizard-hooks.ts`. Webhook UX composition lives in the provider folder. |
+| New-provider guarantee | Adding a PM provider requires zero edits to `pm-wizard.tsx`, `pm-wizard-common-steps.tsx`, or `pm-wizard-hooks.ts`. New providers add one import to the frontend barrel (`web/src/components/projects/pm-providers/index.ts`) — the symmetric counterpart of the backend barrel — and `pm-wizard.tsx` picks it up automatically. The provider picker, edit hydration dispatch (`ProviderWizardDefinition.buildEditState`), config serialization (`ProviderWizardDefinition.buildIntegrationConfig`), verification-button readiness (`areCredentialsReadyFromMetadata`), mutation auth path (`buildProviderAuthArgFromMetadata`), and save credential persistence are all metadata/provider-definition driven; no shared edits required beyond the barrel import. **Shared dashboard state** (`pm-wizard-state.ts`) must still compose the new provider's state slice and action type — see step 4 of "Adding a new PM provider" below. |
 
 ---
 
 ## Adding a new PM provider (step by step)
 
-Spec 009 AC #10: **a new PM provider PR should not need to edit shared router / worker / CLI / dashboard / configMapper / central schema files**. Everything lives in your provider folder + your wizard folder + a single import in `src/integrations/pm/index.ts`. The `tests/unit/integrations/new-provider-surface.test.ts` guard enforces this.
+Spec 009 AC #10: **a new PM provider PR should not need to edit shared router / worker / CLI / dashboard / configMapper / central schema files**. The orchestration and schema work lives in your provider folder + your wizard folder + one import in `src/integrations/pm/index.ts` + one import in `web/src/components/projects/pm-providers/index.ts`. The shared wizard orchestration files (`pm-wizard.tsx`, `pm-wizard-hooks.ts`, `pm-wizard-common-steps.tsx`) are guarded shared surface and should not change for a new provider. The one shared dashboard file that still requires a new-provider edit is `pm-wizard-state.ts` (step 4 below) — it composes the provider's state slice into `WizardState`, `WizardAction`, initial state, and reducer delegation. Edit-mode config hydration belongs on the provider's `ProviderWizardDefinition.buildEditState`; save-payload serialization belongs on `ProviderWizardDefinition.buildIntegrationConfig`; provider hook auth and mutation wiring belong in provider-owned metadata/hooks. The `tests/unit/integrations/new-provider-surface.test.ts` guard enforces the shared-file invariant for orchestration and schema files; `pm-wizard-state.ts` is the deliberate exception.
 
 1. **Backend folder** at `src/integrations/pm/<provider>/`:
    - `client.ts` (or reuse a sibling under `src/<provider>/`) — your REST / GraphQL client. Must use `withXxxCredentials()` + AsyncLocalStorage credential scoping; never hand-assemble Bearer headers (see `_shared/auth-headers.ts`).
@@ -220,17 +231,28 @@ Spec 009 AC #10: **a new PM provider PR should not need to edit shared router / 
    - `router-adapter.ts`, `triggers/*.ts`, `webhook.ts`, `platform-client.ts` — same as before.
    - `index.ts` — side-effect module calling `registerPMProvider(<provider>Manifest)`.
 
-2. **Wire the manifest** via a single import in `src/integrations/pm/index.ts` (`import './<provider>/index.js';`). No other edit to any shared file is needed for registration — the `single-entrypoint` test guards this.
+2. **Wire the backend manifest** via a single import in `src/integrations/pm/index.ts` (`import './<provider>/index.js';`). No other backend file needs to change — the `single-entrypoint` test guards this.
 
-3. **Frontend folder** at `web/src/components/projects/pm-providers/<provider>/`: `wizard.ts` (`ProviderWizardDefinition` with `useProviderHooks` if the provider needs discovery / label creation / custom-field creation / webhook registration), `index.ts`. Add one line to `pm-wizard.tsx` to register. For shared wizard steps declared on `manifest.wizardSpec`, the generator in `pm-providers/generator.tsx` dispatches directly to the real shared step components at `pm-providers/steps/*.tsx` — there are **seven** kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`, `custom-field-mapping`. A provider with purely standard steps writes **zero** per-provider step components; Trello, JIRA, and Linear all use the shared components for every standard kind. Provide `providerHooks` (returned from `useProviderHooks`) to forward discovery data + mutation callbacks into the shared components; the generator spreads `ctx.providerHooks` as props. Unknown step `kind` values still warn-and-render a placeholder. **Provider-specific UI** ships either as (a) `kind: 'custom'` steps declared on the manifest and resolved to provider-folder components (Trello OAuth popup, JIRA issue-type mapping), or (b) Fragment compositions around a shared step when the base UX is standard but needs augmentation (Trello/JIRA webhook steps compose `WebhookUrlDisplayStep` + programmatic Create UX; Linear composes `WebhookUrlDisplayStep` + `ProjectSecretField` + setup instructions — see `pm-providers/{trello,jira,linear}/webhook-step.tsx` for the reference composition pattern).
+3. **Frontend folder** at `web/src/components/projects/pm-providers/<provider>/`: `wizard.ts` (`ProviderWizardDefinition` with `auth`, `credentialPersistence`, `formatVerificationDisplay`, `buildIntegrationConfig`, `buildEditState`, and `useProviderHooks` if the provider needs discovery / label creation / custom-field creation / webhook registration), `state.ts` for the provider-owned wizard state slice/actions/reducer/defaults, `hooks.ts` for provider-owned discovery/mutation/auth/webhook wrappers, `auth.ts` for reusable auth metadata when useful, and `index.ts` for side-effect registration (`registerProviderWizard(<provider>ProviderWizard)`). For shared wizard steps declared on `manifest.wizardSpec`, the generator in `pm-providers/generator.tsx` dispatches directly to the real shared step components at `pm-providers/steps/*.tsx` — there are **seven** kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`, `custom-field-mapping`. A provider with purely standard steps writes **zero** per-provider step components; Trello, JIRA, and Linear all use the shared components for every standard kind. Provide `providerHooks` (returned from `useProviderHooks`) to forward discovery data + mutation callbacks into the shared components; the generator spreads `ctx.providerHooks` as props. Unknown step `kind` values still warn-and-render a placeholder. **Provider-specific UI** ships either as (a) `kind: 'custom'` steps declared on the manifest and resolved to provider-folder components (Trello OAuth popup, JIRA issue-type mapping), or (b) Fragment compositions around a shared step when the base UX is standard but needs augmentation (Trello/JIRA webhook steps compose `WebhookUrlDisplayStep` + programmatic Create UX + active-webhook normalization; Linear composes `WebhookUrlDisplayStep` + `ProjectSecretField` + setup instructions — see `pm-providers/{trello,jira,linear}/webhook-step.tsx` for the reference composition pattern). Shared `pm-wizard-hooks.ts` remains limited to metadata-driven verification/save shells and provider-agnostic mutation factories.
 
-4. **Lifecycle fixture** at `tests/helpers/<provider>LifecycleFixture.ts`. Add the fixture key to `LIFECYCLE_FIXTURES` in `tests/unit/integrations/pm-conformance.test.ts`. Trivial providers can reuse `createFakePMProvider()` (see Trello/JIRA/Linear fixtures).
+4. **Update shared dashboard state** in `web/src/components/projects/pm-wizard-state.ts`. This is the one shared dashboard file a new provider must edit while `WizardState` remains an aggregate type:
+   - Import the provider's state-slice helpers from `pm-providers/<provider>/state.ts`.
+   - Compose the provider slice into `WizardState`, `WizardAction`, `createInitialState`, and `wizardReducer` delegation.
+   - Keep provider-specific credential fields, action definitions, defaults, and reducer logic inside the provider `state.ts`; reducer cases that mutate credentials should clear `verificationResult` and `verifyError`.
 
-5. **Run the conformance harness**: `npx vitest run --project unit-core tests/unit/integrations/pm-conformance.test.ts`. Behavioral contracts run against your provider automatically once `configSchema` / `discoveryCapabilities` / `lifecycle` are declared. Failures name the contract.
+   Edit-mode hydration is provider-owned: implement `buildEditState(initialConfig, configuredKeys)` on the provider's `ProviderWizardDefinition`. It should set `hasStoredCredentials` from the relevant persisted credential keys and restore saved config values (container IDs, status/label mappings) without returning raw credential values.
 
-6. **Provider-specific unit tests** in `tests/unit/pm/<provider>/` — adapter tests (vi.mock the client), config-schema round-trip, discovery shape, wizardSpec, adapter branded IDs.
+   Save config serialization is also provider-owned: implement `buildIntegrationConfig(state)` on the provider's `ProviderWizardDefinition`. The credential-readiness check (`areCredentialsReadyFromMetadata` in `pm-wizard-hooks.ts`) and the mutation auth path (`buildProviderAuthArgFromMetadata`) are fully metadata-driven — they read `manifestDef.auth.rawCredentials` and require **no changes** here.
 
-That's it. The `new-provider-surface` snapshot test proves your PR touches **no** shared infrastructure file.
+5. **Wire the frontend wizard** via a single import in `web/src/components/projects/pm-providers/index.ts` (`import './<provider>/index.js';`). This frontend barrel is the symmetric counterpart of the backend barrel at `src/integrations/pm/index.ts` — `pm-wizard.tsx` imports the barrel once and never needs to be edited for a new provider.
+
+6. **Lifecycle fixture** at `tests/helpers/<provider>LifecycleFixture.ts`. Add the fixture key to `LIFECYCLE_FIXTURES` in `tests/unit/integrations/pm-conformance.test.ts`. Trivial providers can reuse `createFakePMProvider()` (see Trello/JIRA/Linear fixtures).
+
+7. **Run the conformance harness**: `npx vitest run --project unit-core tests/unit/integrations/pm-conformance.test.ts`. Behavioral contracts run against your provider automatically once `configSchema` / `discoveryCapabilities` / `lifecycle` are declared. Failures name the contract.
+
+8. **Provider-specific unit tests** in `tests/unit/pm/<provider>/` — adapter tests (vi.mock the client), config-schema round-trip, discovery shape, wizardSpec, adapter branded IDs.
+
+The shared orchestration files (`pm-wizard.tsx`, `pm-wizard-hooks.ts`, `pm-wizard-common-steps.tsx`) require zero edits beyond the barrel import in step 5. The `new-provider-surface` snapshot test proves your PR does not modify shared router / worker / CLI / dashboard orchestration or central schema files. The one deliberate shared-dashboard exception is `pm-wizard-state.ts` for provider-specific state fields and reducer actions (step 4 above).
 
 ---
 

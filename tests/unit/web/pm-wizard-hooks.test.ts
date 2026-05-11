@@ -1,8 +1,7 @@
 /**
  * Unit tests for pure functions extracted in the pm-wizard-hooks refactor:
- *   - buildProviderAuthArg (generic auth-arg builder for all three providers)
  *   - runPerLabelCreations (batch label creator with per-item error handling)
- *   - buildTrelloIntegrationConfig / buildJiraIntegrationConfig (pure config builders)
+ *   - provider-owned buildIntegrationConfig implementations
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,154 +12,13 @@ import {
 	buildCurrentUserDiscoveryRequest,
 	buildIntegrationUpsertInput,
 	buildPersistedCredentialInputs,
-	buildProviderAuthArg,
 	buildProviderAuthArgFromMetadata,
-	formatVerificationDisplay,
+	buildProviderCustomFieldCreationRequest,
+	buildProviderLabelCreationRequest,
 	runPerLabelCreations,
 } from '../../../web/src/components/projects/pm-wizard-hooks.js';
 import type { WizardState } from '../../../web/src/components/projects/pm-wizard-state.js';
-import {
-	buildJiraIntegrationConfig,
-	buildLinearIntegrationConfig,
-	buildTrelloIntegrationConfig,
-	createInitialState,
-} from '../../../web/src/components/projects/pm-wizard-state.js';
-
-// ============================================================================
-// buildProviderAuthArg
-// ============================================================================
-
-describe('buildProviderAuthArg', () => {
-	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
-		return { ...createInitialState(), provider: 'trello', ...overrides };
-	}
-	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
-		return { ...createInitialState(), provider: 'jira', ...overrides };
-	}
-	function linearState(overrides: Partial<WizardState> = {}): WizardState {
-		return { ...createInitialState(), provider: 'linear', ...overrides };
-	}
-
-	// ── Edit mode — stored credentials path ──────────────────────────────
-	it('trello: returns { projectId } in edit mode when stored creds and no raw key', () => {
-		const state = trelloState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			trelloApiKey: '',
-			trelloToken: '',
-		});
-		expect(buildProviderAuthArg(state, 'proj-1')).toEqual({ projectId: 'proj-1' });
-	});
-
-	it('jira: returns { projectId } in edit mode when stored creds and no raw token', () => {
-		const state = jiraState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			jiraApiToken: '',
-			jiraEmail: '',
-		});
-		expect(buildProviderAuthArg(state, 'proj-jira')).toEqual({ projectId: 'proj-jira' });
-	});
-
-	it('linear: returns { projectId } in edit mode when stored creds and no raw key', () => {
-		const state = linearState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			linearApiKey: '',
-		});
-		expect(buildProviderAuthArg(state, 'proj-lin')).toEqual({ projectId: 'proj-lin' });
-	});
-
-	// ── Fresh setup — credentials path ──────────────────────────────────
-	it('trello: returns credentials when api_key and token present (fresh setup)', () => {
-		const state = trelloState({ trelloApiKey: 'key-abc', trelloToken: 'tok-xyz' });
-		expect(buildProviderAuthArg(state, 'proj-1')).toEqual({
-			credentials: { api_key: 'key-abc', token: 'tok-xyz' },
-		});
-	});
-
-	it('jira: returns credentials when email + api_token + base_url present (fresh setup)', () => {
-		const state = jiraState({
-			jiraEmail: 'user@example.com',
-			jiraApiToken: 'jira-tok',
-			jiraBaseUrl: 'https://example.atlassian.net',
-		});
-		expect(buildProviderAuthArg(state, 'proj-j')).toEqual({
-			credentials: {
-				email: 'user@example.com',
-				api_token: 'jira-tok',
-				base_url: 'https://example.atlassian.net',
-			},
-		});
-	});
-
-	it('linear: returns credentials when api_key present (fresh setup)', () => {
-		const state = linearState({ linearApiKey: 'lin_abc' });
-		expect(buildProviderAuthArg(state, 'proj-l')).toEqual({
-			credentials: { api_key: 'lin_abc' },
-		});
-	});
-
-	// ── Edit mode — user re-typed key → use fresh credentials ───────────
-	it('trello: uses fresh credentials when user re-typed api_key in edit mode', () => {
-		const state = trelloState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			trelloApiKey: 'new-key',
-			trelloToken: 'new-tok',
-		});
-		expect(buildProviderAuthArg(state, 'proj-1')).toEqual({
-			credentials: { api_key: 'new-key', token: 'new-tok' },
-		});
-	});
-
-	it('linear: uses fresh credentials when user re-typed api_key in edit mode', () => {
-		const state = linearState({
-			isEditing: true,
-			hasStoredCredentials: true,
-			linearApiKey: 'lin_fresh',
-		});
-		expect(buildProviderAuthArg(state, 'proj-l')).toEqual({
-			credentials: { api_key: 'lin_fresh' },
-		});
-	});
-
-	// ── Error cases ──────────────────────────────────────────────────────
-	it('trello: throws when no api_key in fresh mode', () => {
-		const state = trelloState({ trelloToken: 'tok' });
-		expect(() => buildProviderAuthArg(state, 'proj-1')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('trello: throws when no token in fresh mode', () => {
-		const state = trelloState({ trelloApiKey: 'key' });
-		expect(() => buildProviderAuthArg(state, 'proj-1')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('jira: throws when no email in fresh mode', () => {
-		const state = jiraState({ jiraApiToken: 'tok', jiraBaseUrl: 'https://x.atlassian.net' });
-		expect(() => buildProviderAuthArg(state, 'proj-j')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('jira: throws when no api_token in fresh mode', () => {
-		const state = jiraState({ jiraEmail: 'u@x.com', jiraBaseUrl: 'https://x.atlassian.net' });
-		expect(() => buildProviderAuthArg(state, 'proj-j')).toThrow(
-			'Enter both credentials before verifying',
-		);
-	});
-
-	it('linear: throws when no api_key in fresh mode', () => {
-		const state = linearState({ linearApiKey: '' });
-		expect(() => buildProviderAuthArg(state, 'proj-l')).toThrow(
-			'Enter your API key before verifying',
-		);
-	});
-});
+import { createInitialState } from '../../../web/src/components/projects/pm-wizard-state.js';
 
 // ============================================================================
 // Provider-owned credential metadata
@@ -358,21 +216,232 @@ describe('metadata-driven verification request', () => {
 
 	it('preserves provider-specific verified-as display formatting', () => {
 		expect(
-			formatVerificationDisplay('trello', { id: '1', name: 'Full Name', displayName: 'user' }),
+			trelloProviderWizard.formatVerificationDisplay({
+				id: '1',
+				name: 'Full Name',
+				displayName: 'user',
+			}),
 		).toBe('@user (Full Name)');
 		expect(
-			formatVerificationDisplay('jira', {
+			jiraProviderWizard.formatVerificationDisplay({
 				id: '2',
 				name: 'Jira User',
 				displayName: 'user@example.com',
 			}),
 		).toBe('Jira User (user@example.com)');
 		expect(
-			formatVerificationDisplay('linear', { id: '3', name: 'Linear User', displayName: 'lin' }),
+			linearProviderWizard.formatVerificationDisplay({
+				id: '3',
+				name: 'Linear User',
+				displayName: 'lin',
+			}),
 		).toBe('lin');
-		expect(formatVerificationDisplay('linear', { id: '4', name: 'Linear User' })).toBe(
+		expect(linearProviderWizard.formatVerificationDisplay({ id: '4', name: 'Linear User' })).toBe(
 			'Linear User',
 		);
+	});
+});
+
+// ============================================================================
+// Metadata-driven mutation requests
+// ============================================================================
+
+describe('metadata-driven mutation requests', () => {
+	function trelloState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'trello', trelloBoardId: 'board-1', ...overrides };
+	}
+	function jiraState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'jira', jiraProjectKey: 'PROJ', ...overrides };
+	}
+	function linearState(overrides: Partial<WizardState> = {}): WizardState {
+		return { ...createInitialState(), provider: 'linear', linearTeamId: 'team-1', ...overrides };
+	}
+
+	it('builds raw credential payloads for provider label creation', () => {
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a label',
+				},
+				trelloState({ trelloApiKey: 'key', trelloToken: 'token' }),
+				'proj-t',
+				{ name: 'cascade-ready', color: 'sky' },
+			),
+		).toEqual({
+			providerId: 'trello',
+			containerId: 'board-1',
+			name: 'cascade-ready',
+			color: 'sky',
+			credentials: { api_key: 'key', token: 'token' },
+		});
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: linearProviderWizard.id,
+					auth: linearProviderWizard.auth,
+					getContainerId: (state) => state.linearTeamId,
+					containerError: 'Team must be selected before creating a label',
+				},
+				linearState({ linearApiKey: 'lin-key' }),
+				'proj-l',
+				{ name: 'cascade-ready', color: '#0284C7' },
+			),
+		).toEqual({
+			providerId: 'linear',
+			containerId: 'team-1',
+			name: 'cascade-ready',
+			color: '#0284C7',
+			credentials: { api_key: 'lin-key' },
+		});
+	});
+
+	it('builds stored credential fallback payloads for provider label creation', () => {
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a label',
+				},
+				trelloState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					trelloApiKey: '',
+					trelloToken: '',
+				}),
+				'proj-t',
+				{ name: 'cascade-ready', color: 'sky' },
+			),
+		).toMatchObject({ providerId: 'trello', projectId: 'proj-t' });
+		expect(
+			buildProviderLabelCreationRequest(
+				{
+					providerId: linearProviderWizard.id,
+					auth: linearProviderWizard.auth,
+					getContainerId: (state) => state.linearTeamId,
+					containerError: 'Team must be selected before creating a label',
+				},
+				linearState({ isEditing: true, hasStoredCredentials: true, linearApiKey: '' }),
+				'proj-l',
+				{ name: 'cascade-ready', color: '#0284C7' },
+			),
+		).toMatchObject({ providerId: 'linear', projectId: 'proj-l' });
+	});
+
+	it('builds raw credential payloads for provider custom-field creation', () => {
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a custom field',
+				},
+				trelloState({ trelloApiKey: 'key', trelloToken: 'token' }),
+				'proj-t',
+				{ name: 'Cost' },
+			),
+		).toEqual({
+			providerId: 'trello',
+			containerId: 'board-1',
+			name: 'Cost',
+			credentials: { api_key: 'key', token: 'token' },
+		});
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: jiraProviderWizard.id,
+					auth: jiraProviderWizard.auth,
+					getContainerId: (state) => state.jiraProjectKey || 'global',
+				},
+				jiraState({
+					jiraEmail: 'user@example.com',
+					jiraApiToken: 'jira-token',
+					jiraBaseUrl: 'https://example.atlassian.net',
+				}),
+				'proj-j',
+				{ name: 'Cost' },
+			),
+		).toEqual({
+			providerId: 'jira',
+			containerId: 'PROJ',
+			name: 'Cost',
+			credentials: {
+				email: 'user@example.com',
+				api_token: 'jira-token',
+				base_url: 'https://example.atlassian.net',
+			},
+		});
+	});
+
+	it('builds stored credential fallback payloads for provider custom-field creation', () => {
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: trelloProviderWizard.id,
+					auth: trelloProviderWizard.auth,
+					getContainerId: (state) => state.trelloBoardId,
+					containerError: 'Board must be selected before creating a custom field',
+				},
+				trelloState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					trelloApiKey: '',
+					trelloToken: '',
+				}),
+				'proj-t',
+				{ name: 'Cost' },
+			),
+		).toMatchObject({ providerId: 'trello', projectId: 'proj-t' });
+		expect(
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: jiraProviderWizard.id,
+					auth: jiraProviderWizard.auth,
+					getContainerId: (state) => state.jiraProjectKey || 'global',
+				},
+				jiraState({
+					isEditing: true,
+					hasStoredCredentials: true,
+					jiraEmail: '',
+					jiraApiToken: '',
+				}),
+				'proj-j',
+				{ name: 'Cost' },
+			),
+		).toMatchObject({ providerId: 'jira', projectId: 'proj-j' });
+	});
+
+	it('throws metadata missing-credential errors for mutation requests', () => {
+		expect(() =>
+			buildProviderLabelCreationRequest(
+				{
+					providerId: linearProviderWizard.id,
+					auth: linearProviderWizard.auth,
+					getContainerId: (state) => state.linearTeamId,
+					containerError: 'Team must be selected before creating a label',
+				},
+				linearState({ linearApiKey: '' }),
+				'proj-l',
+				{ name: 'cascade-ready' },
+			),
+		).toThrow('Enter your API key before verifying');
+		expect(() =>
+			buildProviderCustomFieldCreationRequest(
+				{
+					providerId: jiraProviderWizard.id,
+					auth: jiraProviderWizard.auth,
+					getContainerId: (state) => state.jiraProjectKey || 'global',
+				},
+				jiraState({ jiraEmail: 'user@example.com', jiraApiToken: 'tok', jiraBaseUrl: '' }),
+				'proj-j',
+				{ name: 'Cost' },
+			),
+		).toThrow('Enter both credentials before verifying');
 	});
 });
 
@@ -446,10 +515,10 @@ describe('metadata-driven save payloads', () => {
 });
 
 // ============================================================================
-// buildTrelloIntegrationConfig
+// trelloProviderWizard.buildIntegrationConfig
 // ============================================================================
 
-describe('buildTrelloIntegrationConfig', () => {
+describe('trelloProviderWizard.buildIntegrationConfig', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -462,7 +531,7 @@ describe('buildTrelloIntegrationConfig', () => {
 	}
 
 	it('produces the expected config shape', () => {
-		const config = buildTrelloIntegrationConfig(seed());
+		const config = trelloProviderWizard.buildIntegrationConfig(seed());
 		expect(config).toEqual({
 			boardId: 'board-abc',
 			lists: { todo: 'list-1', done: 'list-2' },
@@ -471,17 +540,19 @@ describe('buildTrelloIntegrationConfig', () => {
 	});
 
 	it('includes customFields when trelloCostFieldId is set', () => {
-		const config = buildTrelloIntegrationConfig(seed({ trelloCostFieldId: 'cf-cost' }));
+		const config = trelloProviderWizard.buildIntegrationConfig(
+			seed({ trelloCostFieldId: 'cf-cost' }),
+		);
 		expect(config.customFields).toEqual({ cost: 'cf-cost' });
 	});
 
 	it('omits customFields when trelloCostFieldId is empty', () => {
-		const config = buildTrelloIntegrationConfig(seed({ trelloCostFieldId: '' }));
+		const config = trelloProviderWizard.buildIntegrationConfig(seed({ trelloCostFieldId: '' }));
 		expect(config).not.toHaveProperty('customFields');
 	});
 
 	it('passes through empty mappings', () => {
-		const config = buildTrelloIntegrationConfig(
+		const config = trelloProviderWizard.buildIntegrationConfig(
 			seed({ trelloListMappings: {}, trelloLabelMappings: {} }),
 		);
 		expect(config.lists).toEqual({});
@@ -490,10 +561,10 @@ describe('buildTrelloIntegrationConfig', () => {
 });
 
 // ============================================================================
-// buildJiraIntegrationConfig
+// jiraProviderWizard.buildIntegrationConfig
 // ============================================================================
 
-describe('buildJiraIntegrationConfig', () => {
+describe('jiraProviderWizard.buildIntegrationConfig', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -507,7 +578,7 @@ describe('buildJiraIntegrationConfig', () => {
 	}
 
 	it('produces the expected config shape', () => {
-		const config = buildJiraIntegrationConfig(seed());
+		const config = jiraProviderWizard.buildIntegrationConfig(seed());
 		expect(config).toEqual({
 			projectKey: 'PROJ',
 			baseUrl: 'https://example.atlassian.net',
@@ -517,39 +588,40 @@ describe('buildJiraIntegrationConfig', () => {
 	});
 
 	it('includes issueTypes when jiraIssueTypes non-empty', () => {
-		const config = buildJiraIntegrationConfig(
+		const config = jiraProviderWizard.buildIntegrationConfig(
 			seed({ jiraIssueTypes: { task: 'Task', subtask: 'Sub-task' } }),
 		);
 		expect(config.issueTypes).toEqual({ task: 'Task', subtask: 'Sub-task' });
 	});
 
 	it('omits issueTypes when jiraIssueTypes is empty', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraIssueTypes: {} }));
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraIssueTypes: {} }));
 		expect(config).not.toHaveProperty('issueTypes');
 	});
 
 	it('omits labels when jiraLabels is empty', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraLabels: {} }));
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraLabels: {} }));
 		expect(config).not.toHaveProperty('labels');
 	});
 
 	it('includes customFields when jiraCostFieldId set', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraCostFieldId: 'customfield_10042' }));
+		const config = jiraProviderWizard.buildIntegrationConfig(
+			seed({ jiraCostFieldId: 'customfield_10042' }),
+		);
 		expect(config.customFields).toEqual({ cost: 'customfield_10042' });
 	});
 
 	it('omits customFields when jiraCostFieldId is empty', () => {
-		const config = buildJiraIntegrationConfig(seed({ jiraCostFieldId: '' }));
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraCostFieldId: '' }));
 		expect(config).not.toHaveProperty('customFields');
 	});
 });
 
 // ============================================================================
-// buildLinearIntegrationConfig (already tested in pm-wizard-state.test.ts;
-// added here for cross-reference completeness)
+// linearProviderWizard.buildIntegrationConfig
 // ============================================================================
 
-describe('buildLinearIntegrationConfig', () => {
+describe('linearProviderWizard.buildIntegrationConfig', () => {
 	function seed(overrides: Partial<WizardState> = {}): WizardState {
 		return {
 			...createInitialState(),
@@ -562,17 +634,17 @@ describe('buildLinearIntegrationConfig', () => {
 	}
 
 	it('produces the expected config shape', () => {
-		const config = buildLinearIntegrationConfig(seed());
+		const config = linearProviderWizard.buildIntegrationConfig(seed());
 		expect(config).toEqual({ teamId: 'T1', statuses: { todo: 'S-TD' } });
 	});
 
 	it('includes projectId when linearProjectId is set', () => {
-		const config = buildLinearIntegrationConfig(seed({ linearProjectId: 'P1' }));
+		const config = linearProviderWizard.buildIntegrationConfig(seed({ linearProjectId: 'P1' }));
 		expect(config.projectId).toBe('P1');
 	});
 
 	it('omits projectId when linearProjectId is empty', () => {
-		const config = buildLinearIntegrationConfig(seed({ linearProjectId: '' }));
+		const config = linearProviderWizard.buildIntegrationConfig(seed({ linearProjectId: '' }));
 		expect(config).not.toHaveProperty('projectId');
 	});
 });

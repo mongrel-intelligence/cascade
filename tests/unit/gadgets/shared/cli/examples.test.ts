@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-
+import { readWorkItemDef } from '../../../../../src/gadgets/pm/definitions.js';
 import {
 	buildOclifExamples,
 	expectedShapeFor,
@@ -47,9 +47,18 @@ describe('CLI examples', () => {
 		const [line] = buildOclifExamples(reviewDef, 'cascade-tools scm create-pr-review');
 		expect(line).toContain("cascade-tools scm create-pr-review --body 'Don'\\''t merge yet'");
 		expect(line).toContain('--no-draft');
-		expect(line).toContain("--labels 'needs-work' --labels 'api'");
+		expect(line).toContain('--labels needs-work --labels api');
 		expect(line).toContain('--comments \'[{"path":"src/a.ts","line":3,"body":"nit"}]\'');
 		expect(line).not.toContain('hidden');
+	});
+
+	it('renders ReadWorkItem examples with shell-safe IDs as bare values', () => {
+		const [line] = buildOclifExamples(readWorkItemDef, 'cascade-tools pm read-work-item');
+
+		expect(line).toBe('cascade-tools pm read-work-item --workItemId abc123 --includeComments');
+		expect(line).not.toContain(`--workItemId '"abc123"'`);
+		expect(line).not.toContain(`--workItemId 'abc123'`);
+		expect(line).not.toContain(`--workItemId "abc123"`);
 	});
 
 	it('uses examples as JSON expected-shape hints with describe fallback', () => {

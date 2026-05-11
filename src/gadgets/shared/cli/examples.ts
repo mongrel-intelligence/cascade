@@ -1,4 +1,5 @@
 import type { ParameterDefinition, ToolDefinition, ToolExample } from '../toolDefinition.js';
+import { formatJsonExample, formatShellScalar, shellQuote } from './shellValues.js';
 
 /**
  * Pull the first concrete value for `paramName` out of the tool definition's examples block.
@@ -39,21 +40,20 @@ function formatExampleLine(cliCommand: string, def: ToolDefinition, ex: ToolExam
 			continue;
 		}
 		if (paramDef.type === 'array' && paramDef.items === 'string' && Array.isArray(value)) {
-			for (const v of value) parts.push(`--${key} ${shellQuote(String(v))}`);
+			for (const v of value) parts.push(`--${key} ${formatShellScalar(v)}`);
 			continue;
 		}
 		if (paramDef.type === 'object' || (paramDef.type === 'array' && paramDef.items === 'object')) {
-			parts.push(`--${key} ${shellQuote(JSON.stringify(value))}`);
+			const json = formatJsonExample(value);
+			if (json) parts.push(`--${key} ${json}`);
 			continue;
 		}
-		parts.push(`--${key} ${shellQuote(String(value))}`);
+		parts.push(`--${key} ${formatShellScalar(value)}`);
 	}
 	return parts.join(' ');
 }
 
-export function shellQuote(s: string): string {
-	return `'${s.replace(/'/g, `'\\''`)}'`;
-}
+export { shellQuote };
 
 /**
  * Derive an `expected` shape hint for a JSON-parse failure envelope from the

@@ -21,19 +21,20 @@ import type { ReactElement } from 'react';
 import { useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
+import type { WizardState } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { trelloAuthMetadata, trelloCredentialPersistence } from './auth.js';
 import {
 	useTrelloCustomFieldCreation,
 	useTrelloDiscovery,
 	useTrelloLabelCreation,
 } from './hooks.js';
 import { TrelloOAuthStep } from './oauth-step.js';
-import { TrelloWebhookAdapter } from './webhook-step.js';
+import { normalizeTrelloActiveWebhooks, TrelloWebhookAdapter } from './webhook-step.js';
 
 // CASCADE stage keys that map to Trello lists (one list per stage).
 export const TRELLO_LIST_SLOTS = [
@@ -247,18 +248,9 @@ function TrelloCustomFieldMappingAdapter({
 export const trelloProviderWizard: ProviderWizardDefinition = {
 	id: 'trello',
 	label: 'Trello',
-	auth: {
-		rawCredentials: [
-			{ role: 'api_key', stateField: 'trelloApiKey' },
-			{ role: 'token', stateField: 'trelloToken' },
-		],
-		storedCredentials: { fallbackWhenStateFieldEmpty: 'trelloApiKey' },
-		missingCredentialsMessage: 'Enter both credentials before verifying',
-	},
-	credentialPersistence: [
-		{ envVarKey: 'TRELLO_API_KEY', stateField: 'trelloApiKey', label: 'Trello API Key' },
-		{ envVarKey: 'TRELLO_TOKEN', stateField: 'trelloToken', label: 'Trello Token' },
-	],
+	auth: trelloAuthMetadata,
+	formatVerificationDisplay: (me) => (me.displayName ? `@${me.displayName} (${me.name})` : me.name),
+	credentialPersistence: trelloCredentialPersistence,
 
 	// Each step mirrors `trelloManifest.wizardSpec.steps` by id.
 	steps: [
@@ -307,16 +299,42 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		...(state.trelloCostFieldId ? { customFields: { cost: state.trelloCostFieldId } } : {}),
 	}),
 
+	buildEditState: (initialConfig, configuredKeys) => {
+		const editState = {
+			provider: 'trello',
+			trelloBoardId: (initialConfig.boardId as string) ?? '',
+			trelloCostFieldId:
+				(initialConfig.customFields as Record<string, string> | undefined)?.cost ?? '',
+			hasStoredCredentials:
+				configuredKeys.has('TRELLO_API_KEY') && configuredKeys.has('TRELLO_TOKEN'),
+		} satisfies Partial<WizardState>;
+
+		const lists = initialConfig.lists as Record<string, string> | undefined;
+		const labels = initialConfig.labels as Record<string, string> | undefined;
+
+		return {
+			...editState,
+			...(lists ? { trelloListMappings: lists } : {}),
+			...(labels ? { trelloLabelMappings: labels } : {}),
+		};
+	},
+
 	isSetupComplete: (state) => {
 		if (!state.trelloBoardId) return false;
 		if (Object.keys(state.trelloListMappings).length === 0) return false;
 		return isCredentialsComplete(state);
 	},
 
-	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
+	useProviderHooks: ({ providerId, auth, state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useTrelloDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const labels = useTrelloLabelCreation(state, dispatch, projectId ?? '');
-		const customField = useTrelloCustomFieldCreation(state, dispatch, projectId ?? '');
+		const labels = useTrelloLabelCreation(providerId, auth, state, dispatch, projectId ?? '');
+		const customField = useTrelloCustomFieldCreation(
+			providerId,
+			auth,
+			state,
+			dispatch,
+			projectId ?? '',
+		);
 		const queryClient = useQueryClient();
 
 		const [creatingSlot, setCreatingSlot] = useState<string | null>(null);
@@ -358,11 +376,7 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
-		const activeTrelloWebhooks = deriveActiveWebhooks('trello', webhooksQuery.data) as Array<{
-			id: string;
-			url: string;
-			active: boolean;
-		}>;
+		const activeTrelloWebhooks = normalizeTrelloActiveWebhooks(webhooksQuery.data);
 
 		const createWebhookMutation = useMutation({
 			mutationFn: () =>

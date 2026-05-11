@@ -75,12 +75,12 @@ describe('updateWorkItem', () => {
 		expect(result).toBe('Work item updated: title, description, 1 label(s)');
 	});
 
-	it('returns error message on failure', async () => {
+	it('throws an error message on failure', async () => {
 		mockProvider.updateWorkItem.mockRejectedValue(new Error('API error'));
 
-		const result = await updateWorkItem({ workItemId: 'item1', title: 'T' });
-
-		expect(result).toBe('Error updating work item: API error');
+		await expect(updateWorkItem({ workItemId: 'item1', title: 'T' })).rejects.toThrow(
+			'Error updating work item: API error',
+		);
 	});
 
 	it('does not call updateWorkItem when only labels provided', async () => {

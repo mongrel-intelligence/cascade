@@ -21,7 +21,9 @@ import { describe, expect, it } from 'vitest';
 
 import { buildToolGuidance } from '../../../../src/backends/shared/nativeToolPrompts.js';
 import * as githubDefs from '../../../../src/gadgets/github/definitions.js';
+import { createPRReviewDef } from '../../../../src/gadgets/github/definitions.js';
 import * as pmDefs from '../../../../src/gadgets/pm/definitions.js';
+import { readWorkItemDef } from '../../../../src/gadgets/pm/definitions.js';
 import * as sentryDefs from '../../../../src/gadgets/sentry/definitions.js';
 import * as sessionDefs from '../../../../src/gadgets/session/definitions.js';
 import { generateToolManifest } from '../../../../src/gadgets/shared/manifestGenerator.js';
@@ -80,6 +82,67 @@ describe('prompt-rendered examples — CLI grammar correctness', () => {
 					rendered,
 					`${def.name}.${flagName} must not render --${flagName} "false"`,
 				).not.toContain(`--${flagName} "false"`);
+			}
+		});
+	}
+
+	it('CreatePRReview renders enum examples as raw CLI values', () => {
+		const manifest = generateToolManifest(createPRReviewDef);
+		const rendered = buildToolGuidance([manifest]);
+
+		expect(rendered).toContain('# example: --event APPROVE');
+		expect(rendered).not.toContain(`--event '"APPROVE"'`);
+		expect(rendered).not.toContain(`--event '"REQUEST_CHANGES"'`);
+		expect(rendered).not.toContain(`--event '"COMMENT"'`);
+	});
+
+	it('ReadWorkItem renders shell-safe PM IDs without literal quotes', () => {
+		const manifest = generateToolManifest(readWorkItemDef);
+		const rendered = buildToolGuidance([manifest]);
+
+		expect(rendered).toContain('# example: --workItemId abc123');
+		expect(rendered).not.toContain(`--workItemId '"abc123"'`);
+		expect(rendered).not.toContain(`--workItemId 'abc123'`);
+		expect(rendered).not.toContain(`--workItemId "abc123"`);
+	});
+
+	it('CreatePRReview keeps array-of-object comments as JSON payload examples', () => {
+		const manifest = generateToolManifest(createPRReviewDef);
+		const rendered = buildToolGuidance([manifest]);
+
+		expect(rendered).toContain(
+			`# example: --comments '${JSON.stringify([
+				{
+					path: 'src/utils.ts',
+					line: 15,
+					body: 'This could cause a null pointer exception. Please add a null check.',
+				},
+			])}'`,
+		);
+		expect(rendered).not.toContain('--comments <string> (repeatable)');
+		expect(rendered).not.toContain('--comments path');
+	});
+
+	for (const def of allDefs) {
+		const enumFlagNames = Object.entries(def.parameters)
+			.filter(([, p]) => p.type === 'enum' && !p.gadgetOnly)
+			.map(([k]) => k);
+
+		if (enumFlagNames.length === 0) continue;
+
+		it(`${def.name}: enum flag examples use raw CLI grammar`, () => {
+			const manifest = generateToolManifest(def);
+			const rendered = buildToolGuidance([manifest]);
+
+			for (const flagName of enumFlagNames) {
+				const options =
+					def.parameters[flagName]?.type === 'enum' ? def.parameters[flagName].options : [];
+				for (const option of options) {
+					expect(
+						rendered,
+						`${def.name}.${flagName} must not render --${flagName} '"${option}"'`,
+					).not.toContain(`--${flagName} '"${option}"'`);
+				}
 			}
 		});
 	}

@@ -79,6 +79,9 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			);
 
 			expect(stdout).toMatch(ENVELOPE_START);
+			const envelope = JSON.parse(stdout.trim());
+			expect(envelope.success).toBe(false);
+			expect(envelope.error.type).toBe('runtime');
 			expect(stdout).not.toContain(ESC);
 			expect(stdout).not.toMatch(LOG_LEVEL_PREFIX);
 			expect(stdout).not.toContain('[cascade]');

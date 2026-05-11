@@ -56,6 +56,8 @@ const integrationRegistry: IntegrationRegistry;  // singleton
 
 The PM barrel (`src/integrations/pm/index.ts`) imports each provider once, then mirrors each manifest's `pmIntegration` into `integrationRegistry`. New PM providers add one provider folder plus one import in that barrel; shared router, worker, dashboard, CLI, and config files are guarded against provider-specific edits by conformance tests.
 
+The dashboard has a matching frontend PM-provider boundary under `web/src/components/projects/pm-providers/<provider>/`. A provider owns its wizard definition, auth metadata, credential persistence metadata, save config serialization, edit-mode hydration, discovery/mutation hooks, webhook UX composition, and provider-specific state slice in that folder. The shared wizard files (`pm-wizard.tsx`, `pm-wizard-hooks.ts`, and `pm-wizard-common-steps.tsx`) only render registered provider definitions and run metadata-driven verification/save helpers, so adding a provider does not require editing them. New providers add one frontend barrel import in `web/src/components/projects/pm-providers/index.ts`; `pm-wizard-state.ts` is the remaining explicit shared-dashboard exception while it composes provider state slices into the aggregate `WizardState` and reducer.
+
 `src/pm/integration.ts` — extends `IntegrationModule` with PM-specific methods:
 
 - `createProvider(project)` — create a `PMProvider` instance for CRUD operations

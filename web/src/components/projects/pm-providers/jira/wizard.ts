@@ -20,16 +20,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
-import { deriveActiveWebhooks } from '../../pm-wizard-state.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
 import { StatusMappingStep } from '../steps/status-mapping.js';
 import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types.js';
+import { jiraAuthMetadata, jiraCredentialPersistence } from './auth.js';
 import { useJiraCustomFieldCreation, useJiraDiscovery } from './hooks.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
-import { JiraWebhookAdapter } from './webhook-step.js';
+import { JiraWebhookAdapter, normalizeJiraActiveWebhooks } from './webhook-step.js';
 
 // CASCADE stage keys that map to JIRA statuses (name-based, not id-based
 // — JIRA statuses are configured per project, name is the stable identity).
@@ -248,19 +248,9 @@ function JiraIssueTypeAdapter({
 export const jiraProviderWizard: ProviderWizardDefinition = {
 	id: 'jira',
 	label: 'JIRA',
-	auth: {
-		rawCredentials: [
-			{ role: 'email', stateField: 'jiraEmail' },
-			{ role: 'api_token', stateField: 'jiraApiToken' },
-			{ role: 'base_url', stateField: 'jiraBaseUrl' },
-		],
-		storedCredentials: { fallbackWhenStateFieldEmpty: 'jiraEmail' },
-		missingCredentialsMessage: 'Enter both credentials before verifying',
-	},
-	credentialPersistence: [
-		{ envVarKey: 'JIRA_EMAIL', stateField: 'jiraEmail', label: 'JIRA Email' },
-		{ envVarKey: 'JIRA_API_TOKEN', stateField: 'jiraApiToken', label: 'JIRA API Token' },
-	],
+	auth: jiraAuthMetadata,
+	formatVerificationDisplay: (me) => (me.displayName ? `${me.name} (${me.displayName})` : me.name),
+	credentialPersistence: jiraCredentialPersistence,
 
 	steps: [
 		{
@@ -316,15 +306,40 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		...(state.jiraCostFieldId ? { customFields: { cost: state.jiraCostFieldId } } : {}),
 	}),
 
+	buildEditState: (initialConfig, configuredKeys) => {
+		const statuses = initialConfig.statuses as Record<string, string> | undefined;
+		const issueTypes = initialConfig.issueTypes as Record<string, string> | undefined;
+		const labels = initialConfig.labels as Record<string, string> | undefined;
+
+		return {
+			provider: 'jira',
+			jiraBaseUrl: (initialConfig.baseUrl as string) ?? '',
+			jiraProjectKey: (initialConfig.projectKey as string) ?? '',
+			...(statuses ? { jiraStatusMappings: statuses } : {}),
+			...(issueTypes ? { jiraIssueTypes: issueTypes } : {}),
+			...(labels ? { jiraLabels: labels } : {}),
+			jiraCostFieldId:
+				(initialConfig.customFields as Record<string, string> | undefined)?.cost ?? '',
+			hasStoredCredentials:
+				configuredKeys.has('JIRA_EMAIL') && configuredKeys.has('JIRA_API_TOKEN'),
+		};
+	},
+
 	isSetupComplete: (state) => {
 		if (!state.jiraProjectKey) return false;
 		if (Object.keys(state.jiraStatusMappings).length === 0) return false;
 		return isCredentialsComplete(state);
 	},
 
-	useProviderHooks: ({ state, dispatch, projectId, advanceToStep }) => {
+	useProviderHooks: ({ providerId, auth, state, dispatch, projectId, advanceToStep }) => {
 		const discovery = useJiraDiscovery(state, dispatch, advanceToStep, projectId ?? '');
-		const customField = useJiraCustomFieldCreation(state, dispatch, projectId ?? '');
+		const customField = useJiraCustomFieldCreation(
+			providerId,
+			auth,
+			state,
+			dispatch,
+			projectId ?? '',
+		);
 		const queryClient = useQueryClient();
 
 		const onCreateCustomField = (_slotKey: string, name: string) => {
@@ -342,11 +357,7 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
-		const activeJiraWebhooks = deriveActiveWebhooks('jira', webhooksQuery.data) as Array<{
-			id: string;
-			url: string;
-			active: boolean;
-		}>;
+		const activeJiraWebhooks = normalizeJiraActiveWebhooks(webhooksQuery.data);
 
 		const createWebhookMutation = useMutation({
 			mutationFn: () =>
