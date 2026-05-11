@@ -45,14 +45,12 @@ interface LinearParsedEvent extends ParsedWebhookEvent {
 	resourceType: string;
 }
 
-interface LinearProjectScopeInput {
-	project: RouterProjectConfig;
+interface ResolveIssueProjectIdInput {
+	candidates: RouterProjectConfig[];
 	isCommentEvent: boolean;
 	workItemId: string | undefined;
 	data: Record<string, unknown>;
 	issue: Record<string, unknown> | undefined;
-	eventType: string;
-	teamId: string;
 }
 
 // ============================================================================
@@ -88,8 +86,8 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 		}
 
 		const config = await loadProjectConfig();
-		const project = config.projects.find((proj) => proj.linear?.teamId === teamId);
-		if (!project) {
+		const candidates = config.projects.filter((proj) => proj.linear?.teamId === teamId);
+		if (candidates.length === 0) {
 			logger.debug('LinearRouterAdapter: no project found for teamId', { teamId });
 			return null;
 		}
@@ -100,20 +98,40 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 			: (data.id as string | undefined);
 		const eventType = `${p.action}/${p.type}`;
 
-		// Optional project-scope filter: when the CASCADE project has been narrowed
-		// to a specific Linear Project, drop webhook events whose issue is not in
-		// that project. Linear cannot scope webhooks to a project, so the filter
-		// runs here, after team-match.
-		const matchesProjectScope = await this.matchesConfiguredProjectScope({
-			project,
+		// 2026-05-11: multiple cascade projects can share a Linear team when each
+		// is narrowed to a different Linear Project (e.g. mongrel team hosts both
+		// `cascade` and `ucho` cascade projects, each scoped to a separate Linear
+		// Project). The previous `find()` returned only the first team match and
+		// the follow-up scope filter dropped events for issues that belonged to
+		// the OTHER cascade project — silently losing webhooks. Select the right
+		// cascade project up front based on the issue's Linear Project:
+		//   1. Strong match: candidate whose `linear.projectId` matches the issue's project
+		//   2. Catch-all:    candidate with no `linear.projectId` configured
+		//   3. Otherwise:    drop with diagnostic (no candidate subscribes to this Project)
+		const issueProjectId = await this.resolveIssueProjectId({
+			candidates,
 			isCommentEvent,
 			workItemId,
 			data,
 			issue,
-			eventType,
-			teamId,
 		});
-		if (!matchesProjectScope) {
+
+		const project =
+			candidates.find((p) => p.linear?.projectId === issueProjectId) ??
+			candidates.find((p) => !p.linear?.projectId);
+
+		if (!project) {
+			logger.info('LinearRouterAdapter: dropping event outside project scope', {
+				reason: issueProjectId ? 'no candidate matches issue project' : 'issue has no project',
+				teamId,
+				issueProjectId,
+				candidates: candidates.map((c) => ({
+					id: c.id,
+					projectId: c.linear?.projectId,
+				})),
+				issueId: workItemId,
+				eventType,
+			});
 			return null;
 		}
 
@@ -128,31 +146,29 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 		};
 	}
 
-	private async matchesConfiguredProjectScope(input: LinearProjectScopeInput): Promise<boolean> {
-		const configuredProjectId = input.project.linear?.projectId;
-		if (!configuredProjectId) return true;
-
+	/**
+	 * Resolve the issue's Linear Project ID — used to pick the right cascade
+	 * project candidate when multiple are configured for the same team.
+	 *
+	 * Returns the inline `data.projectId` / `data.project.id` (or for Comment
+	 * events the equivalent under `data.issue`) when present in the webhook
+	 * payload. For Comment events without inline issue context, falls back to
+	 * a Linear API lookup. The API call uses the first candidate's credentials
+	 * — Linear creds are per-team so any candidate's credentials work for
+	 * fetching team-scoped issue data.
+	 */
+	private async resolveIssueProjectId(
+		input: ResolveIssueProjectIdInput,
+	): Promise<string | undefined> {
 		const payloadProjectId = input.isCommentEvent
 			? ((input.issue?.projectId as string | undefined) ?? nestedId(input.issue?.project))
 			: ((input.data.projectId as string | undefined) ?? nestedId(input.data.project));
-		const issueProjectId =
-			payloadProjectId ??
-			(input.isCommentEvent && input.workItemId
-				? await this.fetchIssueProjectId(input.project.id, input.workItemId)
-				: undefined);
+		if (payloadProjectId) return payloadProjectId;
 
-		if (issueProjectId === configuredProjectId) return true;
-
-		logger.info('LinearRouterAdapter: dropping event outside project scope', {
-			reason: issueProjectId ? 'project scope mismatch' : 'issue has no project',
-			configuredProjectId,
-			issueProjectId,
-			issueId: input.workItemId,
-			teamId: input.teamId,
-			projectId: input.project.id,
-			eventType: input.eventType,
-		});
-		return false;
+		if (input.isCommentEvent && input.workItemId) {
+			return this.fetchIssueProjectId(input.candidates[0].id, input.workItemId);
+		}
+		return undefined;
 	}
 
 	private async fetchIssueProjectId(

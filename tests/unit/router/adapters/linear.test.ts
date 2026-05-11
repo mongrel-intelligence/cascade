@@ -234,15 +234,19 @@ describe('LinearRouterAdapter', () => {
 				data: { ...baseLinearPayload.data, projectId: 'P2' },
 			});
 			expect(result).toBeNull();
+			// 2026-05-11: log shape changed when project selection moved before
+			// scope filtering. `reason` is now "no candidate matches issue project"
+			// (the issue HAS a project, we just didn't find a candidate that
+			// subscribes to it). The log also lists all candidates so operators
+			// can see why none matched.
 			expect(mockLoggerInfo).toHaveBeenCalledWith(
 				expect.stringMatching(/LinearRouterAdapter: dropping event/),
 				expect.objectContaining({
-					reason: 'project scope mismatch',
-					configuredProjectId: 'P1',
+					reason: 'no candidate matches issue project',
 					issueProjectId: 'P2',
 					issueId: 'issue-abc',
 					teamId: 'team-abc-123',
-					projectId: 'p1',
+					candidates: [{ id: 'p1', projectId: 'P1' }],
 					eventType: 'create/Issue',
 				}),
 			);
@@ -255,8 +259,8 @@ describe('LinearRouterAdapter', () => {
 				expect.stringMatching(/LinearRouterAdapter: dropping event/),
 				expect.objectContaining({
 					reason: 'issue has no project',
-					configuredProjectId: 'P1',
 					issueProjectId: undefined,
+					candidates: [{ id: 'p1', projectId: 'P1' }],
 				}),
 			);
 		});
@@ -346,9 +350,9 @@ describe('LinearRouterAdapter', () => {
 			expect(mockLoggerInfo).toHaveBeenCalledWith(
 				expect.stringMatching(/LinearRouterAdapter: dropping event/),
 				expect.objectContaining({
-					reason: 'project scope mismatch',
-					configuredProjectId: 'P1',
+					reason: 'no candidate matches issue project',
 					issueProjectId: 'P2',
+					candidates: [{ id: 'p1', projectId: 'P1' }],
 					eventType: 'create/Comment',
 				}),
 			);
@@ -373,7 +377,7 @@ describe('LinearRouterAdapter', () => {
 			expect(mockLoggerInfo).toHaveBeenCalledWith(
 				expect.stringMatching(/LinearRouterAdapter: dropping event/),
 				expect.objectContaining({
-					reason: 'project scope mismatch',
+					reason: 'no candidate matches issue project',
 					eventType: 'create/IssueLabel',
 				}),
 			);
@@ -391,6 +395,185 @@ describe('LinearRouterAdapter', () => {
 				expect.stringMatching(/LinearRouterAdapter: dropping event/),
 				expect.any(Object),
 			);
+		});
+	});
+
+	// 2026-05-11: multi-cascade-project-per-Linear-team support. Closes the
+	// MNG-638 regression where cascade was migrated from Trello → Linear and
+	// both `cascade` and `ucho` ended up scoped to the same Linear team. The
+	// `.find()` returned only the first match (ucho), then the follow-up
+	// scope filter dropped the event because the issue's Linear Project
+	// (`83a0f22b-...`) didn't match ucho's scope (`7108c72e-...`). Now the
+	// adapter picks the candidate based on teamId AND issue's Linear Project,
+	// not just team.
+	describe('parseWebhook — multi-cascade-project-per-team', () => {
+		const cascadeProject: RouterProjectConfig = {
+			id: 'cascade',
+			repo: 'mongrel/cascade',
+			pmType: 'linear',
+			linear: { teamId: 'team-abc-123', projectId: 'P-cascade' },
+		};
+		const uchoProject: RouterProjectConfig = {
+			id: 'ucho',
+			repo: 'mongrel/ucho',
+			pmType: 'linear',
+			linear: { teamId: 'team-abc-123', projectId: 'P-ucho' },
+		};
+
+		beforeEach(() => {
+			mockLoggerInfo.mockClear();
+		});
+
+		it('routes to the cascade project whose Linear scope matches the issue project (was the .find()-first-match bug)', async () => {
+			// Two cascade projects on the same Linear team; ucho appears first
+			// in the projects array. Pre-fix the .find() would have returned
+			// ucho regardless of the issue's project, and the follow-up scope
+			// filter would have dropped the event. The new code looks at all
+			// candidates and matches on issue's projectId.
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [uchoProject, cascadeProject],
+				fullProjects: [{ id: 'ucho' } as never, { id: 'cascade' } as never],
+			});
+
+			const result = await adapter.parseWebhook({
+				...baseLinearPayload,
+				data: { ...baseLinearPayload.data, projectId: 'P-cascade' },
+			});
+
+			expect(result).not.toBeNull();
+			expect(result?.projectId).toBe('cascade');
+			expect(mockLoggerInfo).not.toHaveBeenCalled();
+		});
+
+		it('routes to ucho when the issue belongs to ucho (mirror of the cascade case)', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [uchoProject, cascadeProject],
+				fullProjects: [{ id: 'ucho' } as never, { id: 'cascade' } as never],
+			});
+
+			const result = await adapter.parseWebhook({
+				...baseLinearPayload,
+				data: { ...baseLinearPayload.data, projectId: 'P-ucho' },
+			});
+
+			expect(result).not.toBeNull();
+			expect(result?.projectId).toBe('ucho');
+		});
+
+		it('drops the event when no candidate subscribes to the issue project; log includes all candidates', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [uchoProject, cascadeProject],
+				fullProjects: [{ id: 'ucho' } as never, { id: 'cascade' } as never],
+			});
+
+			const result = await adapter.parseWebhook({
+				...baseLinearPayload,
+				data: { ...baseLinearPayload.data, projectId: 'P-orphan' },
+			});
+
+			expect(result).toBeNull();
+			expect(mockLoggerInfo).toHaveBeenCalledWith(
+				expect.stringMatching(/LinearRouterAdapter: dropping event/),
+				expect.objectContaining({
+					reason: 'no candidate matches issue project',
+					issueProjectId: 'P-orphan',
+					candidates: [
+						{ id: 'ucho', projectId: 'P-ucho' },
+						{ id: 'cascade', projectId: 'P-cascade' },
+					],
+				}),
+			);
+		});
+
+		it('drops the event when issue has no project and all candidates are scoped', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [uchoProject, cascadeProject],
+				fullProjects: [{ id: 'ucho' } as never, { id: 'cascade' } as never],
+			});
+
+			const result = await adapter.parseWebhook(baseLinearPayload);
+
+			expect(result).toBeNull();
+			expect(mockLoggerInfo).toHaveBeenCalledWith(
+				expect.stringMatching(/LinearRouterAdapter: dropping event/),
+				expect.objectContaining({
+					reason: 'issue has no project',
+					issueProjectId: undefined,
+				}),
+			);
+		});
+
+		it('falls back to an unscoped catch-all candidate when no scoped candidate matches', async () => {
+			const catchAll: RouterProjectConfig = {
+				id: 'catch-all',
+				repo: 'mongrel/catchall',
+				pmType: 'linear',
+				linear: { teamId: 'team-abc-123' },
+			};
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [cascadeProject, catchAll],
+				fullProjects: [{ id: 'cascade' } as never, { id: 'catch-all' } as never],
+			});
+
+			const result = await adapter.parseWebhook({
+				...baseLinearPayload,
+				data: { ...baseLinearPayload.data, projectId: 'P-unmatched' },
+			});
+
+			expect(result).not.toBeNull();
+			expect(result?.projectId).toBe('catch-all');
+		});
+
+		it('prefers the scoped match over an unscoped catch-all when both are configured', async () => {
+			const catchAll: RouterProjectConfig = {
+				id: 'catch-all',
+				repo: 'mongrel/catchall',
+				pmType: 'linear',
+				linear: { teamId: 'team-abc-123' },
+			};
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [catchAll, cascadeProject],
+				fullProjects: [{ id: 'catch-all' } as never, { id: 'cascade' } as never],
+			});
+
+			const result = await adapter.parseWebhook({
+				...baseLinearPayload,
+				data: { ...baseLinearPayload.data, projectId: 'P-cascade' },
+			});
+
+			expect(result).not.toBeNull();
+			// Scoped match wins even though catch-all comes first in array order.
+			expect(result?.projectId).toBe('cascade');
+		});
+
+		it('Comment event fetches issue project via API and routes to the right scoped candidate', async () => {
+			mockGetIssueProjectId.mockResolvedValueOnce('P-cascade');
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [uchoProject, cascadeProject],
+				fullProjects: [{ id: 'ucho' } as never, { id: 'cascade' } as never],
+			});
+
+			const payload = {
+				action: 'create',
+				type: 'Comment',
+				organizationId: 'org-123',
+				webhookTimestamp: Date.now(),
+				data: {
+					id: 'comment-xyz',
+					body: '@cascade please update',
+					issueId: 'issue-abc',
+					issue: { id: 'issue-abc', identifier: 'TEAM-1', teamId: 'team-abc-123' },
+				},
+				url: 'https://linear.app/issue',
+			};
+
+			const result = await adapter.parseWebhook(payload);
+
+			expect(result).not.toBeNull();
+			expect(result?.projectId).toBe('cascade');
+			// The API call uses the FIRST candidate's id — Linear creds are
+			// per-team so any candidate's creds work for the issue lookup.
+			expect(mockGetIssueProjectId).toHaveBeenCalledWith('issue-abc');
 		});
 	});
 
