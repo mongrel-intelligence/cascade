@@ -183,6 +183,15 @@ Periodic scan for Docker containers that outlived their expected lifetime (watch
 
 When a worker container exits non-zero, the router inspects it before Docker AutoRemove can reap it and writes a grep-stable error reason: `Worker crashed with exit code N · OOMKilled=<true|false> · reason="<State.Error>"`. `OOMKilled=true` is the definitive cgroup OOM signal; exit 137 without that marker means something else sent the signal.
 
+## Worker Lifecycle Internals
+
+`src/router/worker-manager.ts` owns the BullMQ processor lifecycle: capacity-slot waiting, retry classification, and handoff to worker spawning. Docker worker lifecycle details sit behind `src/router/container-manager.ts`, which remains the compatibility facade for callers while delegating focused work to helpers:
+
+- `worker-spawn-settings.ts` resolves the effective image, snapshot reuse, timeout, and Docker-safe container name.
+- `worker-container-launcher.ts` creates/starts the Docker container, registers active-worker state, sets the router timeout timer, and monitors `wait()`.
+- `worker-exit-handler.ts` owns post-exit inspection, log tailing, snapshot commit/removal, and cleanup ordering.
+- `worker-timeouts.ts` owns router-side timeout cancellation, timed-out run marking, and timeout notifications.
+
 ## Snapshot Management
 
 `src/router/snapshot-manager.ts`, `src/router/snapshot-cleanup.ts`

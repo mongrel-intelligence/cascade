@@ -1,7 +1,7 @@
 /**
  * Periodic dangling-image cleanup for cascade-managed Docker images.
  *
- * Closes the leak class where `commitContainerToSnapshot` re-tags the
+ * Closes the leak class where `commitWorkerSnapshot` re-tags the
  * `cascade-snapshot-<proj>-<workitem>:latest` slot for repeated runs of the
  * same work item: the previous image's digest becomes dangling (untagged)
  * and is dropped from the in-memory snapshot registry, so the registry-driven

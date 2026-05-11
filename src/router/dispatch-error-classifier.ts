@@ -21,7 +21,7 @@
  *  - SLOT_WAIT_TIMEOUT from the slot-waiter primitive
  */
 
-import { isImageNotFoundError } from './container-manager.js';
+import { isImageNotFoundError } from './worker-snapshots.js';
 
 export type DispatchErrorKind = 'transient' | 'terminal';
 

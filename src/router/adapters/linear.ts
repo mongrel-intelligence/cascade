@@ -226,6 +226,23 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 
 	async resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null> {
 		const config = await loadProjectConfig();
+		// parseWebhook already selected the right cascade project (by team +
+		// Linear Project scope when multiple cascade projects share a Linear
+		// team) and embedded its id on the LinearParsedEvent extension. Use
+		// that id directly — re-looking up by teamId would re-introduce the
+		// `.find()` first-match shadow that PR #1332 fixed in parseWebhook.
+		// Closes a prod regression on 2026-05-11 where MNG-638 (ucho's
+		// Linear Project) routed to `cascade` because both cascade projects
+		// share the same Linear team and `cascade` appeared first in the
+		// projects array.
+		const linearEvent = event as LinearParsedEvent;
+		if (linearEvent.projectId) {
+			return config.projects.find((p) => p.id === linearEvent.projectId) ?? null;
+		}
+		// Fallback: legacy call sites that construct a bare `ParsedWebhookEvent`
+		// without the Linear extension's projectId still get teamId-based
+		// lookup. Single-cascade-project-per-team setups continue working
+		// unchanged.
 		return config.projects.find((p) => p.linear?.teamId === event.projectIdentifier) ?? null;
 	}
 

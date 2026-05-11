@@ -103,7 +103,7 @@ export function startWorkerProcessor(): void {
 	startSnapshotCleanup();
 
 	// Start periodic dangling-image cleanup. Closes the leak class where
-	// `commitContainerToSnapshot` re-tags `cascade-snapshot-*:latest` and
+	// `commitWorkerSnapshot` re-tags `cascade-snapshot-*:latest` and
 	// orphans the prior digest outside the snapshot registry. See
 	// dangling-image-cleanup.ts for the safety scope.
 	startDanglingImageCleanup();

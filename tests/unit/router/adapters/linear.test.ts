@@ -683,7 +683,10 @@ describe('LinearRouterAdapter', () => {
 	});
 
 	describe('resolveProject', () => {
-		it('returns project matching Linear teamId', async () => {
+		// Existing tests — bare ParsedWebhookEvent (no Linear extension)
+		// exercise the teamId-fallback branch. Single-cascade-project-per-team
+		// setups continue working unchanged.
+		it('returns project matching Linear teamId (legacy bare-event path)', async () => {
 			const project = await adapter.resolveProject({
 				projectIdentifier: 'team-abc-123',
 				eventType: 'create/Issue',
@@ -692,13 +695,96 @@ describe('LinearRouterAdapter', () => {
 			expect(project?.id).toBe('p1');
 		});
 
-		it('returns null for unknown teamId', async () => {
+		it('returns null for unknown teamId (legacy bare-event path)', async () => {
 			const project = await adapter.resolveProject({
 				projectIdentifier: 'unknown-team',
 				eventType: 'create/Issue',
 				isCommentEvent: false,
 			});
 			expect(project).toBeNull();
+		});
+
+		// 2026-05-11: multi-cascade-project-per-Linear-team support. Closes
+		// the MNG-638 regression that surfaced after `cascade` was migrated
+		// from Trello → Linear, putting both `cascade` and `ucho` cascade
+		// projects on the same Linear team. PR #1332 fixed parseWebhook but
+		// missed THIS call site — `resolveProject` was re-looking up by
+		// teamId and returning the first array match, discarding the cascade
+		// project that parseWebhook had correctly selected.
+		describe('multi-cascade-project-per-team — uses event.projectId from LinearParsedEvent', () => {
+			const cascadeProject: RouterProjectConfig = {
+				id: 'cascade',
+				repo: 'mongrel/cascade',
+				pmType: 'linear',
+				linear: { teamId: 'team-abc-123', projectId: 'P-cascade' },
+			};
+			const uchoProject: RouterProjectConfig = {
+				id: 'ucho',
+				repo: 'mongrel/ucho',
+				pmType: 'linear',
+				linear: { teamId: 'team-abc-123', projectId: 'P-ucho' },
+			};
+
+			beforeEach(() => {
+				vi.mocked(loadProjectConfig).mockResolvedValue({
+					projects: [cascadeProject, uchoProject],
+					fullProjects: [{ id: 'cascade' } as never, { id: 'ucho' } as never],
+				});
+			});
+
+			it('returns ucho when event.projectId is "ucho", regardless of array order', async () => {
+				const project = await adapter.resolveProject({
+					projectIdentifier: 'team-abc-123',
+					eventType: 'update/Issue',
+					isCommentEvent: false,
+					// @ts-expect-error LinearParsedEvent extension field
+					projectId: 'ucho',
+					action: 'update',
+					resourceType: 'Issue',
+				});
+				// Pre-fix this returned `cascade` (first match by teamId).
+				expect(project?.id).toBe('ucho');
+			});
+
+			it('returns cascade when event.projectId is "cascade"', async () => {
+				const project = await adapter.resolveProject({
+					projectIdentifier: 'team-abc-123',
+					eventType: 'update/Issue',
+					isCommentEvent: false,
+					// @ts-expect-error LinearParsedEvent extension field
+					projectId: 'cascade',
+					action: 'update',
+					resourceType: 'Issue',
+				});
+				expect(project?.id).toBe('cascade');
+			});
+
+			it('returns null when event.projectId points at no configured cascade project (fail-closed)', async () => {
+				const project = await adapter.resolveProject({
+					projectIdentifier: 'team-abc-123',
+					eventType: 'update/Issue',
+					isCommentEvent: false,
+					// @ts-expect-error LinearParsedEvent extension field
+					projectId: 'never-configured-project',
+					action: 'update',
+					resourceType: 'Issue',
+				});
+				expect(project).toBeNull();
+			});
+
+			it('falls back to teamId lookup when event lacks the projectId extension (legacy compat)', async () => {
+				// Bare event — no `projectId` field. The fallback `.find()` by
+				// teamId returns the first match (cascade) — same as the legacy
+				// behavior. Real production calls go through parseWebhook which
+				// always populates `projectId`; this only matters for unit tests
+				// or external callers that construct events directly.
+				const project = await adapter.resolveProject({
+					projectIdentifier: 'team-abc-123',
+					eventType: 'update/Issue',
+					isCommentEvent: false,
+				});
+				expect(project?.id).toBe('cascade');
+			});
 		});
 	});
 

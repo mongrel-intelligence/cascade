@@ -7,7 +7,7 @@
  * base worker image, reducing setup time.
  *
  * This module is pure state management — no Docker API usage.
- * Docker commit operations are triggered from container-manager.ts.
+ * Docker commit operations are owned by worker-snapshots.ts.
  *
  * Eviction strategy:
  * - TTL eviction: snapshots older than ttlMs are removed on access (eager)
