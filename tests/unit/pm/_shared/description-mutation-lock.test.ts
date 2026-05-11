@@ -3,7 +3,10 @@ import { readdir, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { withDescriptionMutationLock } from '../../../../src/pm/_shared/description-mutation-lock.js';
+import {
+	DEFAULT_DESCRIPTION_MUTATION_LOCK_TIMEOUT_MS,
+	withDescriptionMutationLock,
+} from '../../../../src/pm/_shared/description-mutation-lock.js';
 
 describe('withDescriptionMutationLock', () => {
 	let lockDir: string;
@@ -14,6 +17,10 @@ describe('withDescriptionMutationLock', () => {
 
 	afterEach(() => {
 		rmSync(lockDir, { recursive: true, force: true });
+	});
+
+	it('uses a default wait budget long enough for one queued checklist command', () => {
+		expect(DEFAULT_DESCRIPTION_MUTATION_LOCK_TIMEOUT_MS).toBe(45_000);
 	});
 
 	it('serializes concurrent work for the same provider and work item', async () => {

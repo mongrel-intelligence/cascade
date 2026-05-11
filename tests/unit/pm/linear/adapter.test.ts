@@ -533,6 +533,32 @@ describe('LinearPMProvider', () => {
 			expect(result.items).toEqual([]);
 		});
 
+		it('creates checklist with initial items in one description write', async () => {
+			mockIssueDescription('Existing.');
+
+			const result = await provider.createChecklistWithItems('issue-uuid', '✅ AC', [
+				{ name: 'First item', checked: false },
+				{ name: 'Done item', checked: true },
+			]);
+
+			expect(mockUpdateIssue).toHaveBeenCalledTimes(1);
+			expect(mockUpdateIssue).toHaveBeenCalledWith(
+				'issue-uuid',
+				expect.objectContaining({
+					description: 'Existing.\n\n### ✅ AC\n- [ ] First item\n- [x] Done item',
+				}),
+			);
+			expect(result).toMatchObject({
+				name: '✅ AC',
+				workItemId: 'issue-uuid',
+				items: [
+					{ name: 'First item', complete: false },
+					{ name: 'Done item', complete: true },
+				],
+			});
+			expect(result.items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
+		});
+
 		it('waits for Linear read-after-write visibility before the next checklist append', async () => {
 			let description = 'Existing.';
 			let staleDescription: string | null = null;
@@ -591,6 +617,42 @@ describe('LinearPMProvider', () => {
 			expect(description).toContain('- [ ] Ready to ship');
 			expect(description).toContain('### 🔗 Dependencies');
 			expect(description).toContain('- [ ] External API key');
+		});
+
+		it('preserves concurrent bulk-created checklist sections despite stale Linear reads', async () => {
+			let description = 'Existing.';
+			let staleDescription: string | null = null;
+			mockGetIssue.mockImplementation(async () => {
+				if (staleDescription !== null) {
+					const value = staleDescription;
+					staleDescription = null;
+					return makeIssue({ description: value });
+				}
+				return makeIssue({ description });
+			});
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				await sleep(5);
+				staleDescription = description;
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			const results = await Promise.allSettled([
+				provider.createChecklistWithItems('issue-uuid', '✅ Acceptance Criteria', [
+					{ name: 'Ready to ship' },
+				]),
+				provider.createChecklistWithItems('issue-uuid', '🔗 Dependencies', [
+					{ name: 'External API key' },
+					{ name: 'Vendor access', checked: true },
+				]),
+			]);
+
+			expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+			expect(description).toContain('### ✅ Acceptance Criteria');
+			expect(description).toContain('- [ ] Ready to ship');
+			expect(description).toContain('### 🔗 Dependencies');
+			expect(description).toContain('- [ ] External API key');
+			expect(description).toContain('- [x] Vendor access');
 		});
 	});
 

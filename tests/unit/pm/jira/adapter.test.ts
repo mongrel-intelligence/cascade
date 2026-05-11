@@ -609,6 +609,67 @@ describe('JiraPMProvider', () => {
 			expect(result.id).toMatch(/^inline-PROJ-1-[0-9a-f]{8}$/);
 		});
 
+		it('creates checklist with initial items in one ADF description write', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue('Existing.');
+			const adfDoc = { type: 'doc', version: 1, content: [] };
+			mockMarkdownToAdf.mockReturnValue(adfDoc);
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
+
+			const result = await provider.createChecklistWithItems('PROJ-1', '✅ AC', [
+				{ name: 'First item' },
+				{ name: 'Done item', checked: true },
+			]);
+
+			expect(mockMarkdownToAdf).toHaveBeenCalledTimes(1);
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith(
+				'Existing.\n\n### ✅ AC\n- [ ] First item\n- [x] Done item',
+			);
+			expect(mockJiraClient.updateIssue).toHaveBeenCalledTimes(1);
+			expect(mockJiraClient.updateIssue).toHaveBeenCalledWith('PROJ-1', { description: adfDoc });
+			expect(result).toMatchObject({
+				name: '✅ AC',
+				workItemId: 'PROJ-1',
+				items: [
+					{ name: 'First item', complete: false },
+					{ name: 'Done item', complete: true },
+				],
+			});
+			expect(result.items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
+		});
+
+		it('preserves concurrent bulk-created checklist sections', async () => {
+			let markdown = 'Existing.';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockImplementation(() => markdown);
+			mockMarkdownToAdf.mockImplementation((nextMarkdown) => nextMarkdown);
+			mockJiraClient.updateIssue.mockImplementation(async (_id, updates) => {
+				await sleep(5);
+				markdown = updates.description as string;
+			});
+
+			const results = await Promise.allSettled([
+				provider.createChecklistWithItems('PROJ-1', '✅ Acceptance Criteria', [
+					{ name: 'Ready to ship' },
+				]),
+				provider.createChecklistWithItems('PROJ-1', '🔗 Dependencies', [
+					{ name: 'External API key' },
+					{ name: 'Vendor access', checked: true },
+				]),
+			]);
+
+			expect(results.every((result) => result.status === 'fulfilled')).toBe(true);
+			expect(markdown).toContain('### ✅ Acceptance Criteria');
+			expect(markdown).toContain('- [ ] Ready to ship');
+			expect(markdown).toContain('### 🔗 Dependencies');
+			expect(markdown).toContain('- [ ] External API key');
+			expect(markdown).toContain('- [x] Vendor access');
+		});
+
 		it('does NOT call createIssue (no subtask creation)', async () => {
 			mockJiraClient.getIssue.mockResolvedValue({
 				fields: { description: { type: 'doc', content: [] } },

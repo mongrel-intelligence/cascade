@@ -265,6 +265,10 @@ describe('PM gadget definitions', () => {
 
 	// ─── AddChecklist specific ─────────────────────────────────────────────────
 	describe('addChecklistDef', () => {
+		it('keeps timeout above the description mutation lock wait budget', () => {
+			expect(addChecklistDef.timeoutMs).toBe(60_000);
+		});
+
 		it('has required workItemId, checklistName, and item parameters', () => {
 			expect(addChecklistDef.parameters.workItemId?.required).toBe(true);
 			expect(addChecklistDef.parameters.checklistName?.required).toBe(true);
@@ -278,6 +282,10 @@ describe('PM gadget definitions', () => {
 
 	// ─── PMUpdateChecklistItem specific ────────────────────────────────────────
 	describe('pmUpdateChecklistItemDef', () => {
+		it('keeps timeout above the description mutation lock wait budget', () => {
+			expect(pmUpdateChecklistItemDef.timeoutMs).toBe(60_000);
+		});
+
 		it('has required workItemId, checkItemId, and state parameters', () => {
 			expect(pmUpdateChecklistItemDef.parameters.workItemId?.required).toBe(true);
 			expect(pmUpdateChecklistItemDef.parameters.checkItemId?.required).toBe(true);
@@ -295,6 +303,10 @@ describe('PM gadget definitions', () => {
 
 	// ─── PMDeleteChecklistItem specific ────────────────────────────────────────
 	describe('pmDeleteChecklistItemDef', () => {
+		it('keeps timeout above the description mutation lock wait budget', () => {
+			expect(pmDeleteChecklistItemDef.timeoutMs).toBe(60_000);
+		});
+
 		it('has required workItemId and checkItemId parameters', () => {
 			expect(pmDeleteChecklistItemDef.parameters.workItemId?.required).toBe(true);
 			expect(pmDeleteChecklistItemDef.parameters.checkItemId?.required).toBe(true);

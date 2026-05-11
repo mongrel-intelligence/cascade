@@ -299,7 +299,7 @@ export const addChecklistDef: ToolDefinition = {
 	name: 'AddChecklist',
 	description:
 		'Add a checklist with items to a work item. Use this to create interactive checklists for acceptance criteria or implementation steps.',
-	timeoutMs: 30000,
+	timeoutMs: 60000,
 	parameters: {
 		workItemId: {
 			type: 'string',
@@ -346,7 +346,7 @@ export const pmUpdateChecklistItemDef: ToolDefinition = {
 	name: 'PMUpdateChecklistItem',
 	description:
 		'Update a checklist item state on a work item. Use this to mark items as complete or incomplete.',
-	timeoutMs: 15000,
+	timeoutMs: 60000,
 	parameters: {
 		workItemId: {
 			type: 'string',
@@ -381,7 +381,7 @@ export const pmDeleteChecklistItemDef: ToolDefinition = {
 	name: 'PMDeleteChecklistItem',
 	description:
 		'Delete a checklist item from a work item. For JIRA this deletes the subtask issue. For Trello this removes the checklist item. Use this to remove descoped or invalid plan steps — do NOT mark items as "complete" if they were never done.',
-	timeoutMs: 15000,
+	timeoutMs: 60000,
 	parameters: {
 		workItemId: {
 			type: 'string',

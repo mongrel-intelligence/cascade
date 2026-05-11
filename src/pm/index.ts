@@ -18,6 +18,7 @@ export type {
 	Attachment,
 	Checklist,
 	ChecklistItem,
+	ChecklistItemDraft,
 	CreateWorkItemConfig,
 	MediaReference,
 	PMProvider,
