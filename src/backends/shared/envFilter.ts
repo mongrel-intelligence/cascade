@@ -10,6 +10,8 @@
  */
 
 import {
+	FRICTION_SIDECAR_ENV_VAR,
+	PM_WRITE_SIDECAR_ENV_VAR,
 	PR_SIDECAR_ENV_VAR,
 	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
@@ -57,9 +59,19 @@ export const SHARED_ALLOWED_ENV_EXACT = new Set([
 
 	// GitHub ack comment ID for subprocess deletion after PR review
 	GITHUB_ACK_COMMENT_ID_ENV_VAR,
+	// Sidecar paths — written by cascade-tools CLI subprocesses, read by the
+	// adapter to satisfy `requiresPR / requiresReview / requiresPushedChanges /
+	// requiresPMWrite` completion gates. Every constant in
+	// `src/gadgets/sessionState.ts` must be listed here; the regression test
+	// `tests/unit/backends/shared-envFilter.test.ts` enforces it. Prod
+	// incidents MNG-741 / MNG-736 / MNG-739 (2026-05-12) failed every planning
+	// run because PM_WRITE_SIDECAR_ENV_VAR was silently filtered out before
+	// reaching the agent subprocess.
 	PR_SIDECAR_ENV_VAR,
 	PUSHED_CHANGES_SIDECAR_ENV_VAR,
 	REVIEW_SIDECAR_ENV_VAR,
+	PM_WRITE_SIDECAR_ENV_VAR,
+	FRICTION_SIDECAR_ENV_VAR,
 
 	// Node
 	'NODE_PATH',

@@ -6,6 +6,13 @@ import {
 	SHARED_ALLOWED_ENV_PREFIXES,
 	SHARED_BLOCKED_ENV_EXACT,
 } from '../../../src/backends/shared/envFilter.js';
+import {
+	FRICTION_SIDECAR_ENV_VAR,
+	PM_WRITE_SIDECAR_ENV_VAR,
+	PR_SIDECAR_ENV_VAR,
+	PUSHED_CHANGES_SIDECAR_ENV_VAR,
+	REVIEW_SIDECAR_ENV_VAR,
+} from '../../../src/gadgets/sessionState.js';
 
 describe('filterProcessEnv (shared)', () => {
 	it('passes through exact-match shared allowed vars', () => {
@@ -169,6 +176,36 @@ describe('SHARED_ALLOWED_ENV_EXACT', () => {
 	it('passes CASCADE_GITHUB_ACK_COMMENT_ID through filterProcessEnv', () => {
 		const result = filterProcessEnv({ [GITHUB_ACK_COMMENT_ID_ENV_VAR]: '12345' });
 		expect(result[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBe('12345');
+	});
+
+	// Regression net for prod incidents MNG-741 / MNG-736 / MNG-739 (2026-05-12):
+	// `sidecarManager` injected `CASCADE_PM_WRITE_SIDECAR_PATH` into projectSecrets
+	// but the allowlist here dropped it on the way to the subprocess, so the
+	// agent's `cascade-tools pm add-checklist` call never wrote the sidecar and
+	// every planning run failed the `requiresPMWrite` gate. Same drift hazard
+	// for any future sidecar env var. This block iterates every sidecar constant
+	// defined in `src/gadgets/sessionState.ts` and asserts each is allowlisted
+	// AND survives `filterProcessEnv` round-trip — so a new sidecar can't ship
+	// without its env var being plumbed end-to-end.
+	describe('sidecar env-var allowlist invariant (MNG-741 regression)', () => {
+		const sidecarEnvVars = [
+			{ name: 'PM_WRITE_SIDECAR_ENV_VAR', value: PM_WRITE_SIDECAR_ENV_VAR },
+			{ name: 'PR_SIDECAR_ENV_VAR', value: PR_SIDECAR_ENV_VAR },
+			{ name: 'PUSHED_CHANGES_SIDECAR_ENV_VAR', value: PUSHED_CHANGES_SIDECAR_ENV_VAR },
+			{ name: 'REVIEW_SIDECAR_ENV_VAR', value: REVIEW_SIDECAR_ENV_VAR },
+			{ name: 'FRICTION_SIDECAR_ENV_VAR', value: FRICTION_SIDECAR_ENV_VAR },
+		] as const;
+
+		for (const { name, value } of sidecarEnvVars) {
+			it(`${name} (${value}) is in SHARED_ALLOWED_ENV_EXACT`, () => {
+				expect(SHARED_ALLOWED_ENV_EXACT.has(value)).toBe(true);
+			});
+
+			it(`${name} survives filterProcessEnv round-trip`, () => {
+				const result = filterProcessEnv({ [value]: '/tmp/sidecar-xyz.json' });
+				expect(result[value]).toBe('/tmp/sidecar-xyz.json');
+			});
+		}
 	});
 });
 
