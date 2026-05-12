@@ -126,6 +126,17 @@ export async function sourceLocalPRDiffs(params: {
 			continue;
 		}
 
+		// For renamed files, supply both the old and new literal paths so git
+		// can emit proper 'rename from / rename to' metadata. With only the
+		// destination path, git emits 'new file mode' and marks every line as
+		// added — a misleading patch for a pure or near-pure rename. The old
+		// path is always listed first (before the new path) so git's rename
+		// detection algorithm pairs them correctly.
+		const pathspecs: string[] = [`:(literal)${file.filename}`];
+		if (file.previousFilename) {
+			pathspecs.unshift(`:(literal)${file.previousFilename}`);
+		}
+
 		const result = await runCommand(
 			'git',
 			[
@@ -136,7 +147,7 @@ export async function sourceLocalPRDiffs(params: {
 				'--find-copies',
 				`origin/${params.baseBranch}...HEAD`,
 				'--',
-				`:(literal)${file.filename}`,
+				...pathspecs,
 			],
 			params.repoDir,
 			undefined,

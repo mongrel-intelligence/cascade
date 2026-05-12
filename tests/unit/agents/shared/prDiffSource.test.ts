@@ -214,4 +214,56 @@ describe('sourceLocalPRDiffs', () => {
 		expect(result.files[0].patch).toContain('+const pr = 3');
 		expect(result.files[0].patch).not.toContain('+const base = 2');
 	});
+
+	it('emits rename metadata when file.previousFilename is supplied', async () => {
+		// Regression for the renamed-file pathspec bug: with only the destination
+		// path (:(literal)new.ts), git diff emits 'new file mode' with every line
+		// added. Passing both :(literal)old.ts and :(literal)new.ts causes git to
+		// emit the proper 'rename from / rename to' metadata.
+		const remoteDir = mkdtempSync(join(tmpdir(), 'cascade-remote-rename-'));
+		tempDirs.push(remoteDir);
+		execFileSync('git', ['init', '--bare'], { cwd: remoteDir, stdio: 'pipe' });
+
+		const dir = mkdtempSync(join(tmpdir(), 'cascade-pr-diff-rename-'));
+		tempDirs.push(dir);
+		git(dir, 'init');
+		git(dir, 'config', 'user.email', 'test@example.com');
+		git(dir, 'config', 'user.name', 'Test User');
+		git(dir, 'remote', 'add', 'origin', remoteDir);
+
+		// Base commit: old.ts exists
+		writeFileSync(join(dir, 'old.ts'), 'const x = 1;\nconst y = 2;\n');
+		git(dir, 'add', '.');
+		git(dir, 'commit', '-m', 'base');
+		git(dir, 'push', 'origin', 'HEAD:refs/heads/main');
+		git(dir, 'checkout', '-b', 'feature');
+
+		// PR commit: rename old.ts -> new.ts (pure rename, no content change)
+		git(dir, 'mv', 'old.ts', 'new.ts');
+		git(dir, 'commit', '-m', 'rename old.ts to new.ts');
+
+		const result = await sourceLocalPRDiffs({
+			files: [
+				makeFile({
+					filename: 'new.ts',
+					previousFilename: 'old.ts',
+					status: 'renamed',
+					additions: 0,
+					deletions: 0,
+					changes: 0,
+					patch: undefined,
+				}),
+			],
+			repoDir: dir,
+			baseBranch: 'main',
+			logWriter: vi.fn(),
+		});
+
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0].patchSource).toBe('local-git');
+		// Proper rename metadata — not 'new file mode' from a destination-only pathspec
+		expect(result.files[0].patch).toContain('rename from old.ts');
+		expect(result.files[0].patch).toContain('rename to new.ts');
+		expect(result.files[0].patch).not.toContain('new file mode');
+	});
 });
