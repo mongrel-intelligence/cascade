@@ -495,4 +495,91 @@ describe('validateFinish', () => {
 
 		expect(result.valid).toBe(true);
 	});
+
+	// Diagnostic logging regression net — MNG-699 (ucho/PR #400, 2026-05-12):
+	// without a breadcrumb when validateFinish rejects, we couldn't tell from
+	// docker logs why respond-to-review `b728fa3e` was looping on the gate.
+	// Every invalid path must emit a structured WARN that ops can grep.
+	describe('diagnostic logging on rejection (MNG-699 regression)', () => {
+		const baseState = {
+			prCreated: false,
+			reviewSubmitted: false,
+			initialHeadSha: null,
+			prBranch: null,
+		};
+
+		it('logs WARN with reason="missing_review" when review-hook fails', async () => {
+			const result = await validateFinish({
+				...baseState,
+				agentType: 'review',
+				hooks: { requiresReview: true },
+			});
+			expect(result.valid).toBe(false);
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'[Finish] validation rejected',
+				expect.objectContaining({ reason: 'missing_review', agentType: 'review' }),
+			);
+		});
+
+		it('logs WARN with reason="missing_pr" when PR-hook fails', async () => {
+			mockExecSync
+				.mockReturnValueOnce('feature/x\n') // git rev-parse
+				.mockReturnValueOnce('https://github.com/o/r.git\n'); // git remote
+			mockGithub.getOpenPRByBranch.mockResolvedValue(null);
+
+			const result = await validateFinish({
+				...baseState,
+				agentType: 'implementation',
+				hooks: { requiresPR: true },
+			});
+			expect(result.valid).toBe(false);
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'[Finish] validation rejected',
+				expect.objectContaining({ reason: 'missing_pr', agentType: 'implementation' }),
+			);
+		});
+
+		it('logs WARN with reason="uncommitted_changes" when working tree dirty', async () => {
+			mockExecSync.mockReturnValue('M src/file.ts');
+
+			const result = await validateFinish({
+				...baseState,
+				agentType: 'respond-to-review',
+				hooks: { requiresPushedChanges: true },
+			});
+			expect(result.valid).toBe(false);
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'[Finish] validation rejected',
+				expect.objectContaining({ reason: 'uncommitted_changes' }),
+			);
+		});
+
+		it('logs WARN with reason="unpushed_commits" when commits not pushed', async () => {
+			mockExecSync
+				.mockReturnValueOnce('') // no uncommitted
+				.mockReturnValueOnce('2\n'); // 2 unpushed (rev-list count)
+
+			const result = await validateFinish({
+				...baseState,
+				agentType: 'respond-to-review',
+				prBranch: 'feature/MNG-699',
+				hooks: { requiresPushedChanges: true },
+			});
+			expect(result.valid).toBe(false);
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'[Finish] validation rejected',
+				expect.objectContaining({ reason: 'unpushed_commits', prBranch: 'feature/MNG-699' }),
+			);
+		});
+
+		it('does NOT log when validation passes', async () => {
+			const result = await validateFinish({
+				...baseState,
+				agentType: 'splitting',
+				hooks: {},
+			});
+			expect(result.valid).toBe(true);
+			expect(mockLogger.warn).not.toHaveBeenCalled();
+		});
+	});
 });

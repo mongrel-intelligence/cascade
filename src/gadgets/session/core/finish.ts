@@ -161,27 +161,48 @@ export interface FinishValidationSuccess {
 
 export type FinishValidationResult = FinishValidationError | FinishValidationSuccess;
 
+/**
+ * Build a structured validation failure AND emit a WARN log so prod ops
+ * can grep `docker logs cascade-router | grep "[Finish] validation rejected"`
+ * to see why an agent is looping on the gate. Without this, MNG-699-class
+ * incidents (b728fa3e, 2026-05-12) leave no breadcrumb explaining what
+ * precondition the agent was missing.
+ */
+function rejectFinish(reason: string, error: string, state: SessionState): FinishValidationError {
+	logger.warn('[Finish] validation rejected', {
+		reason,
+		error,
+		agentType: state.agentType,
+		prCreated: state.prCreated,
+		reviewSubmitted: state.reviewSubmitted,
+		prBranch: state.prBranch ?? null,
+		hasInitialHeadSha: !!state.initialHeadSha,
+		hooks: state.hooks ?? {},
+	});
+	return { valid: false, error };
+}
+
 function checkPushedChangesHook(state: SessionState): FinishValidationError | null {
 	if (hasUncommittedChanges()) {
-		return {
-			valid: false,
-			error:
-				'Cannot finish session with uncommitted changes. You must commit your changes (git add && git commit) before calling Finish.',
-		};
+		return rejectFinish(
+			'uncommitted_changes',
+			'Cannot finish session with uncommitted changes. You must commit your changes (git add && git commit) before calling Finish.',
+			state,
+		);
 	}
 	if (hasUnpushedCommits(state.prBranch ?? undefined)) {
-		return {
-			valid: false,
-			error:
-				'Cannot finish session without pushing changes. You must push your commits (git push) before calling Finish.',
-		};
+		return rejectFinish(
+			'unpushed_commits',
+			'Cannot finish session without pushing changes. You must push your commits (git push) before calling Finish.',
+			state,
+		);
 	}
 	if (state.initialHeadSha && !hasNewCommits(state.initialHeadSha)) {
-		return {
-			valid: false,
-			error:
-				'Cannot finish session without making any changes. You must commit and push at least one change before calling Finish.',
-		};
+		return rejectFinish(
+			'no_new_commits',
+			'Cannot finish session without making any changes. You must commit and push at least one change before calling Finish.',
+			state,
+		);
 	}
 	return null;
 }
@@ -192,22 +213,22 @@ export async function validateFinish(state: SessionState): Promise<FinishValidat
 	if (hooks.requiresPR && !state.prCreated) {
 		const prUrl = await findPRForCurrentBranch();
 		if (!prUrl) {
-			return {
-				valid: false,
-				error:
-					'Cannot finish session without creating a PR. ' +
+			return rejectFinish(
+				'missing_pr',
+				'Cannot finish session without creating a PR. ' +
 					'You must call CreatePR to submit your changes before calling Finish.',
-			};
+				state,
+			);
 		}
 	}
 
 	if (hooks.requiresReview && !state.reviewSubmitted) {
-		return {
-			valid: false,
-			error:
-				'Cannot finish session without submitting a review. ' +
+		return rejectFinish(
+			'missing_review',
+			'Cannot finish session without submitting a review. ' +
 				'You must call CreatePRReview to submit your review before calling Finish.',
-		};
+			state,
+		);
 	}
 
 	if (hooks.requiresPushedChanges) {

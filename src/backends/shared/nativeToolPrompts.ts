@@ -13,7 +13,15 @@ You are operating in a native-tool environment, not a gadget/function-call envir
   - use the shell tool for all \`cascade-tools ...\`, \`git ...\`, \`rg ...\`, \`fd ...\`, test, lint, and build commands
 - When the task instructions mention gadget names like \`CreatePR\`, \`PostComment\`, \`UpdateChecklistItem\`, \`Finish\`, \`ReadWorkItem\`, \`TodoUpsert\`, or \`TodoUpdateStatus\`, treat that as a request to run the equivalent real command or tool action, not to print the gadget name.
 - If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.
-- Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.`;
+- Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.
+
+## Termination protocol
+
+When you have completed all required side-effects for this task — per the hooks declared on this agent (e.g. commits pushed, PR opened, review submitted, checklist created, PM comment posted) — call the \`Finish\` tool with a one-paragraph summary of what you did.
+
+- **Do not** run additional verification commands, re-read files, or post additional comments after a successful Finish call. The session ends the moment Finish succeeds (\`TaskCompletionSignal\`), so anything emitted after it is wasted work that the user pays for.
+- If Finish returns an error (e.g. "Cannot finish session without pushing changes"), it means a required precondition is not met yet. Fix the precondition (push your branch, submit your review, etc.) and call Finish again. Do not silently keep working hoping the gate will pass on its own — it will not.
+- If your task did not require any side-effects (e.g. you investigated and decided no action was needed), still call Finish with a summary explaining what you found. Always end the session deliberately.`;
 
 type PromptParamSchema = {
 	type: string;
