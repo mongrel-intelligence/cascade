@@ -15,18 +15,34 @@ import type {
 } from '../../../sentry/types.js';
 import type { AlertHints } from './types.js';
 
+export function firstUsefulString(...candidates: unknown[]): string | undefined {
+	for (const candidate of candidates) {
+		if (typeof candidate !== 'string') continue;
+		const trimmed = candidate.trim();
+		if (!trimmed) continue;
+		if (trimmed === 'undefined' || trimmed === 'null') continue;
+		return trimmed;
+	}
+	return undefined;
+}
+
+export function firstUsefulUrl(...candidates: unknown[]): string | undefined {
+	return firstUsefulString(...candidates);
+}
+
 /** Build the PM card title and description body from a Sentry event_alert payload. */
 export function formatSentryCardBody(augmented: SentryAugmentedPayload): AlertHints {
 	const payload = augmented.payload as SentryIssueAlertPayload;
 	const event = payload.data?.event;
 
-	const alertTitle =
-		payload.data?.issue_alert?.title ??
-		payload.data?.triggered_rule ??
-		event?.title ??
-		'Issue Alert';
+	const alertTitle = firstUsefulString(
+		payload.data?.issue_alert?.title,
+		payload.data?.triggered_rule,
+		event?.title,
+		'Issue Alert',
+	);
 
-	const issueUrl = event?.web_url ?? event?.issue_url ?? '';
+	const issueUrl = firstUsefulUrl(event?.web_url, event?.issue_url) ?? '';
 	const timestamp = event?.timestamp ?? '';
 	const topFrame = findTopInAppFrame(event?.exception?.values?.[0]?.stacktrace?.frames);
 
@@ -35,7 +51,10 @@ export function formatSentryCardBody(augmented: SentryAugmentedPayload): AlertHi
 	if (issueUrl) lines.push(`**Sentry issue:** ${issueUrl}`);
 	if (timestamp) lines.push(`**First seen:** ${timestamp}`);
 
-	const ruleName = payload.data?.issue_alert?.title ?? payload.data?.triggered_rule;
+	const ruleName = firstUsefulString(
+		payload.data?.issue_alert?.title,
+		payload.data?.triggered_rule,
+	);
 	if (ruleName) lines.push(`**Alert rule:** ${ruleName}`);
 
 	if (topFrame) {
@@ -68,8 +87,8 @@ export function formatSentryIssueLifecycleCardBody(augmented: SentryAugmentedPay
 	const payload = augmented.payload as SentryIssuePayload;
 	const issue = payload.data?.issue;
 
-	const alertTitle = issue?.title?.trim() ? issue.title : 'Sentry Issue';
-	const issueUrl = issue?.web_url ?? issue?.permalink ?? '';
+	const alertTitle = firstUsefulString(issue?.title, 'Sentry Issue');
+	const issueUrl = firstUsefulUrl(issue?.web_url, issue?.permalink, issue?.url) ?? '';
 	const lines: string[] = [];
 
 	if (issueUrl) lines.push(`**Sentry issue:** ${issueUrl}`);
@@ -94,12 +113,13 @@ export function formatSentryIssueLifecycleCardBody(augmented: SentryAugmentedPay
 export function formatSentryMetricCardBody(augmented: SentryAugmentedPayload): AlertHints {
 	const payload = augmented.payload as SentryMetricAlertPayload;
 
-	const alertTitle =
-		payload.data?.description_title ??
-		payload.data?.metric_alert?.alert_rule?.aggregate ??
-		`Metric Alert (${payload.action})`;
+	const alertTitle = firstUsefulString(
+		payload.data?.description_title,
+		payload.data?.metric_alert?.alert_rule?.aggregate,
+		`Metric Alert (${payload.action})`,
+	);
 
-	const webUrl = payload.data?.web_url ?? '';
+	const webUrl = firstUsefulUrl(payload.data?.web_url) ?? '';
 	const action = payload.action;
 	const query = payload.data?.metric_alert?.alert_rule?.query;
 	const aggregate = payload.data?.metric_alert?.alert_rule?.aggregate;

@@ -28,6 +28,14 @@ vi.mock('../../../src/triggers/shared/trigger-resolution.js', () => ({
 	resolveTriggerResult: vi.fn(),
 }));
 
+vi.mock('../../../src/pm/registry.js', () => ({
+	pmRegistry: {
+		createProvider: vi.fn(() => ({
+			getWorkItemUrl: (id: string) => `https://pm.example.test/${id}`,
+		})),
+	},
+}));
+
 // Mock the dynamically-imported materialization helpers
 vi.mock('../../../src/integrations/alerting/_shared/materialize.js', () => ({
 	materializeAlertWorkItem: vi.fn(),
@@ -224,7 +232,11 @@ describe('processSentryWebhook', () => {
 		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
 		const triggerResult = {
 			agentType: 'alerting',
-			agentInput: { alertIssueId: 'sentry-issue-42' },
+			agentInput: {
+				triggerEvent: 'alerting:issue-alert',
+				alertIssueId: 'sentry-issue-42',
+				alertIssueUrl: 'https://sentry.io/issues/sentry-issue-42/',
+			},
 		} as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 		vi.mocked(materializeAlertWorkItem).mockResolvedValue('card-new');
@@ -240,7 +252,14 @@ describe('processSentryWebhook', () => {
 		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
 				workItemId: 'card-new',
-				agentInput: expect.objectContaining({ workItemId: 'card-new' }),
+				workItemTitle: '[Sentry] Test',
+				workItemUrl: 'https://pm.example.test/card-new',
+				agentInput: expect.objectContaining({
+					workItemId: 'card-new',
+					workItemTitle: '[Sentry] Test',
+					workItemUrl: 'https://pm.example.test/card-new',
+					alertIssueUrl: 'https://sentry.io/issues/sentry-issue-42/',
+				}),
 			}),
 			mockProject,
 			expect.any(Object),
@@ -325,7 +344,10 @@ describe('processSentryWebhook', () => {
 		const payload = { resource: 'metric_alert', cascadeProjectId: 'proj-sentry' };
 		const triggerResult = {
 			agentType: 'alerting',
-			agentInput: { alertMetricKey: 'my-org:Error Rate High' },
+			agentInput: {
+				alertMetricKey: 'my-org:Error Rate High',
+				alertIssueUrl: 'https://sentry.io/alerts/123/',
+			},
 			lockKey: 'sentry-metric:my-org:Error Rate High',
 		} as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
@@ -343,7 +365,14 @@ describe('processSentryWebhook', () => {
 		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
 				workItemId: 'metric-card-1',
-				agentInput: expect.objectContaining({ workItemId: 'metric-card-1' }),
+				workItemTitle: '[Sentry Metric] Error Rate High',
+				workItemUrl: 'https://pm.example.test/metric-card-1',
+				agentInput: expect.objectContaining({
+					workItemId: 'metric-card-1',
+					workItemTitle: '[Sentry Metric] Error Rate High',
+					workItemUrl: 'https://pm.example.test/metric-card-1',
+					alertIssueUrl: 'https://sentry.io/alerts/123/',
+				}),
 			}),
 			mockProject,
 			expect.any(Object),
@@ -421,6 +450,7 @@ describe('processSentryWebhook', () => {
 			agentInput: {
 				triggerEvent: 'alerting:issue-lifecycle',
 				alertIssueId: '118723355',
+				alertIssueUrl: 'https://mongrel.sentry.io/issues/118723355/',
 			},
 			lockKey: 'sentry-issue:118723355',
 		} as never;
@@ -441,7 +471,14 @@ describe('processSentryWebhook', () => {
 		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
 				workItemId: 'issue-card-1',
-				agentInput: expect.objectContaining({ workItemId: 'issue-card-1' }),
+				workItemTitle: '[Sentry] wedged work-item lock',
+				workItemUrl: 'https://pm.example.test/issue-card-1',
+				agentInput: expect.objectContaining({
+					workItemId: 'issue-card-1',
+					workItemTitle: '[Sentry] wedged work-item lock',
+					workItemUrl: 'https://pm.example.test/issue-card-1',
+					alertIssueUrl: 'https://mongrel.sentry.io/issues/118723355/',
+				}),
 			}),
 			mockProject,
 			expect.any(Object),

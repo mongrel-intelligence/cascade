@@ -21,10 +21,12 @@ vi.mock('../../../src/agents/definitions/index.js', () => ({
 }));
 
 import {
+	buildTaskPromptContext,
 	getAvailablePartialNames,
 	getRawPartial,
 	getRawTemplate,
 	getSystemPrompt,
+	getTaskTemplateVariables,
 	getTemplateVariables,
 	getValidAgentTypes,
 	initPrompts,
@@ -37,6 +39,51 @@ import {
 // Initialize prompts before tests so validTypes is populated
 beforeAll(async () => {
 	await initPrompts();
+});
+
+describe('buildTaskPromptContext', () => {
+	it('preserves scalar alert fields and comment aliases', () => {
+		const context = buildTaskPromptContext({
+			workItemId: 'MNG-740',
+			alertTitle: 'Error rate high',
+			alertIssueUrl: 'https://sentry.io/issues/123/',
+			alertIssueId: '123',
+			alertOrgId: 'mongrel',
+			alertMetricKey: 'mongrel:Error rate high',
+			triggerCommentBody: 'Please investigate',
+			triggerCommentText: 'legacy body',
+			triggerCommentAuthor: 'aaight42',
+			project: { id: 'not-exposed' },
+			config: { projects: [] },
+		});
+
+		expect(context).toMatchObject({
+			workItemId: 'MNG-740',
+			alertTitle: 'Error rate high',
+			alertIssueUrl: 'https://sentry.io/issues/123/',
+			alertIssueId: '123',
+			alertOrgId: 'mongrel',
+			alertMetricKey: 'mongrel:Error rate high',
+			commentText: 'Please investigate',
+			commentBody: 'Please investigate',
+			commentAuthor: 'aaight42',
+		});
+		expect(context.project).toBeUndefined();
+		expect(context.config).toBeUndefined();
+	});
+
+	it('documents alert task template variables', () => {
+		const names = getTaskTemplateVariables().map((variable) => variable.name);
+		expect(names).toEqual(
+			expect.arrayContaining([
+				'alertTitle',
+				'alertIssueUrl',
+				'alertIssueId',
+				'alertOrgId',
+				'alertMetricKey',
+			]),
+		);
+	});
 });
 
 describe('getSystemPrompt', () => {

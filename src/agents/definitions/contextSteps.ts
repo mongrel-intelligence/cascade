@@ -564,7 +564,7 @@ export async function fetchPipelineSnapshotStep(
 export async function fetchAlertingIssueStep(
 	params: FetchContextParams,
 ): Promise<ContextInjection[]> {
-	const { alertIssueId, alertOrgId } = params.input;
+	const { alertIssueId, alertOrgId, alertIssueUrl, alertTitle } = params.input;
 	if (!alertIssueId || typeof alertIssueId !== 'string') return [];
 	if (!alertOrgId || typeof alertOrgId !== 'string') return [];
 
@@ -576,7 +576,15 @@ export async function fetchAlertingIssueStep(
 
 		const client = getSentryClient();
 		const event = await client.getIssueEvent(alertOrgId, alertIssueId, 'latest');
-		const result = formatSentryEvent(event);
+		const issue =
+			typeof alertIssueUrl === 'string' && alertIssueUrl.trim()
+				? {
+						id: alertIssueId,
+						permalink: alertIssueUrl,
+						title: typeof alertTitle === 'string' ? alertTitle : undefined,
+					}
+				: await client.getIssue(alertOrgId, alertIssueId).catch(() => undefined);
+		const result = formatSentryEvent(event, issue);
 
 		params.logWriter('INFO', 'fetchAlertingIssueStep: fetched alerting event successfully', {
 			issueId: alertIssueId,

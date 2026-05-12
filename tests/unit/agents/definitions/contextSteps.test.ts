@@ -15,6 +15,15 @@ vi.mock('../../../../src/gadgets/todo/storage.js', () => ({
 const mockTrelloDownload = vi.fn();
 const mockJiraDownload = vi.fn();
 const mockLinearDownload = vi.fn();
+const mockGetIssueEvent = vi.fn();
+const mockGetIssue = vi.fn();
+
+vi.mock('../../../../src/sentry/client.js', () => ({
+	getSentryClient: vi.fn(() => ({
+		getIssueEvent: mockGetIssueEvent,
+		getIssue: mockGetIssue,
+	})),
+}));
 
 vi.mock('../../../../src/trello/client.js', () => ({
 	trelloClient: {
@@ -49,6 +58,7 @@ vi.mock('../../../../src/github/client.js', () => ({
 
 import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
 import {
+	fetchAlertingIssueStep,
 	fetchPRContextStep,
 	fetchWorkItemStep,
 	prepopulateTodosStep,
@@ -499,6 +509,73 @@ describe('fetchWorkItemStep', () => {
 		// MAX_IMAGES_PER_WORK_ITEM is mocked as 10
 		expect(result[0].images).toHaveLength(10);
 		expect(mockTrelloDownload).toHaveBeenCalledTimes(10);
+	});
+});
+
+describe('fetchAlertingIssueStep', () => {
+	beforeEach(() => {
+		mockGetIssueEvent.mockReset();
+		mockGetIssue.mockReset();
+	});
+
+	it('uses alertIssueUrl from agent input in preloaded event context', async () => {
+		mockGetIssueEvent.mockResolvedValue({
+			eventID: 'evt-1',
+			title: 'TypeError: object is not iterable',
+		});
+
+		const result = await fetchAlertingIssueStep(
+			makeParams({
+				alertIssueId: '119054737',
+				alertOrgId: 'mongrel',
+				alertTitle: 'TypeError group',
+				alertIssueUrl: 'https://sentry.io/organizations/mongrel/issues/119054737/',
+			}),
+		);
+
+		expect(mockGetIssueEvent).toHaveBeenCalledWith('mongrel', '119054737', 'latest');
+		expect(mockGetIssue).not.toHaveBeenCalled();
+		expect(result[0].result).toContain(
+			'Sentry issue: https://sentry.io/organizations/mongrel/issues/119054737/',
+		);
+		expect(result[0].result).toContain('Issue ID: 119054737');
+		expect(result[0].result).toContain('Issue title: TypeError group');
+	});
+
+	it('falls back to Sentry issue metadata when alertIssueUrl is absent', async () => {
+		mockGetIssueEvent.mockResolvedValue({
+			eventID: 'evt-1',
+			title: 'TypeError: object is not iterable',
+		});
+		mockGetIssue.mockResolvedValue({
+			id: '119054737',
+			title: 'TypeError group',
+			permalink: 'https://sentry.io/organizations/mongrel/issues/119054737/',
+		});
+
+		const result = await fetchAlertingIssueStep(
+			makeParams({ alertIssueId: '119054737', alertOrgId: 'mongrel' }),
+		);
+
+		expect(mockGetIssue).toHaveBeenCalledWith('mongrel', '119054737');
+		expect(result[0].result).toContain(
+			'Sentry issue: https://sentry.io/organizations/mongrel/issues/119054737/',
+		);
+	});
+
+	it('returns event details when issue metadata fetch fails', async () => {
+		mockGetIssueEvent.mockResolvedValue({
+			eventID: 'evt-1',
+			title: 'TypeError: object is not iterable',
+		});
+		mockGetIssue.mockRejectedValue(new Error('metadata unavailable'));
+
+		const result = await fetchAlertingIssueStep(
+			makeParams({ alertIssueId: '119054737', alertOrgId: 'mongrel' }),
+		);
+
+		expect(result[0].result).toContain('Event ID: evt-1');
+		expect(result[0].result).not.toContain('Sentry issue:');
 	});
 });
 

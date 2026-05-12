@@ -115,7 +115,7 @@ cascade-tools pm report-friction \
 | `GetAlertingEventDetail` | `alerting:read` | Fetch Sentry issue-event details with stacktrace, tags, breadcrumbs, request data, and context |
 | `ListAlertingEvents` | `alerting:read` | List recent events for an issue |
 
-`GetAlertingEventDetail` accepts Sentry's issue-event response shape, including REST aliases from the [Retrieve an Issue Event API](https://docs.sentry.io/api/events/retrieve-an-issue-event/).
+`GetAlertingEventDetail` accepts Sentry's issue-event response shape, including REST aliases from the [Retrieve an Issue Event API](https://docs.sentry.io/api/events/retrieve-an-issue-event/). It fetches issue metadata best-effort and includes `Sentry issue: <permalink>` near the top when Sentry returns a permalink; if that metadata request fails, the event details still render.
 
 ## cascade-tools CLI
 

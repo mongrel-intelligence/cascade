@@ -156,6 +156,7 @@ export interface SentryIssue {
 	id: string;
 	title: string;
 	culprit?: string;
+	web_url?: string;
 	permalink?: string;
 	shortId?: string;
 	status?: string;

@@ -12,6 +12,10 @@ import type {
 	SentryStackFrame,
 } from '../../../sentry/types.js';
 
+export type SentryIssueEventContext = Partial<
+	Pick<SentryIssue, 'id' | 'title' | 'permalink' | 'web_url' | 'shortId'>
+>;
+
 // ============================================================================
 // Issue formatting
 // ============================================================================
@@ -178,6 +182,17 @@ function appendEventMeta(lines: string[], event: SentryEvent): void {
 	if (event.level) lines.push(`Level: ${event.level}`);
 }
 
+function appendIssueContext(lines: string[], issue?: SentryIssueEventContext): void {
+	if (!issue) return;
+	const issueUrl = issue.web_url ?? issue.permalink;
+	if (!issueUrl && !issue.id && !issue.shortId && !issue.title) return;
+
+	if (issueUrl) lines.push(`Sentry issue: ${issueUrl}`);
+	if (issue.id) lines.push(`Issue ID: ${issue.id}`);
+	if (issue.shortId) lines.push(`Short ID: ${issue.shortId}`);
+	if (issue.title) lines.push(`Issue title: ${issue.title}`);
+}
+
 function appendEventTags(lines: string[], event: SentryEvent): void {
 	const tagPairs = normalizeTagPairs(event.tags).map(([key, value]) => `${key}=${value}`);
 	if (tagPairs.length > 0) {
@@ -341,13 +356,14 @@ function formatCompactValue(value: unknown): string {
 	}
 }
 
-export function formatSentryEvent(event: SentryEvent): string {
+export function formatSentryEvent(event: SentryEvent, issue?: SentryIssueEventContext): string {
 	const lines: string[] = [];
 
 	const title = event.title ?? event.message ?? '(no title)';
 	lines.push(`# Alert Event: ${title}`);
 	lines.push('');
 
+	appendIssueContext(lines, issue);
 	appendEventMeta(lines, event);
 	appendEventTags(lines, event);
 	appendEventRequest(lines, event);

@@ -8,5 +8,6 @@ export async function getSentryEventDetail(
 ): Promise<string> {
 	const client = getSentryClient();
 	const event = await client.getIssueEvent(organizationId, issueId, eventId);
-	return formatSentryEvent(event);
+	const issue = await client.getIssue(organizationId, issueId).catch(() => undefined);
+	return formatSentryEvent(event, issue);
 }

@@ -111,6 +111,22 @@ describe('formatSentryEvent', () => {
 		expect(result).toContain('os: {"name":"Linux"}');
 	});
 
+	it('includes issue permalink metadata when provided', () => {
+		const result = formatSentryEvent(makeRestEvent(), {
+			id: '119054737',
+			title: 'TypeError group',
+			permalink: 'https://sentry.io/organizations/mongrel/issues/119054737/',
+			shortId: 'CASCADE-1',
+		});
+
+		expect(result).toContain(
+			'Sentry issue: https://sentry.io/organizations/mongrel/issues/119054737/',
+		);
+		expect(result).toContain('Issue ID: 119054737');
+		expect(result).toContain('Short ID: CASCADE-1');
+		expect(result).toContain('Issue title: TypeError group');
+	});
+
 	it('formats tuple-array tags', () => {
 		const result = formatSentryEvent({
 			title: 'Tuple tags',

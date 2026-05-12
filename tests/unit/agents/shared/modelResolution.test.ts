@@ -43,6 +43,7 @@ vi.mock('../../../../src/agents/definitions/loader.js', () => ({
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
+			'alerting',
 		]),
 	getBuiltinAgentTypes: vi.fn().mockReturnValue([]),
 }));
@@ -62,6 +63,7 @@ vi.mock('../../../../src/agents/definitions/index.js', () => ({
 			'respond-to-pr-comment',
 			'respond-to-planning-comment',
 			'debug',
+			'alerting',
 		]),
 	getBuiltinAgentTypes: vi.fn().mockReturnValue([]),
 }));
@@ -540,6 +542,33 @@ describe('resolveModelConfig', () => {
 			expect(result.taskPrompt).toContain('PR #55');
 			expect(result.taskPrompt).toContain('src/utils.ts');
 			expect(result.taskPrompt).toContain('Fix this line');
+		});
+
+		it('renders alert scalar variables from agentInput in task prompt override', async () => {
+			vi.mocked(resolveAgentDefinition).mockResolvedValue(
+				mockAgentDefinition({
+					taskPrompt: 'Alert: <%= it.alertTitle %> | <%= it.alertIssueUrl %>',
+				}),
+			);
+
+			const result = await resolveModelConfig({
+				agentType: 'alerting',
+				project: makeProject(),
+				config: makeConfig(),
+				repoDir: '/tmp/test',
+				agentInput: {
+					triggerEvent: 'alerting:issue-alert',
+					alertTitle: 'TypeError in worker',
+					alertIssueUrl: 'https://sentry.io/issues/119054737/',
+					alertIssueId: '119054737',
+					alertOrgId: 'mongrel',
+				},
+			});
+
+			expect(result.taskPrompt).toBe(
+				'Alert: TypeError in worker | https://sentry.io/issues/119054737/',
+			);
+			expect(result.taskPrompt).not.toContain('undefined');
 		});
 
 		it('forwards promptContext fields to task prompt rendering', async () => {

@@ -212,6 +212,18 @@ Pipeline prompts receive separate PM identifiers for selection and creation:
 
 For Trello, BACKLOG is a list, so `backlogStatusId` and `workItemCreateContainerId` are both the backlog list ID. For JIRA, `backlogStatusId` is `jira.statuses.backlog` and creation uses `jira.projectKey`. For Linear, `backlogStatusId` is `linear.statuses.backlog` and creation uses `linear.teamId`; backlog-manager must not use the Linear team ID to discover candidate backlog issues.
 
+### Alert task prompt context
+
+Alerting task prompts can reference scalar alert fields passed through `AgentInput`:
+
+| Variable | Purpose |
+|----------|---------|
+| `alertTitle` | Provider-normalized alert title, with empty and stringified `undefined`/`null` candidates discarded |
+| `alertIssueUrl` | Human-facing Sentry issue or alert permalink when available |
+| `alertIssueId` | Sentry issue ID for issue/event alerts |
+| `alertOrgId` | Sentry organization slug used for alerting API reads |
+| `alertMetricKey` | Stable metric-alert key (`orgSlug:title`) used by worker-side materialization |
+
 ## Hooks
 
 ### Trailing hooks

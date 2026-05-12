@@ -11,6 +11,7 @@
  * which would return HTTP 200 to Sentry with no job ever enqueued.
  */
 
+import { firstUsefulString, firstUsefulUrl } from '../../integrations/alerting/_shared/format.js';
 import { getAlertsContainerId } from '../../pm/config.js';
 import { getSentryIntegrationConfig } from '../../sentry/integration.js';
 import type { SentryAugmentedPayload, SentryIssueAlertPayload } from '../../sentry/types.js';
@@ -48,12 +49,13 @@ export class SentryIssueAlertTrigger implements TriggerHandler {
 		// Extract issue/event info from the payload
 		const event = innerPayload.data?.event;
 		const issueId = event?.issue_id ?? event?.issue_url?.split('/').pop();
-		const issueUrl = event?.web_url ?? event?.issue_url;
-		const alertTitle =
-			innerPayload.data?.issue_alert?.title ??
-			innerPayload.data?.triggered_rule ??
-			event?.title ??
-			'Issue Alert';
+		const issueUrl = firstUsefulUrl(event?.web_url, event?.issue_url);
+		const alertTitle = firstUsefulString(
+			innerPayload.data?.issue_alert?.title,
+			innerPayload.data?.triggered_rule,
+			event?.title,
+			'Issue Alert',
+		);
 
 		if (!issueId) {
 			logger.warn('SentryIssueAlertTrigger: cannot determine issue ID from payload', {

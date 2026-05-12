@@ -24,6 +24,7 @@
  * webhooks for the same Sentry issue ID.
  */
 
+import { firstUsefulString, firstUsefulUrl } from '../../integrations/alerting/_shared/format.js';
 import { getAlertsContainerId } from '../../pm/config.js';
 import { getSentryIntegrationConfig } from '../../sentry/integration.js';
 import type { SentryAugmentedPayload, SentryIssuePayload } from '../../sentry/types.js';
@@ -73,8 +74,8 @@ export class SentryIssueLifecycleTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const issueUrl = issue?.web_url ?? issue?.permalink ?? issue?.url;
-		const alertTitle = issue?.title?.trim() ? issue.title : 'Sentry Issue';
+		const issueUrl = firstUsefulUrl(issue?.web_url, issue?.permalink, issue?.url);
+		const alertTitle = firstUsefulString(issue?.title, 'Sentry Issue');
 
 		// Look up org slug from integration config (mirrors SentryIssueAlertTrigger).
 		const sentryConfig = await getSentryIntegrationConfig(ctx.project.id);

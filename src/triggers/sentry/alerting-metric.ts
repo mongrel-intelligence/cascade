@@ -13,6 +13,7 @@
  * which would return HTTP 200 to Sentry with no job ever enqueued.
  */
 
+import { firstUsefulString, firstUsefulUrl } from '../../integrations/alerting/_shared/format.js';
 import { getAlertsContainerId } from '../../pm/config.js';
 import { getSentryIntegrationConfig } from '../../sentry/integration.js';
 import type { SentryAugmentedPayload, SentryMetricAlertPayload } from '../../sentry/types.js';
@@ -70,10 +71,11 @@ export class SentryMetricAlertTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const alertTitle =
-			innerPayload.data?.description_title ??
-			innerPayload.data?.metric_alert?.alert_rule?.aggregate ??
-			`Metric Alert (${action})`;
+		const alertTitle = firstUsefulString(
+			innerPayload.data?.description_title,
+			innerPayload.data?.metric_alert?.alert_rule?.aggregate,
+			`Metric Alert (${action})`,
+		);
 
 		logger.info('Alerting: metric alert triggered', {
 			projectId: ctx.project.id,
@@ -108,7 +110,7 @@ export class SentryMetricAlertTrigger implements TriggerHandler {
 				alertMetricKey,
 				alertOrgId: sentryConfig.organizationSlug,
 				alertTitle,
-				alertIssueUrl: innerPayload.data?.web_url,
+				alertIssueUrl: firstUsefulUrl(innerPayload.data?.web_url),
 			},
 			// workItemId omitted — worker sets it after materialisation.
 			// lockKey provides router-level work-item concurrency protection while
