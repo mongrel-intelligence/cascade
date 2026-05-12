@@ -50,6 +50,9 @@ vi.mock('../../../src/gadgets/github/core/postPRComment.js', () => ({
 vi.mock('../../../src/gadgets/github/core/updatePRComment.js', () => ({
 	updatePRComment: vi.fn().mockResolvedValue({ id: 456 }),
 }));
+vi.mock('../../../src/gadgets/github/core/replyToReviewComment.js', () => ({
+	replyToReviewComment: vi.fn().mockResolvedValue('Reply posted successfully'),
+}));
 
 import CreateWorkItem from '../../../src/cli/pm/create-work-item.js';
 import PostComment from '../../../src/cli/pm/post-comment.js';
@@ -58,10 +61,12 @@ import UpdateWorkItem from '../../../src/cli/pm/update-work-item.js';
 import CreatePR from '../../../src/cli/scm/create-pr.js';
 import CreatePRReview from '../../../src/cli/scm/create-pr-review.js';
 import PostPRComment from '../../../src/cli/scm/post-pr-comment.js';
+import ReplyToReviewComment from '../../../src/cli/scm/reply-to-review-comment.js';
 import UpdatePRComment from '../../../src/cli/scm/update-pr-comment.js';
 import { createPR } from '../../../src/gadgets/github/core/createPR.js';
 import { createPRReview } from '../../../src/gadgets/github/core/createPRReview.js';
 import { postPRComment } from '../../../src/gadgets/github/core/postPRComment.js';
+import { replyToReviewComment } from '../../../src/gadgets/github/core/replyToReviewComment.js';
 import { updatePRComment } from '../../../src/gadgets/github/core/updatePRComment.js';
 import { createWorkItem } from '../../../src/gadgets/pm/core/createWorkItem.js';
 import { postComment } from '../../../src/gadgets/pm/core/postComment.js';
@@ -439,6 +444,58 @@ describe('CreatePRReview --body-file', () => {
 			}),
 		);
 	});
+
+	it('resolves the --comment alias with one JSON object', async () => {
+		const comment = { path: 'src/index.ts', line: 12, body: 'Please handle null here.' };
+		const cmd = new CreatePRReview(
+			[
+				'--prNumber',
+				'42',
+				'--event',
+				'REQUEST_CHANGES',
+				'--body',
+				'Needs a small change',
+				'--comment',
+				JSON.stringify(comment),
+			],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(createPRReview).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: 'Needs a small change',
+				comments: [comment],
+			}),
+		);
+	});
+
+	it('rejects primitive JSON passed through the --comment alias', async () => {
+		const cmd = new CreatePRReview(
+			[
+				'--prNumber',
+				'42',
+				'--event',
+				'REQUEST_CHANGES',
+				'--body',
+				'Needs a small change',
+				'--comment',
+				'"not an array"',
+			],
+			mockConfig as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+
+		expect(createPRReview).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('json-parse');
+		expect(output.error.flag).toBe('comments');
+	});
 });
 
 describe('PostPRComment --body-file', () => {
@@ -556,6 +613,76 @@ describe('UpdatePRComment --body-file', () => {
 
 	it('errors when neither --body nor --body-file is provided (spec 014 envelope)', async () => {
 		const cmd = new UpdatePRComment(['--commentId', '456'], mockConfig as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('missing-required');
+		expect(output.error.flag).toBe('body');
+	});
+});
+
+describe('ReplyToReviewComment --body-file', () => {
+	const originalEnv = process.env;
+
+	beforeEach(() => {
+		process.env = {
+			...originalEnv,
+			CASCADE_REPO_OWNER: 'owner',
+			CASCADE_REPO_NAME: 'repo',
+		};
+	});
+
+	afterEach(() => {
+		process.env = originalEnv;
+	});
+
+	it('reads reply body from file', async () => {
+		const filePath = writeTempFile('reply.md', 'Review reply from file');
+		const cmd = new ReplyToReviewComment(
+			['--prNumber', '42', '--commentId', '789', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(replyToReviewComment).toHaveBeenCalledWith(
+			'owner',
+			'repo',
+			42,
+			789,
+			'Review reply from file',
+		);
+	});
+
+	it('prefers --body-file over --body', async () => {
+		const filePath = writeTempFile('reply.md', 'from file');
+		const cmd = new ReplyToReviewComment(
+			['--prNumber', '42', '--commentId', '789', '--body', 'from flag', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(replyToReviewComment).toHaveBeenCalledWith('owner', 'repo', 42, 789, 'from file');
+	});
+
+	it('still works with inline --body flag', async () => {
+		const cmd = new ReplyToReviewComment(
+			['--prNumber', '42', '--commentId', '789', '--body', 'inline body'],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(replyToReviewComment).toHaveBeenCalledWith('owner', 'repo', 42, 789, 'inline body');
+	});
+
+	it('errors when neither --body nor --body-file is provided (spec 014 envelope)', async () => {
+		const cmd = new ReplyToReviewComment(
+			['--prNumber', '42', '--commentId', '789'],
+			mockConfig as never,
+		);
 		const logSpy = vi.spyOn(cmd, 'log');
 		await expect(cmd.run()).rejects.toThrow();
 		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {

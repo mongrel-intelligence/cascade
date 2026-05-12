@@ -44,6 +44,58 @@ function parseJsonOrError(
 	}
 }
 
+function describeJsonTopLevel(value: unknown): string {
+	if (value === null) return 'null';
+	if (Array.isArray(value)) return 'array';
+	return typeof value;
+}
+
+function normalizeArrayOfObjectJsonOrError(
+	parsed: unknown,
+	flag: string,
+	paramDef: ParameterDefinition,
+	fileAlt: FileInputAlternative | undefined,
+	example: unknown,
+	sink: ErrorSink,
+): unknown {
+	if (paramDef.type !== 'array' || paramDef.items !== 'object') {
+		return parsed;
+	}
+
+	if (Array.isArray(parsed)) {
+		return parsed;
+	}
+
+	if (parsed !== null && typeof parsed === 'object') {
+		return [parsed];
+	}
+
+	const fileHint = fileAlt ? ` Or pass --${fileAlt.fileFlag} <path> (or - for stdin).` : '';
+	return emitCliError({
+		type: 'json-parse',
+		flag,
+		message: `Expected JSON array or object, got ${describeJsonTopLevel(parsed)}`,
+		got: JSON.stringify(parsed),
+		expected: expectedShapeFor(paramDef, example),
+		hint: `Pass a JSON array of objects or one JSON object to normalize into a single-item array.${fileHint}`,
+		stdout: sink.stdout,
+		stderr: sink.stderr,
+		exit: sink.exit,
+	});
+}
+
+function parseJsonParamOrError(
+	raw: string,
+	flag: string,
+	paramDef: ParameterDefinition,
+	fileAlt: FileInputAlternative | undefined,
+	example: unknown,
+	sink: ErrorSink,
+): unknown {
+	const parsed = parseJsonOrError(raw, flag, paramDef, fileAlt, example, sink);
+	return normalizeArrayOfObjectJsonOrError(parsed, flag, paramDef, fileAlt, example, sink);
+}
+
 function resolveFileInputParam(
 	name: string,
 	paramDef: ParameterDefinition,
@@ -59,7 +111,14 @@ function resolveFileInputParam(
 	if (typeof fileFlagValue === 'string' && fileFlagValue.length > 0) {
 		const contents = readFileInput(fileFlagValue);
 		if (fileAlt.parseAs === 'json') {
-			resolvedParams[name] = parseJsonOrError(contents, name, paramDef, fileAlt, example, sink);
+			resolvedParams[name] = parseJsonParamOrError(
+				contents,
+				name,
+				paramDef,
+				fileAlt,
+				example,
+				sink,
+			);
 			return;
 		}
 		resolvedParams[name] = contents;
@@ -69,7 +128,14 @@ function resolveFileInputParam(
 	if (directValue !== undefined && directValue !== null) {
 		if (paramDef.type === 'array' && paramDef.items === 'object') {
 			const asString = typeof directValue === 'string' ? directValue : JSON.stringify(directValue);
-			resolvedParams[name] = parseJsonOrError(asString, name, paramDef, fileAlt, example, sink);
+			resolvedParams[name] = parseJsonParamOrError(
+				asString,
+				name,
+				paramDef,
+				fileAlt,
+				example,
+				sink,
+			);
 			return;
 		}
 		if (typeof directValue === 'string') {
@@ -103,7 +169,7 @@ function resolveObjectParam(
 	if (typeof rawValue !== 'string') {
 		return;
 	}
-	resolvedParams[name] = parseJsonOrError(rawValue, name, paramDef, undefined, example, sink);
+	resolvedParams[name] = parseJsonParamOrError(rawValue, name, paramDef, undefined, example, sink);
 }
 
 function resolveArrayOfObjectParam(
@@ -118,7 +184,7 @@ function resolveArrayOfObjectParam(
 	const rawValue = flags[name];
 	if (rawValue === undefined) return;
 	const asString = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue);
-	resolvedParams[name] = parseJsonOrError(asString, name, paramDef, fileAlt, example, sink);
+	resolvedParams[name] = parseJsonParamOrError(asString, name, paramDef, fileAlt, example, sink);
 }
 
 function resolveStandardParam(
