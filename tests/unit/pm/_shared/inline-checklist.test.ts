@@ -6,6 +6,8 @@ import {
 	parseInlineChecklists,
 	removeChecklistItem,
 	toggleChecklistItem,
+	upsertChecklistSection,
+	upsertItemToChecklist,
 } from '../../../../src/pm/_shared/inline-checklist.js';
 
 // ---------------------------------------------------------------------------
@@ -347,5 +349,70 @@ describe('full round-trip', () => {
 		checklists = parseInlineChecklists(desc);
 		expect(checklists).toHaveLength(0);
 		expect(desc).toBe('Feature description.');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// upsertChecklistSection
+// ---------------------------------------------------------------------------
+
+describe('upsertChecklistSection', () => {
+	it('appends a new section when none exists — same result as appendChecklistSection', () => {
+		const desc = 'Existing text.';
+		const result = upsertChecklistSection(desc, '✅ AC', [{ name: 'Item', checked: false }]);
+		expect(result).toBe('Existing text.\n\n### ✅ AC\n- [ ] Item');
+	});
+
+	it('returns description unchanged when a section with the same name already exists', () => {
+		const desc = 'Existing text.\n\n### ✅ AC\n- [ ] Old item';
+		const result = upsertChecklistSection(desc, '✅ AC', [{ name: 'New item', checked: false }]);
+		// Section already present — idempotent, no duplicate heading added
+		expect(result).toBe(desc);
+		expect(result.split('\n').filter((l) => l === '### ✅ AC')).toHaveLength(1);
+	});
+
+	it('returns description unchanged for an empty existing section', () => {
+		const desc = 'Existing text.\n\n### ✅ AC';
+		const result = upsertChecklistSection(desc, '✅ AC', []);
+		expect(result).toBe(desc);
+	});
+
+	it('appends a new section even when a different section already exists', () => {
+		const desc = '### Other\n- [ ] Foo';
+		const result = upsertChecklistSection(desc, '✅ AC', []);
+		expect(result).toContain('### Other');
+		expect(result).toContain('### ✅ AC');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// upsertItemToChecklist
+// ---------------------------------------------------------------------------
+
+describe('upsertItemToChecklist', () => {
+	it('appends a new item when it does not exist — same result as addItemToChecklist', () => {
+		const desc = '### ✅ AC\n- [ ] Existing';
+		const result = upsertItemToChecklist(desc, '✅ AC', 'New item');
+		expect(result).toBe('### ✅ AC\n- [ ] Existing\n- [ ] New item');
+	});
+
+	it('returns description unchanged when the item already exists', () => {
+		const desc = '### ✅ AC\n- [ ] Existing';
+		const result = upsertItemToChecklist(desc, '✅ AC', 'Existing');
+		expect(result).toBe(desc);
+		expect(result.split('\n').filter((l) => l === '- [ ] Existing')).toHaveLength(1);
+	});
+
+	it('is case-sensitive: same text with different casing is treated as a new item', () => {
+		const desc = '### ✅ AC\n- [ ] existing';
+		const result = upsertItemToChecklist(desc, '✅ AC', 'Existing');
+		expect(result).toContain('- [ ] existing');
+		expect(result).toContain('- [ ] Existing');
+	});
+
+	it('respects checked state when appending a new item', () => {
+		const desc = '### ✅ AC\n- [ ] First';
+		const result = upsertItemToChecklist(desc, '✅ AC', 'Done', true);
+		expect(result).toContain('- [x] Done');
 	});
 });

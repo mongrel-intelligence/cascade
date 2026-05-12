@@ -628,6 +628,75 @@ describe('LinearPMProvider', () => {
 			expect(lastPut[1].description).toContain('- [ ] First item');
 		});
 
+		it('cache is bypassed when GET returns a description different from the pre-PUT value (external edit)', async () => {
+			// Scenario: createChecklist PUTs a section. Then an external actor
+			// (another worker or a human) updates the description. The next GET
+			// for addChecklistItem returns the external edit, which is DIFFERENT
+			// from the value stored as cache.before. The cache must NOT win here —
+			// doing so would overwrite the external edit with our stale cached value.
+			let getCallCount = 0;
+			mockGetIssue.mockImplementation(async () => {
+				getCallCount++;
+				if (getCallCount === 1) {
+					return makeIssue({ description: 'Original.' });
+				}
+				// Second GET: external actor has updated the description.
+				return makeIssue({ description: 'Original.\n\n### ✅ AC\n\n_Human added this._' });
+			});
+			mockUpdateIssue.mockResolvedValue(makeIssue({ description: 'Original.\n\n### ✅ AC' }));
+
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			// cache now: { before: 'Original.', after: 'Original.\n\n### ✅ AC' }
+
+			await provider.addChecklistItem(checklist.id, 'New task');
+			// GET returns 'Original.\n\n### ✅ AC\n\n_Human added this._'
+			// That ≠ cache.before ('Original.') → cache bypassed → uses GET value
+
+			const lastPut = mockUpdateIssue.mock.calls[mockUpdateIssue.mock.calls.length - 1];
+			// External edit must be preserved in the PUT body.
+			expect(lastPut[1].description).toContain('_Human added this._');
+			expect(lastPut[1].description).toContain('- [ ] New task');
+		});
+
+		it('createChecklist is idempotent — does not append a duplicate section', async () => {
+			// Section "✅ AC" already exists in the description (e.g. from a prior run).
+			const state = mockIssueDescription('Existing.\n\n### ✅ AC\n- [ ] Prior item');
+
+			const result = await provider.createChecklist('issue-uuid', '✅ AC');
+
+			expect(result.name).toBe('✅ AC');
+			// The description must have exactly one occurrence of the heading.
+			expect((state.description ?? '').split('\n').filter((l) => l === '### ✅ AC')).toHaveLength(
+				1,
+			);
+		});
+
+		it('createChecklistWithItems is idempotent — does not append a duplicate section', async () => {
+			const state = mockIssueDescription('Existing.\n\n### ✅ AC\n- [ ] Old item');
+
+			const result = await provider.createChecklistWithItems('issue-uuid', '✅ AC', [
+				{ name: 'New item' },
+			]);
+
+			expect(result.name).toBe('✅ AC');
+			// Heading must appear exactly once — no duplicate section was appended.
+			expect((state.description ?? '').split('\n').filter((l) => l === '### ✅ AC')).toHaveLength(
+				1,
+			);
+		});
+
+		it('addChecklistItem is idempotent — does not append a duplicate item', async () => {
+			// Pre-populate description with the item that is about to be "added" again.
+			const state = mockIssueDescription('### ✅ AC\n- [ ] Already here');
+
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'Already here');
+
+			// The item must appear exactly once in the final description.
+			const lines = (state.description ?? '').split('\n');
+			expect(lines.filter((l) => l === '- [ ] Already here')).toHaveLength(1);
+		});
+
 		it('preserves multiple concurrently-created checklist sections despite stale Linear reads', async () => {
 			let description = 'Existing.';
 			let staleDescription: string | null = null;

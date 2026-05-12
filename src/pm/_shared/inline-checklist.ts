@@ -176,6 +176,24 @@ export function appendChecklistSection(
 	return `${description.trimEnd()}\n\n${section}`;
 }
 
+/**
+ * Idempotent version of `appendChecklistSection`.
+ *
+ * Returns `description` unchanged if a `### checklistName` heading already
+ * exists, so that a retried `cascade-tools pm add-checklist` call (or a
+ * repeated programmatic `createChecklist` / `createChecklistWithItems`)
+ * never produces duplicate `### …` sections.
+ */
+export function upsertChecklistSection(
+	description: string,
+	checklistName: string,
+	items: { name: string; checked: boolean }[],
+): string {
+	const heading = `### ${checklistName}`;
+	if (description.split('\n').some((line) => line === heading)) return description;
+	return appendChecklistSection(description, checklistName, items);
+}
+
 // ---------------------------------------------------------------------------
 // Adding a single item
 // ---------------------------------------------------------------------------
@@ -217,6 +235,25 @@ export function addItemToChecklist(
 	const newLine = `- [${checked ? 'x' : ' '}] ${itemName}`;
 	lines.splice(insertIdx + 1, 0, newLine);
 	return lines.join('\n');
+}
+
+/**
+ * Idempotent version of `addItemToChecklist`.
+ *
+ * Returns `description` unchanged if an item named `itemName` already exists
+ * in `checklistName`, so that a retried `cascade-tools pm add-checklist-item`
+ * call never produces duplicate checkbox rows.
+ */
+export function upsertItemToChecklist(
+	description: string,
+	checklistName: string,
+	itemName: string,
+	checked = false,
+): string {
+	const checklists = parseInlineChecklists(description);
+	const section = checklists.find((c) => c.name === checklistName);
+	if (section?.items.some((item) => item.name === itemName)) return description;
+	return addItemToChecklist(description, checklistName, itemName, checked);
 }
 
 // ---------------------------------------------------------------------------

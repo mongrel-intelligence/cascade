@@ -13,8 +13,6 @@ import { linearClient } from '../../linear/client.js';
 import { logger } from '../../utils/logging.js';
 import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
-	addItemToChecklist,
-	appendChecklistSection,
 	buildChecklistId,
 	findChecklistNameByHash,
 	hashChecklistItemId,
@@ -22,6 +20,8 @@ import {
 	parseInlineChecklists,
 	removeChecklistItem,
 	toggleChecklistItem,
+	upsertChecklistSection,
+	upsertItemToChecklist,
 } from '../_shared/inline-checklist.js';
 import type { LinearConfig } from '../config.js';
 import type { ContainerId, LabelId } from '../ids.js';
@@ -48,11 +48,23 @@ import type {
  * (2026-05-12) all failed with "Linear description visibility timed out"
  * even though every PUT succeeded on Linear's side.
  *
- * The new contract: after each successful PUT, store the new description
- * here. The next `updateDescription` call consults the cache before
- * mutating — if the GET returned a stale value within the consistency
- * window, the cached value wins. After TTL the entry is evicted and the
- * GET becomes authoritative again.
+ * The new contract: after each successful PUT we push a `{before, after}`
+ * entry onto a per-issue chain. The next `updateDescription` call compares
+ * the live GET result against the full chain:
+ *
+ *   - GET result === latest `after`  → replica is up to date; no override.
+ *   - GET result matches any prior `before` OR any non-latest `after` in the
+ *     chain → the replica returned either the stale pre-PUT value OR an
+ *     intermediate state where an earlier in-process PUT propagated but a
+ *     later one hasn't yet. Substitute the latest `after` as the mutation
+ *     base so consecutive in-process updates don't read-modify-write over
+ *     each other.
+ *   - GET result matches none of the above → the description changed in a
+ *     way we didn't author (external edit from another worker or a human).
+ *     Use the live value so we don't overwrite concurrent changes.
+ *
+ * Chain entries are evicted after TTL; the chain is capped at 20 entries per
+ * issue so memory is bounded even under heavy mutation bursts.
  *
  * Scope: in-process only. Cross-process races against Linear's eventual
  * consistency are NOT new to this fix and were never solved by the
@@ -60,28 +72,58 @@ import type {
  * process-local too.
  */
 const RECENT_DESCRIPTION_TTL_MS = 60_000;
-type RecentDescription = { description: string; timestamp: number };
-const recentDescriptions = new Map<string, RecentDescription>();
+const RECENT_DESCRIPTION_CHAIN_LIMIT = 20;
+type RecentDescriptionEntry = { before: string; after: string; timestamp: number };
+const recentDescriptions = new Map<string, RecentDescriptionEntry[]>();
 
-function rememberRecentDescription(issueId: string, description: string): void {
-	recentDescriptions.set(issueId, { description, timestamp: Date.now() });
-	// Lazy cleanup — keep the map small without a setInterval.
+function rememberRecentDescription(issueId: string, before: string, after: string): void {
+	const chain = recentDescriptions.get(issueId) ?? [];
+	chain.push({ before, after, timestamp: Date.now() });
+	// Evict expired entries and cap chain length.
+	const cutoff = Date.now() - RECENT_DESCRIPTION_TTL_MS;
+	recentDescriptions.set(
+		issueId,
+		chain.filter((e) => e.timestamp >= cutoff).slice(-RECENT_DESCRIPTION_CHAIN_LIMIT),
+	);
+	// Lazy cleanup of the outer map — keep it small without a setInterval.
 	if (recentDescriptions.size > 200) {
-		const cutoff = Date.now() - RECENT_DESCRIPTION_TTL_MS;
-		for (const [id, entry] of recentDescriptions.entries()) {
-			if (entry.timestamp < cutoff) recentDescriptions.delete(id);
+		for (const [id, arr] of recentDescriptions.entries()) {
+			if (arr.length === 0) recentDescriptions.delete(id);
 		}
 	}
 }
 
-function recallRecentDescription(issueId: string): string | undefined {
-	const entry = recentDescriptions.get(issueId);
-	if (!entry) return undefined;
-	if (Date.now() - entry.timestamp > RECENT_DESCRIPTION_TTL_MS) {
-		recentDescriptions.delete(issueId);
-		return undefined;
-	}
-	return entry.description;
+/**
+ * Returns the latest cached `after` description when the GET result is
+ * demonstrably stale or an intermediate state from our own PUT chain.
+ *
+ * Returns `undefined` when the GET result is the most-recent PUT (already
+ * up to date) or an external edit (unknown description → use live value).
+ */
+function recallRecentDescription(issueId: string, fetchedDescription: string): string | undefined {
+	const chain = recentDescriptions.get(issueId);
+	if (!chain || chain.length === 0) return undefined;
+
+	// Evict expired entries.
+	const cutoff = Date.now() - RECENT_DESCRIPTION_TTL_MS;
+	const fresh = chain.filter((e) => e.timestamp >= cutoff);
+	if (fresh.length !== chain.length) recentDescriptions.set(issueId, fresh);
+	if (fresh.length === 0) return undefined;
+
+	const latestAfter = fresh[fresh.length - 1].after;
+
+	// Already up to date — no override needed.
+	if (fetchedDescription === latestAfter) return undefined;
+
+	// Stale read: matches any previously-known `before` in the chain.
+	if (fresh.some((e) => fetchedDescription === e.before)) return latestAfter;
+
+	// Intermediate state: matches a non-latest `after` (an earlier PUT propagated
+	// but our most-recent PUT hasn't yet).
+	if (fresh.slice(0, -1).some((e) => fetchedDescription === e.after)) return latestAfter;
+
+	// Unknown description — likely an external edit. Use the live GET value.
+	return undefined;
 }
 
 /**
@@ -288,7 +330,7 @@ export class LinearPMProvider implements PMProvider {
 	}
 
 	async createChecklist(workItemId: string, name: string): Promise<Checklist> {
-		await this.updateDescription(workItemId, (desc) => appendChecklistSection(desc, name, []));
+		await this.updateDescription(workItemId, (desc) => upsertChecklistSection(desc, name, []));
 		return {
 			id: buildChecklistId(workItemId, name),
 			name,
@@ -303,7 +345,7 @@ export class LinearPMProvider implements PMProvider {
 		items: ChecklistItemDraft[],
 	): Promise<Checklist> {
 		await this.updateDescription(workItemId, (desc) =>
-			appendChecklistSection(
+			upsertChecklistSection(
 				desc,
 				name,
 				items.map((item) => ({ name: item.name, checked: item.checked ?? false })),
@@ -338,7 +380,7 @@ export class LinearPMProvider implements PMProvider {
 			if (!checklistName) {
 				throw new Error(`Checklist not found in description: ${checklistId}`);
 			}
-			return addItemToChecklist(desc, checklistName, name, checked);
+			return upsertItemToChecklist(desc, checklistName, name, checked);
 		});
 		logger.debug('[Linear] addChecklistItem — appended inline checkbox', {
 			workItemId: parsed.workItemId,
@@ -393,18 +435,18 @@ export class LinearPMProvider implements PMProvider {
 				throw err;
 			}
 
-			// Read-after-write consistency: if we recently PUT a newer description
-			// for this issue and the GET above returned the stale pre-PUT value
-			// (Linear's eventual-consistency window), use the cached fresh value
-			// as the source of truth for the mutation. Without this, consecutive
-			// in-process updates can read-modify-write over each other.
-			const cachedDescription = recallRecentDescription(issueId);
-			const baseDescription =
-				cachedDescription !== undefined ? cachedDescription : (issue.description ?? '');
+			// Read-after-write consistency: if the GET returned the exact
+			// pre-PUT description (demonstrably stale), substitute the cached
+			// post-PUT value as the mutation base. If Linear returned anything
+			// else — our own most-recent PUT or an external edit — use the live
+			// provider value so we don't overwrite concurrent changes.
+			const rawDescription = issue.description ?? '';
+			const cachedDescription = recallRecentDescription(issueId, rawDescription);
+			const baseDescription = cachedDescription !== undefined ? cachedDescription : rawDescription;
 			const newDesc = mutate(baseDescription);
 			try {
 				await linearClient.updateIssue(issueId, { description: newDesc });
-				rememberRecentDescription(issueId, newDesc);
+				rememberRecentDescription(issueId, rawDescription, newDesc);
 				return;
 			} catch (err) {
 				if (attempt === 0) {
