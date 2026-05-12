@@ -254,6 +254,15 @@ describe('GitHub SCM gadget definitions', () => {
 			expect(replyToReviewCommentDef.parameters.commentId?.required).toBe(true);
 			expect(replyToReviewCommentDef.parameters.body?.required).toBe(true);
 		});
+
+		it('has body file input alternative', () => {
+			const bodyAlt = replyToReviewCommentDef.cli?.fileInputAlternatives?.find(
+				(a) => a.paramName === 'body',
+			);
+			expect(bodyAlt).toBeDefined();
+			expect(bodyAlt?.fileFlag).toBe('body-file');
+			expect(bodyAlt?.description).toBeTruthy();
+		});
 	});
 
 	// ─── UpdatePRComment specific ─────────────────────────────────────────────

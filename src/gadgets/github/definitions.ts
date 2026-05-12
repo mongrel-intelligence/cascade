@@ -610,6 +610,13 @@ export const replyToReviewCommentDef: ToolDefinition = {
 	],
 	cli: {
 		autoResolved: ownerRepoAutoResolved,
+		fileInputAlternatives: [
+			{
+				paramName: 'body',
+				fileFlag: 'body-file',
+				description: 'Read reply body from file (use - for stdin)',
+			},
+		],
 	},
 };
 

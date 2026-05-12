@@ -340,6 +340,97 @@ describe('cliCommandFactory — flag generation', () => {
 			expect.objectContaining({ config: { key: 'value', num: 42 } }),
 		);
 	});
+
+	it('passes canonical array-of-object JSON arrays unchanged', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const comments = [{ path: 'src/index.ts', line: 12, body: 'Please handle null here.' }];
+		const def = makeToolDef({
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+					cliAliases: ['comment'],
+				},
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--comments', JSON.stringify(comments)], makeMockConfig() as never);
+		await cmd.run();
+
+		expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ comments }));
+	});
+
+	it('resolves singular array-of-object aliases with JSON arrays', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const comments = [{ path: 'src/index.ts', line: 12, body: 'Please handle null here.' }];
+		const def = makeToolDef({
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+					cliAliases: ['comment'],
+				},
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--comment', JSON.stringify(comments)], makeMockConfig() as never);
+		await cmd.run();
+
+		expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ comments }));
+	});
+
+	it('normalizes singular array-of-object aliases with one JSON object', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const comment = { path: 'src/index.ts', line: 12, body: 'Please handle null here.' };
+		const def = makeToolDef({
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+					cliAliases: ['comment'],
+				},
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--comment', JSON.stringify(comment)], makeMockConfig() as never);
+		await cmd.run();
+
+		expect(coreFn).toHaveBeenCalledWith(expect.objectContaining({ comments: [comment] }));
+	});
+
+	it('rejects primitive JSON for array-of-object params before calling the core function', async () => {
+		const coreFn = vi.fn().mockResolvedValue('ok');
+		const def = makeToolDef({
+			parameters: {
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+					cliAliases: ['comment'],
+				},
+			},
+		});
+		const Cmd = createCLICommand(def, coreFn);
+		const cmd = new Cmd(['--comment', '"not an array"'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+
+		expect(coreFn).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('json-parse');
+		expect(output.error.flag).toBe('comments');
+	});
 });
 
 // ---------------------------------------------------------------------------

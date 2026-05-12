@@ -89,6 +89,78 @@ describe('CLI parameter resolution', () => {
 		});
 	});
 
+	it('wraps a top-level object for array-of-object file inputs', () => {
+		const filePath = writeTempFile('comments.json', '{"path":"from-file.ts"}');
+		const params = resolveDirectParams(
+			def,
+			{
+				body: 'hello',
+				'comments-file': filePath,
+			},
+			new Map([['comments', fileAlt]]),
+			new Map([['owner', autoResolved]]),
+			makeSink(),
+		);
+
+		expect(params).toEqual({
+			body: 'hello',
+			comments: [{ path: 'from-file.ts' }],
+		});
+	});
+
+	it('wraps a top-level object for inline array-of-object values', () => {
+		const params = resolveDirectParams(
+			def,
+			{
+				body: 'hello',
+				comments: '{"path":"inline.ts"}',
+			},
+			new Map([['comments', fileAlt]]),
+			new Map([['owner', autoResolved]]),
+			makeSink(),
+		);
+
+		expect(params).toEqual({
+			body: 'hello',
+			comments: [{ path: 'inline.ts' }],
+		});
+	});
+
+	it('keeps arrays unchanged without validating individual entries', () => {
+		const params = resolveDirectParams(
+			def,
+			{
+				body: 'hello',
+				comments: '["AddChecklist-compatible string entry",{"path":"inline.ts"}]',
+			},
+			new Map([['comments', fileAlt]]),
+			new Map([['owner', autoResolved]]),
+			makeSink(),
+		);
+
+		expect(params).toEqual({
+			body: 'hello',
+			comments: ['AddChecklist-compatible string entry', { path: 'inline.ts' }],
+		});
+	});
+
+	it('emits json-parse when array-of-object JSON has an impossible top-level shape', () => {
+		const sink = makeSink();
+		expect(() =>
+			resolveDirectParams(
+				def,
+				{
+					body: 'hello',
+					comments: '"not an array"',
+				},
+				new Map([['comments', fileAlt]]),
+				new Map([['owner', autoResolved]]),
+				sink,
+			),
+		).toThrow('exit');
+		expect(sink.exit).toHaveBeenCalledWith(1);
+	});
+
 	it('emits missing-required when neither inline nor file value is present', () => {
 		expect(() =>
 			resolveDirectParams(

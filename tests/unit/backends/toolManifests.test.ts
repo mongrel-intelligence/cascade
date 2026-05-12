@@ -158,4 +158,17 @@ describe('getToolManifests', () => {
 			'body-file': { type: 'string' },
 		});
 	});
+
+	it('ReplyToReviewComment has body-file support', () => {
+		const manifests = getToolManifests();
+		const replyToReviewComment = manifests.find((m) => m.name === 'ReplyToReviewComment');
+		expect(replyToReviewComment).toBeDefined();
+		expect(replyToReviewComment?.parameters).toMatchObject({
+			body: { type: 'string', required: true },
+			'body-file': {
+				type: 'string',
+				description: 'Read reply body from file (use - for stdin)',
+			},
+		});
+	});
 });

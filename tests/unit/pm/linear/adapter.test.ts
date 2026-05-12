@@ -36,7 +36,10 @@ vi.mock('../../../../src/linear/client.js', () => ({
 	},
 }));
 
-import { LinearPMProvider } from '../../../../src/pm/linear/adapter.js';
+import {
+	__resetRecentDescriptionsForTests,
+	LinearPMProvider,
+} from '../../../../src/pm/linear/adapter.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -100,6 +103,7 @@ describe('LinearPMProvider', () => {
 	beforeEach(() => {
 		provider = new LinearPMProvider(defaultConfig);
 		vi.clearAllMocks();
+		__resetRecentDescriptionsForTests();
 	});
 
 	it('has type "linear"', () => {
@@ -559,7 +563,13 @@ describe('LinearPMProvider', () => {
 			expect(result.items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
 		});
 
-		it('waits for Linear read-after-write visibility before the next checklist append', async () => {
+		// MNG-741 regression (2026-05-12): the original fix at commit fad4dda1
+		// polled Linear's GET after every PUT with a 1s deadline, then THREW
+		// on timeout. Linear's eventual-consistency window is routinely >1s
+		// under load — every planning run hit this and got bounced. The new
+		// contract: skip the visibility poll entirely, and provide read-after-
+		// write consistency via an in-process recent-description cache.
+		it('uses recent-description cache instead of polling Linear after a PUT', async () => {
 			let description = 'Existing.';
 			let staleDescription: string | null = null;
 			mockGetIssue.mockImplementation(async () => {
@@ -580,6 +590,42 @@ describe('LinearPMProvider', () => {
 			await provider.addChecklistItem(checklist.id, 'First item');
 
 			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
+		});
+
+		it('proceeds without throwing when Linear NEVER returns the updated description (MNG-741)', async () => {
+			// Worst-case path: Linear's GET continues to return the stale description
+			// forever after the PUT (e.g. the read replica is broken or just very slow
+			// — Linear's eventual-consistency window can exceed seconds under load).
+			// Previously this would throw "Linear description visibility timed out"
+			// after 1s and the agent's `cascade-tools pm add-checklist` invocation
+			// would exit non-zero, skip the sidecar write, and the run would fail the
+			// requiresPMWrite gate. Prod incident: MNG-741 / MNG-736 / MNG-739
+			// (2026-05-12, run 1ce6ed4a). New contract: PUT succeeded from Linear's
+			// perspective; trust the cache for subsequent in-process operations,
+			// never throw on visibility-poll failure.
+			const persistedDescription = 'Existing.';
+			mockGetIssue.mockImplementation(async () =>
+				// IMPORTANT: GET always returns the stale pre-PUT value, simulating
+				// Linear's read replica being permanently behind for the test.
+				makeIssue({ description: persistedDescription }),
+			);
+			mockUpdateIssue.mockImplementation(async (_id, _updates: { description?: string }) =>
+				makeIssue({ description: persistedDescription }),
+			);
+
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			expect(checklist.name).toBe('✅ AC');
+
+			// Subsequent operation finds the checklist via the in-process cache,
+			// even though GET keeps returning the stale pre-PUT description.
+			await expect(provider.addChecklistItem(checklist.id, 'First item')).resolves.toBeUndefined();
+
+			// The last PUT body MUST include the appended item. If the cache wasn't
+			// used, mutate() would run against the stale GET → no checklist found →
+			// throw (or, worse, silently overwrite without the section).
+			const lastPut = mockUpdateIssue.mock.calls[mockUpdateIssue.mock.calls.length - 1];
+			expect(lastPut[1].description).toContain('### ✅ AC');
+			expect(lastPut[1].description).toContain('- [ ] First item');
 		});
 
 		it('preserves multiple concurrently-created checklist sections despite stale Linear reads', async () => {

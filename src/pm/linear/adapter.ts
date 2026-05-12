@@ -38,8 +38,60 @@ import type {
 	WorkItemLabel,
 } from '../types.js';
 
-const DESCRIPTION_VISIBILITY_TIMEOUT_MS = 1_000;
-const DESCRIPTION_VISIBILITY_POLL_MS = 25;
+/**
+ * In-process read-after-write cache of recently-PUT issue descriptions.
+ *
+ * Linear's API is eventually consistent — a GET issued moments after a PUT
+ * can return the previous description for seconds. Polling the GET until
+ * visibility (the prior approach in commit fad4dda1) was too aggressive
+ * (1s timeout) and DOSed itself: planning runs MNG-741 / MNG-736 / MNG-739
+ * (2026-05-12) all failed with "Linear description visibility timed out"
+ * even though every PUT succeeded on Linear's side.
+ *
+ * The new contract: after each successful PUT, store the new description
+ * here. The next `updateDescription` call consults the cache before
+ * mutating — if the GET returned a stale value within the consistency
+ * window, the cached value wins. After TTL the entry is evicted and the
+ * GET becomes authoritative again.
+ *
+ * Scope: in-process only. Cross-process races against Linear's eventual
+ * consistency are NOT new to this fix and were never solved by the
+ * visibility wait — the existing `withDescriptionMutationLock` is
+ * process-local too.
+ */
+const RECENT_DESCRIPTION_TTL_MS = 60_000;
+type RecentDescription = { description: string; timestamp: number };
+const recentDescriptions = new Map<string, RecentDescription>();
+
+function rememberRecentDescription(issueId: string, description: string): void {
+	recentDescriptions.set(issueId, { description, timestamp: Date.now() });
+	// Lazy cleanup — keep the map small without a setInterval.
+	if (recentDescriptions.size > 200) {
+		const cutoff = Date.now() - RECENT_DESCRIPTION_TTL_MS;
+		for (const [id, entry] of recentDescriptions.entries()) {
+			if (entry.timestamp < cutoff) recentDescriptions.delete(id);
+		}
+	}
+}
+
+function recallRecentDescription(issueId: string): string | undefined {
+	const entry = recentDescriptions.get(issueId);
+	if (!entry) return undefined;
+	if (Date.now() - entry.timestamp > RECENT_DESCRIPTION_TTL_MS) {
+		recentDescriptions.delete(issueId);
+		return undefined;
+	}
+	return entry.description;
+}
+
+/**
+ * Test-only escape hatch — each test starts with an empty cache so module-
+ * level state doesn't leak between cases. NOT exported via the public API;
+ * called only from `tests/unit/pm/linear/adapter.test.ts`.
+ */
+export function __resetRecentDescriptionsForTests(): void {
+	recentDescriptions.clear();
+}
 const CASCADE_STATUS_KEYS = new Set([
 	'backlog',
 	'todo',
@@ -341,10 +393,18 @@ export class LinearPMProvider implements PMProvider {
 				throw err;
 			}
 
-			const newDesc = mutate(issue.description ?? '');
+			// Read-after-write consistency: if we recently PUT a newer description
+			// for this issue and the GET above returned the stale pre-PUT value
+			// (Linear's eventual-consistency window), use the cached fresh value
+			// as the source of truth for the mutation. Without this, consecutive
+			// in-process updates can read-modify-write over each other.
+			const cachedDescription = recallRecentDescription(issueId);
+			const baseDescription =
+				cachedDescription !== undefined ? cachedDescription : (issue.description ?? '');
+			const newDesc = mutate(baseDescription);
 			try {
 				await linearClient.updateIssue(issueId, { description: newDesc });
-				await this.waitForDescriptionVisibility(issueId, newDesc);
+				rememberRecentDescription(issueId, newDesc);
 				return;
 			} catch (err) {
 				if (attempt === 0) {
@@ -353,30 +413,6 @@ export class LinearPMProvider implements PMProvider {
 				}
 				throw err;
 			}
-		}
-	}
-
-	private async waitForDescriptionVisibility(
-		issueId: string,
-		expectedDescription: string,
-	): Promise<void> {
-		const startedAt = Date.now();
-		const deadline = startedAt + DESCRIPTION_VISIBILITY_TIMEOUT_MS;
-		const expected = normalizeDescriptionForVisibility(expectedDescription);
-
-		while (true) {
-			const issue = await linearClient.getIssue(issueId);
-			if (normalizeDescriptionForVisibility(issue.description ?? '') === expected) {
-				return;
-			}
-
-			if (Date.now() >= deadline) {
-				throw new Error(
-					`Linear description visibility timed out for issue ${issueId} after ${DESCRIPTION_VISIBILITY_TIMEOUT_MS}ms`,
-				);
-			}
-
-			await sleep(Math.min(DESCRIPTION_VISIBILITY_POLL_MS, Math.max(0, deadline - Date.now())));
 		}
 	}
 
@@ -454,12 +490,4 @@ export class LinearPMProvider implements PMProvider {
 			username: user.email,
 		};
 	}
-}
-
-function normalizeDescriptionForVisibility(description: string): string {
-	return description.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-}
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
 }

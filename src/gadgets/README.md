@@ -40,6 +40,8 @@ comments: {
 
 The canonical parameter name always wins. Aliases are additive; suggestions returned by the fuzzy-matcher always point at the canonical form.
 
+For array-of-object CLI params, the canonical input remains a JSON array. The shared parser also accepts one top-level JSON object and normalizes it to a one-element array so aliases like `--comment '{"path":"src/x.ts","line":1,"body":"nit"}'` behave the way agents naturally expect. Arrays pass through unchanged, and the parser validates only the top-level JSON shape; it does not inspect individual array entries.
+
 ### `cli.fileInputAlternatives`
 
 Opt-in `--<param>-file <path>` escape hatches for long or JSON-shaped payloads that don't survive shell quoting. Pair with `parseAs: 'json'` for array-of-object / object params so the file contents are `JSON.parse`-d before reaching the gadget.
@@ -169,7 +171,7 @@ Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_
 
 ## Reference: `createPRReviewDef`
 
-`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, `fileInputAlternatives` entries for `--body-file` (long review summaries) and `--comments-file` (JSON inline comments), and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
+`src/gadgets/github/definitions.ts` is the reference gadget for spec 014 — it carries `cliAliases: ['comment']` on `comments`, `fileInputAlternatives` entries for `--body-file` (long review summaries, reply bodies, and comment updates) and `--comments-file` (JSON inline comments), and a well-formed `examples` block. Read it before you add a new gadget with array-of-object parameters.
 
 ## Reference: `ReportFriction`
 
