@@ -205,6 +205,13 @@ describe('SentryIssueLifecycleTrigger', () => {
 			expect(result?.agentInput?.alertTitle).toBe('Sentry Issue');
 		});
 
+		it('falls back to default alertTitle when title is stringified undefined', async () => {
+			const result = await trigger.handle(
+				makeIssueLifecycleCtx({ issueOverrides: { title: 'undefined' } }),
+			);
+			expect(result?.agentInput?.alertTitle).toBe('Sentry Issue');
+		});
+
 		it('falls back to permalink for alertIssueUrl when web_url is missing', async () => {
 			const result = await trigger.handle(
 				makeIssueLifecycleCtx({

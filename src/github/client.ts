@@ -94,6 +94,7 @@ export interface FailedWorkflowRuns {
 
 export interface PRDiffFile {
 	filename: string;
+	previousFilename?: string;
 	status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
 	additions: number;
 	deletions: number;
@@ -384,6 +385,7 @@ export const githubClient = {
 		});
 		return data.map((f) => ({
 			filename: f.filename,
+			previousFilename: f.previous_filename,
 			status: f.status as PRDiffFile['status'],
 			additions: f.additions,
 			deletions: f.deletions,

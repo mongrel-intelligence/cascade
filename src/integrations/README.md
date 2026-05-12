@@ -367,9 +367,9 @@ See [spec 016](../../docs/specs/016-pm-image-delivery-reliability.md.done) for t
 materializeAlertWorkItem(source, externalId, project, hints) → pmNativeWorkItemId
 ```
 
-Located at `src/integrations/alerting/_shared/materialize.ts`. Callable from any alerting trigger; today only Sentry's `SentryIssueAlertTrigger` uses it, but the signature is generic (`source: AlertSource`).
+Located at `src/integrations/alerting/_shared/materialize.ts`. Callable from any alerting worker path; today Sentry materializes on the worker side after trigger resolution for event alerts, issue-lifecycle webhooks, and metric alerts.
 
-- **`source`** — `'sentry' | 'pagerduty' | 'datadog' | 'github-alert'` (union grows as new sources are added).
+- **`source`** — `'sentry' | 'sentry-issue' | 'sentry-metric' | 'pagerduty' | 'datadog' | 'github-alert'` (union grows as new sources are added). The Sentry literals distinguish alert-rule event alerts, issue-lifecycle webhooks, and metric alerts so unique external mappings do not collide.
 - **`externalId`** — the alert provider's stable issue/alert ID (e.g. Sentry issue ID `117972276`).
 - **`project`** — the full `ProjectConfig` for the target project. The materializer uses `project.pm` to determine which PM provider to call and which `alerts` slot to create the card in.
 - **`hints`** — `{ title: string; descriptionMarkdown: string }` — content to put in the card. Built by the per-source format helper (see below).
@@ -387,7 +387,9 @@ CREATE UNIQUE INDEX uq_pr_work_items_project_external
   WHERE external_source IS NOT NULL;
 ```
 
-A second Sentry alert for the same issue on the same project hits the unique index and updates the existing row (lazy-heal: if the PM card was deleted, the UPDATE fetches the stored `work_item_id`, calls `getWorkItem`, and re-creates the card on 404). This makes the materializer fully idempotent — the same Sentry issue always produces the same `workItemId`.
+A second Sentry alert for the same source/external ID on the same project hits the unique index and updates the existing row (lazy-heal: if the PM card was deleted, the UPDATE fetches the stored `work_item_id`, calls `getWorkItem`, and re-creates the card on 404). This makes the materializer fully idempotent — the same Sentry source event always produces the same `workItemId`.
+
+After worker-side materialization, the Sentry webhook worker mirrors display metadata back into the resolved `TriggerResult`: `workItemId`, `workItemTitle` from the formatted alert hints, `workItemUrl` from the active PM provider, and the same fields on `agentInput`. Shared run persistence, dashboard headers, environment setup, and progress comments consume those values without alert-specific call-site branches.
 
 ### Required `alerts` slot per provider
 
@@ -407,7 +409,7 @@ A `cascade-alert` label (Trello: `labels['cascade-alert']`; JIRA: `labels.cascad
 
 ### Per-source format helpers
 
-Each alert source has a format helper that maps the raw webhook payload to `AlertHints`. Today only Sentry is implemented (`src/integrations/alerting/_shared/format.ts` → `formatSentryCardBody`). Adding PagerDuty, Datadog, or GitHub Alerts follows this pattern:
+Each alert source has a format helper that maps the raw webhook payload to `AlertHints`. Today Sentry has three helpers in `src/integrations/alerting/_shared/format.ts`: `formatSentryCardBody` (`sentry`), `formatSentryIssueLifecycleCardBody` (`sentry-issue`), and `formatSentryMetricCardBody` (`sentry-metric`). Adding PagerDuty, Datadog, or GitHub Alerts follows this pattern:
 
 1. Add the source literal to `AlertSource` in `src/integrations/alerting/_shared/types.ts`.
 2. Add a `formatXxxCardBody(payload) → AlertHints` function in `format.ts` (or a new per-source file).

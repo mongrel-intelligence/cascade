@@ -198,7 +198,7 @@ Use CreatePRReview with:
 - `body`: Summary of findings (or "LGTM" if no issues)
 - `comments`: Inline comments for specific issues
 
-**CRITICAL**: Inline comments can ONLY be placed on files in the PR diff. If you comment on a file path not in the diff, or use line numbers outside the changed ranges, the entire review will fail. Only add inline comments for files you saw in GetPRDiff output.
+**CRITICAL**: Inline comments can ONLY be placed on files in the PR diff. If you comment on a file path not in the diff, or use line numbers outside the changed ranges, the entire review will fail. Only add inline comments for files you saw in GetPRDiffContext output or files you verified by fetching a skipped file on demand via `cascade-tools scm get-pr-diff --path`.
 
 ### Review Body Format
 

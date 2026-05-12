@@ -35,6 +35,21 @@ export interface ResolveModelConfigOptions {
 	agentInput?: AgentInput;
 }
 
+function buildResolveTaskContext(
+	agentInput: AgentInput | undefined,
+	promptContext: PromptContext | undefined,
+): PromptContext {
+	return {
+		...promptContext,
+		...buildTaskPromptContext({
+			...(agentInput ?? {}),
+			workItemId: agentInput?.workItemId ?? promptContext?.workItemId,
+			prNumber: agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
+			prBranch: agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
+		}),
+	};
+}
+
 export async function resolveModelConfig(options: ResolveModelConfigOptions): Promise<ModelConfig> {
 	const { agentType, project, repoDir, modelOverride, promptContext, dbPartials } = options;
 	const configKey = options.configKey ?? agentType;
@@ -78,21 +93,7 @@ export async function resolveModelConfig(options: ResolveModelConfigOptions): Pr
 	const maxIterations = project.maxIterations;
 
 	// Build task context (shared between project and definition task prompt rendering)
-	const taskContext = {
-		// Forward all prompt context (PM list IDs, vocabulary, etc.) so task
-		// prompts can reference any system-level variable via Eta.
-		...promptContext,
-		// Task-specific fields from agentInput override prompt context
-		...buildTaskPromptContext({
-			workItemId: options.agentInput?.workItemId ?? promptContext?.workItemId,
-			prNumber: options.agentInput?.prNumber ?? (promptContext?.prNumber as number | undefined),
-			prBranch: options.agentInput?.prBranch ?? (promptContext?.prBranch as string | undefined),
-			triggerCommentText: options.agentInput?.triggerCommentText,
-			triggerCommentAuthor: options.agentInput?.triggerCommentAuthor,
-			triggerCommentBody: options.agentInput?.triggerCommentBody,
-			triggerCommentPath: options.agentInput?.triggerCommentPath,
-		}),
-	};
+	const taskContext = buildResolveTaskContext(options.agentInput, promptContext);
 
 	// Resolve task prompt: project override → definition override → undefined (use .eta default)
 	let taskPrompt: string | undefined;

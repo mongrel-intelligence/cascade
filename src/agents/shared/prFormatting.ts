@@ -1,5 +1,6 @@
 import { estimateTokens, REVIEW_DIFF_CONTEXT_TOKEN_LIMIT } from '../../config/reviewConfig.js';
 import type { githubClient } from '../../github/client.js';
+import type { EnrichedPRDiffFile, PatchSourceStatus } from './prDiffSource.js';
 
 type PRDetails = Awaited<ReturnType<typeof githubClient.getPR>>;
 type PRDiff = Awaited<ReturnType<typeof githubClient.getPRDiff>>;
@@ -109,12 +110,19 @@ export function formatPRIssueComments(prIssueComments: PRIssueComments): string 
  * Reason a PR file's diff was omitted from the compact context.
  *
  * - `deleted`: file was removed in the PR (no meaningful diff to read).
- * - `no-patch`: GitHub didn't return a patch (typically binary blobs or files
- *   too large for the diff API).
+ * - `no-patch`: neither GitHub nor local git returned a text patch.
+ * - `local-diff-empty`: GitHub reported a patch, but local git produced none.
+ * - `local-diff-failed`: local git could not produce a verified patch.
  * - `patch-too-large`: the individual file's patch would exceed the per-file cap.
  * - `over-budget`: the cumulative context budget was reached before this file.
  */
-export type SkipReason = 'deleted' | 'no-patch' | 'patch-too-large' | 'over-budget';
+export type SkipReason =
+	| 'deleted'
+	| 'no-patch'
+	| 'local-diff-empty'
+	| 'local-diff-failed'
+	| 'patch-too-large'
+	| 'over-budget';
 
 export interface SkippedFile {
 	filename: string;
@@ -122,8 +130,16 @@ export interface SkippedFile {
 }
 
 export interface PRDiffContext {
-	included: Array<{ path: string; status: PRDiff[number]['status']; diff: string }>;
+	included: Array<{
+		path: string;
+		status: PRDiff[number]['status'];
+		diff: string;
+		patchSource?: PatchSourceStatus;
+		tokens: number;
+	}>;
 	skipped: SkippedFile[];
+	totalDiffTokens: number;
+	perFileTokenCap: number;
 }
 
 /** Per-file cap: any single file's patch over this is skipped as "patch-too-large". */
@@ -133,9 +149,16 @@ const PER_FILE_TOKEN_CAP = Math.floor(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT / 10);
  * Format a single file's compact diff section with a consistent header.
  * Kept internal — callers consume `PRDiffContext.included[].diff` directly.
  */
-function formatCompactDiff(file: PRDiff[number]): string {
+function formatCompactDiff(file: PRDiff[number] | EnrichedPRDiffFile): string {
 	const header = `### ${file.filename} (${file.status}, +${file.additions} -${file.deletions})`;
 	return `${header}\n\n\`\`\`diff\n${file.patch ?? ''}\n\`\`\``;
+}
+
+function skipReasonForUnverified(file: PRDiff[number] | EnrichedPRDiffFile): SkipReason | null {
+	const patchSource = (file as EnrichedPRDiffFile).patchSource;
+	if (patchSource === 'local-diff-failed') return 'local-diff-failed';
+	if (patchSource === 'local-diff-empty') return 'local-diff-empty';
+	return null;
 }
 
 /**
@@ -164,6 +187,11 @@ export function extractPRDiffs(prDiff: PRDiff): PRDiffContext {
 			skipped.push({ filename: file.filename, reason: 'deleted' });
 			continue;
 		}
+		const unverifiedReason = skipReasonForUnverified(file);
+		if (unverifiedReason) {
+			skipped.push({ filename: file.filename, reason: unverifiedReason });
+			continue;
+		}
 		if (!file.patch) {
 			skipped.push({ filename: file.filename, reason: 'no-patch' });
 			continue;
@@ -178,11 +206,17 @@ export function extractPRDiffs(prDiff: PRDiff): PRDiffContext {
 			skipped.push({ filename: file.filename, reason: 'over-budget' });
 			continue;
 		}
-		included.push({ path: file.filename, status: file.status, diff });
+		included.push({
+			path: file.filename,
+			status: file.status,
+			diff,
+			patchSource: (file as EnrichedPRDiffFile).patchSource,
+			tokens,
+		});
 		totalTokens += tokens;
 	}
 
-	return { included, skipped };
+	return { included, skipped, totalDiffTokens: totalTokens, perFileTokenCap: PER_FILE_TOKEN_CAP };
 }
 
 /**
@@ -219,8 +253,8 @@ export function formatSkippedFilesInjection(
 		'',
 		'If any of these files are relevant to your review, fetch them on demand:',
 		prNumber !== undefined
-			? `  • \`gh pr diff ${prNumber} -- <path>\` to read the patch`
-			: '  • `gh pr diff <PR_NUMBER> -- <path>` to read the patch',
+			? `  • \`cascade-tools scm get-pr-diff --prNumber ${prNumber} --path <path>\` to read the patch`
+			: '  • `cascade-tools scm get-pr-diff --prNumber <PR_NUMBER> --path <path>` to read the patch',
 		'  • `Read <path>` to read the post-PR file content',
 		'  • `Grep <pattern> <path>` to search inside the file',
 		'',
@@ -235,6 +269,8 @@ export function countSkipsByReason(skipped: SkippedFile[]): Record<SkipReason, n
 	const counts: Record<SkipReason, number> = {
 		deleted: 0,
 		'no-patch': 0,
+		'local-diff-empty': 0,
+		'local-diff-failed': 0,
 		'patch-too-large': 0,
 		'over-budget': 0,
 	};

@@ -54,7 +54,7 @@ strategies: {}
 
 prompts:
   taskPrompt: |
-    An alert has been triggered: "<%= it.alertTitle %>"
+    An alert has been triggered: "<%= it.alertTitle || it.workItemTitle || it.alertIssueId || 'Sentry alert' %>"
 
     <% if (it.alertIssueUrl) { %>Issue: <%= it.alertIssueUrl %><% } %>
 

@@ -230,6 +230,16 @@ describe('SentryIssueAlertTrigger', () => {
 			expect(result?.agentInput?.alertTitle).toBe('Issue Alert');
 		});
 
+		it('skips empty and stringified undefined title candidates', async () => {
+			const ctx = makeSentryIssueAlertCtx({
+				issueAlertTitle: 'undefined',
+				triggeredRule: '   ',
+				eventOverrides: { title: 'Real event title' },
+			});
+			const result = await trigger.handle(ctx);
+			expect(result?.agentInput?.alertTitle).toBe('Real event title');
+		});
+
 		it('sets alertIssueUrl from event.web_url', async () => {
 			const result = await trigger.handle(makeSentryIssueAlertCtx());
 			expect(result?.agentInput?.alertIssueUrl).toBe('https://sentry.io/issues/issue-42/');
@@ -395,6 +405,15 @@ describe('SentryMetricAlertTrigger', () => {
 		it('uses default alertTitle when all title sources are absent', async () => {
 			const result = await trigger.handle(makeSentryMetricAlertCtx({ action: 'critical' }));
 			expect(result?.agentInput?.alertTitle).toBe('Metric Alert (critical)');
+		});
+
+		it('skips empty and stringified undefined metric title candidates', async () => {
+			const ctx = makeSentryMetricAlertCtx({
+				descriptionTitle: 'undefined',
+				aggregate: ' p95(transaction.duration) ',
+			});
+			const result = await trigger.handle(ctx);
+			expect(result?.agentInput?.alertTitle).toBe('p95(transaction.duration)');
 		});
 
 		it('sets alertIssueUrl from data.web_url', async () => {

@@ -73,4 +73,22 @@ describe('formatSentryCardBody', () => {
 		const result = formatSentryCardBody(fixturePayload);
 		expect(result.descriptionMarkdown).toContain('processWebhook');
 	});
+
+	it('does not use non-useful title candidates', () => {
+		const result = formatSentryCardBody({
+			...fixturePayload,
+			payload: {
+				...fixturePayload.payload,
+				data: {
+					...fixturePayload.payload.data,
+					issue_alert: { title: 'undefined' },
+					triggered_rule: '   ',
+					event: { ...fixturePayload.payload.data.event, title: 'Real event title' },
+				},
+			},
+		});
+
+		expect(result.title).toBe('[Sentry] Real event title');
+		expect(result.title).not.toContain('undefined');
+	});
 });

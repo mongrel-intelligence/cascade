@@ -3,5 +3,10 @@ import { getPRDiffDef } from '../../gadgets/github/definitions.js';
 import { createCLICommand } from '../../gadgets/shared/cliCommandFactory.js';
 
 export default createCLICommand(getPRDiffDef, async (params) => {
-	return getPRDiff(params.owner as string, params.repo as string, params.prNumber as number);
+	return getPRDiff(
+		params.owner as string,
+		params.repo as string,
+		params.prNumber as number,
+		params.path as string | undefined,
+	);
 });

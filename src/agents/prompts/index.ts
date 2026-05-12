@@ -219,10 +219,16 @@ export interface TaskPromptInput {
  * Null handling: all optional fields remain undefined when not present (no 'unknown' defaults).
  */
 export function buildTaskPromptContext(input: TaskPromptInput): TaskPromptContext {
+	const context: TaskPromptContext = {};
+	for (const [key, value] of Object.entries(input)) {
+		if (key === 'project' || key === 'config') continue;
+		if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+			context[key] = value;
+		}
+	}
+
 	return {
-		workItemId: input.workItemId,
-		prNumber: input.prNumber,
-		prBranch: input.prBranch,
+		...context,
 		commentText: input.triggerCommentBody ?? input.triggerCommentText,
 		commentAuthor: input.triggerCommentAuthor,
 		commentBody: input.triggerCommentBody ?? input.triggerCommentText,
@@ -386,6 +392,23 @@ export function getTaskTemplateVariables(): Array<{
 		{ name: 'workItemId', group: 'Work Item', description: 'Work item ID (card or issue)' },
 		{ name: 'commentText', group: 'Comment', description: 'Comment text content (PM comments)' },
 		{ name: 'commentAuthor', group: 'Comment', description: 'Comment author username' },
+		{
+			name: 'alertTitle',
+			group: 'Alerting',
+			description: 'Alert title from the alerting provider',
+		},
+		{
+			name: 'alertIssueUrl',
+			group: 'Alerting',
+			description: 'Human-facing URL for the alerting issue or alert',
+		},
+		{ name: 'alertIssueId', group: 'Alerting', description: 'Alerting provider issue ID' },
+		{ name: 'alertOrgId', group: 'Alerting', description: 'Alerting provider organization ID' },
+		{
+			name: 'alertMetricKey',
+			group: 'Alerting',
+			description: 'Stable metric alert key used for metric alert materialization',
+		},
 		{ name: 'prNumber', group: 'PR', description: 'Pull request number' },
 		{ name: 'prBranch', group: 'PR', description: 'Pull request branch name' },
 		{ name: 'commentBody', group: 'PR Comment', description: 'PR comment body text' },

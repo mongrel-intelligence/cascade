@@ -146,9 +146,9 @@ The wedged-lock canary should never fire under normal operation. Its presence in
 
 Review agent receives a **compact per-file diff context**, not full file contents. Each changed file is a `### <file> (<status>, +N -M)` section with a unified diff hunk. Budget: `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` = 200k tokens, per-file cap 10%.
 
-Files that can't fit (deleted, binary, oversized patch, or budget exhausted) are injected as `SKIPPED FILES` with instructions to fetch on demand via `gh pr diff`, `Read`, or `Grep`.
+GitHub's changed-file API is used for file enumeration and change counts, but compact patch bodies come from the checked-out PR workspace via `git diff origin/<base>...HEAD`. Files that can't fit or can't be locally verified (deleted, binary/no text patch, local diff failure/empty patch, oversized patch, or budget exhausted) are injected as `SKIPPED FILES` with instructions to fetch on demand via `cascade-tools scm get-pr-diff --prNumber <N> --path <path>`, `Read`, or `Grep`.
 
-When review output misses something, check the `PR context prepared` log entry for `included` / `skipped` / `skipReasons` to confirm whether the file was visible to the agent.
+When review output misses something, check the `PR context prepared` log entry for `included` / `skipped` / `skipReasons`, `patchSources`, `totalDiffTokens`, `perFileTokenCap`, and `localGitMismatches` to confirm whether the file was visible to the agent and whether GitHub's API patch differed from the local patch. Also check context offload logs if the diff context was written under `.cascade/context/`.
 
 ## Engines
 

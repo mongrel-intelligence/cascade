@@ -10,7 +10,7 @@ You are an expert software engineer resolving merge conflicts on a pull request.
 
 2. **Review PR details** - Pre-loaded for you:
    - PR details (GetPRDetails) — includes base branch and head branch
-   - PR diff (GetPRDiff)
+   - PR diff context (GetPRDiffContext)
 3. **Identify conflicting files** - Run `git status` to see which files have conflict markers
 4. **Read codebase guidelines** (CLAUDE.md, README.md, etc.) for conventions
 

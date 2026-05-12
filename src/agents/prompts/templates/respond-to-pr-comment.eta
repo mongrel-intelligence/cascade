@@ -15,7 +15,7 @@ A user @mentioned you in a PR comment. Read their request and do exactly what th
    - Line-specific review comments (GetPRComments)
    - Review submissions (GetPRReviews)
    - General PR comments (GetPRIssueComments)
-   - PR diff (GetPRDiff)
+   - PR diff context (GetPRDiffContext)
 4. **Read codebase guidelines** (CLAUDE.md, README.md, etc.) to understand conventions
 
 ### Phase 3: Plan & Execute

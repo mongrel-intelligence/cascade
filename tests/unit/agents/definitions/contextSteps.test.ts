@@ -15,6 +15,16 @@ vi.mock('../../../../src/gadgets/todo/storage.js', () => ({
 const mockTrelloDownload = vi.fn();
 const mockJiraDownload = vi.fn();
 const mockLinearDownload = vi.fn();
+const mockGetIssueEvent = vi.fn();
+const mockGetIssue = vi.fn();
+const mockSourceLocalPRDiffs = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../src/sentry/client.js', () => ({
+	getSentryClient: vi.fn(() => ({
+		getIssueEvent: mockGetIssueEvent,
+		getIssue: mockGetIssue,
+	})),
+}));
 
 vi.mock('../../../../src/trello/client.js', () => ({
 	trelloClient: {
@@ -47,8 +57,13 @@ vi.mock('../../../../src/github/client.js', () => ({
 	},
 }));
 
+vi.mock('../../../../src/agents/shared/prDiffSource.js', () => ({
+	sourceLocalPRDiffs: mockSourceLocalPRDiffs,
+}));
+
 import type { FetchContextParams } from '../../../../src/agents/definitions/contextSteps.js';
 import {
+	fetchAlertingIssueStep,
 	fetchPRContextStep,
 	fetchWorkItemStep,
 	prepopulateTodosStep,
@@ -73,6 +88,18 @@ function makeParams(input: Partial<AgentInput>): FetchContextParams {
 		repoDir: '/tmp/repo',
 		contextFiles: [],
 		logWriter: vi.fn(),
+	};
+}
+
+function makeLocalDiffSourceFile(file: Record<string, unknown>) {
+	const patch = typeof file.patch === 'string' ? file.patch : undefined;
+	return {
+		...file,
+		patchSource: patch ? 'local-git' : 'no-patch',
+		localPatchChars: patch?.length ?? 0,
+		githubPatchChars: patch?.length ?? 0,
+		localHunkCount: patch ? 1 : 0,
+		githubHunkCount: patch ? 1 : 0,
 	};
 }
 
@@ -502,8 +529,79 @@ describe('fetchWorkItemStep', () => {
 	});
 });
 
+describe('fetchAlertingIssueStep', () => {
+	beforeEach(() => {
+		mockGetIssueEvent.mockReset();
+		mockGetIssue.mockReset();
+	});
+
+	it('uses alertIssueUrl from agent input in preloaded event context', async () => {
+		mockGetIssueEvent.mockResolvedValue({
+			eventID: 'evt-1',
+			title: 'TypeError: object is not iterable',
+		});
+
+		const result = await fetchAlertingIssueStep(
+			makeParams({
+				alertIssueId: '119054737',
+				alertOrgId: 'mongrel',
+				alertTitle: 'TypeError group',
+				alertIssueUrl: 'https://sentry.io/organizations/mongrel/issues/119054737/',
+			}),
+		);
+
+		expect(mockGetIssueEvent).toHaveBeenCalledWith('mongrel', '119054737', 'latest');
+		expect(mockGetIssue).not.toHaveBeenCalled();
+		expect(result[0].result).toContain(
+			'Sentry issue: https://sentry.io/organizations/mongrel/issues/119054737/',
+		);
+		expect(result[0].result).toContain('Issue ID: 119054737');
+		expect(result[0].result).toContain('Issue title: TypeError group');
+	});
+
+	it('falls back to Sentry issue metadata when alertIssueUrl is absent', async () => {
+		mockGetIssueEvent.mockResolvedValue({
+			eventID: 'evt-1',
+			title: 'TypeError: object is not iterable',
+		});
+		mockGetIssue.mockResolvedValue({
+			id: '119054737',
+			title: 'TypeError group',
+			permalink: 'https://sentry.io/organizations/mongrel/issues/119054737/',
+		});
+
+		const result = await fetchAlertingIssueStep(
+			makeParams({ alertIssueId: '119054737', alertOrgId: 'mongrel' }),
+		);
+
+		expect(mockGetIssue).toHaveBeenCalledWith('mongrel', '119054737');
+		expect(result[0].result).toContain(
+			'Sentry issue: https://sentry.io/organizations/mongrel/issues/119054737/',
+		);
+	});
+
+	it('returns event details when issue metadata fetch fails', async () => {
+		mockGetIssueEvent.mockResolvedValue({
+			eventID: 'evt-1',
+			title: 'TypeError: object is not iterable',
+		});
+		mockGetIssue.mockRejectedValue(new Error('metadata unavailable'));
+
+		const result = await fetchAlertingIssueStep(
+			makeParams({ alertIssueId: '119054737', alertOrgId: 'mongrel' }),
+		);
+
+		expect(result[0].result).toContain('Event ID: evt-1');
+		expect(result[0].result).not.toContain('Sentry issue:');
+	});
+});
+
 describe('fetchPRContextStep — compact diffs + SKIPPED FILES contract', () => {
 	beforeEach(() => {
+		mockSourceLocalPRDiffs.mockImplementation(async ({ files }) => ({
+			files: files.map(makeLocalDiffSourceFile),
+			mismatches: [],
+		}));
 		mockGetPR.mockResolvedValue({
 			number: 1092,
 			title: 'Test PR',
@@ -589,7 +687,7 @@ describe('fetchPRContextStep — compact diffs + SKIPPED FILES contract', () => 
 		expect(skipped).toBeDefined();
 		expect(skipped?.result as string).toContain('legacy.ts');
 		expect(skipped?.result as string).toContain('deleted');
-		expect(skipped?.result as string).toContain('gh pr diff 1092');
+		expect(skipped?.result as string).toContain('cascade-tools scm get-pr-diff --prNumber 1092');
 		expect(skipped?.result as string).toContain('Read');
 	});
 
@@ -649,7 +747,154 @@ describe('fetchPRContextStep — compact diffs + SKIPPED FILES contract', () => 
 				included: 1,
 				skipped: 2,
 				skipReasons: expect.objectContaining({ deleted: 1, 'no-patch': 1 }),
+				patchSources: expect.objectContaining({ 'local-git': 1, 'no-patch': 2 }),
+				totalDiffTokens: expect.any(Number),
+				perFileTokenCap: expect.any(Number),
+				localGitMismatches: [],
 			}),
+		);
+	});
+
+	it('uses local-git patch bodies for compact diff context', async () => {
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'server/lib/calendar/eventContextService.ts',
+				status: 'modified',
+				additions: 3,
+				deletions: 1,
+				changes: 4,
+				patch: '@@ -1 +1 @@\n+api hunk',
+			},
+		]);
+		mockSourceLocalPRDiffs.mockResolvedValue({
+			files: [
+				{
+					filename: 'server/lib/calendar/eventContextService.ts',
+					status: 'modified',
+					additions: 3,
+					deletions: 1,
+					changes: 4,
+					patch: '@@ -1 +1 @@\n+api hunk\n@@ -50 +50 @@\n+local-only central hunk',
+					patchSource: 'local-git',
+					localPatchChars: 64,
+					githubPatchChars: 20,
+					localHunkCount: 2,
+					githubHunkCount: 1,
+				},
+			],
+			mismatches: [
+				{
+					filename: 'server/lib/calendar/eventContextService.ts',
+					localPatchChars: 64,
+					githubPatchChars: 20,
+					localHunkCount: 2,
+					githubHunkCount: 1,
+				},
+			],
+		});
+
+		const params = makePRParams();
+		const injections = await fetchPRContextStep(params);
+
+		const diffInjection = injections.find((i) => i.description === 'Pre-fetched PR diff context');
+		expect(diffInjection?.result as string).toContain('local-only central hunk');
+		expect(injections.some((i) => i.toolName === 'GetPRDiff')).toBe(false);
+		expect(params.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'PR context prepared',
+			expect.objectContaining({
+				localGitMismatches: [
+					expect.objectContaining({
+						filename: 'server/lib/calendar/eventContextService.ts',
+						localHunkCount: 2,
+						githubHunkCount: 1,
+					}),
+				],
+			}),
+		);
+	});
+
+	it('skips local diff failures instead of including GitHub API patches', async () => {
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/a.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@ -1 +1 @@\n+api-only',
+			},
+		]);
+		mockSourceLocalPRDiffs.mockResolvedValue({
+			files: [
+				{
+					filename: 'src/a.ts',
+					status: 'modified',
+					additions: 1,
+					deletions: 0,
+					changes: 1,
+					patch: undefined,
+					patchSource: 'local-diff-failed',
+					localPatchChars: 0,
+					githubPatchChars: 18,
+					localHunkCount: 0,
+					githubHunkCount: 1,
+				},
+			],
+			mismatches: [],
+		});
+
+		const injections = await fetchPRContextStep(makePRParams());
+
+		const diffInjection = injections.find((i) => i.description === 'Pre-fetched PR diff context');
+		expect(diffInjection?.result as string).not.toContain('api-only');
+		const skipped = injections.find((i) => i.description === 'Skipped files');
+		expect(skipped?.result as string).toContain('src/a.ts');
+		expect(skipped?.result as string).toContain('local-diff-failed');
+	});
+
+	it('passes prDetails.baseRef (not project baseBranch) to sourceLocalPRDiffs for stacked PRs', async () => {
+		// When a stacked PR targets a feature branch (e.g. 'parent-feature') instead of
+		// the project's default base branch (e.g. 'main'), the local diff should be
+		// computed against the PR's actual base ref so parent-branch commits are not
+		// included in the review context.
+		mockGetPR.mockResolvedValueOnce({
+			number: 1092,
+			title: 'Stacked PR',
+			body: 'Stacked on parent-feature',
+			state: 'open',
+			htmlUrl: 'https://github.com/o/r/pull/1092',
+			headRef: 'stacked-feature',
+			headSha: 'abc123',
+			baseRef: 'parent-feature',
+			merged: false,
+			mergeable: true,
+			user: { login: 'dev' },
+		});
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/stacked.ts',
+				status: 'added',
+				additions: 3,
+				deletions: 0,
+				changes: 3,
+				patch: '@@ -0,0 +1,3 @@\n+const pr = 3',
+			},
+		]);
+
+		const params = makeParams({
+			prNumber: 1092,
+			repoFullName: 'o/r',
+		});
+		// Provide a project with a different baseBranch to confirm it is ignored
+		(params as FetchContextParams & { project?: { baseBranch: string } }).project = {
+			baseBranch: 'main',
+		} as never;
+
+		await fetchPRContextStep(params as FetchContextParams);
+
+		expect(mockSourceLocalPRDiffs).toHaveBeenCalledWith(
+			expect.objectContaining({ baseBranch: 'parent-feature' }),
 		);
 	});
 });

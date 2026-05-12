@@ -19,6 +19,7 @@
  */
 
 import { AlertSlotMissingError } from '../../integrations/alerting/_shared/types.js';
+import { pmRegistry } from '../../pm/registry.js';
 import type { SentryAugmentedPayload } from '../../sentry/types.js';
 import type { ProjectConfig, TriggerResult } from '../../types/index.js';
 import { startWatchdog } from '../../utils/lifecycle.js';
@@ -65,39 +66,36 @@ async function materializeSentryAlertWorkItem(
 
 	const augmented = payload as SentryAugmentedPayload;
 	try {
-		let workItemId: string;
+		let source: Parameters<typeof materializeAlertWorkItem>[0];
+		let externalId: string;
+		let hints: Parameters<typeof materializeAlertWorkItem>[3];
 		if (triggerEvent === TRIGGER_EVENTS.ALERTING.ISSUE_LIFECYCLE && alertIssueId) {
 			// Sentry-Hook-Resource: issue (Internal Integration default surface).
 			// Distinct AlertSource ('sentry-issue') from event_alert ('sentry') so the
 			// partial-unique (project_id, external_source, external_id) index doesn't
 			// collide if the same Sentry issue arrives via both surfaces.
-			workItemId = await materializeAlertWorkItem(
-				'sentry-issue',
-				alertIssueId,
-				project,
-				formatSentryIssueLifecycleCardBody(augmented),
-			);
+			source = 'sentry-issue';
+			externalId = alertIssueId;
+			hints = formatSentryIssueLifecycleCardBody(augmented);
 		} else if (alertIssueId) {
 			// event_alert path (Sentry Alert Rule firings).
-			workItemId = await materializeAlertWorkItem(
-				'sentry',
-				alertIssueId,
-				project,
-				formatSentryCardBody(augmented),
-			);
+			source = 'sentry';
+			externalId = alertIssueId;
+			hints = formatSentryCardBody(augmented);
 		} else {
 			// alertMetricKey is guaranteed non-null here (checked above).
-			workItemId = await materializeAlertWorkItem(
-				'sentry-metric',
-				alertMetricKey as string,
-				project,
-				formatSentryMetricCardBody(augmented),
-			);
+			source = 'sentry-metric';
+			externalId = alertMetricKey as string;
+			hints = formatSentryMetricCardBody(augmented);
 		}
+		const workItemId = await materializeAlertWorkItem(source, externalId, project, hints);
+		const workItemUrl = pmRegistry.createProvider(project).getWorkItemUrl(workItemId);
 		return {
 			...result,
 			workItemId,
-			agentInput: { ...result.agentInput, workItemId },
+			workItemTitle: hints.title,
+			workItemUrl,
+			agentInput: { ...result.agentInput, workItemId, workItemTitle: hints.title, workItemUrl },
 		};
 	} catch (err) {
 		if (err instanceof AlertSlotMissingError) {

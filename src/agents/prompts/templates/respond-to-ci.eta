@@ -10,7 +10,7 @@ You are an expert software engineer fixing CI check failures on a pull request.
 
 2. **Review CI failures** - Pre-loaded for you:
    - PR details (GetPRDetails)
-   - PR diff (GetPRDiff)
+   - PR diff context (GetPRDiffContext)
    - Check run status summary (GetPRChecks)
 3. **Get failed check logs** - Use the `GetCIRunLogs` gadget with the PR's head SHA to fetch failed CI run logs
 4. **Read codebase guidelines** (CLAUDE.md, README.md, etc.) for conventions

@@ -141,7 +141,7 @@ describe('GetPRDiff command', () => {
 		const cmd = new GetPRDiff(['--prNumber', '15'], makeMockConfig() as never);
 		await cmd.run();
 
-		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15);
+		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, undefined);
 	});
 
 	it('resolves owner/repo from env vars', async () => {
@@ -150,7 +150,17 @@ describe('GetPRDiff command', () => {
 		const cmd = new GetPRDiff(['--prNumber', '99'], makeMockConfig() as never);
 		await cmd.run();
 
-		expect(getPRDiff).toHaveBeenCalledWith('acme', 'webapp', 99);
+		expect(getPRDiff).toHaveBeenCalledWith('acme', 'webapp', 99, undefined);
+	});
+
+	it('passes optional path to getPRDiff', async () => {
+		const cmd = new GetPRDiff(
+			['--prNumber', '15', '--path', 'src/old.ts'],
+			makeMockConfig() as never,
+		);
+		await cmd.run();
+
+		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, 'src/old.ts');
 	});
 
 	it('outputs JSON success result', async () => {

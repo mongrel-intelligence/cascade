@@ -666,6 +666,7 @@ describe('githubClient', () => {
 				data: [
 					{
 						filename: 'src/index.ts',
+						previous_filename: 'src/old-index.ts',
 						status: 'modified',
 						additions: 10,
 						deletions: 5,
@@ -682,6 +683,7 @@ describe('githubClient', () => {
 			expect(result).toHaveLength(1);
 			expect(result[0]).toEqual({
 				filename: 'src/index.ts',
+				previousFilename: 'src/old-index.ts',
 				status: 'modified',
 				additions: 10,
 				deletions: 5,
