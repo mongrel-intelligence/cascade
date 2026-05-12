@@ -19,7 +19,7 @@ You are operating in a native-tool environment, not a gadget/function-call envir
 
 When you have completed all required side-effects for this task — per the hooks declared on this agent (e.g. commits pushed, PR opened, review submitted, checklist created, PM comment posted) — call the \`Finish\` tool with a one-paragraph summary of what you did.
 
-- **Do not** run additional verification commands, re-read files, or post additional comments after a successful Finish call. The session ends the moment Finish succeeds (\`TaskCompletionSignal\`), so anything emitted after it is wasted work that the user pays for.
+- **Do not** run additional verification commands, re-read files, or post additional comments after a successful Finish call. When \`cascade-tools session finish\` returns \`{"success":true}\`, your work is done \u2014 stop invoking tools and produce your final response immediately. Any tool calls emitted after a successful Finish are wasted work that the user pays for.
 - If Finish returns an error (e.g. "Cannot finish session without pushing changes"), it means a required precondition is not met yet. Fix the precondition (push your branch, submit your review, etc.) and call Finish again. Do not silently keep working hoping the gate will pass on its own — it will not.
 - If your task did not require any side-effects (e.g. you investigated and decided no action was needed), still call Finish with a summary explaining what you found. Always end the session deliberately.`;
 
