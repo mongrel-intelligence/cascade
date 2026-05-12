@@ -425,6 +425,12 @@ interface PipelineSnapshotSummary {
 	provider: string;
 	statuses: Partial<Record<PipelineStatusKey, PipelineStatusSummary>>;
 	activePipelineCount: number;
+	/**
+	 * `true` when all active-status list fetches (todo, inProgress, inReview) succeeded.
+	 * `false` when any active-status fetch failed — the count is a lower bound, not authoritative.
+	 * When false, the backlog-manager MUST abort without moving items.
+	 */
+	activeCapacityReliable: boolean;
 	activeStatusKeys: PipelineStatusKey[];
 	itemsById: Record<string, PipelineItemSummary>;
 	errors: Array<{ statusKey?: PipelineStatusKey; itemId?: string; message: string }>;
@@ -688,11 +694,18 @@ function buildPipelineSnapshotSummary(
 		0,
 	);
 
+	// If any active-status list fetch failed, the count is a lower bound, not authoritative.
+	// Callers must treat capacity as unknown and abort moves when this is false.
+	const activeCapacityReliable = ACTIVE_PIPELINE_STATUS_KEYS.every(
+		(statusKey) => !statuses[statusKey]?.error,
+	);
+
 	return {
 		schemaVersion: 1,
 		provider: provider.type,
 		statuses,
 		activePipelineCount,
+		activeCapacityReliable,
 		activeStatusKeys: ACTIVE_PIPELINE_STATUS_KEYS,
 		itemsById,
 		errors,

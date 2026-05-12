@@ -215,6 +215,16 @@ describe('system prompts content', () => {
 		expect(prompt).not.toContain('legacy markdown Pipeline Snapshot');
 	});
 
+	it('backlog-manager prompt aborts moves when activeCapacityReliable is false', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('activeCapacityReliable');
+		expect(prompt).toContain('abort immediately');
+		// The abort instruction must appear before backlog selection guidance
+		const abortIdx = prompt.indexOf('activeCapacityReliable');
+		const selectionIdx = prompt.indexOf('Backlog Selection Process');
+		expect(abortIdx).toBeLessThan(selectionIdx);
+	});
+
 	it('backlog-manager prompt targets all-blocked comment to first BACKLOG item only', () => {
 		const prompt = getSystemPrompt('backlog-manager');
 		expect(prompt).toContain(

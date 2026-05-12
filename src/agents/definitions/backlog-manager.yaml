@@ -72,7 +72,7 @@ prompts:
   taskPrompt: |
     A PipelineSnapshotSummary JSON object has been pre-loaded into your context with the current state of all pipeline statuses (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
 
-    1. Parse PipelineSnapshotSummary and use activePipelineCount for items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
+    1. Parse PipelineSnapshotSummary. If activeCapacityReliable is false, abort immediately — capacity count is unreliable due to a fetch error; do not move any items. Otherwise use activePipelineCount for items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
     2. If the count is below the capacity limit (see system prompt): use PipelineSnapshotSummary.statuses.backlog.itemIds in provider order plus itemsById details to select ALL eligible unblocked items to fill remaining capacity completely — always move the maximum number possible.
     3. If already at or above capacity: exit immediately without taking action.
     4. If every BACKLOG item is blocked, post one Backlog Blocked comment on the first BACKLOG item in PipelineSnapshotSummary.statuses.backlog.itemIds order. If BACKLOG is empty, exit silently.

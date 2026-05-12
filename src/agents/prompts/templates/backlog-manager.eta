@@ -29,6 +29,8 @@ A `PipelineSnapshotSummary` JSON object has been pre-loaded into your context co
    - `inProgress`
    - `inReview`
 
+   **If `activeCapacityReliable` is `false`, abort immediately** — one or more active-status list fetches failed and the pipeline count is a lower bound, not authoritative. Do NOT move any items when capacity is unknown. Exit without posting comments.
+
 2. **Capacity check**: If the count of active <%= it.workItemNounPlural || 'cards' %> (TODO + IN PROGRESS + IN REVIEW) is **>= <%= it.maxInFlightItems ?? 1 %>** (the capacity limit):
    - Exit immediately - the pipeline is at capacity
    - Do NOT post any comments, do NOT scan the backlog

@@ -349,6 +349,54 @@ describe('fetchPipelineSnapshotStep', () => {
 		);
 	});
 
+	it('sets activeCapacityReliable false when an active status fetch fails', async () => {
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'todo') throw new Error('TODO fetch failed');
+			return [];
+		});
+
+		const result = await fetchPipelineSnapshotStep(makeParams({}, makeProject()));
+		const summary = parseSummary(result);
+
+		expect(summary.activeCapacityReliable).toBe(false);
+		expect(summary.activePipelineCount).toBe(0);
+		expect(summary.statuses.todo.error).toBe('TODO fetch failed');
+	});
+
+	it('sets activeCapacityReliable false when any active status (inProgress or inReview) fails', async () => {
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			if (filter?.status === 'inReview') throw new Error('inReview fetch failed');
+			return [];
+		});
+
+		const result = await fetchPipelineSnapshotStep(makeParams({}, makeProject()));
+		const summary = parseSummary(result);
+
+		expect(summary.activeCapacityReliable).toBe(false);
+		expect(summary.statuses.inReview.error).toBe('inReview fetch failed');
+	});
+
+	it('sets activeCapacityReliable true when all active status fetches succeed (non-active error does not affect it)', async () => {
+		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
+			// done/merged failing should not affect active capacity reliability
+			if (filter?.status === 'done') throw new Error('done fetch failed');
+			return [];
+		});
+
+		const result = await fetchPipelineSnapshotStep(makeParams({}, makeProject()));
+		const summary = parseSummary(result);
+
+		expect(summary.activeCapacityReliable).toBe(true);
+		expect(summary.statuses.done.error).toBe('done fetch failed');
+	});
+
+	it('sets activeCapacityReliable true when no fetch errors occur', async () => {
+		const result = await fetchPipelineSnapshotStep(makeParams({}, makeProject()));
+		const summary = parseSummary(result);
+
+		expect(summary.activeCapacityReliable).toBe(true);
+	});
+
 	it('extracts dependency signals from descriptions, comments, checklists, issue IDs, URLs, and keywords', async () => {
 		mockProvider.listWorkItems.mockImplementation(async (_containerId, filter) => {
 			if (filter?.status !== 'backlog') return [];
