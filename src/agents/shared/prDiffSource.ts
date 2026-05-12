@@ -177,11 +177,20 @@ export async function sourceLocalPRDiffs(params: {
 			continue;
 		}
 
-		const patch = result.stdout.trimEnd();
-		const localPatchChars = patch.length;
-		const localHunkCount = countDiffHunks(patch);
+		const rawLocalPatch = result.stdout.trimEnd();
+		const localHunkCount = countDiffHunks(rawLocalPatch);
+		const localPatchChars = rawLocalPatch.length;
+
+		// Binary files produce a non-empty metadata line ("Binary files ... differ")
+		// but contain no @@ hunks. Detect this via the 'Binary files' marker so the
+		// file is listed in SKIPPED FILES rather than injected into review context as
+		// a misleading 'local-git' patch containing binary metadata. Pure renames
+		// also have no @@ hunks but carry 'rename from'/'rename to' metadata that IS
+		// meaningful, so they intentionally pass this guard and remain 'local-git'.
+		const hasBinaryMarker = /^Binary files /m.test(rawLocalPatch);
+		const patch = rawLocalPatch.length > 0 && !hasBinaryMarker ? rawLocalPatch : undefined;
 		const patchSource: PatchSourceStatus =
-			patch.length > 0 ? 'local-git' : file.patch ? 'local-diff-empty' : 'no-patch';
+			patch !== undefined ? 'local-git' : file.patch ? 'local-diff-empty' : 'no-patch';
 		const enrichedFile: EnrichedPRDiffFile = {
 			...file,
 			patch,

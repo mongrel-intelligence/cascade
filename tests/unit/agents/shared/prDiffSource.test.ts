@@ -266,4 +266,58 @@ describe('sourceLocalPRDiffs', () => {
 		expect(result.files[0].patch).toContain('rename to new.ts');
 		expect(result.files[0].patch).not.toContain('new file mode');
 	});
+
+	it('classifies binary files as no-patch instead of local-git', async () => {
+		// Regression for binary diff metadata: git diff emits
+		// "Binary files /dev/null and b/blob.bin differ" with no @@ hunks, but the
+		// output is non-empty. The helper must not classify this as 'local-git' —
+		// binary files should be listed in SKIPPED FILES rather than injecting
+		// misleading binary metadata into the review context.
+		const remoteDir = mkdtempSync(join(tmpdir(), 'cascade-remote-binary-'));
+		tempDirs.push(remoteDir);
+		execFileSync('git', ['init', '--bare'], { cwd: remoteDir, stdio: 'pipe' });
+
+		const dir = mkdtempSync(join(tmpdir(), 'cascade-pr-diff-binary-'));
+		tempDirs.push(dir);
+		git(dir, 'init');
+		git(dir, 'config', 'user.email', 'test@example.com');
+		git(dir, 'config', 'user.name', 'Test User');
+		git(dir, 'remote', 'add', 'origin', remoteDir);
+
+		// Base commit with only a text file
+		writeFileSync(join(dir, 'text.ts'), 'const a = 1;\n');
+		git(dir, 'add', 'text.ts');
+		git(dir, 'commit', '-m', 'base');
+		git(dir, 'push', 'origin', 'HEAD:refs/heads/main');
+		git(dir, 'checkout', '-b', 'feature');
+
+		// PR commit: add a binary file (null byte causes git to treat it as binary)
+		writeFileSync(join(dir, 'blob.bin'), Buffer.from([0x00, 0xff, 0x00, 0xff]));
+		git(dir, 'add', 'blob.bin');
+		git(dir, 'commit', '-m', 'add binary blob');
+
+		const result = await sourceLocalPRDiffs({
+			files: [
+				makeFile({
+					filename: 'blob.bin',
+					status: 'added',
+					additions: 0,
+					deletions: 0,
+					changes: 0,
+					patch: undefined, // GitHub returns no patch for binary files
+				}),
+			],
+			repoDir: dir,
+			baseBranch: 'main',
+			logWriter: vi.fn(),
+		});
+
+		expect(result.files).toHaveLength(1);
+		// Binary diffs must NOT be classified as local-git (the regression guard)
+		expect(result.files[0].patchSource).not.toBe('local-git');
+		// GitHub also has no patch — so this should be no-patch, not local-diff-empty
+		expect(result.files[0].patchSource).toBe('no-patch');
+		// The patch field must be undefined — no binary metadata passed to the LLM
+		expect(result.files[0].patch).toBeUndefined();
+	});
 });
