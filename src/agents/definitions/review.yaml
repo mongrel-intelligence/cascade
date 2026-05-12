@@ -70,12 +70,17 @@ prompts:
     diff hunk. Only the changed lines are in your context; unchanged parts of
     a file are not echoed. Use `Read <path>` if you need surrounding code.
 
-    If a **`SKIPPED FILES`** injection is present, those files were omitted from
-    the compact context (because they were deleted, binary, their patch was too
-    large, or the cumulative diff budget was reached). When any skipped file is
-    relevant to your review, fetch it on demand:
+    GitHub is used to enumerate changed files, but compact patch bodies are
+    produced from the checked-out local PR workspace so the context is not
+    limited by GitHub's `pulls.listFiles().patch` truncation behavior.
 
-      - `gh pr diff <%= it.prNumber %> -- <path>` to read the file's patch
+    If a **`SKIPPED FILES`** injection is present, those files were omitted from
+    the compact context (because they were deleted, binary, could not be locally
+    diffed, their patch was too large, or the cumulative diff budget was
+    reached). When any skipped file is relevant to your review, fetch it on
+    demand:
+
+      - `cascade-tools scm get-pr-diff --prNumber <%= it.prNumber %> --path <path>` to read the file's patch
       - `Read <path>` to read the post-PR file content
       - `Grep <pattern> <path>` to search inside the file
 

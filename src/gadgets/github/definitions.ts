@@ -328,6 +328,12 @@ export const getPRDiffDef: ToolDefinition = {
 			describe: 'The pull request number',
 			required: true,
 		},
+		path: {
+			type: 'string',
+			describe:
+				'Optional changed-file path to fetch. Matches either the current filename or previous filename for renames.',
+			required: false,
+		},
 	},
 	examples: [
 		{

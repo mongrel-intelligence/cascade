@@ -23,12 +23,12 @@ import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import type { ContextInjection, LogWriter } from '../contracts/index.js';
+import { sourceLocalPRDiffs } from '../shared/prDiffSource.js';
 import {
 	countSkipsByReason,
 	extractPRDiffs,
 	formatPRComments,
 	formatPRDetails,
-	formatPRDiff,
 	formatPRDiffContext,
 	formatPRIssueComments,
 	formatPRReviews,
@@ -156,7 +156,6 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 	const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, prDetails.headSha);
 
 	const prDetailsFormatted = formatPRDetails(prDetails);
-	const diffFormatted = formatPRDiff(prDiff);
 	const checkStatusFormatted = formatCheckStatus(prNumber, checkStatus);
 
 	injections.push({
@@ -164,13 +163,6 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 		params: { comment: 'Pre-fetching PR details for review context', owner, repo, prNumber },
 		result: prDetailsFormatted,
 		description: 'Pre-fetched PR details',
-	});
-
-	injections.push({
-		toolName: 'GetPRDiff',
-		params: { comment: 'Pre-fetching PR diff for code review', owner, repo, prNumber },
-		result: diffFormatted,
-		description: 'Pre-fetched PR diff',
 	});
 
 	injections.push({
@@ -186,12 +178,27 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 	// Compact per-file diffs (scales with PR size, not repo size). Files that
 	// don't fit the budget or can't be diffed are surfaced in a separate
 	// SKIPPED FILES injection so the agent can decide whether to fetch them.
-	const diffContext = extractPRDiffs(prDiff);
+	const baseBranch = params.project?.baseBranch ?? 'main';
+	const localDiffSource = await sourceLocalPRDiffs({
+		files: prDiff,
+		repoDir: params.repoDir,
+		baseBranch,
+		logWriter: params.logWriter,
+	});
+	const diffContext = extractPRDiffs(localDiffSource.files);
 	const skipReasons = countSkipsByReason(diffContext.skipped);
+	const patchSources = localDiffSource.files.reduce<Record<string, number>>((acc, file) => {
+		acc[file.patchSource] = (acc[file.patchSource] ?? 0) + 1;
+		return acc;
+	}, {});
 	params.logWriter('INFO', 'PR context prepared', {
 		included: diffContext.included.length,
 		skipped: diffContext.skipped.length,
 		skipReasons,
+		patchSources,
+		totalDiffTokens: diffContext.totalDiffTokens,
+		perFileTokenCap: diffContext.perFileTokenCap,
+		localGitMismatches: localDiffSource.mismatches.slice(0, 20),
 	});
 
 	injections.push({

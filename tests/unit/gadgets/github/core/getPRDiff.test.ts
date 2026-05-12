@@ -64,6 +64,52 @@ describe('getPRDiff', () => {
 		expect(result).toBe('No files changed in this PR.');
 	});
 
+	it('filters by current or previous filename when path is supplied', async () => {
+		mockGithub.getPRDiff.mockResolvedValue([
+			{
+				filename: 'src/new.ts',
+				previousFilename: 'src/old.ts',
+				status: 'renamed',
+				additions: 1,
+				deletions: 1,
+				changes: 2,
+				patch: '@@ -1 +1 @@',
+			},
+			{
+				filename: 'src/other.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@ -2 +2 @@',
+			},
+		] as Awaited<ReturnType<typeof mockGithub.getPRDiff>>);
+
+		const result = await getPRDiff('owner', 'repo', 42, 'src/old.ts');
+
+		expect(result).toContain('1 file(s) changed:');
+		expect(result).toContain('## src/new.ts');
+		expect(result).toContain('Previous filename: src/old.ts');
+		expect(result).not.toContain('src/other.ts');
+	});
+
+	it('returns a clear message when path filter matches no changed file', async () => {
+		mockGithub.getPRDiff.mockResolvedValue([
+			{
+				filename: 'src/other.ts',
+				status: 'modified',
+				additions: 1,
+				deletions: 0,
+				changes: 1,
+				patch: '@@ -2 +2 @@',
+			},
+		] as Awaited<ReturnType<typeof mockGithub.getPRDiff>>);
+
+		const result = await getPRDiff('owner', 'repo', 42, 'src/missing.ts');
+
+		expect(result).toBe('No changed file matched path: src/missing.ts');
+	});
+
 	it('returns error message string when githubClient throws', async () => {
 		mockGithub.getPRDiff.mockRejectedValue(new Error('API rate limit exceeded'));
 

@@ -164,7 +164,6 @@ import {
 import {
 	formatPRComments,
 	formatPRDetails,
-	formatPRDiff,
 	formatPRIssueComments,
 	formatPRReviews,
 } from '../../../src/agents/shared/prFormatting.js';
@@ -753,7 +752,7 @@ describe('fetchReviewContext', () => {
 		mockGithub.getCheckSuiteStatus.mockResolvedValue({ checks: [] } as never);
 	});
 
-	it('includes PR injections (Details, Diff, Checks)', async () => {
+	it('includes PR injections (Details, compact Diff Context, Checks)', async () => {
 		const profile = await getAgentProfile('review');
 		const params = makeContextParams({
 			triggerEvent: 'scm:check-suite-success',
@@ -767,7 +766,8 @@ describe('fetchReviewContext', () => {
 
 		const toolNames = injections.map((i) => i.toolName);
 		expect(toolNames).toContain('GetPRDetails');
-		expect(toolNames).toContain('GetPRDiff');
+		expect(toolNames).toContain('GetPRDiffContext');
+		expect(toolNames).not.toContain('GetPRDiff');
 		expect(toolNames).toContain('GetPRChecks');
 	});
 
@@ -832,7 +832,6 @@ describe('fetchReviewContext', () => {
 		await profile.fetchContext(params as Parameters<typeof profile.fetchContext>[0]);
 
 		expect(vi.mocked(formatPRDetails)).toHaveBeenCalled();
-		expect(vi.mocked(formatPRDiff)).toHaveBeenCalled();
 	});
 });
 
@@ -860,7 +859,8 @@ describe('fetchCIContext', () => {
 
 		const toolNames = injections.map((i) => i.toolName);
 		expect(toolNames).toContain('GetPRDetails');
-		expect(toolNames).toContain('GetPRDiff');
+		expect(toolNames).toContain('GetPRDiffContext');
+		expect(toolNames).not.toContain('GetPRDiff');
 		expect(toolNames).toContain('GetPRChecks');
 		expect(toolNames).toContain('ListDirectory');
 		expect(toolNames).toContain('ReadFile');
@@ -909,7 +909,8 @@ describe('fetchPRCommentResponseContext', () => {
 
 		const toolNames = injections.map((i) => i.toolName);
 		expect(toolNames).toContain('GetPRDetails');
-		expect(toolNames).toContain('GetPRDiff');
+		expect(toolNames).toContain('GetPRDiffContext');
+		expect(toolNames).not.toContain('GetPRDiff');
 		expect(toolNames).toContain('GetPRChecks');
 
 		// 3 conversation injections (all tagged as GetPRComments)

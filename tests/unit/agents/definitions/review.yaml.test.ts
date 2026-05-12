@@ -19,9 +19,14 @@ describe('review.yaml prompt contract', () => {
 		expect(yamlText).toMatch(/SKIPPED FILES/i);
 	});
 
-	it('tells the agent to fetch skipped files via `gh pr diff` or `Read`', () => {
-		expect(yamlText).toMatch(/gh pr diff/);
+	it('tells the agent to fetch skipped files via cascade-tools or Read', () => {
+		expect(yamlText).toMatch(/cascade-tools scm get-pr-diff/);
+		expect(yamlText).toMatch(/--path <path>/);
 		expect(yamlText).toMatch(/\bRead\b/);
+	});
+
+	it('does not send skipped-file fetches through raw gh', () => {
+		expect(yamlText).not.toMatch(/gh pr diff/);
 	});
 
 	it('describes the compact-diff context shape', () => {

@@ -391,7 +391,12 @@ describe('extractPRDiffs', () => {
 	it('handles empty PR diff input', () => {
 		const result = extractPRDiffs([]);
 
-		expect(result).toEqual({ included: [], skipped: [] });
+		expect(result).toEqual({
+			included: [],
+			skipped: [],
+			totalDiffTokens: 0,
+			perFileTokenCap: expect.any(Number),
+		});
 	});
 
 	it('per-file diff contains a header with filename, status, and line-change counts', () => {
@@ -417,5 +422,43 @@ describe('extractPRDiffs', () => {
 
 	it('sanity: budget constant matches imported value (guards against drift)', () => {
 		expect(REVIEW_DIFF_CONTEXT_TOKEN_LIMIT).toBeGreaterThan(0);
+	});
+
+	it('marks local diff failures as skipped instead of trusting an API patch', () => {
+		const prDiff: PRDiff = [
+			makePRFile({
+				filename: 'api-clipped.ts',
+				patch: undefined,
+				patchSource: 'local-diff-failed',
+			} as Partial<PRDiff[number]>),
+		];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included).toHaveLength(0);
+		expect(result.skipped).toEqual<SkippedFile[]>([
+			{ filename: 'api-clipped.ts', reason: 'local-diff-failed' },
+		]);
+	});
+
+	it('preserves local-git source metadata and token counts for included files', () => {
+		const prDiff: PRDiff = [
+			makePRFile({
+				filename: 'local.ts',
+				patch: '@@ -1 +1 @@\n+local',
+				patchSource: 'local-git',
+			} as Partial<PRDiff[number]>),
+		];
+
+		const result = extractPRDiffs(prDiff);
+
+		expect(result.included[0]).toEqual(
+			expect.objectContaining({
+				path: 'local.ts',
+				patchSource: 'local-git',
+				tokens: expect.any(Number),
+			}),
+		);
+		expect(result.totalDiffTokens).toBe(result.included[0].tokens);
 	});
 });
