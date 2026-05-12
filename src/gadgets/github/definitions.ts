@@ -332,7 +332,7 @@ export const getPRDiffDef: ToolDefinition = {
 			type: 'string',
 			describe:
 				'Optional changed-file path to fetch. Matches either the current filename or previous filename for renames.',
-			required: false,
+			optional: true,
 		},
 	},
 	examples: [

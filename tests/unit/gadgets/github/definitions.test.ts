@@ -11,6 +11,7 @@ import {
 	replyToReviewCommentDef,
 	updatePRCommentDef,
 } from '../../../../src/gadgets/github/definitions.js';
+import { buildZodSchema } from '../../../../src/gadgets/shared/gadgetFactory.js';
 import type { ToolDefinition } from '../../../../src/gadgets/shared/toolDefinition.js';
 
 const ALL_SCM_DEFINITIONS: ToolDefinition[] = [
@@ -284,6 +285,43 @@ describe('GitHub SCM gadget definitions', () => {
 			expect(bodyAlt?.fileFlag).toBe('body-file');
 			expect(bodyAlt?.description).toBeTruthy();
 		});
+	});
+});
+
+// ─── GetPRDiff specific ───────────────────────────────────────────────────
+describe('getPRDiffDef', () => {
+	it('has required owner, repo, and prNumber parameters', () => {
+		expect(getPRDiffDef.parameters.owner?.required).toBe(true);
+		expect(getPRDiffDef.parameters.repo?.required).toBe(true);
+		expect(getPRDiffDef.parameters.prNumber?.required).toBe(true);
+	});
+
+	it('path parameter is optional (not required)', () => {
+		expect(getPRDiffDef.parameters.path?.optional).toBe(true);
+		expect(getPRDiffDef.parameters.path?.required).toBeUndefined();
+	});
+
+	it('generated schema accepts a call without path (full-PR behavior unchanged)', () => {
+		const schema = buildZodSchema(getPRDiffDef.parameters);
+		const result = schema.safeParse({
+			comment: 'Get full PR diff',
+			owner: 'acme',
+			repo: 'myapp',
+			prNumber: 42,
+		});
+		expect(result.success).toBe(true);
+	});
+
+	it('generated schema accepts a call with path (single-file filtering)', () => {
+		const schema = buildZodSchema(getPRDiffDef.parameters);
+		const result = schema.safeParse({
+			comment: 'Get diff for a specific file',
+			owner: 'acme',
+			repo: 'myapp',
+			prNumber: 42,
+			path: 'src/foo.ts',
+		});
+		expect(result.success).toBe(true);
 	});
 });
 
