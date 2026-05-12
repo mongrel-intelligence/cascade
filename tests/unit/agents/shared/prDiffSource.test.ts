@@ -13,15 +13,23 @@ function git(cwd: string, ...args: string[]): void {
 }
 
 function makeRepo(): string {
+	// Create a bare remote so git fetch origin <base> succeeds in the diff helper.
+	// Without a real remote, the fail-closed fetch check would mark all files as
+	// local-diff-failed even for a healthy repo.
+	const remoteDir = mkdtempSync(join(tmpdir(), 'cascade-remote-'));
+	tempDirs.push(remoteDir);
+	execFileSync('git', ['init', '--bare'], { cwd: remoteDir, stdio: 'pipe' });
+
 	const dir = mkdtempSync(join(tmpdir(), 'cascade-pr-diff-source-'));
 	tempDirs.push(dir);
 	git(dir, 'init');
 	git(dir, 'config', 'user.email', 'test@example.com');
 	git(dir, 'config', 'user.name', 'Test User');
+	git(dir, 'remote', 'add', 'origin', remoteDir);
 	writeFileSync(join(dir, 'file.ts'), 'const a = 1;\nconst b = 2;\nconst c = 3;\n');
 	git(dir, 'add', 'file.ts');
 	git(dir, 'commit', '-m', 'base');
-	git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+	git(dir, 'push', 'origin', 'HEAD:refs/heads/main');
 	git(dir, 'checkout', '-b', 'feature');
 	writeFileSync(join(dir, 'file.ts'), 'const a = 10;\nconst b = 2;\nconst c = 30;\n');
 	git(dir, 'add', 'file.ts');
@@ -75,7 +83,10 @@ describe('sourceLocalPRDiffs', () => {
 		]);
 	});
 
-	it('marks local diff failures explicitly', async () => {
+	it('marks local diff failures explicitly when base-ref fetch fails', async () => {
+		// When the repoDir does not exist, git fetch exits non-zero. The helper must
+		// fail closed: mark all non-deleted files as local-diff-failed rather than
+		// proceeding with a stale origin/<base> ref that could produce misleading patches.
 		const logWriter = vi.fn();
 		const result = await sourceLocalPRDiffs({
 			files: [makeFile()],
@@ -92,10 +103,12 @@ describe('sourceLocalPRDiffs', () => {
 				localPatchChars: 0,
 			}),
 		);
+		// The WARN is now emitted at the fetch-failure point (fail-closed), not at
+		// the per-file diff step.
 		expect(logWriter).toHaveBeenCalledWith(
 			'WARN',
-			'Local PR diff failed for changed file',
-			expect.objectContaining({ filename: 'file.ts' }),
+			'Failed to refresh base branch ref before local diff',
+			expect.objectContaining({ baseBranch: 'main' }),
 		);
 	});
 
@@ -103,17 +116,22 @@ describe('sourceLocalPRDiffs', () => {
 		// Regression for the pathspec metacharacter bug: without :(literal),
 		// git treats [id] as a character-class glob and includes i.ts / d.ts
 		// hunks under the [id].ts diff header.
+		const remoteDir = mkdtempSync(join(tmpdir(), 'cascade-remote-bracket-'));
+		tempDirs.push(remoteDir);
+		execFileSync('git', ['init', '--bare'], { cwd: remoteDir, stdio: 'pipe' });
+
 		const dir = mkdtempSync(join(tmpdir(), 'cascade-pr-diff-bracket-'));
 		tempDirs.push(dir);
 		git(dir, 'init');
 		git(dir, 'config', 'user.email', 'test@example.com');
 		git(dir, 'config', 'user.name', 'Test User');
+		git(dir, 'remote', 'add', 'origin', remoteDir);
 		// [id].ts has bracket chars; i.ts would be matched by the [id] glob
 		writeFileSync(join(dir, '[id].ts'), 'const bracket = 1;\n');
 		writeFileSync(join(dir, 'i.ts'), 'const normal = 1;\n');
 		git(dir, 'add', '.');
 		git(dir, 'commit', '-m', 'base');
-		git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+		git(dir, 'push', 'origin', 'HEAD:refs/heads/main');
 		git(dir, 'checkout', '-b', 'feature');
 		writeFileSync(join(dir, '[id].ts'), 'const bracket = 2;\n');
 		writeFileSync(join(dir, 'i.ts'), 'const normal = 2;\n');

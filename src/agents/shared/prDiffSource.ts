@@ -43,6 +43,41 @@ function summarizeFailure(stderr: string, stdout: string): string {
 	return text.length > 500 ? `${text.slice(0, 500)}...` : text;
 }
 
+/**
+ * Build the fail-closed result when `git fetch origin <base>` fails.
+ * With a stale origin/<base>, per-file diffs can succeed against the old ref
+ * and include base-branch-only commits — producing a misleading 'local-git'
+ * patch. Deleted files get 'no-patch'; all others get 'local-diff-failed' so
+ * the review agent can fetch verified patches on demand.
+ */
+function buildFetchFailedFiles(files: PRDiffFile[], fetchError: string): EnrichedPRDiffFile[] {
+	return files.map((file) => {
+		const githubPatchChars = file.patch?.length ?? 0;
+		const githubHunkCount = countDiffHunks(file.patch);
+		if (file.status === 'removed') {
+			return {
+				...file,
+				patchSource: 'no-patch' as const,
+				localPatchChars: 0,
+				githubPatchChars,
+				localHunkCount: 0,
+				githubHunkCount,
+				patch: undefined,
+			};
+		}
+		return {
+			...file,
+			patch: undefined,
+			patchSource: 'local-diff-failed' as const,
+			localPatchChars: 0,
+			githubPatchChars,
+			localHunkCount: 0,
+			githubHunkCount,
+			localDiffError: `base-ref fetch failed: ${fetchError}`,
+		};
+	});
+}
+
 export async function sourceLocalPRDiffs(params: {
 	files: PRDiffFile[];
 	repoDir: string;
@@ -55,8 +90,8 @@ export async function sourceLocalPRDiffs(params: {
 	// Refresh origin/<baseBranch> so stale snapshot refs don't produce patches
 	// that include base-branch commits that aren't part of this PR.
 	// Snapshot-reuse PR setup only fetches refs/pull/N/head; origin/<base> can
-	// lag. If the fetch fails (no network, no remote) we log and proceed — the
-	// diff loop's own error handling will surface per-file failures.
+	// lag. If the fetch fails (no network, no remote) we fail closed — see the
+	// handler below.
 	const fetchResult = await runCommand(
 		'git',
 		['fetch', 'origin', params.baseBranch],
@@ -65,12 +100,14 @@ export async function sourceLocalPRDiffs(params: {
 		{ silent: true, label: `fetch-base-branch:${params.baseBranch}` },
 	);
 	if (fetchResult.exitCode !== 0) {
+		const fetchError = summarizeFailure(fetchResult.stderr, fetchResult.stdout);
 		params.logWriter('WARN', 'Failed to refresh base branch ref before local diff', {
 			baseBranch: params.baseBranch,
 			exitCode: fetchResult.exitCode,
 			reason: fetchResult.reason,
-			error: summarizeFailure(fetchResult.stderr, fetchResult.stdout),
+			error: fetchError,
 		});
+		return { files: buildFetchFailedFiles(params.files, fetchError), mismatches };
 	}
 
 	for (const file of params.files) {
