@@ -28,6 +28,7 @@ vi.mock('../../../../../src/utils/logging.js', () => ({
 }));
 
 import {
+	readStructuredWorkItemDetails,
 	readWorkItem,
 	readWorkItemWithMedia,
 } from '../../../../../src/gadgets/pm/core/readWorkItem.js';
@@ -633,5 +634,71 @@ describe('readWorkItemWithMedia', () => {
 		expect(result.media[0].source).toBe('description');
 		// Should appear once in the Pre-fetched Images section
 		expect(result.text.match(/\[Image: diagram\]/g)).toHaveLength(1);
+	});
+});
+
+describe('readStructuredWorkItemDetails', () => {
+	it('returns raw provider fields and filtered media without formatting markdown', async () => {
+		mockProvider.getWorkItem.mockResolvedValue({
+			id: 'item1',
+			title: 'Structured Work Item',
+			url: 'https://trello.com/c/item1',
+			description: 'Depends on MNG-123',
+			labels: [{ id: 'l1', name: 'Bug', color: 'red' }],
+			inlineMedia: [
+				{ url: 'https://example.com/desc.png', mimeType: 'image/png', source: 'description' },
+				{
+					url: 'https://example.com/desc.pdf',
+					mimeType: 'application/pdf',
+					source: 'description',
+				},
+			],
+		});
+		mockProvider.getChecklists.mockResolvedValue([
+			{
+				id: 'cl1',
+				name: 'Tasks',
+				workItemId: 'item1',
+				items: [{ id: 'ci1', name: 'Item 1', complete: false }],
+			},
+		]);
+		mockProvider.getAttachments.mockResolvedValue([
+			{
+				id: 'a1',
+				name: 'screenshot.png',
+				url: 'https://example.com/screenshot.png',
+				mimeType: 'image/png',
+				bytes: 100,
+				date: '2026-05-12T00:00:00.000Z',
+			},
+		]);
+		mockProvider.getWorkItemComments.mockResolvedValue([
+			{
+				id: 'c1',
+				author: { id: 'u1', name: 'Alice', username: 'alice' },
+				date: '2026-05-12T00:00:00.000Z',
+				text: 'Waiting for review',
+				inlineMedia: [
+					{
+						url: 'https://example.com/comment.jpg',
+						mimeType: 'image/jpeg',
+						source: 'comment' as const,
+					},
+				],
+			},
+		]);
+
+		const result = await readStructuredWorkItemDetails('item1', true);
+
+		expect(result.item.title).toBe('Structured Work Item');
+		expect(result.checklists[0].items[0].id).toBe('ci1');
+		expect(result.attachments[0].name).toBe('screenshot.png');
+		expect(result.comments[0].text).toBe('Waiting for review');
+		expect(result.media.map((ref) => ref.url)).toEqual([
+			'https://example.com/desc.png',
+			'https://example.com/screenshot.png',
+			'https://example.com/comment.jpg',
+		]);
+		expect(JSON.stringify(result)).not.toContain('# Structured Work Item');
 	});
 });

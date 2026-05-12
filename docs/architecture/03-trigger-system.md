@@ -203,7 +203,7 @@ Each trigger in a YAML agent definition can declare a `contextPipeline` — an o
 | `prepopulateTodos` | Pre-populate todo list from work item checklists |
 | `prContext` | Fetch PR details, GitHub changed-file metadata, locally verified compact per-file diffs from `origin/<base>...HEAD`, and CI checks; emit a `SKIPPED FILES` injection when files are omitted (over budget, deleted, binary/no patch, or local diff unavailable) |
 | `prConversation` | Fetch PR comments and review threads |
-| `pipelineSnapshot` | Fetch CI pipeline status |
+| `pipelineSnapshot` | Fetch PM workflow/pipeline state and emit the single authoritative `PipelineSnapshotSummary` JSON context for backlog-manager |
 | `alertingIssue` | Fetch Sentry issue and event details |
 
 ## Shared Agent Execution
