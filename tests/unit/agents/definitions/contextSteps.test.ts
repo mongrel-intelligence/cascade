@@ -852,4 +852,49 @@ describe('fetchPRContextStep — compact diffs + SKIPPED FILES contract', () => 
 		expect(skipped?.result as string).toContain('src/a.ts');
 		expect(skipped?.result as string).toContain('local-diff-failed');
 	});
+
+	it('passes prDetails.baseRef (not project baseBranch) to sourceLocalPRDiffs for stacked PRs', async () => {
+		// When a stacked PR targets a feature branch (e.g. 'parent-feature') instead of
+		// the project's default base branch (e.g. 'main'), the local diff should be
+		// computed against the PR's actual base ref so parent-branch commits are not
+		// included in the review context.
+		mockGetPR.mockResolvedValueOnce({
+			number: 1092,
+			title: 'Stacked PR',
+			body: 'Stacked on parent-feature',
+			state: 'open',
+			htmlUrl: 'https://github.com/o/r/pull/1092',
+			headRef: 'stacked-feature',
+			headSha: 'abc123',
+			baseRef: 'parent-feature',
+			merged: false,
+			mergeable: true,
+			user: { login: 'dev' },
+		});
+		mockGetPRDiff.mockResolvedValue([
+			{
+				filename: 'src/stacked.ts',
+				status: 'added',
+				additions: 3,
+				deletions: 0,
+				changes: 3,
+				patch: '@@ -0,0 +1,3 @@\n+const pr = 3',
+			},
+		]);
+
+		const params = makeParams({
+			prNumber: 1092,
+			repoFullName: 'o/r',
+		});
+		// Provide a project with a different baseBranch to confirm it is ignored
+		(params as FetchContextParams & { project?: { baseBranch: string } }).project = {
+			baseBranch: 'main',
+		} as never;
+
+		await fetchPRContextStep(params as FetchContextParams);
+
+		expect(mockSourceLocalPRDiffs).toHaveBeenCalledWith(
+			expect.objectContaining({ baseBranch: 'parent-feature' }),
+		);
+	});
 });

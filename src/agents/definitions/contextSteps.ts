@@ -178,7 +178,10 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 	// Compact per-file diffs (scales with PR size, not repo size). Files that
 	// don't fit the budget or can't be diffed are surfaced in a separate
 	// SKIPPED FILES injection so the agent can decide whether to fetch them.
-	const baseBranch = params.project?.baseBranch ?? 'main';
+	// Use prDetails.baseRef (the PR's actual target branch) rather than the
+	// project base branch so stacked PRs targeting a feature branch don't
+	// include parent-branch commits in the diff context.
+	const baseBranch = prDetails.baseRef;
 	const localDiffSource = await sourceLocalPRDiffs({
 		files: prDiff,
 		repoDir: params.repoDir,
