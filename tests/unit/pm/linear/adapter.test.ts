@@ -924,7 +924,8 @@ describe('LinearPMProvider', () => {
 			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
 			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
 
-			// Human edits the description directly in Linear after cascade's write.
+			// Human edits the description directly in Linear after cascade's write
+			// (APPENDED after the checklist — covered by the prior includes() check).
 			description += '\nHuman edit that should survive.';
 
 			// Simulate process boundary: clear in-process cache (new process B).
@@ -936,6 +937,47 @@ describe('LinearPMProvider', () => {
 
 			// Human edit and both cascade items must be present, without duplication.
 			expect(description).toContain('Human edit that should survive.');
+			expect(description).toContain('- [ ] First item');
+			expect(description).toContain('- [ ] Second item');
+			expect(description.match(/First item/g)).toHaveLength(1);
+			expect(description.match(/Second item/g)).toHaveLength(1);
+		});
+
+		it('preserves human edits inserted before the checklist between cascade writes (review #3227243851)', async () => {
+			// Reviewer repro: the previous includes(bestKnown) check treated the
+			// provider snapshot as stale whenever a human inserted text *before*
+			// or *within* the CASCADE description (not just appended after).
+			// Example: sidecar = "Existing.\n\n### ✅ AC\n- [ ] First item";
+			//          provider = "Existing.\nHuman note\n\n### ✅ AC\n- [ ] First item"
+			// includes() is false → code falls back to sidecar → Human note dropped.
+			// The semantic check (does provider have all checklist sections+items?)
+			// must recognize the provider as current and preserve the human edit.
+			let description = 'Existing.';
+			mockGetIssue.mockImplementation(async () => makeIssue({ description }));
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			// Process A: create checklist.
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
+			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
+
+			// Human inserts a line BEFORE the checklist (interleaved, not appended).
+			// This is the exact shape that broke the includes() check.
+			description = 'Existing.\nHuman note\n\n### ✅ AC\n- [ ] First item';
+
+			// Simulate process boundary: clear in-process cache (new process B).
+			__resetRecentDescriptionsForTests();
+
+			// Process B: Linear GET returns the human-edited description.
+			// Sidecar has the pre-human-edit snapshot ("Existing.\n\n### ✅ AC\n- [ ] First item").
+			// The semantic check must see that provider contains the checklist state
+			// (the "✅ AC" section with "First item") and prefer the provider read.
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'Second item' }]);
+
+			// Human note AND both cascade items must be present, without duplication.
+			expect(description).toContain('Human note');
 			expect(description).toContain('- [ ] First item');
 			expect(description).toContain('- [ ] Second item');
 			expect(description.match(/First item/g)).toHaveLength(1);

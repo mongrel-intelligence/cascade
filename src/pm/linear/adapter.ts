@@ -18,6 +18,7 @@ import {
 } from '../_shared/description-mutation-lock.js';
 import {
 	buildChecklistId,
+	checklistSectionContainsItems,
 	findChecklistNameByHash,
 	hashChecklistItemId,
 	parseChecklistId,
@@ -86,6 +87,62 @@ function recallRecentDescription(issueId: string): string | undefined {
 
 export function __resetRecentDescriptionsForTests(): void {
 	recentDescriptions.clear();
+}
+
+/**
+ * H3 heading pattern for checklist sections.  Duplicated locally (not
+ * re-exported from inline-checklist.ts) so the adapter doesn't need a new
+ * public API just for this internal predicate.
+ */
+const H3_CHECKLIST_REGEX = /^### (.+)$/;
+
+/**
+ * Returns `true` when `providerDesc` semantically contains all the checklist
+ * sections and items present in `bestKnown` — i.e. the provider snapshot is
+ * at-least-as-current as our last written state with respect to checklist data.
+ *
+ * This is intentionally weaker than a full-string `includes()` check so that
+ * human edits inserted *before*, *after*, or *between* CASCADE's checklist
+ * sections still allow the provider snapshot to win.  Only a genuinely stale
+ * read (one missing a checklist section or item we know was written) triggers
+ * a fallback to the sidecar / in-process cache.
+ *
+ * Two-phase check:
+ * 1. Every H3 heading in `bestKnown` (including empty sections) must be present
+ *    in `providerDesc`.  `parseInlineChecklists` skips empty sections, so we
+ *    scan the raw lines for headings first.
+ * 2. Every item within each non-empty section must also be present.
+ *
+ * If `bestKnown` has no H3 headings, the provider is assumed to be current.
+ */
+function providerDescHasBestKnownChecklistState(providerDesc: string, bestKnown: string): boolean {
+	// Phase 1 — collect every H3 heading in bestKnown (including empty sections).
+	const bestKnownHeadings = new Set<string>();
+	for (const line of bestKnown.split('\n')) {
+		const m = line.match(H3_CHECKLIST_REGEX);
+		if (m) bestKnownHeadings.add(m[1]);
+	}
+	if (bestKnownHeadings.size === 0) {
+		// No checklist sections to verify — treat provider as current.
+		return true;
+	}
+	// Every heading from bestKnown must exist in providerDesc.
+	// Passing an empty items array to checklistSectionContainsItems means
+	// "the section just needs to exist"; items are checked in phase 2.
+	for (const heading of bestKnownHeadings) {
+		if (!checklistSectionContainsItems(providerDesc, heading, [])) return false;
+	}
+
+	// Phase 2 — verify the items within each non-empty section.
+	// parseInlineChecklists omits sections with zero items, which is fine here
+	// because phase 1 already verified those headings exist.
+	return parseInlineChecklists(bestKnown).every(({ name, items }) =>
+		checklistSectionContainsItems(
+			providerDesc,
+			name,
+			items.map((item) => ({ name: item.name })), // presence-only; ignore checked state
+		),
+	);
 }
 
 const CASCADE_STATUS_KEYS = new Set([
@@ -403,20 +460,22 @@ export class LinearPMProvider implements PMProvider {
 			//    Linear *after* our last write, the provider read is the freshest
 			//    state and must win — otherwise we'd silently drop their changes.
 			//
-			// Heuristic: if the provider read *contains* our last known-good write
-			// (the sidecar / in-process cache), it is at least as current — prefer
-			// it so external edits that arrived after our write are preserved.
-			// If the provider read does NOT contain our last write, it is
-			// demonstrably stale (Linear hasn't propagated our PUT yet) — fall back
-			// to the sidecar / in-process cache.
+			// Semantic check: the provider read is "current" when it contains all
+			// the checklist sections and items from our last known-good write,
+			// regardless of surrounding prose.  This handles human edits that
+			// insert text *before*, *after*, or *between* our checklist sections —
+			// a full-string includes() check would reject those as stale even
+			// though the checklist state is intact and the provider is up-to-date.
+			// A genuinely stale read (missing checklist sections/items we know
+			// were written) fails this check and falls back to the sidecar.
 			const inProcessDescription = recallRecentDescription(issueId);
 			const bestKnown = sidecarDescription ?? inProcessDescription;
 			let baseDescription: string;
 			if (bestKnown !== undefined) {
 				const providerDesc = issue.description ?? '';
-				if (providerDesc.trimEnd().includes(bestKnown.trimEnd())) {
-					// Provider read is at least as current as our last write — use it
-					// to preserve any external edits that arrived after that write.
+				if (providerDescHasBestKnownChecklistState(providerDesc, bestKnown)) {
+					// Provider read contains our last known-good checklist state — use
+					// it to preserve any external edits that arrived after that write.
 					baseDescription = providerDesc;
 				} else {
 					// Provider read is stale — use our last known-good write as the base.
