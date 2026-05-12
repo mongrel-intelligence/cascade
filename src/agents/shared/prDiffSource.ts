@@ -52,6 +52,27 @@ export async function sourceLocalPRDiffs(params: {
 	const enriched: EnrichedPRDiffFile[] = [];
 	const mismatches: DiffSourceMismatch[] = [];
 
+	// Refresh origin/<baseBranch> so stale snapshot refs don't produce patches
+	// that include base-branch commits that aren't part of this PR.
+	// Snapshot-reuse PR setup only fetches refs/pull/N/head; origin/<base> can
+	// lag. If the fetch fails (no network, no remote) we log and proceed — the
+	// diff loop's own error handling will surface per-file failures.
+	const fetchResult = await runCommand(
+		'git',
+		['fetch', 'origin', params.baseBranch],
+		params.repoDir,
+		undefined,
+		{ silent: true, label: `fetch-base-branch:${params.baseBranch}` },
+	);
+	if (fetchResult.exitCode !== 0) {
+		params.logWriter('WARN', 'Failed to refresh base branch ref before local diff', {
+			baseBranch: params.baseBranch,
+			exitCode: fetchResult.exitCode,
+			reason: fetchResult.reason,
+			error: summarizeFailure(fetchResult.stderr, fetchResult.stdout),
+		});
+	}
+
 	for (const file of params.files) {
 		const githubPatchChars = file.patch?.length ?? 0;
 		const githubHunkCount = countDiffHunks(file.patch);
@@ -78,7 +99,7 @@ export async function sourceLocalPRDiffs(params: {
 				'--find-copies',
 				`origin/${params.baseBranch}...HEAD`,
 				'--',
-				file.filename,
+				`:(literal)${file.filename}`,
 			],
 			params.repoDir,
 			undefined,

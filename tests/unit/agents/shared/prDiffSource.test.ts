@@ -98,4 +98,102 @@ describe('sourceLocalPRDiffs', () => {
 			expect.objectContaining({ filename: 'file.ts' }),
 		);
 	});
+
+	it('uses :(literal) pathspec to avoid bracket-glob filename expansion', async () => {
+		// Regression for the pathspec metacharacter bug: without :(literal),
+		// git treats [id] as a character-class glob and includes i.ts / d.ts
+		// hunks under the [id].ts diff header.
+		const dir = mkdtempSync(join(tmpdir(), 'cascade-pr-diff-bracket-'));
+		tempDirs.push(dir);
+		git(dir, 'init');
+		git(dir, 'config', 'user.email', 'test@example.com');
+		git(dir, 'config', 'user.name', 'Test User');
+		// [id].ts has bracket chars; i.ts would be matched by the [id] glob
+		writeFileSync(join(dir, '[id].ts'), 'const bracket = 1;\n');
+		writeFileSync(join(dir, 'i.ts'), 'const normal = 1;\n');
+		git(dir, 'add', '.');
+		git(dir, 'commit', '-m', 'base');
+		git(dir, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+		git(dir, 'checkout', '-b', 'feature');
+		writeFileSync(join(dir, '[id].ts'), 'const bracket = 2;\n');
+		writeFileSync(join(dir, 'i.ts'), 'const normal = 2;\n');
+		git(dir, 'add', '.');
+		git(dir, 'commit', '-m', 'feature');
+
+		const result = await sourceLocalPRDiffs({
+			files: [makeFile({ filename: '[id].ts' })],
+			repoDir: dir,
+			baseBranch: 'main',
+			logWriter: vi.fn(),
+		});
+
+		expect(result.files).toHaveLength(1);
+		expect(result.files[0].patchSource).toBe('local-git');
+		// Only [id].ts content in patch — i.ts/normal must not bleed in
+		expect(result.files[0].patch).toContain('bracket');
+		expect(result.files[0].patch).not.toContain('normal');
+		expect(result.files[0].patch).not.toContain('i.ts');
+	});
+
+	it('fetches origin base branch before diffing to avoid stale-ref patches', async () => {
+		// Regression for snapshot-reuse scenario: only refs/pull/N/head is
+		// fetched when reusing a snapshot, leaving origin/<base> stale.
+		// Without the fetch, git diff origin/main...HEAD includes base-branch
+		// commits that are NOT part of the PR (A...C instead of B...C).
+
+		// Set up a bare "remote" repo
+		const remoteDir = mkdtempSync(join(tmpdir(), 'cascade-remote-'));
+		tempDirs.push(remoteDir);
+		execFileSync('git', ['init', '--bare'], { cwd: remoteDir, stdio: 'pipe' });
+
+		// Set up local working repo with origin pointing to remoteDir
+		const localDir = mkdtempSync(join(tmpdir(), 'cascade-local-'));
+		tempDirs.push(localDir);
+		git(localDir, 'init');
+		git(localDir, 'config', 'user.email', 'test@example.com');
+		git(localDir, 'config', 'user.name', 'Test User');
+		git(localDir, 'remote', 'add', 'origin', remoteDir);
+
+		// Commit A: initial state — push to remote (remote/main = A)
+		writeFileSync(join(localDir, 'file.ts'), 'const a = 1;\n');
+		git(localDir, 'add', '.');
+		git(localDir, 'commit', '-m', 'A');
+		git(localDir, 'push', 'origin', 'HEAD:refs/heads/main');
+		const shaA = execFileSync('git', ['rev-parse', 'HEAD'], {
+			cwd: localDir,
+			encoding: 'utf8',
+		}).trim();
+
+		// Commit B: base-branch advancement — push to remote (remote/main = B)
+		// This simulates main advancing after the snapshot was created.
+		writeFileSync(join(localDir, 'file.ts'), 'const a = 1;\nconst base = 2;\n');
+		git(localDir, 'add', '.');
+		git(localDir, 'commit', '-m', 'B');
+		git(localDir, 'push', 'origin', 'HEAD:refs/heads/main');
+
+		// Commit C: the PR change on top of B (not pushed — only fetched via
+		// refs/pull/N/head in the real snapshot-reuse path)
+		writeFileSync(join(localDir, 'file.ts'), 'const a = 1;\nconst base = 2;\nconst pr = 3;\n');
+		git(localDir, 'add', '.');
+		git(localDir, 'commit', '-m', 'C');
+
+		// Simulate a stale snapshot: pin origin/main to A so the local ref lags
+		git(localDir, 'update-ref', 'refs/remotes/origin/main', shaA);
+
+		// sourceLocalPRDiffs should fetch origin/main (updating it to B) before
+		// diffing, so the returned patch is B...C, not A...C.
+		const result = await sourceLocalPRDiffs({
+			files: [makeFile()],
+			repoDir: localDir,
+			baseBranch: 'main',
+			logWriter: vi.fn(),
+		});
+
+		expect(result.files[0].patchSource).toBe('local-git');
+		// Only C's change is an added line (+); B's `const base = 2` should be
+		// context (a space-prefixed line), not an addition (+line).
+		// Without the fetch fix, A...C would mark `const base = 2` as "+added".
+		expect(result.files[0].patch).toContain('+const pr = 3');
+		expect(result.files[0].patch).not.toContain('+const base = 2');
+	});
 });
