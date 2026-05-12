@@ -8,8 +8,6 @@ import { jiraClient } from '../../jira/client.js';
 import { logger } from '../../utils/logging.js';
 import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
-	addItemToChecklist,
-	appendChecklistSection,
 	buildChecklistId,
 	findChecklistNameByHash,
 	hashChecklistItemId,
@@ -17,6 +15,8 @@ import {
 	parseInlineChecklists,
 	removeChecklistItem,
 	toggleChecklistItem,
+	upsertChecklistSection,
+	upsertItemInChecklist,
 } from '../_shared/inline-checklist.js';
 import type { ContainerId, LabelId } from '../ids.js';
 import { parseContainerId } from '../ids.js';
@@ -282,7 +282,7 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async createChecklist(workItemId: string, name: string): Promise<Checklist> {
-		await this.updateDescription(workItemId, (desc) => appendChecklistSection(desc, name, []));
+		await this.updateDescription(workItemId, (desc) => upsertChecklistSection(desc, name, []));
 		return {
 			id: buildChecklistId(workItemId, name),
 			name,
@@ -297,7 +297,7 @@ export class JiraPMProvider implements PMProvider {
 		items: ChecklistItemDraft[],
 	): Promise<Checklist> {
 		await this.updateDescription(workItemId, (desc) =>
-			appendChecklistSection(
+			upsertChecklistSection(
 				desc,
 				name,
 				items.map((item) => ({ name: item.name, checked: item.checked ?? false })),
@@ -332,7 +332,7 @@ export class JiraPMProvider implements PMProvider {
 			if (!checklistName) {
 				throw new Error(`Checklist not found in description: ${checklistId}`);
 			}
-			return addItemToChecklist(desc, checklistName, name, checked);
+			return upsertItemInChecklist(desc, checklistName, name, checked);
 		});
 	}
 

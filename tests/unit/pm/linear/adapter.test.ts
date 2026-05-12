@@ -102,6 +102,7 @@ describe('LinearPMProvider', () => {
 
 	beforeEach(() => {
 		provider = new LinearPMProvider(defaultConfig);
+		process.env.CASCADE_DESCRIPTION_MUTATION_LOCK_DIR = `/tmp/cascade-linear-test-locks-${process.pid}-${Date.now()}-${Math.random()}`;
 		vi.clearAllMocks();
 		__resetRecentDescriptionsForTests();
 	});
@@ -563,12 +564,38 @@ describe('LinearPMProvider', () => {
 			expect(result.items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
 		});
 
-		// MNG-741 regression (2026-05-12): the original fix at commit fad4dda1
-		// polled Linear's GET after every PUT with a 1s deadline, then THREW
-		// on timeout. Linear's eventual-consistency window is routinely >1s
-		// under load — every planning run hit this and got bounced. The new
-		// contract: skip the visibility poll entirely, and provide read-after-
-		// write consistency via an in-process recent-description cache.
+		it('does not duplicate checklist sections on repeated bulk creation', async () => {
+			const state = mockIssueDescription('Existing.\n\n### ✅ AC\n- [x] Done item');
+
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [
+				{ name: 'First item' },
+				{ name: 'Done item' },
+			]);
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [
+				{ name: 'First item' },
+				{ name: 'Done item' },
+			]);
+
+			expect(state.description).toBe('Existing.\n\n### ✅ AC\n- [x] Done item\n- [ ] First item');
+			expect(state.description?.match(/^### ✅ AC$/gm)).toHaveLength(1);
+			expect(state.description?.match(/First item/g)).toHaveLength(1);
+			expect(state.description).toContain('- [x] Done item');
+		});
+
+		it('keeps duplicate provider echoes idempotent', async () => {
+			let description = 'Existing.\n\n### ✅ AC\n- [ ] First item';
+			mockGetIssue.mockImplementation(async () => makeIssue({ description }));
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				description = `${updates.description ?? description}\n\n### ✅ AC\n- [ ] First item`;
+				return makeIssue({ description });
+			});
+
+			await expect(
+				provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]),
+			).resolves.toBeDefined();
+			expect(mockUpdateIssue).toHaveBeenCalledTimes(1);
+		});
+
 		it('uses recent-description cache instead of polling Linear after a PUT', async () => {
 			let description = 'Existing.';
 			let staleDescription: string | null = null;
@@ -592,23 +619,9 @@ describe('LinearPMProvider', () => {
 			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
 		});
 
-		it('proceeds without throwing when Linear NEVER returns the updated description (MNG-741)', async () => {
-			// Worst-case path: Linear's GET continues to return the stale description
-			// forever after the PUT (e.g. the read replica is broken or just very slow
-			// — Linear's eventual-consistency window can exceed seconds under load).
-			// Previously this would throw "Linear description visibility timed out"
-			// after 1s and the agent's `cascade-tools pm add-checklist` invocation
-			// would exit non-zero, skip the sidecar write, and the run would fail the
-			// requiresPMWrite gate. Prod incident: MNG-741 / MNG-736 / MNG-739
-			// (2026-05-12, run 1ce6ed4a). New contract: PUT succeeded from Linear's
-			// perspective; trust the cache for subsequent in-process operations,
-			// never throw on visibility-poll failure.
+		it('proceeds without throwing when Linear never returns the updated description', async () => {
 			const persistedDescription = 'Existing.';
-			mockGetIssue.mockImplementation(async () =>
-				// IMPORTANT: GET always returns the stale pre-PUT value, simulating
-				// Linear's read replica being permanently behind for the test.
-				makeIssue({ description: persistedDescription }),
-			);
+			mockGetIssue.mockImplementation(async () => makeIssue({ description: persistedDescription }));
 			mockUpdateIssue.mockImplementation(async (_id, _updates: { description?: string }) =>
 				makeIssue({ description: persistedDescription }),
 			);
@@ -616,13 +629,8 @@ describe('LinearPMProvider', () => {
 			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
 			expect(checklist.name).toBe('✅ AC');
 
-			// Subsequent operation finds the checklist via the in-process cache,
-			// even though GET keeps returning the stale pre-PUT description.
 			await expect(provider.addChecklistItem(checklist.id, 'First item')).resolves.toBeUndefined();
 
-			// The last PUT body MUST include the appended item. If the cache wasn't
-			// used, mutate() would run against the stale GET → no checklist found →
-			// throw (or, worse, silently overwrite without the section).
 			const lastPut = mockUpdateIssue.mock.calls[mockUpdateIssue.mock.calls.length - 1];
 			expect(lastPut[1].description).toContain('### ✅ AC');
 			expect(lastPut[1].description).toContain('- [ ] First item');
@@ -739,6 +747,17 @@ describe('LinearPMProvider', () => {
 			const lastCall = mockUpdateIssue.mock.calls[mockUpdateIssue.mock.calls.length - 1];
 			expect(lastCall[1].description).toContain('- [x] Done item');
 		});
+
+		it('does not duplicate a markdown checkbox on retry', async () => {
+			const state = mockIssueDescription('### ✅ AC\n- [x] Existing');
+
+			const checklist = await provider.createChecklist('issue-uuid', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'Existing');
+			await provider.addChecklistItem(checklist.id, 'Existing');
+
+			expect(state.description).toBe('### ✅ AC\n- [x] Existing');
+			expect(state.description?.match(/Existing/g)).toHaveLength(1);
+		});
 	});
 
 	describe('updateChecklistItem (inline)', () => {
@@ -831,6 +850,96 @@ describe('LinearPMProvider', () => {
 
 			expect(mockGetIssue).toHaveBeenCalledTimes(1);
 			expect(mockUpdateIssue).not.toHaveBeenCalled();
+		});
+
+		it('does not duplicate checklist content when Linear readback stays stale', async () => {
+			let description = 'Existing.';
+			mockGetIssue.mockImplementation(async () =>
+				makeIssue({
+					description: description !== 'Existing.' ? 'Existing.' : description,
+				}),
+			);
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
+			expect(mockUpdateIssue).toHaveBeenCalledTimes(1);
+
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
+
+			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
+			expect(description.match(/^### ✅ AC$/gm)).toHaveLength(1);
+			expect(description.match(/First item/g)).toHaveLength(1);
+		});
+
+		it('uses cross-process sidecar as fresh base when in-process cache is cold (different process)', async () => {
+			// Regression: review comment #3226669608 — the in-process recentDescriptions cache
+			// doesn't help a *second OS process* that acquires the lock after the first exits.
+			// The sidecar file written while holding the lock provides the cross-process fresh base.
+			//
+			// Simulate: process A writes checklist → clears in-process cache (new process B) →
+			// Linear GET returns stale description → process B must read sidecar, not Linear.
+			let description = 'Existing.';
+			const staleDescription = 'Existing.'; // Linear always returns pre-write state (stale)
+			mockGetIssue.mockImplementation(async () => makeIssue({ description: staleDescription }));
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			// Process A: create checklist — sidecar is written while lock is held.
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
+			expect(mockUpdateIssue).toHaveBeenCalledTimes(1);
+
+			// Simulate process boundary: wipe the in-process cache.
+			// Without the sidecar, the next call would base off stale Linear GET.
+			__resetRecentDescriptionsForTests();
+
+			// Process B: retry with the same args while Linear still returns stale description.
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
+
+			// The sidecar (written by process A) must have served as the fresh base so the
+			// checklist section and item appear exactly once — not duplicated.
+			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
+			expect(description.match(/^### ✅ AC$/gm)).toHaveLength(1);
+			expect(description.match(/First item/g)).toHaveLength(1);
+		});
+
+		it('preserves human edits that arrived between cascade writes (review #3226887552)', async () => {
+			// Reviewer repro: the sidecar was preferred unconditionally over the
+			// provider read, so a human edit that appeared in Linear *after* cascade's
+			// last write was silently dropped when a second cascade process added items.
+			// The fix: prefer the provider read when it already contains cascade's last
+			// known-good write (i.e. the provider is current, not stale).
+			let description = 'Existing.';
+			mockGetIssue.mockImplementation(async () => makeIssue({ description }));
+			mockUpdateIssue.mockImplementation(async (_id, updates: { description?: string }) => {
+				description = updates.description ?? description;
+				return makeIssue({ description });
+			});
+
+			// Process A: create checklist.
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'First item' }]);
+			expect(description).toBe('Existing.\n\n### ✅ AC\n- [ ] First item');
+
+			// Human edits the description directly in Linear after cascade's write.
+			description += '\nHuman edit that should survive.';
+
+			// Simulate process boundary: clear in-process cache (new process B).
+			__resetRecentDescriptionsForTests();
+
+			// Process B: Linear GET now returns the human-edited description (current),
+			// while the sidecar still has the pre-human-edit snapshot.
+			await provider.createChecklistWithItems('issue-uuid', '✅ AC', [{ name: 'Second item' }]);
+
+			// Human edit and both cascade items must be present, without duplication.
+			expect(description).toContain('Human edit that should survive.');
+			expect(description).toContain('- [ ] First item');
+			expect(description).toContain('- [ ] Second item');
+			expect(description.match(/First item/g)).toHaveLength(1);
+			expect(description.match(/Second item/g)).toHaveLength(1);
 		});
 	});
 

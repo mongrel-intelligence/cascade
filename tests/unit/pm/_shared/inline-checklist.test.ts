@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
 	addItemToChecklist,
 	appendChecklistSection,
+	checklistItemStateSatisfied,
+	checklistSectionContainsItems,
 	hashChecklistItemId,
 	parseInlineChecklists,
 	removeChecklistItem,
 	toggleChecklistItem,
+	upsertChecklistSection,
+	upsertItemInChecklist,
 } from '../../../../src/pm/_shared/inline-checklist.js';
 
 // ---------------------------------------------------------------------------
@@ -210,6 +214,203 @@ describe('addItemToChecklist', () => {
 		const desc = '### AC\n- [ ] First\n  Detail line';
 		const result = addItemToChecklist(desc, 'AC', 'Second');
 		expect(result).toBe('### AC\n- [ ] First\n  Detail line\n- [ ] Second');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// upsertChecklistSection / upsertItemInChecklist
+// ---------------------------------------------------------------------------
+
+describe('upsertChecklistSection', () => {
+	it('appends when the section is missing', () => {
+		const result = upsertChecklistSection('Existing text.', '✅ AC', [
+			{ name: 'First', checked: false },
+		]);
+		expect(result).toBe('Existing text.\n\n### ✅ AC\n- [ ] First');
+	});
+
+	it('does not duplicate an existing section or item on retry', () => {
+		let desc = upsertChecklistSection('', '✅ AC', [{ name: 'First', checked: false }]);
+		desc = upsertChecklistSection(desc, '✅ AC', [{ name: 'First', checked: false }]);
+
+		expect(desc).toBe('### ✅ AC\n- [ ] First');
+	});
+
+	it('merges requested rows into an empty existing section', () => {
+		const result = upsertChecklistSection('### ✅ AC', '✅ AC', [
+			{ name: 'First', checked: false },
+		]);
+		expect(result).toBe('### ✅ AC\n- [ ] First');
+	});
+
+	it('deduplicates duplicate sections while preserving first section position and unrelated prose', () => {
+		const desc = `Intro.
+
+### ✅ AC
+- [ ] First
+
+Middle prose.
+
+### ✅ AC
+- [x] First
+- [ ] Second
+
+## Next
+Keep me.`;
+
+		const result = upsertChecklistSection(desc, '✅ AC', [{ name: 'Third', checked: false }]);
+
+		expect(result).toBe(`Intro.
+
+### ✅ AC
+- [x] First
+- [ ] Second
+- [ ] Third
+
+Middle prose.
+
+## Next
+Keep me.`);
+	});
+
+	it('does not merge different headings', () => {
+		const desc = '### ✅ AC\n- [ ] First\n\n### Dependencies\n- [ ] First';
+		const result = upsertChecklistSection(desc, '✅ AC', [{ name: 'Second', checked: false }]);
+
+		expect(result).toContain('### ✅ AC\n- [ ] First\n- [ ] Second');
+		expect(result).toContain('### Dependencies\n- [ ] First');
+	});
+
+	it('preserves non-checkbox prose from duplicate sections instead of silently dropping it', () => {
+		// Regression: MNG-741 — user-edited prose inside a duplicate checklist section
+		// must survive the convergence pass (data-loss path reported in review #3226378053).
+		const desc = '### AC\n- [ ] First\n\n### AC\n- [x] First\nThis note should stay.\nMore detail.';
+
+		const result = upsertChecklistSection(desc, 'AC', []);
+
+		expect(result).toContain('This note should stay.');
+		expect(result).toContain('More detail.');
+		// The duplicate heading must be collapsed into one.
+		expect(result.match(/^### AC$/gm)).toHaveLength(1);
+		// Checkbox items are merged correctly.
+		expect(result).toContain('- [x] First');
+	});
+
+	it('inserts merged rows after trailing detail lines so they stay attached to their parent item', () => {
+		// Regression: MNG-741 — rows merged from a duplicate section were inserted at
+		// lastCheckboxIdx + 1, which placed them BEFORE any trailing detail/prose
+		// belonging to the last existing checkbox. The detail was then visually
+		// re-attributed to the newly inserted item (review comment #3226513749).
+		// ### AC\n- [ ] First\n  Detail for First\n\n### AC\n- [ ] Second
+		// must NOT become:  - [ ] First\n- [ ] Second\n  Detail for First
+		// but instead:      - [ ] First\n  Detail for First\n- [ ] Second
+		const desc = '### AC\n- [ ] First\n  Detail for First\n\n### AC\n- [ ] Second';
+
+		const result = upsertChecklistSection(desc, 'AC', []);
+
+		expect(result).toBe('### AC\n- [ ] First\n  Detail for First\n- [ ] Second');
+		// Heading appears exactly once.
+		expect(result.match(/^### AC$/gm)).toHaveLength(1);
+		// Detail line is still present and not displaced.
+		expect(result).toContain('  Detail for First');
+		// Detail immediately follows First, not Second.
+		expect(result.indexOf('  Detail for First')).toBeLessThan(result.indexOf('- [ ] Second'));
+	});
+
+	it('detail line from a duplicate section travels with its checkbox into the first section', () => {
+		// Exact reviewer repro (review comment #3226669603):
+		// upsertChecklistSection("### AC\n- [ ] First\n\n### AC\n- [ ] Second\n  Detail for Second", "AC", [])
+		// must NOT orphan "  Detail for Second" after a blank line;
+		// it must be emitted immediately after "- [ ] Second" in the merged section.
+		const desc = '### AC\n- [ ] First\n\n### AC\n- [ ] Second\n  Detail for Second';
+
+		const result = upsertChecklistSection(desc, 'AC', []);
+
+		// Heading appears exactly once.
+		expect(result.match(/^### AC$/gm)).toHaveLength(1);
+		// Both items present.
+		expect(result).toContain('- [ ] First');
+		expect(result).toContain('- [ ] Second');
+		// Detail line is present and immediately follows Second (not orphaned after a blank line).
+		expect(result).toContain('  Detail for Second');
+		const secondIdx = result.indexOf('- [ ] Second');
+		const detailIdx = result.indexOf('  Detail for Second');
+		const blankAfterSecond = result.indexOf('\n\n', secondIdx);
+		// Detail must appear after Second but before any blank line gap (i.e. no orphan gap).
+		expect(detailIdx).toBeGreaterThan(secondIdx);
+		expect(blankAfterSecond === -1 || detailIdx < blankAfterSecond).toBe(true);
+	});
+
+	it('detail from duplicate section stays attached when existing item in section 1 has no prior detail', () => {
+		// Reviewer repro (review comment #3226887541):
+		// When section 1 has "- [ ] First" with no detail but the duplicate has
+		// "- [ ] First\n  Detail for duplicate First", convergence must NOT emit
+		// "  Detail for duplicate First" as orphaned prose after a blank line.
+		// It must be attached to "First" in the merged section.
+		const desc = '### AC\n- [ ] First\n\n### AC\n- [ ] First\n  Detail for duplicate First';
+
+		const result = upsertChecklistSection(desc, 'AC', []);
+
+		// Heading appears exactly once.
+		expect(result.match(/^### AC$/gm)).toHaveLength(1);
+		// Item present.
+		expect(result).toContain('- [ ] First');
+		// Detail is present.
+		expect(result).toContain('  Detail for duplicate First');
+		// Detail must immediately follow First with no blank-line gap (not orphaned).
+		const firstIdx = result.indexOf('- [ ] First');
+		const detailIdx = result.indexOf('  Detail for duplicate First');
+		const blankAfterFirst = result.indexOf('\n\n', firstIdx);
+		expect(detailIdx).toBeGreaterThan(firstIdx);
+		expect(blankAfterFirst === -1 || detailIdx < blankAfterFirst).toBe(true);
+	});
+});
+
+describe('upsertItemInChecklist', () => {
+	it('adds missing item to an existing section', () => {
+		const result = upsertItemInChecklist('### AC\n- [ ] Existing', 'AC', 'New item');
+		expect(result).toBe('### AC\n- [ ] Existing\n- [ ] New item');
+	});
+
+	it('does not append an identical row on retry', () => {
+		const result = upsertItemInChecklist('### AC\n- [ ] Existing', 'AC', 'Existing');
+		expect(result).toBe('### AC\n- [ ] Existing');
+	});
+
+	it('preserves checked state when any duplicate row is checked', () => {
+		const desc = '### AC\n- [ ] Item\n\n### AC\n- [x] Item';
+		const result = upsertItemInChecklist(desc, 'AC', 'Item');
+		expect(result).toBe('### AC\n- [x] Item');
+	});
+
+	it('throws when checklist section does not exist', () => {
+		expect(() => upsertItemInChecklist('No checklist here.', 'AC', 'Item')).toThrow();
+	});
+});
+
+describe('semantic checklist predicates', () => {
+	it('recognizes requested checklist items after duplicate section convergence', () => {
+		const desc = '### AC\n- [ ] First\n\n### AC\n- [x] Second';
+
+		expect(
+			checklistSectionContainsItems(desc, 'AC', [
+				{ name: 'First', checked: false },
+				{ name: 'Second', checked: true },
+			]),
+		).toBe(true);
+	});
+
+	it('treats checked rows as satisfying unchecked create requests', () => {
+		expect(
+			checklistSectionContainsItems('### AC\n- [x] First', 'AC', [
+				{ name: 'First', checked: false },
+			]),
+		).toBe(true);
+	});
+
+	it('requires exact state for item update satisfaction', () => {
+		expect(checklistItemStateSatisfied('### AC\n- [x] First', 'AC', 'First', true)).toBe(true);
+		expect(checklistItemStateSatisfied('### AC\n- [x] First', 'AC', 'First', false)).toBe(false);
 	});
 });
 

@@ -11,10 +11,12 @@
 import { resolveLabelId as sharedResolveLabelId } from '../../integrations/pm/_shared/label-id-resolver.js';
 import { linearClient } from '../../linear/client.js';
 import { logger } from '../../utils/logging.js';
-import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
-	addItemToChecklist,
-	appendChecklistSection,
+	readLockedDescription,
+	withDescriptionMutationLock,
+	writeLockedDescription,
+} from '../_shared/description-mutation-lock.js';
+import {
 	buildChecklistId,
 	findChecklistNameByHash,
 	hashChecklistItemId,
@@ -22,6 +24,8 @@ import {
 	parseInlineChecklists,
 	removeChecklistItem,
 	toggleChecklistItem,
+	upsertChecklistSection,
+	upsertItemInChecklist,
 } from '../_shared/inline-checklist.js';
 import type { LinearConfig } from '../config.js';
 import type { ContainerId, LabelId } from '../ids.js';
@@ -41,23 +45,20 @@ import type {
 /**
  * In-process read-after-write cache of recently-PUT issue descriptions.
  *
- * Linear's API is eventually consistent — a GET issued moments after a PUT
- * can return the previous description for seconds. Polling the GET until
- * visibility (the prior approach in commit fad4dda1) was too aggressive
- * (1s timeout) and DOSed itself: planning runs MNG-741 / MNG-736 / MNG-739
- * (2026-05-12) all failed with "Linear description visibility timed out"
- * even though every PUT succeeded on Linear's side.
+ * Linear's API is eventually consistent: a GET issued moments after a PUT can
+ * return the previous description for seconds.  After each successful PUT we
+ * store the new description in two places:
  *
- * The new contract: after each successful PUT, store the new description
- * here. The next `updateDescription` call consults the cache before
- * mutating — if the GET returned a stale value within the consistency
- * window, the cached value wins. After TTL the entry is evicted and the
- * GET becomes authoritative again.
+ * 1. This in-process map — fast, zero I/O, covers same-process retries and
+ *    consecutive mutations within the same `cascade-tools` invocation.
  *
- * Scope: in-process only. Cross-process races against Linear's eventual
- * consistency are NOT new to this fix and were never solved by the
- * visibility wait — the existing `withDescriptionMutationLock` is
- * process-local too.
+ * 2. A filesystem sidecar file (via `writeLockedDescription`) — durable
+ *    across process boundaries.  Because `withDescriptionMutationLock` is a
+ *    filesystem lock shared by all `cascade-tools` processes on the same
+ *    host, a second process can acquire the lock after this one releases it
+ *    with an empty in-process cache.  The sidecar, written while holding the
+ *    lock, provides that process with the fresh base so it doesn't overwrite
+ *    the first process's accepted write with a stale Linear snapshot.
  */
 const RECENT_DESCRIPTION_TTL_MS = 60_000;
 type RecentDescription = { description: string; timestamp: number };
@@ -65,7 +66,6 @@ const recentDescriptions = new Map<string, RecentDescription>();
 
 function rememberRecentDescription(issueId: string, description: string): void {
 	recentDescriptions.set(issueId, { description, timestamp: Date.now() });
-	// Lazy cleanup — keep the map small without a setInterval.
 	if (recentDescriptions.size > 200) {
 		const cutoff = Date.now() - RECENT_DESCRIPTION_TTL_MS;
 		for (const [id, entry] of recentDescriptions.entries()) {
@@ -84,14 +84,10 @@ function recallRecentDescription(issueId: string): string | undefined {
 	return entry.description;
 }
 
-/**
- * Test-only escape hatch — each test starts with an empty cache so module-
- * level state doesn't leak between cases. NOT exported via the public API;
- * called only from `tests/unit/pm/linear/adapter.test.ts`.
- */
 export function __resetRecentDescriptionsForTests(): void {
 	recentDescriptions.clear();
 }
+
 const CASCADE_STATUS_KEYS = new Set([
 	'backlog',
 	'todo',
@@ -288,7 +284,7 @@ export class LinearPMProvider implements PMProvider {
 	}
 
 	async createChecklist(workItemId: string, name: string): Promise<Checklist> {
-		await this.updateDescription(workItemId, (desc) => appendChecklistSection(desc, name, []));
+		await this.updateDescription(workItemId, (desc) => upsertChecklistSection(desc, name, []));
 		return {
 			id: buildChecklistId(workItemId, name),
 			name,
@@ -302,12 +298,12 @@ export class LinearPMProvider implements PMProvider {
 		name: string,
 		items: ChecklistItemDraft[],
 	): Promise<Checklist> {
+		const checklistItems = items.map((item) => ({
+			name: item.name,
+			checked: item.checked ?? false,
+		}));
 		await this.updateDescription(workItemId, (desc) =>
-			appendChecklistSection(
-				desc,
-				name,
-				items.map((item) => ({ name: item.name, checked: item.checked ?? false })),
-			),
+			upsertChecklistSection(desc, name, checklistItems),
 		);
 
 		return {
@@ -338,7 +334,7 @@ export class LinearPMProvider implements PMProvider {
 			if (!checklistName) {
 				throw new Error(`Checklist not found in description: ${checklistId}`);
 			}
-			return addItemToChecklist(desc, checklistName, name, checked);
+			return upsertItemInChecklist(desc, checklistName, name, checked);
 		});
 		logger.debug('[Linear] addChecklistItem — appended inline checkbox', {
 			workItemId: parsed.workItemId,
@@ -381,6 +377,12 @@ export class LinearPMProvider implements PMProvider {
 		issueId: string,
 		mutate: (desc: string) => string,
 	): Promise<void> {
+		// Read the cross-process sidecar first — if a different process wrote a
+		// description under this lock before us, its sidecar is more authoritative
+		// than a potentially-stale Linear GET.  Called here (inside the lock body)
+		// so the read is serialized with any concurrent writes.
+		const sidecarDescription = await readLockedDescription('linear', issueId);
+
 		for (let attempt = 0; attempt < 2; attempt++) {
 			let issue: Awaited<ReturnType<typeof linearClient.getIssue>>;
 			try {
@@ -393,18 +395,42 @@ export class LinearPMProvider implements PMProvider {
 				throw err;
 			}
 
-			// Read-after-write consistency: if we recently PUT a newer description
-			// for this issue and the GET above returned the stale pre-PUT value
-			// (Linear's eventual-consistency window), use the cached fresh value
-			// as the source of truth for the mutation. Without this, consecutive
-			// in-process updates can read-modify-write over each other.
-			const cachedDescription = recallRecentDescription(issueId);
-			const baseDescription =
-				cachedDescription !== undefined ? cachedDescription : (issue.description ?? '');
+			// Choose the base description carefully to handle two competing risks:
+			// 1. Linear's eventual consistency: a GET issued shortly after a PUT
+			//    can return the pre-write description.  Our sidecar / in-process
+			//    cache records the last accepted write so we don't overwrite it.
+			// 2. External human edits: if a user has edited the description in
+			//    Linear *after* our last write, the provider read is the freshest
+			//    state and must win — otherwise we'd silently drop their changes.
+			//
+			// Heuristic: if the provider read *contains* our last known-good write
+			// (the sidecar / in-process cache), it is at least as current — prefer
+			// it so external edits that arrived after our write are preserved.
+			// If the provider read does NOT contain our last write, it is
+			// demonstrably stale (Linear hasn't propagated our PUT yet) — fall back
+			// to the sidecar / in-process cache.
+			const inProcessDescription = recallRecentDescription(issueId);
+			const bestKnown = sidecarDescription ?? inProcessDescription;
+			let baseDescription: string;
+			if (bestKnown !== undefined) {
+				const providerDesc = issue.description ?? '';
+				if (providerDesc.trimEnd().includes(bestKnown.trimEnd())) {
+					// Provider read is at least as current as our last write — use it
+					// to preserve any external edits that arrived after that write.
+					baseDescription = providerDesc;
+				} else {
+					// Provider read is stale — use our last known-good write as the base.
+					baseDescription = bestKnown;
+				}
+			} else {
+				baseDescription = issue.description ?? '';
+			}
 			const newDesc = mutate(baseDescription);
 			try {
 				await linearClient.updateIssue(issueId, { description: newDesc });
 				rememberRecentDescription(issueId, newDesc);
+				// Persist for the next process that acquires this lock.
+				await writeLockedDescription('linear', issueId, newDesc);
 				return;
 			} catch (err) {
 				if (attempt === 0) {

@@ -80,6 +80,7 @@ describe('JiraPMProvider', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		provider = new JiraPMProvider(mockConfig);
+		process.env.CASCADE_DESCRIPTION_MUTATION_LOCK_DIR = `/tmp/cascade-jira-test-locks-${process.pid}-${Date.now()}-${Math.random()}`;
 		mockAdfToPlainText.mockReturnValue('plain text description');
 		mockMarkdownToAdf.mockReturnValue({ type: 'doc', version: 1, content: [] });
 		// Default: no media nodes found (most tests don't need media extraction)
@@ -640,6 +641,48 @@ describe('JiraPMProvider', () => {
 			expect(result.items[0].id).toMatch(/^cl-[0-9a-f]{8}$/);
 		});
 
+		it('does not duplicate checklist sections on repeated bulk creation', async () => {
+			let markdown = 'Existing.\n\n### ✅ AC\n- [x] Done item';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockImplementation(() => markdown);
+			mockMarkdownToAdf.mockImplementation((nextMarkdown) => nextMarkdown);
+			mockJiraClient.updateIssue.mockImplementation(async (_id, updates) => {
+				markdown = updates.description as string;
+			});
+
+			await provider.createChecklistWithItems('PROJ-1', '✅ AC', [
+				{ name: 'First item' },
+				{ name: 'Done item' },
+			]);
+			await provider.createChecklistWithItems('PROJ-1', '✅ AC', [
+				{ name: 'First item' },
+				{ name: 'Done item' },
+			]);
+
+			expect(markdown).toBe('Existing.\n\n### ✅ AC\n- [x] Done item\n- [ ] First item');
+			expect(markdown.match(/^### ✅ AC$/gm)).toHaveLength(1);
+			expect(markdown.match(/First item/g)).toHaveLength(1);
+		});
+
+		it('merges duplicate checklist sections through the ADF round trip', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockReturnValue(
+				'### ✅ AC\n- [ ] First\n\n### ✅ AC\n- [x] First\n- [ ] Second',
+			);
+			mockMarkdownToAdf.mockImplementation((nextMarkdown) => nextMarkdown);
+			mockJiraClient.updateIssue.mockResolvedValue(undefined);
+
+			await provider.createChecklistWithItems('PROJ-1', '✅ AC', [{ name: 'Third' }]);
+
+			expect(mockMarkdownToAdf).toHaveBeenCalledWith(
+				'### ✅ AC\n- [x] First\n- [ ] Second\n- [ ] Third',
+			);
+		});
+
 		it('preserves concurrent bulk-created checklist sections', async () => {
 			let markdown = 'Existing.';
 			mockJiraClient.getIssue.mockResolvedValue({
@@ -717,6 +760,25 @@ describe('JiraPMProvider', () => {
 			await expect(provider.addChecklistItem('invalid-format', 'Item')).rejects.toThrow(
 				'Invalid JIRA checklist ID',
 			);
+		});
+
+		it('does not duplicate a markdown checkbox on retry', async () => {
+			let markdown = '### ✅ AC\n- [x] Existing';
+			mockJiraClient.getIssue.mockResolvedValue({
+				fields: { description: { type: 'doc', content: [] } },
+			});
+			mockAdfToPlainText.mockImplementation(() => markdown);
+			mockMarkdownToAdf.mockImplementation((nextMarkdown) => nextMarkdown);
+			mockJiraClient.updateIssue.mockImplementation(async (_id, updates) => {
+				markdown = updates.description as string;
+			});
+
+			const checklist = await provider.createChecklist('PROJ-1', '✅ AC');
+			await provider.addChecklistItem(checklist.id, 'Existing');
+			await provider.addChecklistItem(checklist.id, 'Existing');
+
+			expect(markdown).toBe('### ✅ AC\n- [x] Existing');
+			expect(markdown.match(/Existing/g)).toHaveLength(1);
 		});
 	});
 
