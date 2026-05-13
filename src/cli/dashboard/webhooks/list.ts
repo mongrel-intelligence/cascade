@@ -91,7 +91,7 @@ export default class WebhooksList extends DashboardCommand {
 					`  Paired project: ${result.sentry.organizationSlug}/${result.sentry.projectSlug}`,
 				);
 				this.log(`  Webhook secret: ${result.sentry.webhookSecretSet ? 'configured' : 'not set'}`);
-				this.log('  Delivery filter: mismatched Sentry projects are ignored by Cascade.');
+				this.log(`  Delivery filter: payload project must match "${result.sentry.projectSlug}".`);
 				this.log(`  ${result.sentry.note}`);
 			} else {
 				this.log('  (not configured)');

@@ -315,7 +315,7 @@ This creates webhooks on GitHub, Trello, and Jira when those integrations are co
 | Trello | Programmatic create/list/delete | `https://your-router-host/trello/webhook` |
 | Jira | Programmatic create/list/delete plus label ensure | `https://your-router-host/jira/webhook` |
 | Linear | Manual setup with optional `LINEAR_WEBHOOK_SECRET` | `https://your-router-host/linear/webhook` |
-| Sentry | Manual setup with optional Sentry webhook secret; filtered by configured `organizationSlug` and `projectSlug` | `https://your-router-host/sentry/webhook/my-project` |
+| Sentry | Manual setup with optional Sentry webhook secret; paired with configured `organizationSlug`/`projectSlug` and filtered by payload project matching `projectSlug` | `https://your-router-host/sentry/webhook/my-project` |
 
 ---
 

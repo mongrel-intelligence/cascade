@@ -85,7 +85,7 @@ interface ParsedWebhookEvent {
 | `LinearRouterAdapter` | `src/router/adapters/linear.ts` | Linear team ID |
 | `SentryRouterAdapter` | `src/router/adapters/sentry.ts` | CASCADE `projectId` (from URL) |
 
-Sentry keeps the route shape `/sentry/webhook/:projectId`. The project ID selects the Cascade project, then the adapter filters the payload against the configured Sentry `organizationSlug` and `projectSlug`; organization-level Sentry deliveries for other projects are acknowledged but do not dispatch agents.
+Sentry keeps the route shape `/sentry/webhook/:projectId`. The project ID selects the Cascade project, whose Sentry config includes a paired `organizationSlug`/`projectSlug`. The adapter filters payloads by matching Sentry project identifiers against the configured `projectSlug`; organization-level deliveries whose payload project does not match are acknowledged but do not dispatch agents.
 
 ## The 12-Step Pipeline
 

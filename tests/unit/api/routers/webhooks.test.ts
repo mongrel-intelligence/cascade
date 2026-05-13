@@ -352,7 +352,7 @@ describe('webhooksRouter', () => {
 				projectSlug: 'api',
 				note: expect.stringContaining('my-org/api'),
 			});
-			expect(result.sentry?.note).toContain('mismatched Sentry projects are filtered');
+			expect(result.sentry?.note).toContain('project matches the configured project slug "api"');
 		});
 
 		it('does not return Sentry info without project slug or API token', async () => {
@@ -685,7 +685,7 @@ describe('webhooksRouter', () => {
 				webhookSecretSet: false,
 				organizationSlug: 'my-org',
 				projectSlug: 'api',
-				note: expect.stringContaining('mismatched Sentry projects are filtered'),
+				note: expect.stringContaining('project matches the configured project slug "api"'),
 			});
 		});
 	});

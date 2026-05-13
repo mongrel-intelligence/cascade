@@ -151,7 +151,7 @@ describe('WebhooksList (webhooks list)', () => {
 							webhookSecretSet: true,
 							organizationSlug: 'my-org',
 							projectSlug: 'api',
-							note: 'Cascade dispatches only payloads for my-org/api; mismatched Sentry projects are filtered.',
+							note: 'Cascade dispatches only payloads whose Sentry project matches the configured project slug "api".',
 						},
 						linear: null,
 						errors: {},
@@ -167,8 +167,8 @@ describe('WebhooksList (webhooks list)', () => {
 
 		const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
 		expect(output).toContain('Paired project: my-org/api');
-		expect(output).toContain('Delivery filter: mismatched Sentry projects are ignored by Cascade.');
-		expect(output).toContain('mismatched Sentry projects are filtered');
+		expect(output).toContain('Delivery filter: payload project must match "api".');
+		expect(output).toContain('configured project slug "api"');
 	});
 
 	it('requires project ID argument', async () => {
@@ -260,7 +260,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 							webhookSecretSet: false,
 							organizationSlug: 'my-org',
 							projectSlug: 'api',
-							note: 'Cascade dispatches only payloads for my-org/api; mismatched Sentry projects are filtered.',
+							note: 'Cascade dispatches only payloads whose Sentry project matches the configured project slug "api".',
 						},
 					}),
 				},
@@ -274,7 +274,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 
 		const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
 		expect(output).toContain('Paired project: my-org/api');
-		expect(output).toContain('Delivery filter: mismatched Sentry projects are ignored by Cascade.');
+		expect(output).toContain('Delivery filter: payload project must match "api".');
 		expect(output).toContain('"event_alert", "metric_alert", and/or "issue"');
 	});
 

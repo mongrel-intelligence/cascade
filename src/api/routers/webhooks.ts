@@ -108,7 +108,7 @@ function buildSentryDisplayInfo(
 		webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
 		organizationSlug: pctx.sentryOrganizationSlug,
 		projectSlug: pctx.sentryProjectSlug,
-		note: `Configure this URL manually in your Sentry Internal Integration webhook settings. Cascade dispatches only payloads for ${pctx.sentryOrganizationSlug}/${pctx.sentryProjectSlug}; mismatched Sentry projects are filtered.`,
+		note: `Configure this URL manually in your Sentry Internal Integration webhook settings for ${pctx.sentryOrganizationSlug}/${pctx.sentryProjectSlug}. Cascade dispatches only payloads whose Sentry project matches the configured project slug "${pctx.sentryProjectSlug}".`,
 	};
 }
 

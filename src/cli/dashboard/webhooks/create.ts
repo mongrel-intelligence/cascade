@@ -87,7 +87,7 @@ export default class WebhooksCreate extends DashboardCommand {
 					`  Paired project: ${result.sentry.organizationSlug}/${result.sentry.projectSlug}`,
 				);
 				this.log(`  Webhook secret: ${result.sentry.webhookSecretSet ? 'configured' : 'not set'}`);
-				this.log('  Delivery filter: mismatched Sentry projects are ignored by Cascade.');
+				this.log(`  Delivery filter: payload project must match "${result.sentry.projectSlug}".`);
 				this.log('  Steps:');
 				this.log('    1. Go to Sentry > Settings > Developer Settings > Internal Integrations');
 				this.log('    2. Create or edit an Internal Integration');
