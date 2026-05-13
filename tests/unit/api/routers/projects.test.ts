@@ -492,6 +492,65 @@ describe('projectsRouter', () => {
 				);
 			});
 
+			it('trims and upserts Sentry project slug config', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				mockUpsertProjectIntegration.mockResolvedValue(undefined);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await caller.integrations.upsert({
+					projectId: 'p1',
+					category: 'alerting',
+					provider: 'sentry',
+					config: {
+						organizationSlug: ' my-org ',
+						projectSlug: ' api ',
+						resultsContainerId: ' Alerts ',
+					},
+				});
+
+				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith(
+					'p1',
+					'alerting',
+					'sentry',
+					{ organizationSlug: 'my-org', projectSlug: 'api', resultsContainerId: 'Alerts' },
+					undefined,
+				);
+			});
+
+			it('rejects Sentry alerting integration without organization slug', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await expect(
+					caller.integrations.upsert({
+						projectId: 'p1',
+						category: 'alerting',
+						provider: 'sentry',
+						config: { organizationSlug: ' ', projectSlug: 'api' },
+					}),
+				).rejects.toMatchObject({
+					code: 'BAD_REQUEST',
+					message: 'Sentry organization slug is required',
+				});
+			});
+
+			it('rejects Sentry alerting integration without project slug', async () => {
+				mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+				await expect(
+					caller.integrations.upsert({
+						projectId: 'p1',
+						category: 'alerting',
+						provider: 'sentry',
+						config: { organizationSlug: 'my-org', projectSlug: '' },
+					}),
+				).rejects.toMatchObject({
+					code: 'BAD_REQUEST',
+					message: 'Sentry project slug is required',
+				});
+			});
+
 			it('rejects unknown category', async () => {
 				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 				await expect(

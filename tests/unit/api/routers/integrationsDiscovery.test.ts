@@ -689,6 +689,28 @@ describe('integrationsDiscoveryRouter', () => {
 			);
 		});
 
+		it('returns project id, name, and slug when projectSlug is provided', async () => {
+			mockFetch.mockResolvedValue({
+				ok: true,
+				json: async () => ({ id: 'proj-123', name: 'API', slug: 'api' }),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.verifySentry({
+				apiToken: 'sntrys_abc',
+				organizationSlug: 'my-org',
+				projectSlug: 'api',
+			});
+
+			expect(result).toEqual({ id: 'proj-123', name: 'API', slug: 'api' });
+			expect(mockFetch).toHaveBeenCalledWith(
+				'https://sentry.io/api/0/projects/my-org/api/',
+				expect.objectContaining({
+					headers: { Authorization: 'Bearer sntrys_abc' },
+				}),
+			);
+		});
+
 		it('returns empty strings when Sentry response fields are missing', async () => {
 			mockFetch.mockResolvedValue({
 				ok: true,
@@ -714,6 +736,23 @@ describe('integrationsDiscoveryRouter', () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
 				caller.verifySentry({ apiToken: 'bad-token', organizationSlug: 'my-org' }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		});
+
+		it('wraps unknown project response in BAD_REQUEST', async () => {
+			mockFetch.mockResolvedValue({
+				ok: false,
+				status: 404,
+				statusText: 'Not Found',
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.verifySentry({
+					apiToken: 'sntrys_abc',
+					organizationSlug: 'my-org',
+					projectSlug: 'missing-api',
+				}),
 			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		});
 
