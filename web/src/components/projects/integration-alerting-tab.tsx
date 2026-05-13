@@ -219,6 +219,7 @@ export function AlertingTab({
 	const [organizationSlug, setOrganizationSlug] = useState(
 		(existingConfig.organizationSlug as string) ?? '',
 	);
+	const [projectSlug, setProjectSlug] = useState((existingConfig.projectSlug as string) ?? '');
 	const [resultsContainerId, setResultsContainerId] = useState(
 		(existingConfig.resultsContainerId as string) ?? '',
 	);
@@ -245,11 +246,13 @@ export function AlertingTab({
 	const webhookSecretCred = credentials.find((c) => c.envVarKey === 'SENTRY_WEBHOOK_SECRET');
 
 	const handleVerify = async (rawToken: string) => {
+		const trimmedOrganizationSlug = organizationSlug.trim();
+		const trimmedProjectSlug = projectSlug.trim();
 		if (!rawToken) {
 			setVerifyError('Enter the API token value to verify it');
 			return;
 		}
-		if (!organizationSlug) {
+		if (!trimmedOrganizationSlug) {
 			setVerifyError('Enter the organization slug to verify it');
 			return;
 		}
@@ -259,7 +262,8 @@ export function AlertingTab({
 		try {
 			const result = await trpcClient.integrationsDiscovery.verifySentry.mutate({
 				apiToken: rawToken,
-				organizationSlug,
+				organizationSlug: trimmedOrganizationSlug,
+				...(trimmedProjectSlug ? { projectSlug: trimmedProjectSlug } : {}),
 			});
 			setVerifyResult(result);
 		} catch (err) {
@@ -271,13 +275,23 @@ export function AlertingTab({
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
+			const trimmedOrganizationSlug = organizationSlug.trim();
+			const trimmedProjectSlug = projectSlug.trim();
+			const trimmedResultsContainerId = resultsContainerId.trim();
+			if (!trimmedOrganizationSlug) {
+				throw new Error('Sentry organization slug is required');
+			}
+			if (!trimmedProjectSlug) {
+				throw new Error('Sentry project slug is required');
+			}
 			return trpcClient.projects.integrations.upsert.mutate({
 				projectId,
 				category: 'alerting',
 				provider: 'sentry',
 				config: {
-					organizationSlug,
-					...(resultsContainerId ? { resultsContainerId } : {}),
+					organizationSlug: trimmedOrganizationSlug,
+					projectSlug: trimmedProjectSlug,
+					...(trimmedResultsContainerId ? { resultsContainerId: trimmedResultsContainerId } : {}),
 				},
 			});
 		},
@@ -327,6 +341,20 @@ export function AlertingTab({
 					value={organizationSlug}
 					onChange={(e) => setOrganizationSlug(e.target.value)}
 					placeholder="my-organization"
+				/>
+			</div>
+
+			{/* Project Slug */}
+			<div className="space-y-2">
+				<Label htmlFor="sentry-project-slug">Sentry Project Slug</Label>
+				<p className="text-xs text-muted-foreground">
+					Your Sentry project slug (found in project URLs after the organization slug).
+				</p>
+				<Input
+					id="sentry-project-slug"
+					value={projectSlug}
+					onChange={(e) => setProjectSlug(e.target.value)}
+					placeholder="my-project"
 				/>
 			</div>
 

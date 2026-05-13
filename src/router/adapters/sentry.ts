@@ -9,9 +9,15 @@
 
 import { withJiraCredentials } from '../../jira/client.js';
 import { withLinearCredentials } from '../../linear/client.js';
+import { getSentryIntegrationConfig } from '../../sentry/integration.js';
+import {
+	formatSentryProjectMatchFailure,
+	matchSentryPayloadProject,
+} from '../../sentry/project-filter.js';
 import type { SentryAugmentedPayload } from '../../sentry/types.js';
 import { withTrelloCredentials } from '../../trello/client.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
+import { buildSkipResult } from '../../triggers/shared/result-builders.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
@@ -110,6 +116,22 @@ export class SentryRouterAdapter implements RouterPlatformAdapter {
 		if (!fullProject) {
 			logger.info('SentryRouterAdapter: no full project config found', { projectId: project.id });
 			return null;
+		}
+
+		const sentryConfig = await getSentryIntegrationConfig(fullProject.id);
+		const projectMatch = matchSentryPayloadProject(
+			payload as SentryAugmentedPayload,
+			sentryConfig?.projectSlug,
+		);
+		if (!projectMatch.allowed) {
+			const message = formatSentryProjectMatchFailure(projectMatch);
+			logger.info('SentryRouterAdapter: payload project filtered before dispatch', {
+				projectId: fullProject.id,
+				reason: projectMatch.reason,
+				configuredProjectSlug: projectMatch.configuredProjectSlug,
+				payloadProjects: projectMatch.payloadProjects,
+			});
+			return buildSkipResult('sentry-project-filter', message);
 		}
 
 		const ctx: TriggerContext = { project: fullProject, source: 'sentry', payload };

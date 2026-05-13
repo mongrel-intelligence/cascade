@@ -295,11 +295,21 @@ export const integrationsDiscoveryRouter = router({
 	 * The token is never stored by this endpoint.
 	 */
 	verifySentry: protectedProcedure
-		.input(z.object({ apiToken: z.string().min(1), organizationSlug: z.string().min(1) }))
+		.input(
+			z.object({
+				apiToken: z.string().min(1),
+				organizationSlug: z.string().trim().min(1),
+				projectSlug: z.string().trim().min(1).optional(),
+			}),
+		)
 		.mutation(async ({ ctx, input }) => {
 			logger.debug('integrationsDiscovery.verifySentry called', { orgId: ctx.effectiveOrgId });
 			return wrapIntegrationCall('Failed to verify Sentry credentials', async () => {
-				const url = `https://sentry.io/api/0/organizations/${encodeURIComponent(input.organizationSlug)}/`;
+				const organizationSlug = input.organizationSlug;
+				const projectSlug = input.projectSlug;
+				const url = projectSlug
+					? `https://sentry.io/api/0/projects/${encodeURIComponent(organizationSlug)}/${encodeURIComponent(projectSlug)}/`
+					: `https://sentry.io/api/0/organizations/${encodeURIComponent(organizationSlug)}/`;
 				const response = await fetch(url, {
 					headers: { Authorization: `Bearer ${input.apiToken}` },
 				});

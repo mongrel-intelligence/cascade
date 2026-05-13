@@ -113,7 +113,11 @@ export interface SentryEvent {
 	web_url?: string;
 	issue_id?: string;
 	issue_url?: string;
-	project?: string;
+	project?:
+		| string
+		| { id?: string; slug?: string; name?: string; project_slug?: string; projectSlug?: string };
+	project_slug?: string;
+	projectSlug?: string;
 	release?: string | Record<string, unknown>;
 	environment?: string;
 	platform?: string;
@@ -212,7 +216,10 @@ export interface SentryMetricAlertPayload {
 				triggers?: unknown[];
 			};
 			status?: string;
-			projects?: string[];
+			projects?: Array<
+				| string
+				| { id?: string; slug?: string; name?: string; project_slug?: string; projectSlug?: string }
+			>;
 			date_created?: string;
 			date_detected?: string;
 			date_started?: string;

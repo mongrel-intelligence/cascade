@@ -113,6 +113,17 @@ const mockLinearProject = {
 	},
 };
 
+const mockSentryProject = {
+	id: 'sentry-project',
+	orgId: 'org-1',
+	repo: 'owner/sentry-repo',
+	pm: { type: 'linear' },
+	linear: {
+		teamId: 'TEAM-123',
+		statuses: { todo: 'Todo' },
+	},
+};
+
 function setupJiraProjectContext() {
 	mockDbSelect.mockReturnValue({ from: mockDbFrom });
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
@@ -164,6 +175,34 @@ function setupProjectContext(opts?: {
 	}
 	if (opts?.webhookSecret) {
 		creds.GITHUB_WEBHOOK_SECRET = opts.webhookSecret;
+	}
+	mockGetAllProjectCredentials.mockResolvedValue(creds);
+}
+
+function setupSentryProjectContext(opts?: {
+	noSentryApiToken?: boolean;
+	webhookSecret?: boolean;
+	config?: Record<string, unknown> | null;
+	provider?: string;
+}) {
+	mockDbSelect.mockReturnValue({ from: mockDbFrom });
+	mockDbFrom.mockReturnValue({ where: mockDbWhere });
+	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+	mockFindProjectByIdFromDb.mockResolvedValue(mockSentryProject);
+	mockGetIntegrationByProjectAndCategory.mockResolvedValue(
+		opts?.config === null
+			? null
+			: {
+					provider: opts?.provider ?? 'sentry',
+					config: opts?.config ?? { organizationSlug: 'my-org', projectSlug: 'api' },
+				},
+	);
+	const creds: Record<string, string> = {};
+	if (!opts?.noSentryApiToken) {
+		creds.SENTRY_API_TOKEN = 'sntrys_test123';
+	}
+	if (opts?.webhookSecret) {
+		creds.SENTRY_WEBHOOK_SECRET = 'sentry-secret-abc';
 	}
 	mockGetAllProjectCredentials.mockResolvedValue(creds);
 }
@@ -295,6 +334,43 @@ describe('webhooksRouter', () => {
 			// GITHUB_TOKEN_IMPLEMENTER was not set, so GitHub webhooks should not be listed
 			expect(result.github).toEqual([]);
 			expect(mockListWebhooks).not.toHaveBeenCalled();
+		});
+
+		it('returns Sentry project pairing when alerting config and API token are complete', async () => {
+			setupSentryProjectContext({ webhookSecret: true });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.list({
+				projectId: 'sentry-project',
+				callbackBaseUrl: 'http://example.com/',
+			});
+
+			expect(result.sentry).toEqual({
+				url: 'http://example.com/sentry/webhook/sentry-project',
+				webhookSecretSet: true,
+				organizationSlug: 'my-org',
+				projectSlug: 'api',
+				note: expect.stringContaining('my-org/api'),
+			});
+			expect(result.sentry?.note).toContain('project matches the configured project slug "api"');
+		});
+
+		it('does not return Sentry info without project slug or API token', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			setupSentryProjectContext({ config: { organizationSlug: 'my-org' } });
+			const missingProjectSlug = await caller.list({
+				projectId: 'sentry-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+			expect(missingProjectSlug.sentry).toBeNull();
+
+			setupSentryProjectContext({ noSentryApiToken: true });
+			const missingApiToken = await caller.list({
+				projectId: 'sentry-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+			expect(missingApiToken.sentry).toBeNull();
 		});
 	});
 
@@ -593,6 +669,24 @@ describe('webhooksRouter', () => {
 
 			expect(result.jira).toMatchObject({ id: 101 });
 			expect(result.labelsEnsured).toEqual([]);
+		});
+
+		it('returns Sentry manual setup info with paired project context', async () => {
+			setupSentryProjectContext();
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'sentry-project',
+				callbackBaseUrl: 'http://example.com/',
+			});
+
+			expect(result.sentry).toEqual({
+				url: 'http://example.com/sentry/webhook/sentry-project',
+				webhookSecretSet: false,
+				organizationSlug: 'my-org',
+				projectSlug: 'api',
+				note: expect.stringContaining('project matches the configured project slug "api"'),
+			});
 		});
 	});
 

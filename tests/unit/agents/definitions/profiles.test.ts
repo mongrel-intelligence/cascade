@@ -255,7 +255,7 @@ describe('getAgentProfile', () => {
 			// trigger --agent-type backlog-manager` ran with NO pipelineSnapshot
 			// because resolveContextPipeline returned [] for undefined triggerEvent.
 			mockPipelineSnapshotStep.mockResolvedValue([
-				{ toolName: 'PipelineSnapshot', params: {}, result: 'ok', description: 'snapshot' },
+				{ toolName: 'PipelineSnapshotSummary', params: {}, result: 'ok', description: 'snapshot' },
 			]);
 			mockResolveAgentDefinition.mockResolvedValue(
 				makeDefinition({ requiredContext: ['pipelineSnapshot'] }),
@@ -268,7 +268,7 @@ describe('getAgentProfile', () => {
 
 			expect(mockPipelineSnapshotStep).toHaveBeenCalledOnce();
 			expect(result).toHaveLength(1);
-			expect(result[0].toolName).toBe('PipelineSnapshot');
+			expect(result[0].toolName).toBe('PipelineSnapshotSummary');
 		});
 
 		it('aborts with a structured error when a requiredContext step returns 0 injections', async () => {
@@ -309,7 +309,7 @@ describe('getAgentProfile', () => {
 			// scm:pr-merged) lists pipelineSnapshot in its contextPipeline AND
 			// the agent declares it as requiredContext.
 			mockPipelineSnapshotStep.mockResolvedValue([
-				{ toolName: 'PipelineSnapshot', params: {}, result: 'ok', description: 'snapshot' },
+				{ toolName: 'PipelineSnapshotSummary', params: {}, result: 'ok', description: 'snapshot' },
 			]);
 			mockResolveAgentDefinition.mockResolvedValue(
 				makeDefinition({
@@ -340,7 +340,7 @@ describe('getAgentProfile', () => {
 				order.push('pipelineSnapshot');
 				return [
 					{
-						toolName: 'PipelineSnapshot',
+						toolName: 'PipelineSnapshotSummary',
 						params: {},
 						result: 'ok',
 						description: 'snapshot',

@@ -29,7 +29,7 @@ import { checkTriggerEnabledWithParams } from '../../../../src/triggers/shared/t
 import type { TriggerContext } from '../../../../src/types/index.js';
 import { createMockProject } from '../../../helpers/factories.js';
 
-const sentryConfig = { organizationSlug: 'my-org' };
+const sentryConfig = { organizationSlug: 'my-org', projectSlug: 'api' };
 
 // Project with alerts slot configured — required for dispatch
 const mockProjectWithAlerts = createMockProject({

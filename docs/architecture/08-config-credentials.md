@@ -77,6 +77,16 @@ Backlog selection and work-item creation use different native concepts:
 
 For Linear, `teamId` is not a backlog state. It is the container used when creating or searching issues, and unfiltered team listing may include unmapped workflow states such as Ideas. Pipeline snapshot and backlog-manager paths use status-aware listing (`ListWorkItems --status backlog`) so only the configured `linear.statuses.backlog` state is eligible for selection.
 
+Backlog-manager receives pipeline state through the required `pipelineSnapshot`
+context step, which emits one structured `PipelineSnapshotSummary` JSON
+injection. The JSON includes provider-source status counts, active pipeline
+count, backlog item order, `itemsById`, comments, checklists, labels,
+descriptions, attachments/media references, dependency signals, and provider
+errors. The legacy markdown `PipelineSnapshot` context is intentionally not
+emitted. If all backlog items appear blocked, backlog-manager posts the blocked
+backlog comment only on the first BACKLOG item in `statuses.backlog.itemIds`
+provider order; when BACKLOG is empty it exits without posting.
+
 `maxInFlightItems` is enforced at two points: (a) the `backlog-manager` chain
 gates (won't auto-pull from BACKLOG when at capacity) and (b) the PM
 `status-changed` triggers (won't fire `implementation` when a card is moved

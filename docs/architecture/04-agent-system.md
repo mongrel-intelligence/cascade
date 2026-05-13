@@ -212,6 +212,14 @@ Pipeline prompts receive separate PM identifiers for selection and creation:
 
 For Trello, BACKLOG is a list, so `backlogStatusId` and `workItemCreateContainerId` are both the backlog list ID. For JIRA, `backlogStatusId` is `jira.statuses.backlog` and creation uses `jira.projectKey`. For Linear, `backlogStatusId` is `linear.statuses.backlog` and creation uses `linear.teamId`; backlog-manager must not use the Linear team ID to discover candidate backlog issues.
 
+### Backlog-manager pipeline context
+
+The `backlog-manager` agent requires the `pipelineSnapshot` context step on every run. That internal step key now emits exactly one context injection named `PipelineSnapshotSummary`; its `result` is structured JSON, not markdown. The JSON is the authoritative contract for active pipeline capacity, backlog ordering, per-status counts, `itemsById`, comments, checklists, labels, descriptions, attachments/media references, dependency signals, and provider or item-read errors.
+
+The previous human-readable markdown `PipelineSnapshot` context was intentionally removed as a clean contract break. Prompt policy should read `PipelineSnapshotSummary.statuses.<status>.itemIds` and `PipelineSnapshotSummary.itemsById` directly instead of parsing formatted work-item text.
+
+When capacity is available but every backlog item is blocked, backlog-manager posts the `Backlog Blocked` comment exactly once on the first item in `PipelineSnapshotSummary.statuses.backlog.itemIds` provider order. If BACKLOG is empty, it exits silently without posting that comment. Selected items are still moved only from BACKLOG to TODO with `MoveWorkItem.expectedSourceState` set to the configured backlog source.
+
 ### Alert task prompt context
 
 Alerting task prompts can reference scalar alert fields passed through `AgentInput`:

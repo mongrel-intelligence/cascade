@@ -100,11 +100,15 @@ function buildSentryDisplayInfo(
 	projectId: string,
 	baseUrl: string,
 ): SentryWebhookInfo | undefined {
-	if (!pctx.sentryConfigured) return undefined;
+	if (!pctx.sentryConfigured || !pctx.sentryOrganizationSlug || !pctx.sentryProjectSlug) {
+		return undefined;
+	}
 	return {
 		url: `${baseUrl}/sentry/webhook/${projectId}`,
 		webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
-		note: 'Configure this URL manually in your Sentry Internal Integration webhook settings.',
+		organizationSlug: pctx.sentryOrganizationSlug,
+		projectSlug: pctx.sentryProjectSlug,
+		note: `Configure this URL manually in your Sentry Internal Integration webhook settings for ${pctx.sentryOrganizationSlug}/${pctx.sentryProjectSlug}. Cascade dispatches only payloads whose Sentry project matches the configured project slug "${pctx.sentryProjectSlug}".`,
 	};
 }
 
@@ -139,16 +143,13 @@ export const webhooksRouter = router({
 				jiraListWebhooks(pctx),
 			]);
 
-			// Sentry — informational only (webhooks must be configured in Sentry UI)
-			let sentry: SentryWebhookInfo | null = null;
-			if (input.callbackBaseUrl && pctx.sentryConfigured) {
-				const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
-				sentry = {
-					url: `${baseUrl}/sentry/webhook/${input.projectId}`,
-					webhookSecretSet: pctx.sentryWebhookSecretSet ?? false,
-					note: 'Configure this URL in your Sentry Internal Integration webhook settings.',
-				};
-			}
+			const sentry = input.callbackBaseUrl
+				? (buildSentryDisplayInfo(
+						pctx,
+						input.projectId,
+						input.callbackBaseUrl.replace(/\/$/, ''),
+					) ?? null)
+				: null;
 
 			// Linear — informational only (webhooks must be configured in Linear team settings)
 			let linear: LinearWebhookInfo | null = null;

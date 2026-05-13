@@ -20,6 +20,11 @@
 
 import { AlertSlotMissingError } from '../../integrations/alerting/_shared/types.js';
 import { pmRegistry } from '../../pm/registry.js';
+import { getSentryIntegrationConfig } from '../../sentry/integration.js';
+import {
+	formatSentryProjectMatchFailure,
+	matchSentryPayloadProject,
+} from '../../sentry/project-filter.js';
 import type { SentryAugmentedPayload } from '../../sentry/types.js';
 import type { ProjectConfig, TriggerResult } from '../../types/index.js';
 import { startWatchdog } from '../../utils/lifecycle.js';
@@ -120,6 +125,22 @@ export async function processSentryWebhook(
 	const pc = await loadProjectConfigById(projectId);
 	if (!pc) {
 		logger.warn('processSentryWebhook: project not found, skipping', { projectId });
+		return;
+	}
+
+	const sentryConfig = await getSentryIntegrationConfig(projectId);
+	const projectMatch = matchSentryPayloadProject(
+		payload as SentryAugmentedPayload,
+		sentryConfig?.projectSlug,
+	);
+	if (!projectMatch.allowed) {
+		logger.info('processSentryWebhook: payload project filtered before trigger resolution', {
+			projectId,
+			reason: projectMatch.reason,
+			message: formatSentryProjectMatchFailure(projectMatch),
+			configuredProjectSlug: projectMatch.configuredProjectSlug,
+			payloadProjects: projectMatch.payloadProjects,
+		});
 		return;
 	}
 

@@ -42,6 +42,44 @@ async function verifyProjectOwnership(projectId: string, orgId: string) {
 	}
 }
 
+function normalizeIntegrationConfig(input: {
+	category: 'pm' | 'scm' | 'alerting';
+	provider: string;
+	config: Record<string, unknown>;
+}): Record<string, unknown> {
+	if (input.category !== 'alerting' || input.provider !== 'sentry') {
+		return input.config;
+	}
+
+	const organizationSlug =
+		typeof input.config.organizationSlug === 'string' ? input.config.organizationSlug.trim() : '';
+	const projectSlug =
+		typeof input.config.projectSlug === 'string' ? input.config.projectSlug.trim() : '';
+	const resultsContainerId =
+		typeof input.config.resultsContainerId === 'string'
+			? input.config.resultsContainerId.trim()
+			: '';
+
+	if (!organizationSlug) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: 'Sentry organization slug is required',
+		});
+	}
+	if (!projectSlug) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: 'Sentry project slug is required',
+		});
+	}
+
+	return {
+		organizationSlug,
+		projectSlug,
+		...(resultsContainerId ? { resultsContainerId } : {}),
+	};
+}
+
 function serializeProject<T extends { agentEngineSettings?: unknown }>(
 	project: T,
 ): Omit<T, 'agentEngineSettings'> & { engineSettings: T['agentEngineSettings'] | null } {
@@ -188,11 +226,12 @@ export const projectsRouter = router({
 			)
 			.mutation(async ({ ctx, input }) => {
 				await verifyProjectOwnership(input.projectId, ctx.effectiveOrgId);
+				const config = normalizeIntegrationConfig(input);
 				return upsertProjectIntegration(
 					input.projectId,
 					input.category,
 					input.provider,
-					input.config,
+					config,
 					input.triggers,
 				);
 			}),

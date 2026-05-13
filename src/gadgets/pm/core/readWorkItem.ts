@@ -1,30 +1,13 @@
-import type { Attachment, MediaReference } from '../../../pm/index.js';
+import type {
+	Attachment,
+	Checklist,
+	MediaReference,
+	WorkItem,
+	WorkItemComment,
+	WorkItemLabel,
+} from '../../../pm/index.js';
 import { filterImageMedia, getPMProvider, getPMProviderOrNull } from '../../../pm/index.js';
 import { logger } from '../../../utils/logging.js';
-
-interface Label {
-	name: string;
-	color?: string;
-}
-
-interface ChecklistItem {
-	id: string;
-	name: string;
-	complete: boolean;
-}
-
-interface Checklist {
-	id: string;
-	name: string;
-	items: ChecklistItem[];
-}
-
-interface Comment {
-	author: { name: string };
-	date: string;
-	text: string;
-	inlineMedia?: MediaReference[];
-}
 
 /**
  * Result returned by readWorkItemWithMedia().
@@ -38,7 +21,16 @@ export interface WorkItemWithMedia {
 	urlsDetected: number;
 }
 
-function formatLabels(labels: Label[]): string {
+export interface StructuredWorkItemDetails {
+	item: WorkItem;
+	checklists: Checklist[];
+	attachments: Attachment[];
+	comments: WorkItemComment[];
+	media: MediaReference[];
+	urlsDetected: number;
+}
+
+function formatLabels(labels: WorkItemLabel[]): string {
 	if (labels.length === 0) return '';
 	const items = labels.map((l) => `- ${l.name}${l.color ? ` (${l.color})` : ''}`).join('\n');
 	return `## Labels\n\n${items}\n\n`;
@@ -71,7 +63,7 @@ function formatAttachments(attachments: Attachment[]): string {
 	return `${result}\n`;
 }
 
-function formatComments(comments: Comment[]): string {
+function formatComments(comments: WorkItemComment[]): string {
 	if (comments.length === 0) return '## Comments\n\n(No comments)\n\n';
 	let result = `## Comments (${comments.length})\n\n`;
 	for (const comment of comments.slice().reverse()) {
@@ -111,6 +103,28 @@ export async function readWorkItemWithMedia(
 	workItemId: string,
 	includeComments = true,
 ): Promise<WorkItemWithMedia> {
+	const details = await readStructuredWorkItemDetails(workItemId, includeComments);
+	const { item, checklists, attachments, comments, media, urlsDetected } = details;
+
+	let text = `# ${item.title}\n\n**URL:** ${item.url}\n\n## Description\n\n${item.description || '(No description)'}\n\n`;
+	text += formatLabels(item.labels);
+	text += formatChecklists(checklists);
+	text += formatAttachments(attachments);
+
+	if (includeComments) {
+		text += formatComments(comments);
+	}
+
+	// Append pre-fetched images section listing discovered images
+	text += formatPreFetchedImages(media);
+
+	return { text, media, urlsDetected };
+}
+
+export async function readStructuredWorkItemDetails(
+	workItemId: string,
+	includeComments = true,
+): Promise<StructuredWorkItemDetails> {
 	const provider = getPMProvider();
 	const [item, checklists, attachments] = await Promise.all([
 		provider.getWorkItem(workItemId),
@@ -140,20 +154,15 @@ export async function readWorkItemWithMedia(
 		),
 	);
 
-	let text = `# ${item.title}\n\n**URL:** ${item.url}\n\n## Description\n\n${item.description || '(No description)'}\n\n`;
-	text += formatLabels(item.labels);
-	text += formatChecklists(checklists);
-	text += formatAttachments(attachments);
-
+	let comments: WorkItemComment[] = [];
 	if (includeComments) {
-		const comments = await provider.getWorkItemComments(workItemId);
+		comments = await provider.getWorkItemComments(workItemId);
 		for (const comment of comments) {
 			if (comment.inlineMedia && comment.inlineMedia.length > 0) {
 				urlsDetected += comment.inlineMedia.length;
 				allMedia.push(...filterImageMedia(comment.inlineMedia));
 			}
 		}
-		text += formatComments(comments);
 	}
 
 	// Deduplicate by URL — JIRA description images are always backed by an attachment,
@@ -166,10 +175,7 @@ export async function readWorkItemWithMedia(
 		return true;
 	});
 
-	// Append pre-fetched images section listing discovered images
-	text += formatPreFetchedImages(dedupedMedia);
-
-	return { text, media: dedupedMedia, urlsDetected };
+	return { item, checklists, attachments, comments, media: dedupedMedia, urlsDetected };
 }
 
 /**

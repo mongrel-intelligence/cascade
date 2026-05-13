@@ -7,7 +7,11 @@
 
 import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
-import { readWorkItem, readWorkItemWithMedia } from '../../gadgets/pm/core/readWorkItem.js';
+import {
+	readStructuredWorkItemDetails,
+	readWorkItemWithMedia,
+	type StructuredWorkItemDetails,
+} from '../../gadgets/pm/core/readWorkItem.js';
 import { formatSentryEvent } from '../../gadgets/sentry/core/format.js';
 import type { Todo } from '../../gadgets/todo/storage.js';
 import {
@@ -18,6 +22,13 @@ import {
 } from '../../gadgets/todo/storage.js';
 import { githubClient } from '../../github/client.js';
 import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../../pm/config.js';
+import type {
+	Attachment,
+	Checklist,
+	MediaReference,
+	WorkItem,
+	WorkItemLabel,
+} from '../../pm/index.js';
 import { getPMProviderOrNull } from '../../pm/index.js';
 import { getSentryClient } from '../../sentry/client.js';
 import type { AgentInput, ProjectConfig } from '../../types/index.js';
@@ -367,8 +378,69 @@ interface PipelineListResult {
 	error: string | null;
 }
 
+type PipelineStatusKey = PipelineList['statusKey'];
+
+interface PipelineCommentSummary {
+	id: string;
+	authorName: string;
+	date: string;
+	text: string;
+}
+
+interface PipelineDependencySignal {
+	sourceType: 'description' | 'comment' | 'checklist' | 'attachment';
+	sourceId?: string;
+	text: string;
+	matches: string[];
+}
+
+interface PipelineStatusSummary {
+	statusKey: PipelineStatusKey;
+	statusName: string;
+	itemIds: string[];
+	count: number;
+	error?: string;
+}
+
+interface PipelineItemSummary {
+	id: string;
+	title: string;
+	url: string;
+	statusKey: PipelineStatusKey;
+	statusName: string;
+	providerStatus?: string;
+	providerStatusId?: string;
+	description?: string;
+	labels: WorkItemLabel[];
+	checklists: Checklist[];
+	comments: PipelineCommentSummary[];
+	attachments: Attachment[];
+	mediaReferences: MediaReference[];
+	dependencySignals: PipelineDependencySignal[];
+	error?: string;
+}
+
+interface PipelineSnapshotSummary {
+	schemaVersion: 1;
+	provider: string;
+	statuses: Partial<Record<PipelineStatusKey, PipelineStatusSummary>>;
+	activePipelineCount: number;
+	/**
+	 * `true` when all active-status list fetches (todo, inProgress, inReview) succeeded.
+	 * `false` when any active-status fetch failed — the count is a lower bound, not authoritative.
+	 * When false, the backlog-manager MUST abort without moving items.
+	 */
+	activeCapacityReliable: boolean;
+	activeStatusKeys: PipelineStatusKey[];
+	itemsById: Record<string, PipelineItemSummary>;
+	errors: Array<{ statusKey?: PipelineStatusKey; itemId?: string; message: string }>;
+}
+
 const PIPELINE_DETAIL_LISTS = new Set(['BACKLOG', 'TODO', 'IN_PROGRESS', 'IN_REVIEW']);
 const PIPELINE_DETAIL_CONCURRENCY = 5;
+const ACTIVE_PIPELINE_STATUS_KEYS: PipelineStatusKey[] = ['todo', 'inProgress', 'inReview'];
+const DEPENDENCY_SIGNAL_REGEX =
+	/\b(?:blocked by|depends on|waiting for|after|requires)\b|[A-Z][A-Z0-9]+-\d+|https?:\/\/\S+/gi;
 
 function buildPipelineLists(project: ProjectConfig): PipelineList[] {
 	const trelloConfig = getTrelloConfig(project);
@@ -437,15 +509,15 @@ function collectItemsNeedingFullDetails(listResults: PipelineListResult[]): Arra
 async function fetchFullPipelineDetails(
 	items: Array<{ id: string }>,
 	logWriter: LogWriter,
-): Promise<Map<string, string>> {
-	const fullDetails = new Map<string, string>();
+): Promise<Map<string, StructuredWorkItemDetails | { error: string }>> {
+	const fullDetails = new Map<string, StructuredWorkItemDetails | { error: string }>();
 
 	for (let i = 0; i < items.length; i += PIPELINE_DETAIL_CONCURRENCY) {
 		const batch = items.slice(i, i + PIPELINE_DETAIL_CONCURRENCY);
 		await Promise.all(
 			batch.map(async ({ id }) => {
 				try {
-					const details = await readWorkItem(id, true);
+					const details = await readStructuredWorkItemDetails(id, true);
 					fullDetails.set(id, details);
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
@@ -453,7 +525,7 @@ async function fetchFullPipelineDetails(
 						workItemId: id,
 						error: message,
 					});
-					fullDetails.set(id, `Error reading details: ${message}`);
+					fullDetails.set(id, { error: message });
 				}
 			}),
 		);
@@ -462,59 +534,190 @@ async function fetchFullPipelineDetails(
 	return fullDetails;
 }
 
-function appendPipelineSection(
-	sections: string[],
-	listResult: PipelineListResult,
-	fullDetails: Map<string, string>,
-): void {
-	const { list, items, error } = listResult;
+function collectDependencySignalsFromText(
+	sourceType: PipelineDependencySignal['sourceType'],
+	text: string | undefined,
+	sourceId?: string,
+): PipelineDependencySignal[] {
+	const matches = Array.from(new Set(text?.match(DEPENDENCY_SIGNAL_REGEX) ?? []));
+	if (!text || matches.length === 0) return [];
+	return [{ sourceType, sourceId, text, matches }];
+}
 
-	sections.push(`## ${list.name} (status: ${list.statusKey})`);
-	sections.push('');
+function collectDependencySignals(details: {
+	item: WorkItem;
+	checklists: Checklist[];
+	attachments: Attachment[];
+	comments: PipelineCommentSummary[];
+}): PipelineDependencySignal[] {
+	const signals: PipelineDependencySignal[] = [
+		...collectDependencySignalsFromText('description', details.item.description),
+	];
 
-	if (error) {
-		sections.push(`_Failed to fetch: ${error}_`);
-		sections.push('');
-		return;
-	}
-
-	if (!items || items.length === 0) {
-		sections.push('_Empty — no items_');
-		sections.push('');
-		return;
-	}
-
-	sections.push(`${items.length} item(s):`);
-	sections.push('');
-
-	if (!PIPELINE_DETAIL_LISTS.has(list.name)) {
-		for (const item of items) {
-			sections.push(`- [${item.id}] ${item.title}${item.url ? ` (${item.url})` : ''}`);
+	for (const checklist of details.checklists) {
+		for (const item of checklist.items) {
+			signals.push(...collectDependencySignalsFromText('checklist', item.name, item.id));
 		}
-		sections.push('');
-		return;
 	}
 
-	for (const item of items) {
-		const details = fullDetails.get(item.id);
-		if (details) {
-			sections.push(`### [${item.id}] ${item.title}`);
-			sections.push('');
-			sections.push(details);
-			sections.push('');
+	for (const comment of details.comments) {
+		signals.push(...collectDependencySignalsFromText('comment', comment.text, comment.id));
+	}
+
+	for (const attachment of details.attachments) {
+		signals.push(...collectDependencySignalsFromText('attachment', attachment.url, attachment.id));
+	}
+
+	return signals;
+}
+
+function summarizeComments(details: StructuredWorkItemDetails): PipelineCommentSummary[] {
+	return details.comments.map((comment) => ({
+		id: comment.id,
+		authorName: comment.author.name,
+		date: comment.date,
+		text: comment.text,
+	}));
+}
+
+function buildItemSummary(
+	list: PipelineList,
+	listItem: WorkItem,
+	fullDetails: Map<string, StructuredWorkItemDetails | { error: string }>,
+): PipelineItemSummary {
+	const detail = fullDetails.get(listItem.id);
+	if (detail && 'error' in detail) {
+		return {
+			id: listItem.id,
+			title: listItem.title,
+			url: listItem.url,
+			statusKey: list.statusKey,
+			statusName: list.name,
+			providerStatus: listItem.status,
+			providerStatusId: listItem.statusId,
+			description: listItem.description,
+			labels: listItem.labels,
+			checklists: [],
+			comments: [],
+			attachments: [],
+			mediaReferences: [],
+			dependencySignals: collectDependencySignalsFromText('description', listItem.description),
+			error: detail.error,
+		};
+	}
+
+	if (detail) {
+		const comments = summarizeComments(detail);
+		const item = detail.item;
+		return {
+			id: item.id,
+			title: item.title,
+			url: item.url,
+			statusKey: list.statusKey,
+			statusName: list.name,
+			providerStatus: item.status,
+			providerStatusId: item.statusId,
+			description: item.description,
+			labels: item.labels,
+			checklists: detail.checklists,
+			comments,
+			attachments: detail.attachments,
+			mediaReferences: detail.media,
+			dependencySignals: collectDependencySignals({
+				item,
+				checklists: detail.checklists,
+				attachments: detail.attachments,
+				comments,
+			}),
+		};
+	}
+
+	const compactDetails = {
+		item: listItem,
+		checklists: [] as Checklist[],
+		attachments: [] as Attachment[],
+		comments: [] as PipelineCommentSummary[],
+	};
+	return {
+		id: listItem.id,
+		title: listItem.title,
+		url: listItem.url,
+		statusKey: list.statusKey,
+		statusName: list.name,
+		providerStatus: listItem.status,
+		providerStatusId: listItem.statusId,
+		description: listItem.description,
+		labels: listItem.labels,
+		checklists: [],
+		comments: [],
+		attachments: [],
+		mediaReferences: listItem.inlineMedia ?? [],
+		dependencySignals: collectDependencySignals(compactDetails),
+	};
+}
+
+function buildPipelineSnapshotSummary(
+	listResults: PipelineListResult[],
+	fullDetails: Map<string, StructuredWorkItemDetails | { error: string }>,
+	provider: NonNullable<ReturnType<typeof getPMProviderOrNull>>,
+): PipelineSnapshotSummary {
+	const statuses: PipelineSnapshotSummary['statuses'] = {};
+	const itemsById: Record<string, PipelineItemSummary> = {};
+	const errors: PipelineSnapshotSummary['errors'] = [];
+
+	for (const { list, items, error } of listResults) {
+		const itemIds = items?.map((item) => item.id) ?? [];
+		statuses[list.statusKey] = {
+			statusKey: list.statusKey,
+			statusName: list.name,
+			itemIds,
+			count: itemIds.length,
+			...(error ? { error } : {}),
+		};
+
+		if (error) {
+			errors.push({ statusKey: list.statusKey, message: error });
 			continue;
 		}
 
-		sections.push(`- [${item.id}] ${item.title} _(details unavailable)_`);
+		for (const item of items ?? []) {
+			const summary = buildItemSummary(list, item, fullDetails);
+			itemsById[item.id] = summary;
+			if (summary.error) {
+				errors.push({ statusKey: list.statusKey, itemId: item.id, message: summary.error });
+			}
+		}
 	}
+
+	const activePipelineCount = ACTIVE_PIPELINE_STATUS_KEYS.reduce(
+		(total, statusKey) => total + (statuses[statusKey]?.count ?? 0),
+		0,
+	);
+
+	// If any active-status list fetch failed, the count is a lower bound, not authoritative.
+	// Callers must treat capacity as unknown and abort moves when this is false.
+	const activeCapacityReliable = ACTIVE_PIPELINE_STATUS_KEYS.every(
+		(statusKey) => !statuses[statusKey]?.error,
+	);
+
+	return {
+		schemaVersion: 1,
+		provider: provider.type,
+		statuses,
+		activePipelineCount,
+		activeCapacityReliable,
+		activeStatusKeys: ACTIVE_PIPELINE_STATUS_KEYS,
+		itemsById,
+		errors,
+	};
 }
 
 /**
- * Fetch full contents of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED)
- * and inject them as a structured snapshot into agent context.
+ * Fetch pipeline state (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED)
+ * and inject it as the structured PipelineSnapshotSummary JSON contract.
  *
- * This allows the backlog-manager agent to make decisions without making additional
- * ListWorkItems or ReadWorkItem calls — the full pipeline state is pre-loaded.
+ * This allows the backlog-manager agent to make decisions without parsing the
+ * runtime ReadWorkItem markdown format.
  */
 export async function fetchPipelineSnapshotStep(
 	params: FetchContextParams,
@@ -540,22 +743,14 @@ export async function fetchPipelineSnapshotStep(
 	const listResults = await fetchPipelineLists(lists, provider, params.logWriter);
 	const itemsNeedingFullDetails = collectItemsNeedingFullDetails(listResults);
 	const fullDetails = await fetchFullPipelineDetails(itemsNeedingFullDetails, params.logWriter);
-
-	// Format the snapshot
-	const sections: string[] = ['# Pipeline Snapshot', ''];
-
-	for (const listResult of listResults) {
-		appendPipelineSection(sections, listResult, fullDetails);
-	}
-
-	const result = sections.join('\n');
+	const summary = buildPipelineSnapshotSummary(listResults, fullDetails, provider);
 
 	return [
 		{
-			toolName: 'PipelineSnapshot',
-			params: { comment: 'Pre-fetched full pipeline snapshot across all lists' },
-			result,
-			description: `Pre-fetched pipeline snapshot (${lists.length} lists, ${itemsNeedingFullDetails.length} items with full details)`,
+			toolName: 'PipelineSnapshotSummary',
+			params: { comment: 'Pre-fetched structured pipeline snapshot across all statuses' },
+			result: JSON.stringify(summary, null, 2),
+			description: `Pre-fetched structured pipeline snapshot (${lists.length} statuses, ${itemsNeedingFullDetails.length} items with full details)`,
 		},
 	];
 }

@@ -148,8 +148,8 @@ Each provider declares its credential roles — the mapping from logical role na
 
 - `SentryAlertingIntegration` implements `AlertingIntegration`
 - `sentryClient` — REST API client with Bearer token auth
-- Supports issue alerts, metric alerts, and issue lifecycle webhooks
-- Config: `organizationSlug` stored in `project_integrations.config` JSONB
+- Supports Sentry webhook resources `event_alert`, `metric_alert`, and `issue` lifecycle
+- Config: `organizationSlug` and `projectSlug` stored in `project_integrations.config` JSONB
 
 ## PM Abstraction
 

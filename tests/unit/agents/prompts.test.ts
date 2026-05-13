@@ -206,6 +206,40 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('MANDATORY FIRST STEP');
 	});
 
+	it('backlog-manager prompt uses PipelineSnapshotSummary JSON as the only pipeline contract', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('PipelineSnapshotSummary');
+		expect(prompt).toContain('activePipelineCount');
+		expect(prompt).toContain('itemsById');
+		expect(prompt).toContain('dependencySignals');
+		expect(prompt).not.toContain('legacy markdown Pipeline Snapshot');
+	});
+
+	it('backlog-manager prompt aborts moves when activeCapacityReliable is false', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('activeCapacityReliable');
+		expect(prompt).toContain('abort immediately');
+		// The abort instruction must appear before backlog selection guidance
+		const abortIdx = prompt.indexOf('activeCapacityReliable');
+		const selectionIdx = prompt.indexOf('Backlog Selection Process');
+		expect(abortIdx).toBeLessThan(selectionIdx);
+	});
+
+	it('backlog-manager prompt targets all-blocked comment to first BACKLOG item only', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain(
+			'Post this comment exactly once on the first BACKLOG item in `PipelineSnapshotSummary.statuses.backlog.itemIds` order',
+		);
+		expect(prompt).toContain('Do not post it on a DONE/MERGED trigger item');
+		expect(prompt).toContain('do not post it on every blocked backlog item');
+	});
+
+	it('backlog-manager prompt exits silently when backlog is empty', () => {
+		const prompt = getSystemPrompt('backlog-manager');
+		expect(prompt).toContain('If BACKLOG is empty, exit silently');
+		expect(prompt).toContain('do not post a blocked-backlog comment');
+	});
+
 	it('backlog-manager prompt checks only active pipeline stages (not DONE)', () => {
 		const prompt = getSystemPrompt('backlog-manager');
 		expect(prompt).toContain('TODO');
@@ -241,6 +275,7 @@ describe('system prompts content', () => {
 		});
 		expect(prompt).toContain('BACKLOG_STATUS_ID: `state-backlog`');
 		expect(prompt).toContain('status: "backlog"');
+		expect(prompt).toContain('expectedSourceState: state-backlog');
 		expect(prompt).not.toContain('Use these EXACT IDs when calling `ListWorkItems`');
 	});
 

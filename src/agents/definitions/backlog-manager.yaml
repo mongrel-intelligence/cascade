@@ -58,7 +58,7 @@ triggers:
 # Required context — runs for EVERY invocation regardless of trigger source.
 # Manual `cascade runs trigger --agent-type backlog-manager` would otherwise
 # skip the per-trigger contextPipeline (triggerEvent is undefined), and the
-# agent would freelance with no snapshot. Empty pipelineSnapshot result
+# agent would freelance with no structured PipelineSnapshotSummary JSON. Empty pipelineSnapshot result
 # aborts the run with a structured error + Sentry capture under tag
 # `context_pipeline_required_step_failed` (closes the 2026-04-29 incident
 # where MNG-422 was pulled from SPLITTING into TODO).
@@ -70,10 +70,11 @@ prompts:
   # The system prompt (.eta file) contains full instructions.
   # This taskPrompt provides the per-run context and directive.
   taskPrompt: |
-    A Pipeline Snapshot has been pre-loaded into your context with the current state of all pipeline lists (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
+    A PipelineSnapshotSummary JSON object has been pre-loaded into your context with the current state of all pipeline statuses (BACKLOG, TODO, IN_PROGRESS, IN_REVIEW, DONE, MERGED).
 
-    1. Review the pre-loaded Pipeline Snapshot and count items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
-    2. If the count is below the capacity limit (see system prompt): use the pre-loaded BACKLOG data from the snapshot to select ALL eligible unblocked items to fill remaining capacity completely — always move the maximum number possible.
+    1. Parse PipelineSnapshotSummary. If activeCapacityReliable is false, abort immediately — capacity count is unreliable due to a fetch error; do not move any items. Otherwise use activePipelineCount for items currently in the active pipeline (TODO + IN PROGRESS + IN REVIEW).
+    2. If the count is below the capacity limit (see system prompt): use PipelineSnapshotSummary.statuses.backlog.itemIds in provider order plus itemsById details to select ALL eligible unblocked items to fill remaining capacity completely — always move the maximum number possible.
     3. If already at or above capacity: exit immediately without taking action.
+    4. If every BACKLOG item is blocked, post one Backlog Blocked comment on the first BACKLOG item in PipelineSnapshotSummary.statuses.backlog.itemIds order. If BACKLOG is empty, exit silently.
 
 hint: Only act if pipeline has capacity (items in TODO + IN PROGRESS + IN REVIEW < maxInFlightItems). When acting, ALWAYS fill ALL remaining capacity.
