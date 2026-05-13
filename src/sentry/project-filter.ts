@@ -27,6 +27,25 @@ export interface SentryProjectMatchResult {
 	payloadProjects: SentryProjectCandidate[];
 }
 
+export function formatSentryProjectMatchFailure(result: SentryProjectMatchResult): string {
+	const configuredProject = result.configuredProjectSlug ?? '(missing)';
+	const payloadProjects =
+		result.payloadProjects
+			.map((project) => {
+				const identifiers = [
+					project.id ? `id=${project.id}` : null,
+					project.slug ? `slug=${project.slug}` : null,
+					project.name ? `name=${project.name}` : null,
+				]
+					.filter(Boolean)
+					.join(',');
+				return `${project.source}{${identifiers}}`;
+			})
+			.join('; ') || '(missing)';
+
+	return `${result.reason}: configuredProjectSlug=${configuredProject}; payloadProjects=${payloadProjects}`;
+}
+
 type ProjectLike = {
 	project?: unknown;
 	id?: unknown;

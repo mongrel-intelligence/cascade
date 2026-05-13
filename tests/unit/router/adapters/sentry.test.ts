@@ -7,10 +7,15 @@ vi.mock('../../../../src/router/config.js', () => ({
 	loadProjectConfig: vi.fn(),
 }));
 
+vi.mock('../../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn(),
+}));
+
 import { SentryRouterAdapter } from '../../../../src/router/adapters/sentry.js';
 import type { RouterProjectConfig } from '../../../../src/router/config.js';
 import { loadProjectConfig } from '../../../../src/router/config.js';
 import type { SentryJob } from '../../../../src/router/queue.js';
+import { getSentryIntegrationConfig } from '../../../../src/sentry/integration.js';
 import type { TriggerRegistry } from '../../../../src/triggers/registry.js';
 
 // ============================================================================
@@ -35,13 +40,13 @@ const mockTriggerRegistry = {
 
 const validEventAlertPayload = {
 	resource: 'event_alert',
-	payload: { action: 'triggered', data: { event: {} } },
+	payload: { action: 'triggered', data: { event: { project: 'api' } } },
 	cascadeProjectId: 'p1',
 };
 
 const validMetricAlertPayload = {
 	resource: 'metric_alert',
-	payload: { action: 'critical', data: {} },
+	payload: { action: 'critical', data: { metric_alert: { projects: [{ slug: 'api' }] } } },
 	cascadeProjectId: 'p1',
 };
 
@@ -50,6 +55,10 @@ beforeEach(() => {
 	vi.mocked(loadProjectConfig).mockResolvedValue({
 		projects: [mockProject],
 		fullProjects: [mockFullProject as never],
+	});
+	vi.mocked(getSentryIntegrationConfig).mockResolvedValue({
+		organizationSlug: 'mongrel',
+		projectSlug: 'api',
 	});
 });
 
@@ -292,6 +301,63 @@ describe('SentryRouterAdapter', () => {
 				}),
 			);
 			expect(result).toEqual(mockTriggerResult);
+		});
+
+		it('returns structured skip and does not dispatch when payload project mismatches configured project', async () => {
+			const event = {
+				projectIdentifier: 'p1',
+				eventType: 'event_alert',
+				isCommentEvent: false,
+			};
+			const payload = {
+				resource: 'event_alert',
+				payload: { action: 'triggered', data: { event: { project: 'mobile' } } },
+				cascadeProjectId: 'p1',
+			};
+
+			const result = await adapter.dispatchWithCredentials(
+				event,
+				payload,
+				mockProject,
+				mockTriggerRegistry,
+			);
+
+			expect(getSentryIntegrationConfig).toHaveBeenCalledWith('p1');
+			expect(mockTriggerRegistry.dispatch).not.toHaveBeenCalled();
+			expect(result).toEqual({
+				agentType: null,
+				agentInput: {},
+				skipReason: {
+					handler: 'sentry-project-filter',
+					message: expect.stringContaining('project_mismatch'),
+				},
+			});
+		});
+
+		it('returns structured skip and does not dispatch when Sentry config is missing', async () => {
+			vi.mocked(getSentryIntegrationConfig).mockResolvedValueOnce(null);
+			const event = {
+				projectIdentifier: 'p1',
+				eventType: 'event_alert',
+				isCommentEvent: false,
+			};
+
+			const result = await adapter.dispatchWithCredentials(
+				event,
+				validEventAlertPayload,
+				mockProject,
+				mockTriggerRegistry,
+			);
+
+			expect(mockTriggerRegistry.dispatch).not.toHaveBeenCalled();
+			expect(result).toEqual({
+				agentType: null,
+				agentInput: {},
+				skipReason: {
+					handler: 'sentry-project-filter',
+					message: expect.stringContaining('missing_configured_project'),
+				},
+			});
 		});
 
 		it('returns null when full project is not found', async () => {

@@ -7,6 +7,10 @@ vi.mock('../../../src/config/provider.js', () => ({
 	loadProjectConfigById: vi.fn(),
 }));
 
+vi.mock('../../../src/sentry/integration.js', () => ({
+	getSentryIntegrationConfig: vi.fn(),
+}));
+
 vi.mock('../../../src/utils/lifecycle.js', () => ({
 	startWatchdog: vi.fn(),
 }));
@@ -62,6 +66,7 @@ import {
 } from '../../../src/integrations/alerting/_shared/format.js';
 import { materializeAlertWorkItem } from '../../../src/integrations/alerting/_shared/materialize.js';
 import { AlertSlotMissingError } from '../../../src/integrations/alerting/_shared/types.js';
+import { getSentryIntegrationConfig } from '../../../src/sentry/integration.js';
 import { processSentryWebhook } from '../../../src/triggers/sentry/webhook-handler.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
 import { withAgentTypeConcurrency } from '../../../src/triggers/shared/concurrency.js';
@@ -70,6 +75,30 @@ import { resolveTriggerResult } from '../../../src/triggers/shared/trigger-resol
 import { createMockProject } from '../../helpers/factories.js';
 
 const mockProject = createMockProject({ id: 'proj-sentry' });
+
+function makeEventAlertPayload(project = 'api') {
+	return {
+		resource: 'event_alert',
+		cascadeProjectId: 'proj-sentry',
+		payload: { data: { event: { project } } },
+	};
+}
+
+function makeMetricAlertPayload(project = 'api') {
+	return {
+		resource: 'metric_alert',
+		cascadeProjectId: 'proj-sentry',
+		payload: { data: { metric_alert: { projects: [{ slug: project }] } } },
+	};
+}
+
+function makeIssuePayload(project = 'api') {
+	return {
+		resource: 'issue',
+		cascadeProjectId: 'proj-sentry',
+		payload: { data: { issue: { project } } },
+	};
+}
 
 describe('processSentryWebhook', () => {
 	let mockRegistry: { dispatch: ReturnType<typeof vi.fn> };
@@ -80,6 +109,10 @@ describe('processSentryWebhook', () => {
 		vi.mocked(loadProjectConfigById).mockResolvedValue({
 			project: mockProject,
 			config: { projects: [mockProject] } as never,
+		});
+		vi.mocked(getSentryIntegrationConfig).mockResolvedValue({
+			organizationSlug: 'mongrel',
+			projectSlug: 'api',
 		});
 		vi.mocked(runAgentExecutionPipeline).mockResolvedValue(undefined);
 		// Re-apply pass-through implementations after resetAllMocks clears them
@@ -105,7 +138,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('loads project config by projectId and calls resolveTriggerResult with sentry source', async () => {
-		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeEventAlertPayload();
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, undefined);
 
@@ -123,7 +156,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('creates a TriggerContext with source sentry and the given payload', async () => {
-		const payload = { resource: 'metric_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeMetricAlertPayload();
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
 
@@ -148,7 +181,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('passes triggerResult to resolveTriggerResult when provided', async () => {
-		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
@@ -162,7 +195,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('logs info message when triggerResult is provided (via resolveTriggerResult)', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 
@@ -176,7 +209,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('runs the agent execution pipeline when triggerResult has an agentType', async () => {
-		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 
@@ -191,7 +224,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('does not run the agent when resolveTriggerResult returns null', async () => {
-		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeEventAlertPayload();
 		vi.mocked(resolveTriggerResult).mockResolvedValue(null);
 
 		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never);
@@ -199,8 +232,23 @@ describe('processSentryWebhook', () => {
 		expect(runAgentExecutionPipeline).not.toHaveBeenCalled();
 	});
 
+	it('returns before trigger resolution and PM materialization when payload project mismatches configured project', async () => {
+		const payload = makeEventAlertPayload('mobile');
+		const triggerResult = {
+			agentType: 'alerting',
+			agentInput: { alertIssueId: 'sentry-issue-42' },
+		} as never;
+
+		await processSentryWebhook(payload, 'proj-sentry', mockRegistry as never, triggerResult);
+
+		expect(getSentryIntegrationConfig).toHaveBeenCalledWith('proj-sentry');
+		expect(resolveTriggerResult).not.toHaveBeenCalled();
+		expect(materializeAlertWorkItem).not.toHaveBeenCalled();
+		expect(runAgentExecutionPipeline).not.toHaveBeenCalled();
+	});
+
 	it('applies agent-type concurrency when running the agent', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 
@@ -216,7 +264,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips execution when concurrency is blocked', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = { agentType: 'alerting', agentInput: {} } as never;
 		vi.mocked(resolveTriggerResult).mockResolvedValue(triggerResult);
 		vi.mocked(withAgentTypeConcurrency).mockResolvedValue(false);
@@ -229,7 +277,7 @@ describe('processSentryWebhook', () => {
 	// ── PM card materialisation (spec 019) ──────────────────────────────────
 
 	it('materialises a PM work item when alertIssueId is set and workItemId is absent', async () => {
-		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {
@@ -268,7 +316,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips materialisation and runs agent directly when workItemId is already set', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			workItemId: 'wi-already-set',
@@ -288,7 +336,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips materialisation when alertIssueId is not a string', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {},
@@ -302,7 +350,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('logs a warning and skips agent when materialisation throws AlertSlotMissingError', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: { alertIssueId: 'sentry-issue-42' },
@@ -322,7 +370,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('re-throws transient PM errors so BullMQ can retry the job', async () => {
-		const payload = { resource: 'event_alert' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: { alertIssueId: 'sentry-issue-42' },
@@ -341,7 +389,7 @@ describe('processSentryWebhook', () => {
 	// ── Metric alert PM card materialisation (spec 019 review feedback) ──────
 
 	it('materialises a PM work item for metric alerts when alertMetricKey is set', async () => {
-		const payload = { resource: 'metric_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeMetricAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {
@@ -381,7 +429,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips metric alert materialisation when workItemId is already set', async () => {
-		const payload = { resource: 'metric_alert' };
+		const payload = makeMetricAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			workItemId: 'metric-card-already',
@@ -401,7 +449,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips agent and warns when metric alert materialisation throws AlertSlotMissingError', async () => {
-		const payload = { resource: 'metric_alert' };
+		const payload = makeMetricAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: { alertMetricKey: 'my-org:Error Rate High' },
@@ -421,7 +469,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('re-throws transient PM errors for metric alerts so BullMQ can retry', async () => {
-		const payload = { resource: 'metric_alert' };
+		const payload = makeMetricAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: { alertMetricKey: 'my-org:Error Rate High' },
@@ -444,7 +492,7 @@ describe('processSentryWebhook', () => {
 	// to pick the lifecycle format helper + 'sentry-issue' AlertSource.
 
 	it('materialises a PM work item for issue-lifecycle when triggerEvent is alerting:issue-lifecycle', async () => {
-		const payload = { resource: 'issue', cascadeProjectId: 'proj-sentry' };
+		const payload = makeIssuePayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {
@@ -490,7 +538,7 @@ describe('processSentryWebhook', () => {
 		// Regression net: the existing event_alert flow must keep using
 		// `formatSentryCardBody` and `'sentry'` AlertSource even though both
 		// surfaces pass `alertIssueId`.
-		const payload = { resource: 'event_alert', cascadeProjectId: 'proj-sentry' };
+		const payload = makeEventAlertPayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {
@@ -514,7 +562,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips issue-lifecycle materialisation when workItemId is already set', async () => {
-		const payload = { resource: 'issue' };
+		const payload = makeIssuePayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			workItemId: 'issue-card-already',
@@ -538,7 +586,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('skips agent and warns when issue-lifecycle materialisation throws AlertSlotMissingError', async () => {
-		const payload = { resource: 'issue' };
+		const payload = makeIssuePayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {
@@ -561,7 +609,7 @@ describe('processSentryWebhook', () => {
 	});
 
 	it('re-throws transient PM errors for issue-lifecycle so BullMQ can retry', async () => {
-		const payload = { resource: 'issue' };
+		const payload = makeIssuePayload();
 		const triggerResult = {
 			agentType: 'alerting',
 			agentInput: {
