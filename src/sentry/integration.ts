@@ -14,6 +14,8 @@ import { getIntegrationByProjectAndCategory } from '../db/repositories/integrati
 export interface SentryIntegrationConfig {
 	/** Sentry organization slug (e.g. "my-company") */
 	organizationSlug: string;
+	/** Sentry project slug (e.g. "api") */
+	projectSlug: string;
 	/**
 	 * PM container ID where the alerting agent creates investigation work items.
 	 * Maps to the prompt creation container when no PM backlog is configured.
@@ -36,12 +38,22 @@ export async function getSentryIntegrationConfig(
 	if (!row || row.provider !== 'sentry') return null;
 
 	const config = row.config as Record<string, unknown> | null;
-	if (!config?.organizationSlug || typeof config.organizationSlug !== 'string') return null;
+	const organizationSlug = normalizeRequiredString(config?.organizationSlug);
+	const projectSlug = normalizeRequiredString(config?.projectSlug);
+	if (!organizationSlug || !projectSlug) return null;
+
+	const resultsContainerId = normalizeRequiredString(config?.resultsContainerId);
 
 	return {
-		organizationSlug: config.organizationSlug,
-		...(typeof config.resultsContainerId === 'string'
-			? { resultsContainerId: config.resultsContainerId }
-			: {}),
+		organizationSlug,
+		projectSlug,
+		...(resultsContainerId ? { resultsContainerId } : {}),
 	};
+}
+
+function normalizeRequiredString(value: unknown): string | null {
+	if (typeof value !== 'string') return null;
+
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : null;
 }

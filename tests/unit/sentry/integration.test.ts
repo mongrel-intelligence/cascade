@@ -28,7 +28,7 @@ describe('sentry/integration', () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-1',
 				provider: 'pagerduty',
-				config: { organizationSlug: 'my-org' },
+				config: { organizationSlug: 'my-org', projectSlug: 'api' },
 			});
 
 			const result = await getSentryIntegrationConfig('proj-1');
@@ -52,7 +52,43 @@ describe('sentry/integration', () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-1',
 				provider: 'sentry',
-				config: { organizationSlug: 12345 },
+				config: { organizationSlug: 12345, projectSlug: 'api' },
+			});
+
+			const result = await getSentryIntegrationConfig('proj-1');
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when config is missing projectSlug', async () => {
+			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
+				id: 'int-1',
+				provider: 'sentry',
+				config: { organizationSlug: 'my-org' },
+			});
+
+			const result = await getSentryIntegrationConfig('proj-1');
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when projectSlug is not a string', async () => {
+			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
+				id: 'int-1',
+				provider: 'sentry',
+				config: { organizationSlug: 'my-org', projectSlug: 12345 },
+			});
+
+			const result = await getSentryIntegrationConfig('proj-1');
+
+			expect(result).toBeNull();
+		});
+
+		it('returns null when required slugs are blank strings', async () => {
+			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
+				id: 'int-1',
+				provider: 'sentry',
+				config: { organizationSlug: '  ', projectSlug: '\t' },
 			});
 
 			const result = await getSentryIntegrationConfig('proj-1');
@@ -76,37 +112,42 @@ describe('sentry/integration', () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-1',
 				provider: 'sentry',
-				config: { organizationSlug: 'my-company' },
+				config: { organizationSlug: 'my-company', projectSlug: 'api' },
 			});
 
 			const result = await getSentryIntegrationConfig('proj-1');
 
-			expect(result).toEqual({ organizationSlug: 'my-company' });
+			expect(result).toEqual({ organizationSlug: 'my-company', projectSlug: 'api' });
 		});
 
-		it('returns correct organizationSlug from config', async () => {
+		it('returns normalized slugs from config', async () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-2',
 				provider: 'sentry',
-				config: { organizationSlug: 'acme-corp', extraField: 'ignored' },
+				config: { organizationSlug: ' acme-corp ', projectSlug: ' web ', extraField: 'ignored' },
 			});
 
 			const result = await getSentryIntegrationConfig('proj-2');
 
-			expect(result).toEqual({ organizationSlug: 'acme-corp' });
+			expect(result).toEqual({ organizationSlug: 'acme-corp', projectSlug: 'web' });
 		});
 
 		it('returns resultsContainerId when present in config', async () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-3',
 				provider: 'sentry',
-				config: { organizationSlug: 'my-org', resultsContainerId: 'list-backlog-123' },
+				config: {
+					organizationSlug: 'my-org',
+					projectSlug: 'api',
+					resultsContainerId: 'list-backlog-123',
+				},
 			});
 
 			const result = await getSentryIntegrationConfig('proj-3');
 
 			expect(result).toEqual({
 				organizationSlug: 'my-org',
+				projectSlug: 'api',
 				resultsContainerId: 'list-backlog-123',
 			});
 		});
@@ -115,12 +156,12 @@ describe('sentry/integration', () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-4',
 				provider: 'sentry',
-				config: { organizationSlug: 'my-org' },
+				config: { organizationSlug: 'my-org', projectSlug: 'api' },
 			});
 
 			const result = await getSentryIntegrationConfig('proj-4');
 
-			expect(result).toEqual({ organizationSlug: 'my-org' });
+			expect(result).toEqual({ organizationSlug: 'my-org', projectSlug: 'api' });
 			expect(result?.resultsContainerId).toBeUndefined();
 		});
 
@@ -128,11 +169,24 @@ describe('sentry/integration', () => {
 			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
 				id: 'int-5',
 				provider: 'sentry',
-				config: { organizationSlug: 'my-org', resultsContainerId: 42 },
+				config: { organizationSlug: 'my-org', projectSlug: 'api', resultsContainerId: 42 },
 			});
 
 			const result = await getSentryIntegrationConfig('proj-5');
 
+			expect(result?.resultsContainerId).toBeUndefined();
+		});
+
+		it('omits resultsContainerId when it is blank', async () => {
+			mockGetIntegrationByProjectAndCategory.mockResolvedValueOnce({
+				id: 'int-6',
+				provider: 'sentry',
+				config: { organizationSlug: 'my-org', projectSlug: 'api', resultsContainerId: '  ' },
+			});
+
+			const result = await getSentryIntegrationConfig('proj-6');
+
+			expect(result).toEqual({ organizationSlug: 'my-org', projectSlug: 'api' });
 			expect(result?.resultsContainerId).toBeUndefined();
 		});
 

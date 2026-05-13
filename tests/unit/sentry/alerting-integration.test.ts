@@ -48,7 +48,10 @@ describe('SentryAlertingIntegration', () => {
 	// =========================================================================
 	describe('hasIntegration', () => {
 		it('returns true when sentry integration config is non-null', async () => {
-			mockGetSentryIntegrationConfig.mockResolvedValue({ organizationSlug: 'my-org' });
+			mockGetSentryIntegrationConfig.mockResolvedValue({
+				organizationSlug: 'my-org',
+				projectSlug: 'api',
+			});
 
 			const result = await integration.hasIntegration('proj-1');
 
@@ -79,12 +82,12 @@ describe('SentryAlertingIntegration', () => {
 	// =========================================================================
 	describe('getConfig', () => {
 		it('returns SentryIntegrationConfig when sentry integration is configured', async () => {
-			const config = { organizationSlug: 'my-company' };
+			const config = { organizationSlug: 'my-company', projectSlug: 'web' };
 			mockGetSentryIntegrationConfig.mockResolvedValue(config);
 
 			const result = await integration.getConfig('proj-1');
 
-			expect(result).toEqual({ organizationSlug: 'my-company' });
+			expect(result).toEqual({ organizationSlug: 'my-company', projectSlug: 'web' });
 			expect(mockGetSentryIntegrationConfig).toHaveBeenCalledWith('proj-1');
 		});
 

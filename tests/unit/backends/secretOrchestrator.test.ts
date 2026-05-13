@@ -139,6 +139,7 @@ describe('buildExecutionPlan', () => {
 	it('fetches sentry config for alerting agent', async () => {
 		mockGetSentryIntegrationConfig.mockResolvedValueOnce({
 			organizationSlug: 'org',
+			projectSlug: 'api',
 			resultsContainerId: 'sentry-container-123',
 		});
 

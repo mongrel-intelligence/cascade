@@ -42,7 +42,7 @@ const mockProject = createMockProject({
 	},
 });
 
-const sentryConfig = { organizationSlug: 'mongrel' };
+const sentryConfig = { organizationSlug: 'mongrel', projectSlug: 'cascade' };
 
 function makeIssueLifecycleCtx(
 	overrides: {

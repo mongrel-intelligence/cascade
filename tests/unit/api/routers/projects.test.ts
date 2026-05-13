@@ -480,14 +480,14 @@ describe('projectsRouter', () => {
 					projectId: 'p1',
 					category: 'alerting',
 					provider: 'sentry',
-					config: { organizationSlug: 'my-org' },
+					config: { organizationSlug: 'my-org', projectSlug: 'api' },
 				});
 
 				expect(mockUpsertProjectIntegration).toHaveBeenCalledWith(
 					'p1',
 					'alerting',
 					'sentry',
-					{ organizationSlug: 'my-org' },
+					{ organizationSlug: 'my-org', projectSlug: 'api' },
 					undefined,
 				);
 			});

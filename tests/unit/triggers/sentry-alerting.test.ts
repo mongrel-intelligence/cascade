@@ -36,7 +36,7 @@ const mockProject = createMockProject({
 	},
 });
 
-const sentryConfig = { organizationSlug: 'my-org' };
+const sentryConfig = { organizationSlug: 'my-org', projectSlug: 'api' };
 
 function makeSentryIssueAlertCtx(
 	overrides: {
