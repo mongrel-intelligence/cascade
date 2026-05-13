@@ -29,6 +29,8 @@ export interface JiraWebhookInfo {
 export interface SentryWebhookInfo {
 	url: string;
 	webhookSecretSet: boolean;
+	organizationSlug: string;
+	projectSlug: string;
 	note: string;
 }
 
@@ -54,6 +56,8 @@ export interface ProjectContext {
 	jiraApiToken?: string;
 	webhookSecret?: string;
 	sentryConfigured?: boolean;
+	sentryOrganizationSlug?: string;
+	sentryProjectSlug?: string;
 	sentryWebhookSecretSet?: boolean;
 	linearApiKey?: string;
 	linearWebhookSecretSet?: boolean;

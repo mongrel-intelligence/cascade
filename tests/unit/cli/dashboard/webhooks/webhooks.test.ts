@@ -138,6 +138,39 @@ describe('WebhooksList (webhooks list)', () => {
 		expect(client.webhooks.list.query).toHaveBeenCalled();
 	});
 
+	it('displays Sentry paired project and filtering guidance', async () => {
+		const client = makeClient({
+			webhooks: {
+				list: {
+					query: vi.fn().mockResolvedValue({
+						trello: [],
+						github: [],
+						jira: [],
+						sentry: {
+							url: 'http://localhost:3001/sentry/webhook/my-project',
+							webhookSecretSet: true,
+							organizationSlug: 'my-org',
+							projectSlug: 'api',
+							note: 'Cascade dispatches only payloads for my-org/api; mismatched Sentry projects are filtered.',
+						},
+						linear: null,
+						errors: {},
+					}),
+				},
+			},
+		});
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new WebhooksList(['my-project'], oclifConfig as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+		expect(output).toContain('Paired project: my-org/api');
+		expect(output).toContain('Delivery filter: mismatched Sentry projects are ignored by Cascade.');
+		expect(output).toContain('mismatched Sentry projects are filtered');
+	});
+
 	it('requires project ID argument', async () => {
 		mockCreateDashboardClient.mockReturnValue(makeClient());
 
@@ -215,6 +248,34 @@ describe('WebhooksCreate (webhooks create)', () => {
 		expect(client.webhooks.create.mutate).toHaveBeenCalledWith(
 			expect.objectContaining({ trelloOnly: true, githubOnly: false }),
 		);
+	});
+
+	it('displays Sentry paired project and manual filtering guidance', async () => {
+		const client = makeClient({
+			webhooks: {
+				create: {
+					mutate: vi.fn().mockResolvedValue({
+						sentry: {
+							url: 'http://localhost:3001/sentry/webhook/my-project',
+							webhookSecretSet: false,
+							organizationSlug: 'my-org',
+							projectSlug: 'api',
+							note: 'Cascade dispatches only payloads for my-org/api; mismatched Sentry projects are filtered.',
+						},
+					}),
+				},
+			},
+		});
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new WebhooksCreate(['my-project'], oclifConfig as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = logSpy.mock.calls.map((call) => call[0]).join('\n');
+		expect(output).toContain('Paired project: my-org/api');
+		expect(output).toContain('Delivery filter: mismatched Sentry projects are ignored by Cascade.');
+		expect(output).toContain('"event_alert", "metric_alert", and/or "issue"');
 	});
 
 	it('requires project ID argument', async () => {

@@ -307,7 +307,7 @@ node bin/cascade.js webhooks create my-project \
   --callback-url https://your-tunnel.ngrok.io
 ```
 
-This creates webhooks on GitHub, Trello, and Jira when those integrations are configured, reusing existing hooks when the canonical callback URL already exists. Linear and Sentry are informational/manual setup paths: the dashboard and API show the correct callback URL and whether a signing secret is stored, but you create the webhook in the provider UI.
+This creates webhooks on GitHub, Trello, and Jira when those integrations are configured, reusing existing hooks when the canonical callback URL already exists. Linear and Sentry are informational/manual setup paths: the dashboard and API show the correct callback URL and whether a signing secret is stored, but you create the webhook in the provider UI. For Sentry, the URL remains `https://your-router-host/sentry/webhook/:projectId`; organization-level deliveries may reach that URL, but Cascade dispatches only payloads whose Sentry project matches the configured `projectSlug`.
 
 | Provider | Setup behavior | Callback URL |
 |----------|----------------|--------------|
@@ -315,7 +315,7 @@ This creates webhooks on GitHub, Trello, and Jira when those integrations are co
 | Trello | Programmatic create/list/delete | `https://your-router-host/trello/webhook` |
 | Jira | Programmatic create/list/delete plus label ensure | `https://your-router-host/jira/webhook` |
 | Linear | Manual setup with optional `LINEAR_WEBHOOK_SECRET` | `https://your-router-host/linear/webhook` |
-| Sentry | Manual setup with optional Sentry webhook secret | `https://your-router-host/sentry/webhook/my-project` |
+| Sentry | Manual setup with optional Sentry webhook secret; filtered by configured `organizationSlug` and `projectSlug` | `https://your-router-host/sentry/webhook/my-project` |
 
 ---
 

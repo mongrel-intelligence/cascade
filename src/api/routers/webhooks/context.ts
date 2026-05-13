@@ -2,8 +2,8 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { getAllProjectCredentials } from '../../../config/provider.js';
 import { findProjectByIdFromDb } from '../../../db/repositories/configRepository.js';
-import { getIntegrationByProjectAndCategory } from '../../../db/repositories/integrationsRepository.js';
 import { getJiraConfig, getTrelloConfig } from '../../../pm/config.js';
+import { getSentryIntegrationConfig } from '../../../sentry/integration.js';
 import { verifyProjectOrgAccess } from '../_shared/projectAccess.js';
 import type { ProjectContext } from './types.js';
 
@@ -35,9 +35,8 @@ export async function resolveProjectContext(
 			]
 		: undefined;
 
-	// Check if Sentry alerting integration is configured
-	const alertingIntegration = await getIntegrationByProjectAndCategory(projectId, 'alerting');
-	const sentryConfigured = alertingIntegration?.provider === 'sentry' && !!creds.SENTRY_API_TOKEN;
+	const sentryConfig = await getSentryIntegrationConfig(projectId);
+	const sentryConfigured = !!creds.SENTRY_API_TOKEN && sentryConfig !== null;
 
 	return {
 		projectId,
@@ -55,6 +54,8 @@ export async function resolveProjectContext(
 		jiraApiToken: creds.JIRA_API_TOKEN ?? '',
 		webhookSecret: creds.GITHUB_WEBHOOK_SECRET ?? undefined,
 		sentryConfigured,
+		sentryOrganizationSlug: sentryConfig?.organizationSlug,
+		sentryProjectSlug: sentryConfig?.projectSlug,
 		sentryWebhookSecretSet: !!creds.SENTRY_WEBHOOK_SECRET,
 		linearApiKey: creds.LINEAR_API_KEY ?? undefined,
 		linearWebhookSecretSet: !!creds.LINEAR_WEBHOOK_SECRET,
