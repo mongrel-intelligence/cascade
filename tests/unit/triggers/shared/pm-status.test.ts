@@ -15,6 +15,7 @@ import {
 	resolvePMStatusAgentById,
 	resolvePMStatusAgentByIdFromWorkflowDefinitions,
 	resolvePMStatusAgentByName,
+	resolvePMStatusAgentByNameFromWorkflowDefinitions,
 	shouldFirePMStatusEvent,
 } from '../../../../src/triggers/shared/pm-status.js';
 
@@ -86,6 +87,61 @@ describe('PM status helpers', () => {
 				statusId: 'state-done',
 				configuredStatuses: {
 					done: 'state-done',
+				},
+			}),
+		).resolves.toBeUndefined();
+	});
+
+	it('resolves custom workflow status names to custom agents case-insensitively', async () => {
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue({
+			id: 1,
+			key: 'prd',
+			label: 'PRD',
+			agentType: 'prd',
+			sortOrder: 1000,
+			createdAt: null,
+			updatedAt: null,
+		});
+
+		await expect(
+			resolvePMStatusAgentByNameFromWorkflowDefinitions({
+				statusName: 'prd review',
+				configuredStatuses: {
+					prd: 'PRD Review',
+				},
+			}),
+		).resolves.toEqual({ agentType: 'prd', cascadeStatus: 'prd' });
+	});
+
+	it('resolves built-in status names through workflow definitions case-insensitively', async () => {
+		await expect(
+			resolvePMStatusAgentByNameFromWorkflowDefinitions({
+				statusName: 'to do',
+				configuredStatuses: {
+					todo: 'To Do',
+				},
+			}),
+		).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+	});
+
+	it('ignores workflow statuses with no dispatch agent when resolving by name', async () => {
+		await expect(
+			resolvePMStatusAgentByNameFromWorkflowDefinitions({
+				statusName: 'Done',
+				configuredStatuses: {
+					done: 'Done',
+				},
+			}),
+		).resolves.toBeUndefined();
+	});
+
+	it('returns undefined when name does not match any configured status', async () => {
+		await expect(
+			resolvePMStatusAgentByNameFromWorkflowDefinitions({
+				statusName: 'Unknown',
+				configuredStatuses: {
+					todo: 'To Do',
+					planning: 'Planning',
 				},
 			}),
 		).resolves.toBeUndefined();

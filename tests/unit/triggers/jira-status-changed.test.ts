@@ -5,6 +5,15 @@ import {
 	mockTriggerCheckModule,
 } from '../../helpers/sharedMocks.js';
 
+const { mockGetCustomWorkflowStatusDefinition } = vi.hoisted(() => ({
+	mockGetCustomWorkflowStatusDefinition: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	getCustomWorkflowStatusDefinition: mockGetCustomWorkflowStatusDefinition,
+	listCustomWorkflowStatusDefinitions: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
@@ -90,6 +99,7 @@ describe('JiraStatusChangedTrigger', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		mockTriggerConfig(true);
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
 		trigger = new JiraStatusChangedTrigger();
 	});
 
@@ -365,6 +375,179 @@ describe('JiraStatusChangedTrigger', () => {
 
 			expect(result?.coalesceKey).toBe('test-project:PROJ-42');
 			expect(result).not.toHaveProperty('coalesceRole');
+		});
+	});
+
+	describe('custom workflow status mapping', () => {
+		const customProject = {
+			id: 'test-project',
+			name: 'Test Project',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			branchPrefix: 'feature/',
+			jira: {
+				projectKey: 'PROJ',
+				baseUrl: 'https://myorg.atlassian.net',
+				statuses: {
+					backlog: 'Backlog',
+					splitting: 'Splitting',
+					planning: 'Planning',
+					todo: 'To Do',
+					done: 'Done',
+					prd: 'PRD Review',
+					ux: 'UX Mocks',
+				},
+			},
+		} as TriggerContext['project'];
+
+		function buildCustomCtx(statusName: string): TriggerContext {
+			return {
+				project: customProject,
+				source: 'jira',
+				payload: {
+					webhookEvent: 'jira:issue_updated',
+					issue: {
+						key: 'PROJ-42',
+						fields: { summary: 'Test Issue' },
+					},
+					changelog: {
+						items: [{ field: 'status', fromString: 'Backlog', toString: statusName }],
+					},
+				},
+			};
+		}
+
+		it('dispatches a custom agent when a custom status is configured and matches case-insensitively', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			const result = await trigger.handle(buildCustomCtx('prd review'));
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('prd');
+			expect(result?.workItemId).toBe('PROJ-42');
+			expect(result?.workItemUrl).toBe('https://myorg.atlassian.net/browse/PROJ-42');
+			expect(result?.workItemTitle).toBe('Test Issue');
+			expect(result?.agentInput.triggerEvent).toBe('pm:status-changed');
+		});
+
+		it('returns null when a custom status has no dispatch agent configured', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'ux') {
+					return {
+						id: 2,
+						key: 'ux',
+						label: 'UX',
+						agentType: null,
+						sortOrder: 2000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			const result = await trigger.handle(buildCustomCtx('UX Mocks'));
+			expect(result).toBeNull();
+		});
+
+		it('returns null when a custom status is missing from the workflow definitions table', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
+
+			const result = await trigger.handle(buildCustomCtx('PRD Review'));
+			expect(result).toBeNull();
+		});
+
+		it('calls checkTriggerEnabledWithParams with the custom agent type', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			await trigger.handle(buildCustomCtx('PRD Review'));
+
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
+				'test-project',
+				'prd',
+				'pm:status-changed',
+				'jira-status-changed',
+			);
+		});
+
+		it('returns null when the trigger is disabled for the resolved custom agent', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+			mockTriggerConfig(false);
+
+			const result = await trigger.handle(buildCustomCtx('PRD Review'));
+			expect(result).toBeNull();
+		});
+
+		it('dispatches a custom agent on create when onCreate is enabled', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+
+			const ctx: TriggerContext = {
+				project: customProject,
+				source: 'jira',
+				payload: {
+					webhookEvent: 'jira:issue_created',
+					issue: {
+						key: 'PROJ-42',
+						fields: { summary: 'Test Issue', status: { name: 'PRD Review' } },
+					},
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result?.agentType).toBe('prd');
 		});
 	});
 });

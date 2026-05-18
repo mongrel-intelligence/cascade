@@ -94,6 +94,17 @@ export function resolvePMStatusAgentByIdFromWorkflowDefinitions(args: {
 	});
 }
 
+export function resolvePMStatusAgentByNameFromWorkflowDefinitions(args: {
+	statusName: string;
+	configuredStatuses: Record<string, string>;
+}): Promise<ResolvedPMStatusAgent | undefined> {
+	return resolvePMStatusAgentFromWorkflowDefinitions({
+		incomingStatus: args.statusName,
+		configuredStatuses: args.configuredStatuses,
+		matcher: caseInsensitiveStatusMatcher,
+	});
+}
+
 export function buildPMStatusCoalesceKey(projectId: string, workItemId: string): string {
 	return `${projectId}:${workItemId}`;
 }

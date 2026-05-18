@@ -4,6 +4,7 @@ import {
 	resolvePMStatusAgentById,
 	resolvePMStatusAgentByIdFromWorkflowDefinitions,
 	resolvePMStatusAgentByName,
+	resolvePMStatusAgentByNameFromWorkflowDefinitions,
 } from './pm-status.js';
 import { buildPMDispatchResult } from './result-builders.js';
 
@@ -43,6 +44,16 @@ export function resolvePMLabelAgentByStatusIdFromWorkflowDefinitions(args: {
 }): Promise<{ agentType: string; cascadeStatus: string } | undefined> {
 	return resolvePMStatusAgentByIdFromWorkflowDefinitions({
 		statusId: args.statusId,
+		configuredStatuses: args.configuredStatuses,
+	});
+}
+
+export function resolvePMLabelAgentByStatusNameFromWorkflowDefinitions(args: {
+	statusName: string;
+	configuredStatuses: Record<string, string>;
+}): Promise<{ agentType: string; cascadeStatus: string } | undefined> {
+	return resolvePMStatusAgentByNameFromWorkflowDefinitions({
+		statusName: args.statusName,
 		configuredStatuses: args.configuredStatuses,
 	});
 }

@@ -15,7 +15,7 @@ import { logger } from '../../utils/logging.js';
 import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
 import {
 	buildPMStatusDispatchResult,
-	resolvePMStatusAgentByName,
+	resolvePMStatusAgentByNameFromWorkflowDefinitions,
 	shouldFirePMStatusEvent,
 } from '../shared/pm-status.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
@@ -83,7 +83,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const resolved = resolvePMStatusAgentByName({
+		const resolved = await resolvePMStatusAgentByNameFromWorkflowDefinitions({
 			statusName: newStatus,
 			configuredStatuses: jiraConfig.statuses,
 		});
@@ -95,7 +95,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			});
 			return null;
 		}
-		const { agentType } = resolved;
+		const { agentType, cascadeStatus: matchedCascadeStatus } = resolved;
 
 		const { enabled, parameters } = await checkTriggerEnabledWithParams(
 			ctx.project.id,
@@ -133,6 +133,7 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			eventKind: isCreate ? 'create' : 'move',
 			...(isCreate ? {} : { fromStatus: statusChange?.fromString }),
 			toStatus: newStatus,
+			cascadeStatus: matchedCascadeStatus,
 			agentType,
 		});
 
