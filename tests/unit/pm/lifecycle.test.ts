@@ -140,8 +140,12 @@ describe('pm/lifecycle', () => {
 					error: 'label-err-id',
 					readyToProcess: 'label-ready-id',
 				},
+				// Trello's lifecycle config now spreads the full lists record so
+				// every configured key (including custom ones like `todo`) survives
+				// normalization for use by `moveOnPrepare` / `moveOnSuccess` hooks.
 				statuses: {
 					backlog: 'list-backlog-id',
+					todo: 'list-todo-id',
 					inProgress: 'list-progress-id',
 					inReview: 'list-review-id',
 					done: 'list-done-id',
@@ -278,6 +282,9 @@ describe('pm/lifecycle', () => {
 
 			const config = resolveProjectPMConfig(project);
 
+			// Trello statuses are now spread from the configured lists record;
+			// keys that were never configured are simply absent rather than
+			// explicitly `undefined`.
 			expect(config).toEqual({
 				labels: {
 					processing: undefined,
@@ -286,11 +293,7 @@ describe('pm/lifecycle', () => {
 					readyToProcess: undefined,
 				},
 				statuses: {
-					backlog: undefined,
-					inProgress: undefined,
-					inReview: undefined,
-					done: undefined,
-					merged: undefined,
+					todo: 'list-id',
 				},
 			});
 		});
@@ -655,6 +658,194 @@ describe('pm/lifecycle', () => {
 					'❌ Error: Database connection failed',
 				);
 			});
+		});
+	});
+
+	// =========================================================================
+	// End-to-end: provider-normalized config + PMLifecycleManager move hooks
+	//
+	// These tests guarantee that custom workflow keys (`prd`, `story`,
+	// `phased-plan`) configured on a real Trello / JIRA project survive
+	// resolveProjectPMConfig normalization AND remain resolvable when a
+	// LifecycleHook (`moveOnPrepare` / `moveOnSuccess`) references them.
+	// =========================================================================
+	describe('resolveProjectPMConfig → PMLifecycleManager custom workflow moves', () => {
+		function makeMockProvider(type: 'trello' | 'jira'): PMProvider {
+			return {
+				type,
+				addLabel: vi.fn().mockResolvedValue(undefined),
+				removeLabel: vi.fn().mockResolvedValue(undefined),
+				moveWorkItem: vi.fn().mockResolvedValue(undefined),
+				addComment: vi.fn().mockResolvedValue(undefined),
+				updateComment: vi.fn().mockResolvedValue(undefined),
+				linkPR: vi.fn().mockResolvedValue(undefined),
+				getWorkItem: vi.fn(),
+				getWorkItemComments: vi.fn(),
+				updateWorkItem: vi.fn(),
+				createWorkItem: vi.fn(),
+				listWorkItems: vi.fn(),
+				getChecklists: vi.fn(),
+				createChecklist: vi.fn(),
+				addChecklistItem: vi.fn(),
+				updateChecklistItem: vi.fn(),
+				getAttachments: vi.fn(),
+				addAttachment: vi.fn(),
+				addAttachmentFile: vi.fn(),
+				getCustomFieldNumber: vi.fn(),
+				updateCustomFieldNumber: vi.fn(),
+				getWorkItemUrl: vi.fn(),
+				getAuthenticatedUser: vi.fn(),
+			} as unknown as PMProvider;
+		}
+
+		it('moves a Trello card via moveOnPrepare to a custom story status', async () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'Trello Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'trello' },
+				trello: {
+					boardId: 'board123',
+					labels: {},
+					lists: {
+						backlog: 'list-backlog',
+						inProgress: 'list-progress',
+						story: 'list-story',
+						'phased-plan': 'list-phased-plan',
+					},
+				},
+			};
+
+			const pmConfig = resolveProjectPMConfig(project);
+			expect(pmConfig.statuses.story).toBe('list-story');
+			expect(pmConfig.statuses['phased-plan']).toBe('list-phased-plan');
+
+			const provider = makeMockProvider('trello');
+			const manager = new PMLifecycleManager(provider, pmConfig);
+
+			await manager.prepareForAgent('card-1', { moveOnPrepare: 'story' });
+
+			expect(provider.moveWorkItem).toHaveBeenCalledWith('card-1', 'list-story');
+		});
+
+		it('moves a Trello card via moveOnSuccess to a custom phased-plan status', async () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'Trello Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'trello' },
+				trello: {
+					boardId: 'board123',
+					labels: {},
+					lists: {
+						inProgress: 'list-progress',
+						'phased-plan': 'list-phased-plan',
+						prd: 'list-prd',
+					},
+				},
+			};
+
+			const pmConfig = resolveProjectPMConfig(project);
+
+			const provider = makeMockProvider('trello');
+			const manager = new PMLifecycleManager(provider, pmConfig);
+
+			await manager.handleSuccess('card-1', { moveOnSuccess: 'phased-plan' });
+
+			expect(provider.moveWorkItem).toHaveBeenCalledWith('card-1', 'list-phased-plan');
+		});
+
+		it('moves a JIRA issue via moveOnPrepare to a custom prd status', async () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'JIRA Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					statuses: {
+						inProgress: 'In Progress',
+						prd: 'PRD Review',
+						story: 'Story Refinement',
+						'phased-plan': 'Phased Planning',
+					},
+				},
+			};
+
+			const pmConfig = resolveProjectPMConfig(project);
+			expect(pmConfig.statuses.prd).toBe('PRD Review');
+
+			const provider = makeMockProvider('jira');
+			const manager = new PMLifecycleManager(provider, pmConfig);
+
+			await manager.prepareForAgent('PROJ-1', { moveOnPrepare: 'prd' });
+
+			expect(provider.moveWorkItem).toHaveBeenCalledWith('PROJ-1', 'PRD Review');
+		});
+
+		it('moves a JIRA issue via moveOnSuccess to a custom story status', async () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'JIRA Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'jira' },
+				jira: {
+					projectKey: 'PROJ',
+					statuses: {
+						inProgress: 'In Progress',
+						story: 'Story Refinement',
+					},
+				},
+			};
+
+			const pmConfig = resolveProjectPMConfig(project);
+
+			const provider = makeMockProvider('jira');
+			const manager = new PMLifecycleManager(provider, pmConfig);
+
+			await manager.handleSuccess('PROJ-1', { moveOnSuccess: 'story' });
+
+			expect(provider.moveWorkItem).toHaveBeenCalledWith('PROJ-1', 'Story Refinement');
+		});
+
+		it('skips the move when the custom status key is not configured on the project', async () => {
+			const project: ProjectConfig = {
+				id: 'proj1',
+				orgId: 'org1',
+				name: 'Trello Project',
+				repo: 'owner/repo',
+				baseBranch: 'main',
+				branchPrefix: 'feature/',
+				pm: { type: 'trello' },
+				trello: {
+					boardId: 'board123',
+					labels: {},
+					lists: { inProgress: 'list-progress' }, // no `story`
+				},
+			};
+
+			const pmConfig = resolveProjectPMConfig(project);
+			expect(pmConfig.statuses.story).toBeUndefined();
+
+			const provider = makeMockProvider('trello');
+			const manager = new PMLifecycleManager(provider, pmConfig);
+
+			await manager.prepareForAgent('card-1', { moveOnPrepare: 'story' });
+
+			// Provider's moveWorkItem must not be called when the destination is undefined.
+			expect(provider.moveWorkItem).not.toHaveBeenCalled();
 		});
 	});
 });

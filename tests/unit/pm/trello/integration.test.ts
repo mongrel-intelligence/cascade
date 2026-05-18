@@ -39,27 +39,30 @@ vi.mock('../../../../src/router/reactions.js', () => ({
 	sendAcknowledgeReaction: (...args: unknown[]) => mockSendAcknowledgeReaction(...args),
 }));
 
+const mockGetTrelloConfig = vi.fn();
 vi.mock('../../../../src/pm/config.js', () => ({
-	getTrelloConfig: vi.fn().mockReturnValue({
-		labels: {
-			processing: 'label-processing',
-			processed: 'label-processed',
-			error: 'label-error',
-			readyToProcess: 'label-ready',
-			auto: 'label-auto',
-		},
-		lists: {
-			backlog: 'list-backlog',
-			inProgress: 'list-in-progress',
-			inReview: 'list-in-review',
-			done: 'list-done',
-			merged: 'list-merged',
-		},
-	}),
+	getTrelloConfig: (...args: unknown[]) => mockGetTrelloConfig(...args),
 }));
 
 import { TrelloIntegration } from '../../../../src/pm/trello/integration.js';
 import type { ProjectConfig } from '../../../../src/types/index.js';
+
+const DEFAULT_TRELLO_CONFIG = {
+	labels: {
+		processing: 'label-processing',
+		processed: 'label-processed',
+		error: 'label-error',
+		readyToProcess: 'label-ready',
+		auto: 'label-auto',
+	},
+	lists: {
+		backlog: 'list-backlog',
+		inProgress: 'list-in-progress',
+		inReview: 'list-in-review',
+		done: 'list-done',
+		merged: 'list-merged',
+	},
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -92,6 +95,7 @@ describe('TrelloIntegration', () => {
 
 	beforeEach(() => {
 		integration = new TrelloIntegration();
+		mockGetTrelloConfig.mockReturnValue(DEFAULT_TRELLO_CONFIG);
 	});
 
 	it('has type "trello"', () => {
@@ -239,6 +243,49 @@ describe('TrelloIntegration', () => {
 			expect(config.statuses.inReview).toBe('list-in-review');
 			expect(config.statuses.done).toBe('list-done');
 			expect(config.statuses.merged).toBe('list-merged');
+		});
+
+		it('preserves custom status keys like prd, story, and phased-plan from trello.lists', () => {
+			mockGetTrelloConfig.mockReturnValue({
+				labels: DEFAULT_TRELLO_CONFIG.labels,
+				lists: {
+					...DEFAULT_TRELLO_CONFIG.lists,
+					prd: 'list-prd',
+					story: 'list-story',
+					'phased-plan': 'list-phased-plan',
+				},
+			});
+
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			// Built-in statuses still resolve correctly (regression safety)
+			expect(config.statuses.backlog).toBe('list-backlog');
+			expect(config.statuses.inProgress).toBe('list-in-progress');
+			expect(config.statuses.done).toBe('list-done');
+			// Custom statuses survive normalization so lifecycle hooks like
+			// moveOnPrepare/moveOnSuccess can resolve them.
+			expect(config.statuses.prd).toBe('list-prd');
+			expect(config.statuses.story).toBe('list-story');
+			expect(config.statuses['phased-plan']).toBe('list-phased-plan');
+		});
+
+		it('returns an empty statuses object when trello.lists is missing', () => {
+			mockGetTrelloConfig.mockReturnValue({ labels: {} });
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			expect(config.statuses).toEqual({});
+		});
+
+		it('returns an empty statuses object when trello config itself is missing', () => {
+			mockGetTrelloConfig.mockReturnValue(undefined);
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			expect(config.statuses).toEqual({});
+			expect(config.labels.processing).toBeUndefined();
+			expect(config.labels.auto).toBeUndefined();
 		});
 	});
 
