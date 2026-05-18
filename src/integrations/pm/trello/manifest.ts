@@ -28,6 +28,7 @@ import { trelloClient, withTrelloCredentials } from '../../../trello/client.js';
 import { TrelloCommentMentionTrigger } from '../../../triggers/trello/comment-mention.js';
 import { ReadyToProcessLabelTrigger } from '../../../triggers/trello/label-added.js';
 import {
+	TrelloCustomStatusChangedTrigger,
 	TrelloStatusChangedBacklogTrigger,
 	TrelloStatusChangedMergedTrigger,
 	TrelloStatusChangedPlanningTrigger,
@@ -94,6 +95,7 @@ export const trelloManifest: PMProviderManifest = {
 		TrelloStatusChangedTodoTrigger,
 		TrelloStatusChangedBacklogTrigger,
 		TrelloStatusChangedMergedTrigger,
+		new TrelloCustomStatusChangedTrigger(),
 		new ReadyToProcessLabelTrigger(),
 	],
 

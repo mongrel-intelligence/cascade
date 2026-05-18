@@ -13,6 +13,7 @@ import type { TriggerRegistry } from '../registry.js';
 import { TrelloCommentMentionTrigger } from './comment-mention.js';
 import { ReadyToProcessLabelTrigger } from './label-added.js';
 import {
+	TrelloCustomStatusChangedTrigger,
 	TrelloStatusChangedBacklogTrigger,
 	TrelloStatusChangedMergedTrigger,
 	TrelloStatusChangedPlanningTrigger,
@@ -25,6 +26,10 @@ import {
  *
  * Order matters: TrelloCommentMentionTrigger must be registered before
  * status-changed triggers so it gets first crack at comment events.
+ * TrelloCustomStatusChangedTrigger is registered after the built-in
+ * per-list triggers (so they get first crack at their hardcoded lists)
+ * and before the ready-label trigger (so status changes are handled
+ * before label-driven dispatch).
  */
 export function registerTrelloTriggers(registry: TriggerRegistry): void {
 	// Must be registered before status-changed triggers
@@ -35,6 +40,7 @@ export function registerTrelloTriggers(registry: TriggerRegistry): void {
 	registry.register(TrelloStatusChangedTodoTrigger);
 	registry.register(TrelloStatusChangedBacklogTrigger);
 	registry.register(TrelloStatusChangedMergedTrigger);
+	registry.register(new TrelloCustomStatusChangedTrigger());
 
 	registry.register(new ReadyToProcessLabelTrigger());
 }
