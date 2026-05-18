@@ -36,11 +36,13 @@ docker run --rm "$WORKER_IMAGE" bash -lc '
 '
 
 # 2. Playwright Chromium — the cache lives at $PLAYWRIGHT_BROWSERS_PATH and
-# is readable by the unprivileged `node` user the worker switches to. The
-# native-tool env filter (src/backends/shared/envFilter.ts) allowlists this
-# single exact variable; broader `PLAYWRIGHT_*` propagation is intentionally
-# off to keep the defense-in-depth posture for the rest of Playwright's env
-# surface.
+# is readable/writable by the unprivileged `node` user the worker switches to.
+# Write access is deliberate: project `.cascade/setup.sh` scripts inherit this
+# env var, and repos pinned to a different Playwright revision must be able to
+# install the missing browser revision into the shared cache. The native-tool
+# env filter (src/backends/shared/envFilter.ts) allowlists this single exact
+# variable; broader `PLAYWRIGHT_*` propagation is intentionally off to keep the
+# defense-in-depth posture for the rest of Playwright's env surface.
 #
 # `NODE_PATH=$(npm root -g)` is the documented way to require globally
 # installed packages from a one-off Node invocation — `@playwright/test`
@@ -59,6 +61,12 @@ docker run --rm "$WORKER_IMAGE" bash -lc '
     echo "FAIL: PLAYWRIGHT_BROWSERS_PATH ($PLAYWRIGHT_BROWSERS_PATH) does not exist"
     exit 1
   fi
+  if [ ! -w "$PLAYWRIGHT_BROWSERS_PATH" ]; then
+    echo "FAIL: PLAYWRIGHT_BROWSERS_PATH ($PLAYWRIGHT_BROWSERS_PATH) is not writable by $(id -un)"
+    exit 1
+  fi
+  mkdir -p "$PLAYWRIGHT_BROWSERS_PATH/.cascade-write-test"
+  rmdir "$PLAYWRIGHT_BROWSERS_PATH/.cascade-write-test"
   NODE_PATH=$(npm root -g) node -e "console.log(\"playwright version:        \" + require(\"@playwright/test/package.json\").version)"
   echo ""
 

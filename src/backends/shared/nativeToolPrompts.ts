@@ -22,7 +22,7 @@ The worker image bakes the following baseline tools so you can rely on them in a
 - \`python\` and \`python3\` — interchangeable; both resolve to the same Debian-owned Python 3. Use either for ad-hoc JSON shaping (\`python -c 'import json; ...'\`), small parsing scripts, or library smoke checks. Do NOT \`pip install\` packages at runtime — the image's stdlib is the contract.
 - \`jq\`, \`rg\` (ripgrep), \`fd\`, \`git\`, \`tmux\` — preferred for JSON queries, content/file search, version-control, and persistent shell sessions respectively.
 - \`cascade-tools\` — the CASCADE CLI documented in the "CASCADE Tools" section below. Use it (not \`gh\` / raw curl) for PM, SCM, and session operations.
-- Playwright Chromium — installed at \`$PLAYWRIGHT_BROWSERS_PATH\` (\`/ms-playwright\`). \`@playwright/test\` is available globally; \`NODE_PATH=$(npm root -g) node -e 'require("@playwright/test")...'\` or \`npx playwright test\` from a repo with a local pin both work without re-downloading the browser.
+- Playwright Chromium — installed at \`$PLAYWRIGHT_BROWSERS_PATH\` (\`/ms-playwright\`). \`@playwright/test\` is available globally; \`NODE_PATH=$(npm root -g) node -e 'require("@playwright/test")...'\` or \`npx playwright test\` from a repo with a local pin can use the cache, and project setup can install a missing pinned revision into that writable path.
 
 ## Termination protocol
 

@@ -159,14 +159,14 @@ Native-tool engines do not provision their own shell environment — they execut
 |---|---|---|
 | `python` / `python3` | apt `python3` + `python-is-python3` | Both names resolve to the same Debian-owned Python 3. Use either for `python -c 'import json'` etc.; do not `pip install` at runtime. |
 | `jq`, `rg`, `fd`, `git`, `tmux`, `cascade-tools`, `ast-grep` (`sg`) | apt + curl + npm install in the worker image | Prefer these over hand-rolled equivalents in shell commands. |
-| Playwright Chromium | `npm install -g @playwright/test@<pin> && playwright install --with-deps chromium` | Browser cache lives at `$PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`), readable by the unprivileged `node` user. |
+| Playwright Chromium | `npm install -g @playwright/test@<pin> && playwright install --with-deps chromium` | Browser cache lives at `$PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`), readable and writable by the unprivileged `node` user. |
 | Agent engine CLIs | `@anthropic-ai/claude-code`, `@openai/codex`, `opencode-ai` | All pinned versions. |
 
 **Env propagation.** Native-tool engines sanitize subprocess env via `src/backends/shared/envFilter.ts`. `PLAYWRIGHT_BROWSERS_PATH` is allowlisted as an exact match so the bake-in cache is reachable from agent shells; the broader `PLAYWRIGHT_*` prefix is intentionally not allowed, preserving the defense-in-depth posture for the rest of Playwright's env surface.
 
 **Smoke coverage.** Every build path validates the baseline via `tests/docker/worker-runtime-tools/run-test.sh`. CI (`.github/workflows/ci.yml` → `docker-build-check`) runs the script against `cascade-worker:ci-check` after `docker build`. The deploy workflows (`.github/workflows/deploy{,-dev}.yml`) run the same script against the freshly built worker image **before** pushing `:latest` / `:dev` / SHA tags, so a regression that would break agents in production blocks the publish step.
 
-**Image size.** Chromium + system deps significantly increase the worker image. We pin one Chromium revision and one `@playwright/test` version; target repositories that need a materially different revision must install their own copy in `.cascade/setup.sh`. Other browsers (Firefox, WebKit) are intentionally not installed.
+**Image size.** Chromium + system deps significantly increase the worker image. We pin one Chromium revision and one `@playwright/test` version; target repositories that need a materially different revision can run their normal `npx playwright install chromium` flow in `.cascade/setup.sh`, which writes the missing revision into the same `$PLAYWRIGHT_BROWSERS_PATH` cache as the runtime `node` user. Other browsers (Firefox, WebKit) are intentionally not installed.
 
 **Agent visibility.** The list of guaranteed tools is surfaced to agents in the native-tool system prompt (`src/backends/shared/nativeToolPrompts.ts`, "Guaranteed runtime tools" section). Adding a new tool to the worker image should always be paired with an update to that section so agents reach for the new capability instead of working around its absence.
 
