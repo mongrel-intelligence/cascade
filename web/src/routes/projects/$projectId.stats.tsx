@@ -37,6 +37,7 @@ function ProjectStatsPage() {
 			status: filters.status || undefined,
 		}),
 	);
+	const agentTypesQuery = useQuery(trpc.agentDefinitions.knownTypes.queryOptions());
 
 	return (
 		<div className="space-y-6">
@@ -44,7 +45,11 @@ function ProjectStatsPage() {
 				<h2 className="text-lg font-semibold">Stats</h2>
 			</div>
 
-			<StatsFiltersBar filters={filters} onFilterChange={setFilters} />
+			<StatsFiltersBar
+				filters={filters}
+				agentTypes={agentTypesQuery.data}
+				onFilterChange={setFilters}
+			/>
 
 			{statsQuery.isLoading && (
 				<div className="py-8 text-center text-muted-foreground">Loading stats...</div>

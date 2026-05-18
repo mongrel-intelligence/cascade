@@ -19,7 +19,7 @@ import { logger } from '../../utils/logging.js';
 import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
 import {
 	buildPMStatusDispatchResult,
-	resolvePMStatusAgentById,
+	resolvePMStatusAgentByIdFromWorkflowDefinitions,
 	shouldFirePMStatusEvent,
 } from '../shared/pm-status.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
@@ -72,7 +72,7 @@ export class LinearStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const resolved = resolvePMStatusAgentById({
+		const resolved = await resolvePMStatusAgentByIdFromWorkflowDefinitions({
 			statusId: newStateId,
 			configuredStatuses: linearConfig.statuses,
 		});

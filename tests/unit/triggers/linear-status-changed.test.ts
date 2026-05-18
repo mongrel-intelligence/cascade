@@ -12,6 +12,15 @@ vi.mock('../../../src/triggers/shared/pipeline-capacity-gate.js', () => ({
 	shouldBlockForPipelineCapacity: vi.fn().mockResolvedValue(false),
 }));
 
+const { mockGetCustomWorkflowStatusDefinition } = vi.hoisted(() => ({
+	mockGetCustomWorkflowStatusDefinition: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	getCustomWorkflowStatusDefinition: mockGetCustomWorkflowStatusDefinition,
+	listCustomWorkflowStatusDefinitions: vi.fn().mockResolvedValue([]),
+}));
+
 const mockGetLinearConfig = vi.fn();
 vi.mock('../../../src/pm/config.js', () => ({
 	getLinearConfig: (...args: unknown[]) => mockGetLinearConfig(...args),
@@ -111,6 +120,7 @@ describe('LinearStatusChangedTrigger', () => {
 		vi.resetAllMocks();
 		// Default: trigger enabled with YAML-default params (onCreate: false, onMove: true)
 		mockTriggerConfig(true);
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
 		mockGetLinearConfig.mockReturnValue(baseLinearConfig);
 		trigger = new LinearStatusChangedTrigger();
 	});
@@ -198,6 +208,32 @@ describe('LinearStatusChangedTrigger', () => {
 		it('returns null when moved to an unmapped state', async () => {
 			const result = await trigger.handle(buildCtx({ newStateId: 'state-done' }));
 			expect(result).toBeNull();
+		});
+
+		it('returns custom agent when moved to a custom workflow status', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				...baseLinearConfig,
+				statuses: { ...baseLinearConfig.statuses, prd: 'state-prd' },
+			});
+			mockGetCustomWorkflowStatusDefinition.mockResolvedValue({
+				id: 1,
+				key: 'prd',
+				label: 'PRD',
+				agentType: 'prd',
+				sortOrder: 1000,
+				createdAt: null,
+				updatedAt: null,
+			});
+
+			const result = await trigger.handle(buildCtx({ newStateId: 'state-prd' }));
+
+			expect(result?.agentType).toBe('prd');
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
+				'proj-linear',
+				'prd',
+				'pm:status-changed',
+				'linear-status-changed',
+			);
 		});
 
 		it('returns null when data.stateId is missing', async () => {

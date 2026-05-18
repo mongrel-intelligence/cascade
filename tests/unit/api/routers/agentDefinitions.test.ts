@@ -18,9 +18,12 @@ const {
 	mockGetAgentDefinitionMetadata,
 	mockUpsertAgentDefinition,
 	mockDeleteAgentDefinition,
+	mockClearAgentTypeReferences,
 	mockGetRawTemplate,
 	mockValidateTemplate,
 	mockLoadPartials,
+	mockLoggerInfo,
+	mockListWorkflowStatusDefinitions,
 } = vi.hoisted(() => ({
 	mockGetBuiltinAgentTypes: vi.fn<() => string[]>(),
 	mockIsBuiltinAgentType: vi.fn<(agentType: string) => boolean>(),
@@ -32,9 +35,12 @@ const {
 	mockGetAgentDefinitionMetadata: vi.fn(),
 	mockUpsertAgentDefinition: vi.fn(),
 	mockDeleteAgentDefinition: vi.fn(),
+	mockClearAgentTypeReferences: vi.fn(),
 	mockGetRawTemplate: vi.fn<(agentType: string) => string>(),
 	mockValidateTemplate: vi.fn(),
 	mockLoadPartials: vi.fn(),
+	mockLoggerInfo: vi.fn(),
+	mockListWorkflowStatusDefinitions: vi.fn(),
 }));
 
 vi.mock('../../../../src/agents/definitions/loader.js', () => ({
@@ -53,6 +59,10 @@ vi.mock('../../../../src/db/repositories/agentDefinitionsRepository.js', () => (
 	deleteAgentDefinition: mockDeleteAgentDefinition,
 }));
 
+vi.mock('../../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	clearAgentTypeReferences: mockClearAgentTypeReferences,
+}));
+
 vi.mock('../../../../src/agents/prompts/index.js', () => ({
 	getRawTemplate: mockGetRawTemplate,
 	validateTemplate: mockValidateTemplate,
@@ -60,6 +70,19 @@ vi.mock('../../../../src/agents/prompts/index.js', () => ({
 
 vi.mock('../../../../src/db/repositories/partialsRepository.js', () => ({
 	loadPartials: mockLoadPartials,
+}));
+
+vi.mock('../../../../src/utils/logging.js', () => ({
+	logger: {
+		info: mockLoggerInfo,
+		warn: vi.fn(),
+		error: vi.fn(),
+		debug: vi.fn(),
+	},
+}));
+
+vi.mock('../../../../src/workflow/statusDefinitions.js', () => ({
+	listWorkflowStatusDefinitions: mockListWorkflowStatusDefinitions,
 }));
 
 // Re-export schema values (these are pure constants, not functions to mock)
@@ -118,6 +141,8 @@ describe('agentDefinitionsRouter', () => {
 		);
 		mockValidateTemplate.mockReturnValue({ valid: true });
 		mockLoadPartials.mockResolvedValue(new Map());
+		mockClearAgentTypeReferences.mockResolvedValue(0);
+		mockListWorkflowStatusDefinitions.mockResolvedValue([]);
 	});
 
 	// =====================================================================
@@ -270,6 +295,28 @@ describe('agentDefinitionsRouter', () => {
 			expect(mockUpsertAgentDefinition).toHaveBeenCalledWith('implementation', def, true);
 		});
 
+		it('rejects creating a builtin override without status-changed support while referenced by a workflow status', async () => {
+			mockGetAgentDefinitionMetadata.mockResolvedValue(null);
+			mockListWorkflowStatusDefinitions.mockResolvedValue([
+				{
+					key: 'todo',
+					label: 'Todo',
+					agentType: 'implementation',
+					sortOrder: 40,
+					isBuiltin: true,
+				},
+			]);
+			const def = createMockDefinition({ triggers: [] });
+
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+			await expectTRPCError(
+				caller.create({ agentType: 'implementation', definition: def }),
+				'BAD_REQUEST',
+			);
+
+			expect(mockUpsertAgentDefinition).not.toHaveBeenCalled();
+		});
+
 		it('throws CONFLICT when agent type already exists', async () => {
 			mockGetAgentDefinitionMetadata.mockResolvedValue({ agentType: 'existing', isBuiltin: false });
 			const def = createMockDefinition();
@@ -319,6 +366,21 @@ describe('agentDefinitionsRouter', () => {
 			expect(mockInvalidateDefinitionCache).toHaveBeenCalled();
 		});
 
+		it('does not query workflow statuses when updating fields other than triggers', async () => {
+			const current = createMockDefinition();
+			mockResolveAgentDefinition.mockResolvedValue(current);
+			mockUpsertAgentDefinition.mockResolvedValue(undefined);
+			mockListWorkflowStatusDefinitions.mockClear();
+
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+			await caller.update({
+				agentType: 'implementation',
+				patch: { hint: 'updated hint' },
+			});
+
+			expect(mockListWorkflowStatusDefinitions).not.toHaveBeenCalled();
+		});
+
 		it('throws NOT_FOUND when definition does not exist', async () => {
 			mockResolveAgentDefinition.mockRejectedValue(new Error('not found'));
 
@@ -326,6 +388,38 @@ describe('agentDefinitionsRouter', () => {
 			await expect(
 				caller.update({ agentType: 'missing', patch: { hint: 'x' } }),
 			).rejects.toMatchObject({ code: 'NOT_FOUND' });
+		});
+
+		it('rejects removing status-changed support while referenced by a workflow status', async () => {
+			mockResolveAgentDefinition.mockResolvedValue(
+				createMockDefinition({
+					triggers: [
+						{
+							event: 'pm:status-changed',
+							label: 'Status Changed',
+							defaultEnabled: false,
+							parameters: [],
+						},
+					],
+				}),
+			);
+			mockListWorkflowStatusDefinitions.mockResolvedValue([
+				{
+					key: 'story',
+					label: 'Story',
+					agentType: 'story-agent',
+					sortOrder: 1000,
+					isBuiltin: false,
+				},
+			]);
+
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+			await expectTRPCError(
+				caller.update({ agentType: 'story-agent', patch: { triggers: [] } }),
+				'BAD_REQUEST',
+			);
+
+			expect(mockUpsertAgentDefinition).not.toHaveBeenCalled();
 		});
 
 		it('throws FORBIDDEN when non-superadmin tries to update', async () => {
@@ -360,7 +454,31 @@ describe('agentDefinitionsRouter', () => {
 
 			expect(result).toEqual({ agentType: 'custom-agent' });
 			expect(mockDeleteAgentDefinition).toHaveBeenCalledWith('custom-agent');
+			expect(mockClearAgentTypeReferences).toHaveBeenCalledWith('custom-agent');
 			expect(mockInvalidateDefinitionCache).toHaveBeenCalled();
+		});
+
+		it('clears workflow status references when deleting a referenced custom agent definition', async () => {
+			mockGetAgentDefinitionMetadata.mockResolvedValue({
+				agentType: 'story-agent',
+				isBuiltin: false,
+			});
+			mockDeleteAgentDefinition.mockResolvedValue(undefined);
+			mockClearAgentTypeReferences.mockResolvedValue(2);
+
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+			const result = await caller.delete({ agentType: 'story-agent' });
+
+			expect(result).toEqual({ agentType: 'story-agent' });
+			expect(mockDeleteAgentDefinition).toHaveBeenCalledWith('story-agent');
+			expect(mockClearAgentTypeReferences).toHaveBeenCalledWith('story-agent');
+			expect(mockLoggerInfo).toHaveBeenCalledWith(
+				'Cleared workflow status agent references after agent definition delete',
+				{
+					agentType: 'story-agent',
+					clearedWorkflowStatuses: 2,
+				},
+			);
 		});
 
 		it('deletes an invalid DB-only definition without parsing it', async () => {
@@ -375,6 +493,7 @@ describe('agentDefinitionsRouter', () => {
 
 			expect(result).toEqual({ agentType: 'email-joke' });
 			expect(mockDeleteAgentDefinition).toHaveBeenCalledWith('email-joke');
+			expect(mockClearAgentTypeReferences).toHaveBeenCalledWith('email-joke');
 		});
 
 		it('throws NOT_FOUND when definition not in DB', async () => {
@@ -435,6 +554,25 @@ describe('agentDefinitionsRouter', () => {
 			await expect(caller.reset({ agentType: 'custom-agent' })).rejects.toMatchObject({
 				code: 'BAD_REQUEST',
 			});
+		});
+
+		it('rejects resetting a referenced builtin to YAML defaults without status-changed support', async () => {
+			mockLoadBuiltinDefinition.mockReturnValue(createMockDefinition({ triggers: [] }));
+			mockListWorkflowStatusDefinitions.mockResolvedValue([
+				{
+					key: 'review-ready',
+					label: 'Review Ready',
+					agentType: 'review',
+					sortOrder: 1000,
+					isBuiltin: false,
+				},
+			]);
+			mockUpsertAgentDefinition.mockClear();
+
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+			await expectTRPCError(caller.reset({ agentType: 'review' }), 'BAD_REQUEST');
+
+			expect(mockUpsertAgentDefinition).not.toHaveBeenCalled();
 		});
 
 		it('throws FORBIDDEN when non-superadmin tries to reset', async () => {
@@ -669,6 +807,21 @@ describe('agentDefinitionsRouter', () => {
 			await expect(caller.resetPrompt({ agentType: 'implementation' })).rejects.toMatchObject({
 				code: 'NOT_FOUND',
 			});
+		});
+
+		it('throws BAD_REQUEST for custom agents without built-in prompt defaults', async () => {
+			const current = createMockDefinition({
+				prompts: { systemPrompt: 'custom system', taskPrompt: 'custom task' },
+			});
+			mockResolveAgentDefinition.mockResolvedValue(current);
+			mockIsBuiltinAgentType.mockReturnValue(false);
+
+			const caller = createCaller({ user: mockSuperAdmin, effectiveOrgId: mockSuperAdmin.orgId });
+			await expect(caller.resetPrompt({ agentType: 'phased-plan' })).rejects.toMatchObject({
+				code: 'BAD_REQUEST',
+				message: 'No built-in prompt defaults exist for custom agent: phased-plan',
+			});
+			expect(mockLoadBuiltinDefinition).not.toHaveBeenCalled();
 		});
 
 		it('throws FORBIDDEN for non-superadmin', async () => {

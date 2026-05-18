@@ -24,6 +24,7 @@ import { type ReactElement, useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc } from '@/lib/trpc.js';
 import type { ProjectCredentialMeta } from '../../project-secret-field.js';
+import { buildMissingStatusTriggerConfigs } from '../save-trigger-configs.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
@@ -135,6 +136,7 @@ interface LinearProviderHooks {
 	readonly webhookUrl: string;
 	readonly projectIdForSecret: string;
 	readonly webhookSecretCredential: ProjectCredentialMeta | undefined;
+	readonly workflowStatuses: ReadonlyArray<{ readonly key: string; readonly label: string }>;
 }
 
 function asLinearHooks(providerHooks: Record<string, unknown> | undefined): LinearProviderHooks {
@@ -179,7 +181,7 @@ function LinearStatusMappingAdapter({
 	return StatusMappingStep({
 		step: { kind: 'status-mapping', id: 'linear-statuses' },
 		providerId: 'linear',
-		cascadeStatuses: LINEAR_STATUS_SLOTS,
+		cascadeStatuses: h.workflowStatuses.length > 0 ? h.workflowStatuses : LINEAR_STATUS_SLOTS,
 		providerStates: h.providerStates,
 		mappings: state.linearStatusMappings,
 		onMappingChange: (key, value) => dispatch({ type: 'SET_LINEAR_STATUS_MAPPING', key, value }),
@@ -281,6 +283,13 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		...(Object.keys(state.linearLabels).length > 0 ? { labels: state.linearLabels } : {}),
 	}),
 
+	buildSaveTriggerConfigs: ({ state, workflowStatuses, existingConfigs }) =>
+		buildMissingStatusTriggerConfigs({
+			statusMappings: state.linearStatusMappings,
+			workflowStatuses,
+			existingConfigs,
+		}),
+
 	buildEditState: (initialConfig, configuredKeys) => {
 		const statuses = initialConfig.statuses as Record<string, string> | undefined;
 		const labels = initialConfig.labels as Record<string, string> | undefined;
@@ -311,6 +320,7 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 		const credentialsQuery = useQuery(
 			trpc.projects.credentials.list.queryOptions({ projectId: projectId ?? '' }),
 		);
+		const workflowStatusesQuery = useQuery(trpc.workflowStatuses.list.queryOptions());
 		const webhookSecretCredential = credentialsQuery.data?.find(
 			(c) => c.envVarKey === 'LINEAR_WEBHOOK_SECRET',
 		);
@@ -370,6 +380,11 @@ export const linearProviderWizard: ProviderWizardDefinition = {
 			webhookUrl,
 			projectIdForSecret: projectId ?? '',
 			webhookSecretCredential,
+			workflowStatuses:
+				workflowStatusesQuery.data?.map((status) => ({
+					key: status.key,
+					label: status.label,
+				})) ?? LINEAR_STATUS_SLOTS,
 		} satisfies LinearProviderHooks & Record<string, unknown>;
 	},
 };

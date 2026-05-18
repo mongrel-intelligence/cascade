@@ -13,5 +13,5 @@ export async function createWorkItem(params: CreateWorkItemParams): Promise<stri
 		description: params.description,
 	});
 
-	return `Work item created successfully: "${item.title}" - ${item.url}`;
+	return `Work item created successfully: "${item.title}" [id: ${item.id}] - ${item.url}`;
 }

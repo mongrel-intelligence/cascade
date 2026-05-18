@@ -218,7 +218,9 @@ flowchart TD
     A[Trigger matched] --> B[Guard and context setup]
     B --> C[Validation and budget preflight]
     C -->|Blocked| D[Notify PM/callbacks and stop]
-    C -->|Allowed| E[Persist work-item and PR links]
+    C -->|Allowed| FG[Implementation freshness gate]
+    FG -->|Blocked| FGSKIP[Post durable PM skip comment and stop]
+    FG -->|Passed| E[Persist work-item and PR links]
     E --> F[PM lifecycle: prepareForAgent]
     F --> G[Run agent via engine]
     G --> H[Post-run side effects]
@@ -231,6 +233,7 @@ flowchart TD
 This includes:
 - Context setup in `agent-execution-runtime.ts`: build the `PMLifecycleManager`, load agent lifecycle hooks, and re-resolve `workItemId` from PR links when a webhook arrived before the DB mapping existed.
 - Validation and lifecycle preflight in `agent-execution-lifecycle.ts`: validate PM/SCM integrations, notify PM/callbacks on validation failure, check `workItemBudgetUsd`, and run `prepareForAgent`.
+- Implementation freshness gate in `implementation-freshness-gate.ts` (MNG-1053): only fires for `agentType === 'implementation'` with a resolved `workItemId`. Reloads the live PM work item, terminal checklists (`Implementation Steps`, `Acceptance Criteria`), and `agent_runs` ownership state, then verifies any linked PRs through GitHub using the implementer persona token. Open or merged PRs, fully-completed terminal checklists, and active same-type runs short-circuit dispatch with a stable `Implementation not started:` PM comment (updating the existing ack comment when present, posting a new comment otherwise). Checklist read uncertainty always falls into `needs_human_reconciliation`; PR lookup uncertainty does the same when a DB/run-linked PR candidate exists. Closed-unmerged PRs do NOT permanently block reimplementation.
 - Work-item and PR traceability in `agent-work-items.ts`: create/update work-item records, maintain PR/work-item links before and after execution, fetch PR titles, and backfill run PR numbers.
 - Agent execution in `agent-execution-runtime.ts`: call `runAgent()` with the resolved input plus project, config, and remaining budget.
 - Post-run PM behavior in `agent-pm-summary.ts` and `agent-execution-lifecycle.ts`: post review/output summaries to the PM work item, handle artifacts, post budget warnings, clean up processing state, and call `handleSuccess` or `handleFailure`.

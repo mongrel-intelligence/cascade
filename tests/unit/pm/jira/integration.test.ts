@@ -304,6 +304,64 @@ describe('JiraIntegration', () => {
 
 			expect(config.statuses.backlog).toBeUndefined();
 		});
+
+		it('preserves custom status keys like prd, story, and phased-plan from jira.statuses', () => {
+			mockGetJiraConfig.mockReturnValue(
+				makeJiraConfig({
+					statuses: {
+						backlog: 'Backlog',
+						inProgress: 'In Progress',
+						done: 'Done',
+						prd: 'PRD',
+						story: 'Story Refinement',
+						'phased-plan': 'Phased Planning',
+					},
+				}),
+			);
+
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			// Built-in statuses still resolve correctly (regression safety)
+			expect(config.statuses.backlog).toBe('Backlog');
+			expect(config.statuses.inProgress).toBe('In Progress');
+			expect(config.statuses.done).toBe('Done');
+			// Custom statuses survive normalization so lifecycle hooks like
+			// moveOnPrepare/moveOnSuccess can resolve them.
+			expect(config.statuses.prd).toBe('PRD');
+			expect(config.statuses.story).toBe('Story Refinement');
+			expect(config.statuses['phased-plan']).toBe('Phased Planning');
+		});
+
+		it('returns an empty statuses object when jira.statuses is missing entirely', () => {
+			mockGetJiraConfig.mockReturnValue({
+				projectKey: 'PROJ',
+				baseUrl: 'https://example.atlassian.net',
+			});
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			expect(config.statuses).toEqual({});
+		});
+
+		it('preserves default labels when only custom statuses are provided', () => {
+			mockGetJiraConfig.mockReturnValue({
+				projectKey: 'PROJ',
+				baseUrl: 'https://example.atlassian.net',
+				statuses: { story: 'Story' },
+			});
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			// JIRA labels still fall back to their cascade-* defaults.
+			expect(config.labels.processing).toBe('cascade-processing');
+			expect(config.labels.processed).toBe('cascade-processed');
+			expect(config.labels.error).toBe('cascade-error');
+			expect(config.labels.readyToProcess).toBe('cascade-ready');
+			expect(config.labels.auto).toBe('cascade-auto');
+			// Custom status survives.
+			expect(config.statuses.story).toBe('Story');
+		});
 	});
 
 	// =========================================================================

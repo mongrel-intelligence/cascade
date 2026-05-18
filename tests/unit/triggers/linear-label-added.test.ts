@@ -4,6 +4,15 @@ import { mockLogger, mockTriggerCheckModule } from '../../helpers/sharedMocks.js
 vi.mock('../../../src/utils/logging.js', () => ({ logger: mockLogger }));
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
+const { mockGetCustomWorkflowStatusDefinition } = vi.hoisted(() => ({
+	mockGetCustomWorkflowStatusDefinition: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	getCustomWorkflowStatusDefinition: mockGetCustomWorkflowStatusDefinition,
+	listCustomWorkflowStatusDefinitions: vi.fn().mockResolvedValue([]),
+}));
+
 const mockGetLinearConfig = vi.fn();
 vi.mock('../../../src/pm/config.js', () => ({
 	getLinearConfig: (...args: unknown[]) => mockGetLinearConfig(...args),
@@ -114,6 +123,7 @@ describe('LinearReadyToProcessLabelTrigger', () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
 		mockGetLinearConfig.mockReturnValue(baseLinearConfig);
 		mockResolveProjectPMConfig.mockReturnValue(baseProjectPMConfig);
 		trigger = new LinearReadyToProcessLabelTrigger();
@@ -208,6 +218,32 @@ describe('LinearReadyToProcessLabelTrigger', () => {
 		it('returns null when issue state does not map to any agent', async () => {
 			const result = await trigger.handle(buildCtx({ issueStateId: 'state-done' }));
 			expect(result).toBeNull();
+		});
+
+		it('returns custom agent when issue state maps to a custom workflow status', async () => {
+			mockGetLinearConfig.mockReturnValue({
+				...baseLinearConfig,
+				statuses: { ...baseLinearConfig.statuses, story: 'state-story' },
+			});
+			mockGetCustomWorkflowStatusDefinition.mockResolvedValue({
+				id: 2,
+				key: 'story',
+				label: 'Story',
+				agentType: 'story',
+				sortOrder: 1000,
+				createdAt: null,
+				updatedAt: null,
+			});
+
+			const result = await trigger.handle(buildCtx({ issueStateId: 'state-story' }));
+
+			expect(result?.agentType).toBe('story');
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'proj-linear',
+				'story',
+				'pm:label-added',
+				'linear-ready-to-process-label-added',
+			);
 		});
 
 		it('returns null when issue identifier is missing', async () => {

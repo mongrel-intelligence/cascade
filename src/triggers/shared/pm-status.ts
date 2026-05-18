@@ -1,4 +1,5 @@
 import type { AgentInput, TriggerResult } from '../../types/index.js';
+import { resolveWorkflowStatusDefinition } from '../../workflow/statusDefinitions.js';
 import { TRIGGER_EVENTS } from './events.js';
 import { buildPMDispatchResult } from './result-builders.js';
 import { STATUS_TO_AGENT } from './status-to-agent.js';
@@ -60,6 +61,47 @@ export function resolvePMStatusAgentById(args: {
 		incomingStatus: args.statusId,
 		configuredStatuses: args.configuredStatuses,
 		matcher: exactStatusMatcher,
+	});
+}
+
+export async function resolvePMStatusAgentFromWorkflowDefinitions(args: {
+	incomingStatus: string;
+	configuredStatuses: Record<string, string>;
+	matcher?: StatusMatcher;
+}): Promise<ResolvedPMStatusAgent | undefined> {
+	const matcher = args.matcher ?? exactStatusMatcher;
+
+	for (const [cascadeStatus, configuredStatus] of Object.entries(args.configuredStatuses)) {
+		if (matcher(configuredStatus, args.incomingStatus)) {
+			const definition = await resolveWorkflowStatusDefinition(cascadeStatus);
+			if (definition?.agentType) {
+				return { agentType: definition.agentType, cascadeStatus };
+			}
+		}
+	}
+
+	return undefined;
+}
+
+export function resolvePMStatusAgentByIdFromWorkflowDefinitions(args: {
+	statusId: string;
+	configuredStatuses: Record<string, string>;
+}): Promise<ResolvedPMStatusAgent | undefined> {
+	return resolvePMStatusAgentFromWorkflowDefinitions({
+		incomingStatus: args.statusId,
+		configuredStatuses: args.configuredStatuses,
+		matcher: exactStatusMatcher,
+	});
+}
+
+export function resolvePMStatusAgentByNameFromWorkflowDefinitions(args: {
+	statusName: string;
+	configuredStatuses: Record<string, string>;
+}): Promise<ResolvedPMStatusAgent | undefined> {
+	return resolvePMStatusAgentFromWorkflowDefinitions({
+		incomingStatus: args.statusName,
+		configuredStatuses: args.configuredStatuses,
+		matcher: caseInsensitiveStatusMatcher,
 	});
 }
 

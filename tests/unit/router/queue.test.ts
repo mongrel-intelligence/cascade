@@ -6,9 +6,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // inside factory closures.
 // ---------------------------------------------------------------------------
 
-const { mockQueueInstance } = vi.hoisted(() => {
+const { mockQueueHandlers, mockQueueInstance } = vi.hoisted(() => {
+	const mockQueueHandlers = new Map<string, (...args: unknown[]) => void>();
 	const mockQueueInstance = {
-		on: vi.fn(),
+		on: vi.fn((event: string, handler: (...args: unknown[]) => void) => {
+			mockQueueHandlers.set(event, handler);
+		}),
 		add: vi.fn().mockResolvedValue({ id: 'test-job-id' }),
 		getDelayed: vi.fn().mockResolvedValue([]),
 		getWaiting: vi.fn().mockResolvedValue([]),
@@ -17,7 +20,7 @@ const { mockQueueInstance } = vi.hoisted(() => {
 		getCompletedCount: vi.fn().mockResolvedValue(0),
 		getFailedCount: vi.fn().mockResolvedValue(0),
 	};
-	return { mockQueueInstance };
+	return { mockQueueHandlers, mockQueueInstance };
 });
 
 vi.mock('bullmq', () => ({
@@ -46,7 +49,15 @@ vi.mock('../../../src/sentry.js', () => ({
 }));
 
 import type { CascadeJob } from '../../../src/router/queue.js';
-import { scheduleCoalescedJob } from '../../../src/router/queue.js';
+import {
+	addJob,
+	getPendingCoalescedJobData,
+	getQueueStats,
+	hasPendingCoalescedJob,
+	scheduleCoalescedJob,
+} from '../../../src/router/queue.js';
+import { captureException } from '../../../src/sentry.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const sampleJob: CascadeJob = {
 	type: 'jira',
@@ -77,6 +88,76 @@ describe('scheduleCoalescedJob', () => {
 		mockQueueInstance.getDelayed.mockResolvedValue([]);
 		mockQueueInstance.getWaiting.mockResolvedValue([]);
 		mockQueueInstance.add.mockResolvedValue({ id: 'mock-id' });
+		mockQueueInstance.getWaitingCount.mockResolvedValue(0);
+		mockQueueInstance.getActiveCount.mockResolvedValue(0);
+		mockQueueInstance.getCompletedCount.mockResolvedValue(0);
+		mockQueueInstance.getFailedCount.mockResolvedValue(0);
+		vi.mocked(logger.info).mockClear();
+		vi.mocked(logger.error).mockClear();
+		vi.mocked(captureException).mockClear();
+	});
+
+	it('adds an immediate job and returns the BullMQ id', async () => {
+		mockQueueInstance.add.mockResolvedValueOnce({ id: 'bull-job-1' });
+
+		await expect(addJob(sampleJob)).resolves.toBe('bull-job-1');
+
+		expect(mockQueueInstance.add).toHaveBeenCalledWith(
+			'jira',
+			sampleJob,
+			expect.objectContaining({ jobId: expect.stringMatching(/^jira-\d+-[a-z0-9]{6}$/) }),
+		);
+		expect(logger.info).toHaveBeenCalledWith('Job added to queue', {
+			id: 'bull-job-1',
+			type: 'jira',
+		});
+	});
+
+	it('falls back to generated id when BullMQ does not return one', async () => {
+		mockQueueInstance.add.mockResolvedValueOnce({});
+
+		const jobId = await addJob(sampleJob);
+
+		expect(jobId).toMatch(/^jira-\d+-[a-z0-9]{6}$/);
+	});
+
+	it('reports whether a pending coalesced job exists', async () => {
+		mockQueueInstance.getDelayed.mockResolvedValueOnce([makeFakeJob('proj-1:PROJ-42', sampleJob)]);
+		mockQueueInstance.getWaiting.mockResolvedValueOnce([makeFakeJob('proj-2:PROJ-99', sampleJob)]);
+
+		await expect(hasPendingCoalescedJob('proj-1:PROJ-42')).resolves.toBe(true);
+		await expect(hasPendingCoalescedJob('missing:key')).resolves.toBe(false);
+	});
+
+	it('returns data for the first pending coalesced job', async () => {
+		mockQueueInstance.getDelayed.mockResolvedValueOnce([makeFakeJob('proj-1:PROJ-42', sampleJob)]);
+
+		await expect(getPendingCoalescedJobData('proj-1:PROJ-42')).resolves.toEqual(sampleJob);
+	});
+
+	it('returns queue stats from BullMQ counters', async () => {
+		mockQueueInstance.getWaitingCount.mockResolvedValueOnce(2);
+		mockQueueInstance.getActiveCount.mockResolvedValueOnce(3);
+		mockQueueInstance.getCompletedCount.mockResolvedValueOnce(5);
+		mockQueueInstance.getFailedCount.mockResolvedValueOnce(7);
+
+		await expect(getQueueStats()).resolves.toEqual({
+			waiting: 2,
+			active: 3,
+			completed: 5,
+			failed: 7,
+		});
+	});
+
+	it('logs and captures queue errors', () => {
+		const errorHandler = mockQueueHandlers.get('error');
+		const err = new Error('redis down');
+
+		expect(errorHandler).toBeDefined();
+		errorHandler?.(err);
+
+		expect(logger.error).toHaveBeenCalledWith('Queue error', { error: 'Error: redis down' });
+		expect(captureException).toHaveBeenCalledWith(err, { tags: { source: 'job_queue' } });
 	});
 
 	it('schedules a new delayed job when no prior pending job exists', async () => {

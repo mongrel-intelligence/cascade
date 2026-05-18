@@ -49,6 +49,7 @@ export async function createAgentExecutionContext(
 		executionConfig,
 		agentType: result.agentType,
 		logLabel: executionConfig.logLabel ?? 'Agent',
+		pmProvider,
 		lifecycle,
 		lifecycleHooks,
 		workItemId,

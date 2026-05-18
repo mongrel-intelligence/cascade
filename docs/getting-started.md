@@ -353,6 +353,42 @@ node bin/cascade.js projects trigger-set my-project \
 node bin/cascade.js projects trigger-discover --agent implementation
 ```
 
+### Map a custom workflow status
+
+You can add columns/states beyond the built-in CASCADE stages (Backlog → Splitting → Planning → Todo → In Progress → In Review → Done → Merged) and have them dispatch any custom or built-in agent. This works for Trello, Jira, and Linear with the same wiring:
+
+1. **Register the custom status definition** (superadmin) so the wizard offers a mapping row for it:
+
+   ```bash
+   # Dispatches the `prd` agent — the agent must declare a `pm:status-changed` trigger
+   node bin/cascade.js workflow-statuses create \
+     --key prd --label PRD --agent-type prd --sort-order 1000
+
+   # Or render-only — no agent dispatches when work items land in this status
+   node bin/cascade.js workflow-statuses create --key icebox --label Icebox
+
+   node bin/cascade.js workflow-statuses list
+   ```
+
+2. **Map the custom key to a provider-native list/status** in the PM wizard's **Status Mapping** step. The wizard renders a row for every registered status (built-in + custom) and saves the mapping in the same provider-native shape:
+
+   - **Trello** stores the list ID under `lists.prd`
+   - **Jira** stores the status name under `statuses.prd`
+   - **Linear** stores the workflow state UUID under `statuses.prd`
+
+3. **Verify trigger config readiness**. Saving the wizard auto-enables `pm:status-changed` for any custom-status agent the operator just mapped. Confirm via the dashboard's **Agent Configs** tab, or:
+
+   ```bash
+   node bin/cascade.js projects trigger-list my-project
+   # Look for: agent=prd event=pm:status-changed enabled=true
+
+   # If missing, enable manually:
+   node bin/cascade.js projects trigger-set my-project \
+     --agent prd --event pm:status-changed --enable
+   ```
+
+A custom status only dispatches when its definition has an `agent-type` AND the project trigger config for `(agent, pm:status-changed)` is enabled. Statuses created without `--agent-type` (or updated with `--no-agent`) render in the wizard and persist in the provider config, but the trigger handlers return `null` instead of dispatching — useful for board columns CASCADE should know about but never act on.
+
 ---
 
 ## 11. Test It

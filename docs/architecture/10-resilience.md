@@ -31,6 +31,14 @@ Prevents multiple agents from working on the same card/issue simultaneously. The
 - Key: `(projectId, workItemId, agentType)`
 - Only same-agent duplicates are blocked; different agent types may run concurrently on the same work item
 
+### Implementation freshness gate (worker-side)
+
+`src/triggers/shared/implementation-freshness-gate.ts`
+
+The router-level work-item lock catches in-flight duplicates of the same agent type, but cannot see (a) a sibling implementation run that already completed via post-completion review chaining or a manual run, (b) a terminal checklist (`Implementation Steps`, `Acceptance Criteria`) that an operator finished while the dispatch sat in the PM coalesce window, or (c) a PR that already exists for the work item. PM router adapters intentionally embed a pre-resolved `TriggerResult` for delayed/coalesced PM jobs, so the freshness gate runs the last-mile check inside the worker execution pipeline before `persistAgentWorkItemLinks()` and `prepareForAgent()`.
+
+The gate is implementation-only (`agentType === 'implementation'` plus a resolved `workItemId`); follow-up agents — `review`, `respond-to-review`, `respond-to-ci`, `respond-to-pr-comment` — bypass it and keep their existing dispatch path. When the gate fires, it reloads the live PM work item / checklists, counts active same-type runs, looks up linked PR candidates from `pr_work_items` + recent runs, and verifies PR state through `githubClient.getPR()` inside a freshly resolved implementer-token scope. Open or merged PRs and fully-complete terminal checklists return `already_implemented` or `implementation_pr_exists`; checklist read uncertainty always returns `needs_human_reconciliation`, and PR lookup uncertainty does the same when a DB/run-linked PR candidate exists. The pipeline posts a durable PM comment (updating the existing ack comment when present, otherwise adding a new one) prefixed with `Implementation not started:` and exits normally so router cleanup releases locks without retrying.
+
 ### Agent-type concurrency limit
 
 `src/router/agent-type-lock.ts`

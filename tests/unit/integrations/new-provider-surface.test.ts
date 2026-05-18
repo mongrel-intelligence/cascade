@@ -106,7 +106,7 @@ const GUARDED_WIZARD_FILE_HASHES: Record<string, string> = {
 	'web/src/components/projects/pm-wizard.tsx':
 		'402cc6829689f34dfec940034f8ba014fe14425671018d0455ad67145e6a0fb9',
 	'web/src/components/projects/pm-wizard-hooks.ts':
-		'7aa07ab092695afdfd2ecc78345c097b569adce46e3eb928e8ee0bfa5d4131dd',
+		'7eab3a6cdf2657116658d111ca238f98444ce569e7f2bc61e3acd70b71113913',
 	'web/src/components/projects/pm-wizard-common-steps.tsx':
 		'0d9ca8bb56036687aed695b502be75ebf2a753195decb2e6b58f440c2abaa7c9',
 };

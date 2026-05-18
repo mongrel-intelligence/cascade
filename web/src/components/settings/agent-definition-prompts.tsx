@@ -102,6 +102,7 @@ export function PromptEditorHeader({
 	agentType,
 	hasCustom,
 	hasAnyCustom,
+	canReset,
 	onReset,
 	onSave,
 	resetPending,
@@ -111,6 +112,7 @@ export function PromptEditorHeader({
 	agentType: string;
 	hasCustom: boolean;
 	hasAnyCustom: boolean;
+	canReset: boolean;
 	onReset: () => void;
 	onSave: () => void;
 	resetPending: boolean;
@@ -128,7 +130,7 @@ export function PromptEditorHeader({
 				<button
 					type="button"
 					onClick={onReset}
-					disabled={!hasAnyCustom || resetPending}
+					disabled={!canReset || !hasAnyCustom || resetPending}
 					className="inline-flex h-9 items-center rounded-md border border-input px-4 text-sm hover:bg-accent disabled:opacity-50"
 				>
 					Reset All Prompts
@@ -165,6 +167,8 @@ export function PromptsPanel({ agentType }: { agentType: string }) {
 	const partialsQuery = useQuery(trpc.prompts.listPartials.queryOptions());
 
 	const definition = definitionQuery.data?.definition;
+	const isBuiltin = definitionQuery.data?.isBuiltin ?? false;
+	const hasDiskDefault = defaultQuery.data?.source === 'disk';
 	const hasCustomSystemPrompt = !!definition?.prompts?.systemPrompt;
 	const hasCustomTaskPrompt = !!definition?.prompts?.taskPrompt;
 
@@ -225,7 +229,7 @@ export function PromptsPanel({ agentType }: { agentType: string }) {
 	});
 
 	function loadDefaultSystemPrompt() {
-		if (defaultQuery.data) {
+		if (hasDiskDefault && defaultQuery.data) {
 			setSystemPrompt(defaultQuery.data.content);
 			setValidationStatus(null);
 		}
@@ -296,6 +300,7 @@ export function PromptsPanel({ agentType }: { agentType: string }) {
 				agentType={agentType}
 				hasCustom={hasCustom}
 				hasAnyCustom={hasCustomSystemPrompt || hasCustomTaskPrompt}
+				canReset={isBuiltin}
 				onReset={handleReset}
 				onSave={() => saveMutation.mutate()}
 				resetPending={resetMutation.isPending}
@@ -319,6 +324,7 @@ export function PromptsPanel({ agentType }: { agentType: string }) {
 							<button
 								type="button"
 								onClick={loadDefaultSystemPrompt}
+								disabled={!hasDiskDefault}
 								className="text-sm text-muted-foreground hover:text-foreground"
 							>
 								Load Default

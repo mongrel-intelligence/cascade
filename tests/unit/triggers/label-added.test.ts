@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	mockAcknowledgmentsModule,
 	mockConfigProvider,
@@ -8,6 +8,15 @@ import {
 	mockTrelloClientModule,
 	mockTriggerCheckModule,
 } from '../../helpers/sharedMocks.js';
+
+const { mockGetCustomWorkflowStatusDefinition } = vi.hoisted(() => ({
+	mockGetCustomWorkflowStatusDefinition: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	getCustomWorkflowStatusDefinition: mockGetCustomWorkflowStatusDefinition,
+	listCustomWorkflowStatusDefinitions: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
@@ -36,6 +45,11 @@ import {
 describe('ReadyToProcessLabelTrigger', () => {
 	const trigger = new ReadyToProcessLabelTrigger();
 	const mockGetCard = vi.mocked(trelloClient.getCard);
+
+	beforeEach(() => {
+		mockGetCustomWorkflowStatusDefinition.mockReset();
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
+	});
 
 	const mockProject = createMockProject({
 		trello: {
@@ -319,6 +333,227 @@ describe('ReadyToProcessLabelTrigger', () => {
 						type: 'addLabelToCard',
 						date: '2024-01-01',
 						data: {
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('custom workflow status mapping', () => {
+		const customProject = createMockProject({
+			trello: {
+				boardId: 'board123',
+				lists: {
+					splitting: 'splitting-list-id',
+					planning: 'planning-list-id',
+					todo: 'todo-list-id',
+					prd: 'prd-list-id',
+					ux: 'ux-list-id',
+				},
+				labels: {
+					readyToProcess: 'ready-label-id',
+				},
+			},
+		});
+
+		it('dispatches a custom agent when the card is in a list mapped to a custom workflow status', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			mockGetCard.mockResolvedValue(
+				createTrelloCard({
+					id: 'card-custom',
+					name: 'Custom Card',
+					url: 'https://trello.com/c/abc/custom-card',
+					shortUrl: 'https://trello.com/c/abc',
+					idList: 'prd-list-id',
+				}),
+			);
+
+			const ctx: TriggerContext = {
+				project: customProject,
+				source: 'trello',
+				payload: createTrelloActionPayload({
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card-custom', name: 'Custom Card', idShort: 99, shortLink: 'abc' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('prd');
+			expect(result?.workItemId).toBe('card-custom');
+			expect(result?.workItemUrl).toBe('https://trello.com/c/abc');
+			expect(result?.workItemTitle).toBe('Custom Card');
+			expect(result?.agentInput.triggerEvent).toBe('pm:label-added');
+		});
+
+		it('returns null when a custom mapped status has no dispatch agent configured', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'ux') {
+					return {
+						id: 2,
+						key: 'ux',
+						label: 'UX',
+						agentType: null,
+						sortOrder: 2000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			mockGetCard.mockResolvedValue(createTrelloCard({ id: 'card-ux', idList: 'ux-list-id' }));
+
+			const ctx: TriggerContext = {
+				project: customProject,
+				source: 'trello',
+				payload: createTrelloActionPayload({
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card-ux', name: 'UX Card', idShort: 100, shortLink: 'uxx' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('returns null when a custom mapped status is missing from workflow definitions', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
+
+			mockGetCard.mockResolvedValue(createTrelloCard({ id: 'card-prd', idList: 'prd-list-id' }));
+
+			const ctx: TriggerContext = {
+				project: customProject,
+				source: 'trello',
+				payload: createTrelloActionPayload({
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card-prd', name: 'PRD Card', idShort: 101, shortLink: 'prdx' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				}),
+			};
+
+			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+
+		it('checks trigger enablement for the resolved custom agent', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			mockGetCard.mockResolvedValue(createTrelloCard({ id: 'card-custom', idList: 'prd-list-id' }));
+
+			const ctx: TriggerContext = {
+				project: customProject,
+				source: 'trello',
+				payload: createTrelloActionPayload({
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card-custom', name: 'Custom Card', idShort: 99, shortLink: 'abc' },
+							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
+						},
+					},
+				}),
+			};
+
+			await trigger.handle(ctx);
+
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test',
+				'prd',
+				'pm:label-added',
+				'ready-to-process-label-added',
+			);
+		});
+
+		it('returns null when the trigger is disabled for the resolved custom agent', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			mockGetCard.mockResolvedValue(createTrelloCard({ id: 'card-custom', idList: 'prd-list-id' }));
+
+			const ctx: TriggerContext = {
+				project: customProject,
+				source: 'trello',
+				payload: createTrelloActionPayload({
+					action: {
+						id: 'action1',
+						idMemberCreator: 'member1',
+						type: 'addLabelToCard',
+						date: '2024-01-01',
+						data: {
+							card: { id: 'card-custom', name: 'Custom Card', idShort: 99, shortLink: 'abc' },
 							label: { id: 'ready-label-id', name: 'Ready', color: 'green' },
 						},
 					},

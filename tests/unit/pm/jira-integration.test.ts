@@ -58,4 +58,22 @@ describe('JiraIntegration.resolveLifecycleConfig', () => {
 		expect(cfg.statuses.done).toBe('DN');
 		expect(cfg.statuses.merged).toBe('MG');
 	});
+
+	it('preserves custom status keys (prd, story, phased-plan) needed by lifecycle moveOnPrepare / moveOnSuccess hooks', () => {
+		const project = makeProject({
+			backlog: 'BL',
+			inProgress: 'IP',
+			prd: 'PRD',
+			story: 'Story Refinement',
+			'phased-plan': 'Phased Planning',
+		});
+		const cfg = integration.resolveLifecycleConfig(project);
+		// Built-in keys still resolve.
+		expect(cfg.statuses.backlog).toBe('BL');
+		expect(cfg.statuses.inProgress).toBe('IP');
+		// Custom workflow keys survive normalization.
+		expect(cfg.statuses.prd).toBe('PRD');
+		expect(cfg.statuses.story).toBe('Story Refinement');
+		expect(cfg.statuses['phased-plan']).toBe('Phased Planning');
+	});
 });

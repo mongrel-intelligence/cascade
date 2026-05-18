@@ -88,6 +88,25 @@ export interface ProviderCredentialPersistenceMapping {
 	readonly label: string;
 }
 
+export interface ProviderSaveTriggerConfig {
+	readonly agentType: string;
+	readonly triggerEvent: string;
+	readonly enabled: boolean;
+}
+
+export interface ProviderSaveTriggerContext {
+	readonly state: WizardState;
+	readonly workflowStatuses: ReadonlyArray<{
+		readonly key: string;
+		readonly agentType: string | null;
+		readonly isBuiltin: boolean;
+	}>;
+	readonly existingConfigs: ReadonlyArray<{
+		readonly agentType: string;
+		readonly triggerEvent: string;
+	}>;
+}
+
 export interface ProviderWizardDefinition {
 	/** Must match the backend manifest id (e.g. 'trello', 'linear'). */
 	readonly id: string;
@@ -110,6 +129,13 @@ export interface ProviderWizardDefinition {
 	 * save API. Mirrors the existing `buildXxxIntegrationConfig` functions.
 	 */
 	readonly buildIntegrationConfig: (state: WizardState) => Record<string, unknown>;
+	/**
+	 * Optional provider-owned trigger config side effects to run after saving
+	 * integration config and credentials.
+	 */
+	readonly buildSaveTriggerConfigs?: (
+		context: ProviderSaveTriggerContext,
+	) => readonly ProviderSaveTriggerConfig[];
 	/**
 	 * Hydrates provider-owned edit-mode wizard state from a saved integration
 	 * config plus the project credential keys currently configured on the server.

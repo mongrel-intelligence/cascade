@@ -387,16 +387,22 @@ export function useSaveMutation(
 				await trpcClient.projects.credentials.set.mutate({ projectId, ...cred });
 			}
 
-			// On first-time setup, auto-enable default PM triggers for the three main agents
-			if (!state.isEditing) {
-				await trpcClient.agentTriggerConfigs.bulkUpsert.mutate({
-					projectId,
-					configs: [
-						{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
-						{ agentType: 'splitting', triggerEvent: 'pm:status-changed', enabled: true },
-						{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
-					],
+			if (manifestDef.buildSaveTriggerConfigs) {
+				const [workflowStatuses, existingConfigs] = await Promise.all([
+					trpcClient.workflowStatuses.list.query(),
+					trpcClient.agentTriggerConfigs.listByProject.query({ projectId }),
+				]);
+				const configs = manifestDef.buildSaveTriggerConfigs({
+					state,
+					workflowStatuses,
+					existingConfigs,
 				});
+				if (configs.length > 0) {
+					await trpcClient.agentTriggerConfigs.bulkUpsert.mutate({
+						projectId,
+						configs: [...configs],
+					});
+				}
 			}
 
 			// If the user switched provider mid-edit, clean up the old provider's credentials.

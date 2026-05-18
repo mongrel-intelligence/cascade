@@ -35,6 +35,15 @@ vi.mock('../../../src/triggers/shared/integration-validation.js', () => ({
 	formatValidationErrors: vi.fn().mockReturnValue(''),
 }));
 
+vi.mock('../../../src/triggers/shared/implementation-freshness-gate.js', () => ({
+	evaluateImplementationFreshness: vi.fn().mockResolvedValue({
+		kind: 'dispatchable',
+		message: 'ok',
+		evidence: {},
+	}),
+	postFreshnessSkipNotice: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
 
 vi.mock('../../../src/pm/context.js', () => ({
@@ -64,6 +73,10 @@ import { handleAgentResultArtifacts } from '../../../src/triggers/shared/agent-r
 import { checkBudgetExceeded } from '../../../src/triggers/shared/budget.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
 import { shouldTriggerDebug } from '../../../src/triggers/shared/debug-trigger.js';
+import {
+	evaluateImplementationFreshness,
+	postFreshnessSkipNotice,
+} from '../../../src/triggers/shared/implementation-freshness-gate.js';
 import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerResult } from '../../../src/triggers/types.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
@@ -112,6 +125,12 @@ beforeEach(() => {
 	vi.mocked(handleAgentResultArtifacts).mockResolvedValue(undefined);
 	vi.mocked(shouldTriggerDebug).mockResolvedValue(null);
 	vi.mocked(triggerDebugAnalysis).mockResolvedValue(undefined);
+	vi.mocked(evaluateImplementationFreshness).mockResolvedValue({
+		kind: 'dispatchable',
+		message: 'ok',
+		evidence: {},
+	});
+	vi.mocked(postFreshnessSkipNotice).mockResolvedValue(undefined);
 	vi.mocked(runAgent).mockResolvedValue({
 		success: true,
 		runId: 'run-1',
@@ -450,6 +469,112 @@ describe('runAgentExecutionPipeline', () => {
 			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig, { onFailure });
 
 			expect(onFailure).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('implementation freshness gate', () => {
+		it('runs the gate for implementation runs with a workItemId', async () => {
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(evaluateImplementationFreshness).toHaveBeenCalledWith(
+				expect.objectContaining({
+					agentType: 'implementation',
+					workItemId: 'card-123',
+					project: mockProject,
+				}),
+			);
+		});
+
+		it('skips the gate for non-implementation agent types', async () => {
+			const reviewResult: TriggerResult = {
+				agentType: 'review',
+				workItemId: 'card-123',
+				agentInput: {},
+			};
+
+			await runAgentExecutionPipeline(reviewResult, mockProject, mockConfig);
+
+			expect(evaluateImplementationFreshness).not.toHaveBeenCalled();
+			expect(runAgent).toHaveBeenCalledWith('review', expect.any(Object));
+		});
+
+		it('skips the gate when there is no workItemId', async () => {
+			const noWorkItemResult: TriggerResult = {
+				agentType: 'implementation',
+				agentInput: {},
+			};
+
+			await runAgentExecutionPipeline(noWorkItemResult, mockProject, mockConfig);
+
+			expect(evaluateImplementationFreshness).not.toHaveBeenCalled();
+			expect(runAgent).toHaveBeenCalledWith('implementation', expect.any(Object));
+		});
+
+		it('stops the pipeline before agent startup when the gate blocks', async () => {
+			vi.mocked(evaluateImplementationFreshness).mockResolvedValueOnce({
+				kind: 'already_implemented',
+				message: 'Implementation not started: already implemented.',
+				evidence: { completedChecklists: ['Implementation Steps'] },
+			});
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(postFreshnessSkipNotice).toHaveBeenCalledWith(
+				expect.anything(),
+				'card-123',
+				expect.any(Object),
+				expect.objectContaining({ kind: 'already_implemented' }),
+			);
+			expect(checkBudgetExceeded).not.toHaveBeenCalled();
+			expect(runAgent).not.toHaveBeenCalled();
+			expect(mockLifecycle.prepareForAgent).not.toHaveBeenCalled();
+		});
+
+		it('does not call lifecycle failure when blocked by an existing PR', async () => {
+			vi.mocked(evaluateImplementationFreshness).mockResolvedValueOnce({
+				kind: 'implementation_pr_exists',
+				message: 'Implementation not started: existing PR ...',
+				evidence: { pullRequests: [{ prNumber: 5, prUrl: 'x', state: 'open', merged: false }] },
+			});
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(mockLifecycle.handleFailure).not.toHaveBeenCalled();
+			expect(mockLifecycle.cleanupProcessing).not.toHaveBeenCalled();
+		});
+
+		it('stops the pipeline on needs_human_reconciliation', async () => {
+			vi.mocked(evaluateImplementationFreshness).mockResolvedValueOnce({
+				kind: 'needs_human_reconciliation',
+				message: 'Implementation not started: needs human reconciliation.',
+				evidence: { uncertaintyReason: 'pr_lookup_failed' },
+			});
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(postFreshnessSkipNotice).toHaveBeenCalled();
+			expect(runAgent).not.toHaveBeenCalled();
+		});
+
+		it('continues normally when the gate returns dispatchable', async () => {
+			vi.mocked(evaluateImplementationFreshness).mockResolvedValueOnce({
+				kind: 'dispatchable',
+				message: 'ok',
+				evidence: {},
+			});
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(postFreshnessSkipNotice).not.toHaveBeenCalled();
+			expect(runAgent).toHaveBeenCalledWith('implementation', expect.any(Object));
+		});
+
+		it('does not crash when the gate itself throws — proceeds with dispatch', async () => {
+			vi.mocked(evaluateImplementationFreshness).mockRejectedValueOnce(new Error('gate broke'));
+
+			await runAgentExecutionPipeline(mockTriggerResult, mockProject, mockConfig);
+
+			expect(runAgent).toHaveBeenCalledWith('implementation', expect.any(Object));
 		});
 	});
 

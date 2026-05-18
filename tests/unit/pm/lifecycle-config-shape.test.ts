@@ -35,11 +35,25 @@ describe('ProjectPMConfig.statuses shape', () => {
 		expect(cfg.statuses).toEqual({});
 	});
 
+	it('accepts custom workflow status keys for provider lifecycle moves', () => {
+		const cfg: ProjectPMConfig = {
+			labels: {},
+			statuses: {
+				prd: 'state-prd',
+				story: 'state-story',
+				'phased-plan': 'state-phased-plan',
+			},
+		};
+
+		expect(cfg.statuses.story).toBe('state-story');
+		expect(cfg.statuses['phased-plan']).toBe('state-phased-plan');
+	});
+
 	it('every key in STATUS_TO_AGENT is a declared key of ProjectPMConfig.statuses', () => {
 		// Construct a fully populated statuses object; if STATUS_TO_AGENT contains
 		// any key that isn't assignable to ProjectPMConfig.statuses, this ceases to
 		// type-check.
-		const allStatuses: Required<ProjectPMConfig['statuses']> = {
+		const allStatuses = {
 			backlog: '',
 			splitting: '',
 			planning: '',
@@ -49,7 +63,7 @@ describe('ProjectPMConfig.statuses shape', () => {
 			done: '',
 			merged: '',
 			debug: '',
-		};
+		} satisfies Required<Record<keyof typeof STATUS_TO_AGENT, string>>;
 
 		for (const agentKey of Object.keys(STATUS_TO_AGENT)) {
 			expect(agentKey in allStatuses).toBe(true);

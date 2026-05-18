@@ -12,6 +12,7 @@ import { runsRouter } from './routers/runs.js';
 import { usersRouter } from './routers/users.js';
 import { webhookLogsRouter } from './routers/webhookLogs.js';
 import { webhooksRouter } from './routers/webhooks.js';
+import { workflowStatusesRouter } from './routers/workflowStatuses.js';
 import { workItemsRouter } from './routers/workItems.js';
 import { router } from './trpc.js';
 
@@ -33,6 +34,7 @@ export const appRouter = router({
 	prs: prsRouter,
 	workItems: workItemsRouter,
 	users: usersRouter,
+	workflowStatuses: workflowStatusesRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -89,16 +89,7 @@ export class LinearIntegration implements PMIntegration {
 				readyToProcess: labels?.readyToProcess,
 				auto: labels?.auto,
 			},
-			statuses: {
-				backlog: linearConfig?.statuses?.backlog,
-				splitting: linearConfig?.statuses?.splitting,
-				planning: linearConfig?.statuses?.planning,
-				todo: linearConfig?.statuses?.todo,
-				inProgress: linearConfig?.statuses?.inProgress,
-				inReview: linearConfig?.statuses?.inReview,
-				done: linearConfig?.statuses?.done,
-				merged: linearConfig?.statuses?.merged,
-			},
+			statuses: { ...(linearConfig?.statuses ?? {}) },
 		};
 	}
 

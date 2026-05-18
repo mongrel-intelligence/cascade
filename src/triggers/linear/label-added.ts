@@ -17,7 +17,10 @@ import { getLinearConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { buildPMLabelDispatchResult, resolvePMLabelAgentByStatusId } from '../shared/pm-label.js';
+import {
+	buildPMLabelDispatchResult,
+	resolvePMLabelAgentByStatusIdFromWorkflowDefinitions,
+} from '../shared/pm-label.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { LinearWebhookIssueLabelData, LinearWebhookTriggerPayload } from './types.js';
 
@@ -73,7 +76,7 @@ export class LinearReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const resolved = resolvePMLabelAgentByStatusId({
+		const resolved = await resolvePMLabelAgentByStatusIdFromWorkflowDefinitions({
 			statusId: issueStateId,
 			configuredStatuses: linearConfig.statuses,
 		});

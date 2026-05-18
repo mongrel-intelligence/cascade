@@ -71,6 +71,11 @@ export class JiraIntegration implements PMIntegration {
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig {
 		const jiraConfig = getJiraConfig(project);
 		const jiraLabels = jiraConfig?.labels;
+		// Spread the full statuses record so custom workflow keys (e.g. `prd`,
+		// `story`, `phased-plan`) configured on the JIRA project survive
+		// normalization and are available to lifecycle hooks like
+		// `moveOnPrepare` / `moveOnSuccess`. Mirrors
+		// LinearIntegration.resolveLifecycleConfig.
 		return {
 			labels: {
 				processing: jiraLabels?.processing ?? 'cascade-processing',
@@ -79,16 +84,7 @@ export class JiraIntegration implements PMIntegration {
 				readyToProcess: jiraLabels?.readyToProcess ?? 'cascade-ready',
 				auto: jiraLabels?.auto ?? 'cascade-auto',
 			},
-			statuses: {
-				backlog: jiraConfig?.statuses?.backlog,
-				splitting: jiraConfig?.statuses?.splitting,
-				planning: jiraConfig?.statuses?.planning,
-				todo: jiraConfig?.statuses?.todo,
-				inProgress: jiraConfig?.statuses?.inProgress,
-				inReview: jiraConfig?.statuses?.inReview,
-				done: jiraConfig?.statuses?.done,
-				merged: jiraConfig?.statuses?.merged,
-			},
+			statuses: { ...(jiraConfig?.statuses ?? {}) },
 		};
 	}
 

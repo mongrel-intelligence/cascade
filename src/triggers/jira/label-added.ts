@@ -14,7 +14,10 @@ import { getJiraConfig } from '../../pm/config.js';
 import { resolveProjectPMConfig } from '../../pm/lifecycle.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
-import { buildPMLabelDispatchResult, resolvePMLabelAgentByStatusName } from '../shared/pm-label.js';
+import {
+	buildPMLabelDispatchResult,
+	resolvePMLabelAgentByStatusNameFromWorkflowDefinitions,
+} from '../shared/pm-label.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { JiraWebhookPayload } from './types.js';
 
@@ -85,12 +88,12 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const agentType = resolvePMLabelAgentByStatusName({
+		const resolved = await resolvePMLabelAgentByStatusNameFromWorkflowDefinitions({
 			statusName: currentStatus,
 			configuredStatuses: jiraConfig.statuses,
 		});
 
-		if (!agentType) {
+		if (!resolved) {
 			logger.debug('JIRA issue status does not map to any agent', {
 				issueKey,
 				currentStatus,
@@ -98,6 +101,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			});
 			return null;
 		}
+		const { agentType, cascadeStatus: matchedCascadeStatus } = resolved;
 
 		// Check per-agent ready-to-process toggle via new DB-driven system
 		if (!(await checkTriggerEnabled(ctx.project.id, agentType, 'pm:label-added', this.name))) {
@@ -107,6 +111,7 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 		logger.info('JIRA "Ready to Process" label added, triggering agent', {
 			issueKey,
 			currentStatus,
+			cascadeStatus: matchedCascadeStatus,
 			agentType,
 		});
 

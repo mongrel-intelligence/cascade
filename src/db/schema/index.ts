@@ -10,3 +10,4 @@ export { prWorkItems } from './prWorkItems.js';
 export { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from './runs.js';
 export { sessions, users } from './users.js';
 export { webhookLogs } from './webhookLogs.js';
+export { workflowStatusDefinitions } from './workflowStatusDefinitions.js';

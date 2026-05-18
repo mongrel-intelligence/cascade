@@ -1,12 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockGetCustomWorkflowStatusDefinition } = vi.hoisted(() => ({
+	mockGetCustomWorkflowStatusDefinition: vi.fn(),
+}));
+
+vi.mock('../../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	getCustomWorkflowStatusDefinition: mockGetCustomWorkflowStatusDefinition,
+	listCustomWorkflowStatusDefinitions: vi.fn().mockResolvedValue([]),
+}));
+
 import {
 	buildPMLabelDispatchResult,
 	resolvePMLabelAgentByList,
 	resolvePMLabelAgentByStatusId,
+	resolvePMLabelAgentByStatusIdFromWorkflowDefinitions,
 	resolvePMLabelAgentByStatusName,
+	resolvePMLabelAgentByStatusNameFromWorkflowDefinitions,
 } from '../../../../src/triggers/shared/pm-label.js';
 
 describe('PM label helpers', () => {
+	beforeEach(() => {
+		mockGetCustomWorkflowStatusDefinition.mockReset();
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
+	});
+
 	it('resolves Trello current lists to agent types', () => {
 		const lists = {
 			splitting: 'list-splitting',
@@ -40,6 +57,60 @@ describe('PM label helpers', () => {
 				},
 			}),
 		).toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+	});
+
+	it('resolves JIRA status names through workflow definitions case-insensitively', async () => {
+		await expect(
+			resolvePMLabelAgentByStatusNameFromWorkflowDefinitions({
+				statusName: 'to do',
+				configuredStatuses: {
+					todo: 'To Do',
+				},
+			}),
+		).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+	});
+
+	it('resolves custom JIRA status names through workflow definitions', async () => {
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue({
+			id: 1,
+			key: 'prd',
+			label: 'PRD',
+			agentType: 'prd',
+			sortOrder: 1000,
+			createdAt: null,
+			updatedAt: null,
+		});
+
+		await expect(
+			resolvePMLabelAgentByStatusNameFromWorkflowDefinitions({
+				statusName: 'PRD Review',
+				configuredStatuses: {
+					prd: 'PRD Review',
+				},
+			}),
+		).resolves.toEqual({ agentType: 'prd', cascadeStatus: 'prd' });
+	});
+
+	it('returns undefined when JIRA workflow status has no dispatch agent', async () => {
+		await expect(
+			resolvePMLabelAgentByStatusNameFromWorkflowDefinitions({
+				statusName: 'Done',
+				configuredStatuses: {
+					done: 'Done',
+				},
+			}),
+		).resolves.toBeUndefined();
+	});
+
+	it('resolves Linear state IDs through workflow definitions', async () => {
+		await expect(
+			resolvePMLabelAgentByStatusIdFromWorkflowDefinitions({
+				statusId: 'state-todo',
+				configuredStatuses: {
+					todo: 'state-todo',
+				},
+			}),
+		).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
 	});
 
 	it('builds canonical label-added dispatch results', () => {

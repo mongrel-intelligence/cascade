@@ -69,6 +69,10 @@ export class TrelloIntegration implements PMIntegration {
 
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig {
 		const trelloConfig = getTrelloConfig(project);
+		// Spread the full lists record so custom workflow keys (e.g. `prd`, `story`,
+		// `phased-plan`) configured on the Trello board survive normalization and
+		// are available to lifecycle hooks like `moveOnPrepare` / `moveOnSuccess`.
+		// Mirrors LinearIntegration.resolveLifecycleConfig.
 		return {
 			labels: {
 				processing: trelloConfig?.labels?.processing,
@@ -77,13 +81,7 @@ export class TrelloIntegration implements PMIntegration {
 				readyToProcess: trelloConfig?.labels?.readyToProcess,
 				auto: trelloConfig?.labels?.auto,
 			},
-			statuses: {
-				backlog: trelloConfig?.lists?.backlog,
-				inProgress: trelloConfig?.lists?.inProgress,
-				inReview: trelloConfig?.lists?.inReview,
-				done: trelloConfig?.lists?.done,
-				merged: trelloConfig?.lists?.merged,
-			},
+			statuses: { ...(trelloConfig?.lists ?? {}) },
 		};
 	}
 

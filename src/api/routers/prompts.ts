@@ -1,5 +1,6 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { resolveAgentDefinition } from '../../agents/definitions/loader.js';
 import {
 	getAvailablePartialNames,
 	getRawPartial,
@@ -29,14 +30,22 @@ export const promptsRouter = router({
 
 	getDefault: protectedProcedure
 		.input(z.object({ agentType: z.string().min(1) }))
-		.query(({ input }) => {
+		.query(async ({ input }) => {
 			try {
-				return { content: getRawTemplate(input.agentType) };
+				return { content: getRawTemplate(input.agentType), source: 'disk' as const };
 			} catch {
-				throw new TRPCError({
-					code: 'NOT_FOUND',
-					message: `Unknown agent type: ${input.agentType}`,
-				});
+				try {
+					const definition = await resolveAgentDefinition(input.agentType);
+					return {
+						content: definition.prompts.systemPrompt ?? '',
+						source: 'definition' as const,
+					};
+				} catch {
+					throw new TRPCError({
+						code: 'NOT_FOUND',
+						message: `Unknown agent type: ${input.agentType}`,
+					});
+				}
 			}
 		}),
 

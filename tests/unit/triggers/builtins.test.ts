@@ -43,6 +43,9 @@ vi.mock('../../../src/triggers/trello/status-changed.js', () => ({
 	TrelloStatusChangedTodoTrigger: { name: 'trello-status-changed-todo' },
 	TrelloStatusChangedBacklogTrigger: { name: 'trello-status-changed-backlog' },
 	TrelloStatusChangedMergedTrigger: { name: 'trello-status-changed-merged' },
+	TrelloCustomStatusChangedTrigger: vi
+		.fn()
+		.mockImplementation(() => ({ name: 'trello-status-changed-custom' })),
 }));
 vi.mock('../../../src/triggers/trello/comment-mention.js', () => ({
 	TrelloCommentMentionTrigger: vi
@@ -91,6 +94,7 @@ vi.mock('../../../src/integrations/pm/registry.js', () => ({
 				{ name: 'trello-status-changed-todo' },
 				{ name: 'trello-status-changed-backlog' },
 				{ name: 'trello-status-changed-merged' },
+				{ name: 'trello-status-changed-custom' },
 				{ name: 'ready-to-process-label' },
 			],
 		},
@@ -139,10 +143,11 @@ describe('registerBuiltInTriggers', () => {
 
 		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
 
-		// Should have registered all 25 built-in triggers (19 + 3 Sentry alerting + 3 Linear triggers).
+		// Should have registered all 26 built-in triggers (20 + 3 Sentry alerting + 3 Linear triggers).
 		// Sentry triggers: SentryIssueAlertTrigger (event_alert), SentryMetricAlertTrigger
 		// (metric_alert), SentryIssueLifecycleTrigger (issue lifecycle webhook).
-		expect(registry.register).toHaveBeenCalledTimes(25);
+		// Trello: +1 for TrelloCustomStatusChangedTrigger added for custom mapped lists.
+		expect(registry.register).toHaveBeenCalledTimes(26);
 	});
 
 	it('registers TrelloCommentMentionTrigger first', () => {
@@ -165,6 +170,21 @@ describe('registerBuiltInTriggers', () => {
 		expect(registeredNames).toContain('trello-status-changed-todo');
 		expect(registeredNames).toContain('trello-status-changed-backlog');
 		expect(registeredNames).toContain('trello-status-changed-merged');
+	});
+
+	it('registers TrelloCustomStatusChangedTrigger after built-in status triggers and before ready-label trigger', () => {
+		const registry = createMockRegistry();
+
+		registerBuiltInTriggers(registry as unknown as TriggerRegistry);
+
+		const names = registry.handlers.map((h: object) => (h as { name: string }).name);
+		const customIdx = names.indexOf('trello-status-changed-custom');
+		const mergedIdx = names.indexOf('trello-status-changed-merged');
+		const readyLabelIdx = names.indexOf('ready-to-process-label');
+
+		expect(customIdx).toBeGreaterThanOrEqual(0);
+		expect(mergedIdx).toBeLessThan(customIdx);
+		expect(customIdx).toBeLessThan(readyLabelIdx);
 	});
 
 	it('registers GitHub triggers', () => {

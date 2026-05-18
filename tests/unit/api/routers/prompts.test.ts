@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockSuperAdmin, createMockUser } from '../../../helpers/factories.js';
 import { createCallerFor, expectTRPCError } from '../../../helpers/trpcTestHarness.js';
 
@@ -15,6 +15,7 @@ const {
 	mockGetPartial,
 	mockUpsertPartial,
 	mockDeletePartial,
+	mockResolveAgentDefinition,
 } = vi.hoisted(() => ({
 	mockGetValidAgentTypes: vi.fn(),
 	mockGetRawTemplate: vi.fn(),
@@ -27,6 +28,7 @@ const {
 	mockGetPartial: vi.fn(),
 	mockUpsertPartial: vi.fn(),
 	mockDeletePartial: vi.fn(),
+	mockResolveAgentDefinition: vi.fn(),
 }));
 
 vi.mock('../../../../src/agents/prompts/index.js', () => ({
@@ -36,6 +38,10 @@ vi.mock('../../../../src/agents/prompts/index.js', () => ({
 	validateTemplate: mockValidateTemplate,
 	getAvailablePartialNames: mockGetAvailablePartialNames,
 	getRawPartial: mockGetRawPartial,
+}));
+
+vi.mock('../../../../src/agents/definitions/loader.js', () => ({
+	resolveAgentDefinition: mockResolveAgentDefinition,
 }));
 
 // Mock partials repository
@@ -55,6 +61,10 @@ const mockUser = createMockSuperAdmin();
 const mockAdminUser = createMockUser({ role: 'admin' });
 
 describe('promptsRouter', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
 	describe('agentTypes', () => {
 		it('returns list of agent types', async () => {
 			const types = ['splitting', 'planning', 'implementation'];
@@ -80,14 +90,33 @@ describe('promptsRouter', () => {
 
 			const result = await caller.getDefault({ agentType: 'splitting' });
 
-			expect(result).toEqual({ content: 'Template content: <%= it.baseBranch %>' });
+			expect(result).toEqual({
+				content: 'Template content: <%= it.baseBranch %>',
+				source: 'disk',
+			});
 			expect(mockGetRawTemplate).toHaveBeenCalledWith('splitting');
+		});
+
+		it('falls back to DB definition prompt for custom agents without disk templates', async () => {
+			mockGetRawTemplate.mockImplementation(() => {
+				throw new Error('no disk template');
+			});
+			mockResolveAgentDefinition.mockResolvedValue({
+				prompts: { systemPrompt: 'custom system', taskPrompt: 'custom task' },
+			});
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			const result = await caller.getDefault({ agentType: 'phased-plan' });
+
+			expect(result).toEqual({ content: 'custom system', source: 'definition' });
+			expect(mockResolveAgentDefinition).toHaveBeenCalledWith('phased-plan');
 		});
 
 		it('throws NOT_FOUND for unknown agent type', async () => {
 			mockGetRawTemplate.mockImplementation(() => {
 				throw new Error('Unknown');
 			});
+			mockResolveAgentDefinition.mockRejectedValue(new Error('Unknown'));
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 
 			await expect(caller.getDefault({ agentType: 'unknown' })).rejects.toMatchObject({

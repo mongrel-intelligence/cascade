@@ -2,8 +2,8 @@
  * LinearIntegration.resolveLifecycleConfig — unit tests.
  *
  * Verifies the normalized ProjectPMConfig produced from a project's Linear
- * config passes through all 8 CASCADE stages Linear operators can map
- * (backlog, splitting, planning, todo, inProgress, inReview, done, merged).
+ * config passes through every configured Linear status mapping, including
+ * custom workflow status keys.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -53,6 +53,21 @@ describe('LinearIntegration.resolveLifecycleConfig', () => {
 		expect(cfg.statuses.merged).toBe('s-mg');
 	});
 
+	it('preserves custom workflow status keys for lifecycle moves', () => {
+		const project = makeProject({
+			prd: 's-prd',
+			story: 's-story',
+			'phased-plan': 's-phased-plan',
+			inProgress: 's-ip',
+		});
+		const cfg = integration.resolveLifecycleConfig(project);
+
+		expect(cfg.statuses.prd).toBe('s-prd');
+		expect(cfg.statuses.story).toBe('s-story');
+		expect(cfg.statuses['phased-plan']).toBe('s-phased-plan');
+		expect(cfg.statuses.inProgress).toBe('s-ip');
+	});
+
 	it('preserves undefined for keys not provided in the project config', () => {
 		const project = makeProject({ inProgress: 's-ip' });
 		const cfg = integration.resolveLifecycleConfig(project);
@@ -66,10 +81,10 @@ describe('LinearIntegration.resolveLifecycleConfig', () => {
 		expect(cfg.statuses.merged).toBeUndefined();
 	});
 
-	it('does not surface debug from Linear config (Linear has no debug slot)', () => {
+	it('preserves arbitrary configured Linear status keys', () => {
 		const project = makeProject({ debug: 's-dbg', inProgress: 's-ip' });
 		const cfg = integration.resolveLifecycleConfig(project);
-		expect(cfg.statuses.debug).toBeUndefined();
+		expect(cfg.statuses.debug).toBe('s-dbg');
 		expect(cfg.statuses.inProgress).toBe('s-ip');
 	});
 });

@@ -33,7 +33,7 @@ export interface ProjectPMConfig {
 		done?: string;
 		merged?: string;
 		debug?: string;
-	};
+	} & Record<string, string | undefined>;
 }
 
 /**
@@ -78,8 +78,7 @@ export class PMLifecycleManager {
 		await this.safeRemoveLabel(workItemId, this.pmConfig.labels.processed);
 
 		if (hooks.moveOnPrepare) {
-			const destination =
-				this.pmConfig.statuses[hooks.moveOnPrepare as keyof typeof this.pmConfig.statuses];
+			const destination = this.pmConfig.statuses[hooks.moveOnPrepare];
 			await this.safeMove(workItemId, destination);
 		}
 	}
@@ -93,8 +92,7 @@ export class PMLifecycleManager {
 		await this.safeAddLabel(workItemId, this.pmConfig.labels.processed);
 
 		if (hooks.moveOnSuccess) {
-			const destination =
-				this.pmConfig.statuses[hooks.moveOnSuccess as keyof typeof this.pmConfig.statuses];
+			const destination = this.pmConfig.statuses[hooks.moveOnSuccess];
 			await this.safeMove(workItemId, destination);
 		}
 

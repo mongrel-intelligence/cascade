@@ -91,8 +91,10 @@ export async function isWorkItemLocked(
 	projectId: string,
 	workItemId: string,
 	agentType: string,
+	options: { ignoreInMemoryCount?: number } = {},
 ): Promise<{ locked: boolean; reason?: string }> {
-	const inMemorySameType = getInMemorySameTypeCount(projectId, workItemId, agentType);
+	const rawInMemorySameType = getInMemorySameTypeCount(projectId, workItemId, agentType);
+	const inMemorySameType = Math.max(0, rawInMemorySameType - (options.ignoreInMemoryCount ?? 0));
 
 	// Short-circuit: in-memory alone proves locked for same type
 	if (inMemorySameType >= MAX_SAME_TYPE_PER_WORK_ITEM) {

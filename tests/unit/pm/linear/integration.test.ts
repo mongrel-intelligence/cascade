@@ -232,6 +232,23 @@ describe('LinearIntegration', () => {
 			expect(config.statuses.done).toBe('state-done');
 		});
 
+		it('preserves custom workflow status mappings for lifecycle moves', () => {
+			mockGetLinearConfig.mockReturnValue({
+				teamId: 'team-abc',
+				statuses: {
+					prd: 'state-prd',
+					story: 'state-story',
+					'phased-plan': 'state-phased-plan',
+				},
+			});
+			const project = makeProject();
+			const config = integration.resolveLifecycleConfig(project);
+
+			expect(config.statuses.prd).toBe('state-prd');
+			expect(config.statuses.story).toBe('state-story');
+			expect(config.statuses['phased-plan']).toBe('state-phased-plan');
+		});
+
 		it('returns undefined labels when labels config is missing (not name-string defaults)', () => {
 			// Linear requires UUIDs for addLabel — name-string defaults like 'cascade-processing'
 			// would cause resolveLabelId() to silently return null. When no label is configured,

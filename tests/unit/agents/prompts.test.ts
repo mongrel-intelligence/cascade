@@ -458,6 +458,27 @@ describe('renderCustomPrompt', () => {
 	});
 });
 
+describe('buildTaskPromptContext', () => {
+	it('preserves prompt context fields in addition to normalized trigger aliases', () => {
+		const context = buildTaskPromptContext({
+			workItemId: 'ATS-123',
+			pmName: 'Linear',
+			workItemNoun: 'issue',
+			workItemTitle: 'Create PRD',
+			triggerCommentBody: 'Please update',
+		});
+
+		expect(context).toMatchObject({
+			workItemId: 'ATS-123',
+			pmName: 'Linear',
+			workItemNoun: 'issue',
+			workItemTitle: 'Create PRD',
+			commentText: 'Please update',
+			commentBody: 'Please update',
+		});
+	});
+});
+
 describe('validateTemplate', () => {
 	it('returns valid for correct Eta syntax', () => {
 		const result = validateTemplate('Hello <%= it.baseBranch %>');

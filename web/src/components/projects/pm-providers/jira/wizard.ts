@@ -20,6 +20,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
+import { buildMissingStatusTriggerConfigs } from '../save-trigger-configs.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CredentialsStep } from '../steps/credentials.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
@@ -130,6 +131,7 @@ interface JiraProviderHooks {
 	readonly createError: string | undefined;
 	readonly deleteJiraWebhook: (callbackBaseUrl: string) => void;
 	readonly deleteLoading: boolean;
+	readonly workflowStatuses: ReadonlyArray<{ readonly key: string; readonly label: string }>;
 }
 
 function asJiraHooks(providerHooks: Record<string, unknown> | undefined): JiraProviderHooks {
@@ -180,7 +182,7 @@ function JiraStatusMappingAdapter({
 	return StatusMappingStep({
 		step: { kind: 'status-mapping', id: 'jira-statuses' },
 		providerId: 'jira',
-		cascadeStatuses: JIRA_STATUS_SLOTS,
+		cascadeStatuses: h.workflowStatuses.length > 0 ? h.workflowStatuses : JIRA_STATUS_SLOTS,
 		providerStates: h.providerStates,
 		mappings: state.jiraStatusMappings,
 		onMappingChange: (key, value) => dispatch({ type: 'SET_JIRA_STATUS_MAPPING', key, value }),
@@ -306,6 +308,13 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		...(state.jiraCostFieldId ? { customFields: { cost: state.jiraCostFieldId } } : {}),
 	}),
 
+	buildSaveTriggerConfigs: ({ state, workflowStatuses, existingConfigs }) =>
+		buildMissingStatusTriggerConfigs({
+			statusMappings: state.jiraStatusMappings,
+			workflowStatuses,
+			existingConfigs,
+		}),
+
 	buildEditState: (initialConfig, configuredKeys) => {
 		const statuses = initialConfig.statuses as Record<string, string> | undefined;
 		const issueTypes = initialConfig.issueTypes as Record<string, string> | undefined;
@@ -358,6 +367,12 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
 		const activeJiraWebhooks = normalizeJiraActiveWebhooks(webhooksQuery.data);
+
+		// Load workflow status definitions so the status-mapping step can
+		// render rows for custom statuses (e.g. `prd`) alongside the
+		// built-in CASCADE stages. Falls back to `JIRA_STATUS_SLOTS` while
+		// loading or when the query has no data.
+		const workflowStatusesQuery = useQuery(trpc.workflowStatuses.list.queryOptions());
 
 		const createWebhookMutation = useMutation({
 			mutationFn: () =>
@@ -422,6 +437,11 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 				: undefined,
 			deleteJiraWebhook: (baseUrl: string) => deleteWebhookMutation.mutate(baseUrl),
 			deleteLoading: deleteWebhookMutation.isPending,
+			workflowStatuses:
+				workflowStatusesQuery.data?.map((status) => ({
+					key: status.key,
+					label: status.label,
+				})) ?? JIRA_STATUS_SLOTS,
 		} satisfies JiraProviderHooks & Record<string, unknown>;
 	},
 };

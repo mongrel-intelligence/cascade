@@ -121,6 +121,7 @@ export async function truncateAll() {
 			agent_trigger_configs,
 			agent_configs,
 			agent_definitions,
+			workflow_status_definitions,
 			prompt_partials,
 			sessions,
 			users,

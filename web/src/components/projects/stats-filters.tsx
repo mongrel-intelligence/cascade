@@ -1,4 +1,4 @@
-const agentTypes = [
+const defaultAgentTypes = [
 	'splitting',
 	'planning',
 	'implementation',
@@ -11,6 +11,13 @@ const agentTypes = [
 	'backlog-manager',
 	'resolve-conflicts',
 ];
+
+export function getStatsAgentTypeOptions(agentTypes?: string[], selectedAgentType?: string) {
+	const source = agentTypes && agentTypes.length > 0 ? agentTypes : defaultAgentTypes;
+	return [...new Set([...source, ...(selectedAgentType ? [selectedAgentType] : [])])].filter(
+		Boolean,
+	);
+}
 
 const statuses = ['completed', 'failed', 'timed_out'];
 
@@ -29,13 +36,16 @@ export interface StatsFilters {
 
 interface StatsFiltersProps {
 	filters: StatsFilters;
+	agentTypes?: string[];
 	onFilterChange: (filters: StatsFilters) => void;
 }
 
 const selectClass =
 	'h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring dark:bg-card dark:text-foreground [&_option]:bg-card sm:w-auto';
 
-export function StatsFiltersBar({ filters, onFilterChange }: StatsFiltersProps) {
+export function StatsFiltersBar({ filters, agentTypes, onFilterChange }: StatsFiltersProps) {
+	const agentTypeOptions = getStatsAgentTypeOptions(agentTypes, filters.agentType);
+
 	return (
 		<div className="flex flex-wrap items-center gap-3">
 			<select
@@ -56,7 +66,7 @@ export function StatsFiltersBar({ filters, onFilterChange }: StatsFiltersProps) 
 				className={selectClass}
 			>
 				<option value="">All agent types</option>
-				{agentTypes.map((t) => (
+				{agentTypeOptions.map((t) => (
 					<option key={t} value={t}>
 						{t}
 					</option>

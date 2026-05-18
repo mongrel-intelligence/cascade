@@ -20,14 +20,18 @@ export async function checkDispatchLocks({
 	adapterType,
 	projectId,
 	result,
+	ignorePendingOwnLock = false,
 }: {
 	adapterType: string;
 	projectId: string;
 	result: TriggerResult & { agentType: string };
+	ignorePendingOwnLock?: boolean;
 }): Promise<DispatchLockCheckResult> {
 	const effectiveLockKey = result.lockKey ?? result.workItemId;
 	if (effectiveLockKey) {
-		const lockStatus = await isWorkItemLocked(projectId, effectiveLockKey, result.agentType);
+		const lockStatus = await isWorkItemLocked(projectId, effectiveLockKey, result.agentType, {
+			ignoreInMemoryCount: ignorePendingOwnLock ? 1 : 0,
+		});
 		if (lockStatus.locked) {
 			result.onBlocked?.();
 			logger.info(`Skipping ${adapterType} job — work item already locked`, {
@@ -77,6 +81,10 @@ export async function checkDispatchLocks({
 		result.agentType,
 		adapterType,
 		result.workItemId,
+		{
+			ignoreInMemoryCount: ignorePendingOwnLock ? 1 : 0,
+			ignoreRecentDispatch: ignorePendingOwnLock,
+		},
 	);
 	if (concurrencyCheck.blocked) {
 		result.onBlocked?.();

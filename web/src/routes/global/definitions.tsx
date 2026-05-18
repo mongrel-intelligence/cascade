@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
-import { ArrowLeft, Pencil, Trash2 } from 'lucide-react';
+import type { inferRouterOutputs } from '@trpc/server';
+import { ArrowLeft, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
+import type { AppRouter } from '@/../../src/api/router.js';
 import { AgentDefinitionEditor } from '@/components/settings/agent-definition-editor.js';
 import type { DefinitionRow } from '@/components/settings/agent-definition-table.js';
 import { AgentDefinitionsTable } from '@/components/settings/agent-definition-table.js';
@@ -17,8 +19,10 @@ import {
 } from '@/components/ui/table.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
+import { AGENT_DEFINITIONS_TABS, type AgentDefinitionsTab } from './definitions-tabs.js';
+import { getStatusDispatchAgentTypes } from './definitions-utils.js';
 
-type Tab = 'definitions' | 'partials';
+type Tab = AgentDefinitionsTab;
 type EditTarget =
 	| { type: 'definition'; existing?: DefinitionRow }
 	| { type: 'partial'; name: string };
@@ -70,7 +74,8 @@ function AgentDefinitionsPage() {
 				<div>
 					<h1 className="text-2xl font-bold tracking-tight">Agent Definitions</h1>
 					<p className="text-sm text-muted-foreground">
-						View and edit agent definitions, system prompts, and reusable partials.
+						View and edit agent definitions, system prompts, reusable partials, and workflow
+						statuses.
 					</p>
 				</div>
 				{tab === 'definitions' && (
@@ -86,7 +91,7 @@ function AgentDefinitionsPage() {
 
 			{/* Tab bar */}
 			<div className="flex gap-2 overflow-x-auto border-b border-border">
-				{(['definitions', 'partials'] as Tab[]).map((t) => (
+				{AGENT_DEFINITIONS_TABS.map((t) => (
 					<button
 						key={t}
 						type="button"
@@ -97,7 +102,11 @@ function AgentDefinitionsPage() {
 								: 'border-transparent text-muted-foreground hover:text-foreground'
 						}`}
 					>
-						{t === 'definitions' ? 'Definitions' : 'Partials'}
+						{t === 'definitions'
+							? 'Definitions'
+							: t === 'partials'
+								? 'Partials'
+								: 'Workflow Statuses'}
 					</button>
 				))}
 			</div>
@@ -128,6 +137,8 @@ function AgentDefinitionsPage() {
 			{tab === 'partials' && (
 				<PartialsTab onEdit={(name) => setEditTarget({ type: 'partial', name })} />
 			)}
+
+			{tab === 'workflow-statuses' && <WorkflowStatusesTab />}
 		</div>
 	);
 }
@@ -205,6 +216,263 @@ function PartialsTab({ onEdit }: { onEdit: (name: string) => void }) {
 					))}
 				</TableBody>
 			</Table>
+		</div>
+	);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Workflow statuses tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+type RouterOutput = inferRouterOutputs<AppRouter>;
+type WorkflowStatusRow = RouterOutput['workflowStatuses']['list'][number];
+
+function WorkflowStatusesTab() {
+	const queryClient = useQueryClient();
+	const statusesQuery = useQuery(trpc.workflowStatuses.list.queryOptions());
+	const agentDefinitionsQuery = useQuery(trpc.agentDefinitions.list.queryOptions());
+	const queryKey = trpc.workflowStatuses.list.queryOptions().queryKey;
+
+	const [draft, setDraft] = useState({
+		key: '',
+		label: '',
+		agentType: '',
+		sortOrder: 1000,
+	});
+	const [editingKey, setEditingKey] = useState<string | null>(null);
+	const [editDraft, setEditDraft] = useState({
+		label: '',
+		agentType: '',
+		sortOrder: 1000,
+	});
+
+	const createMutation = useMutation({
+		mutationFn: () =>
+			trpcClient.workflowStatuses.create.mutate({
+				key: draft.key,
+				label: draft.label,
+				agentType: draft.agentType || null,
+				sortOrder: draft.sortOrder,
+			}),
+		onSuccess: () => {
+			setDraft({ key: '', label: '', agentType: '', sortOrder: 1000 });
+			queryClient.invalidateQueries({ queryKey });
+		},
+	});
+
+	const updateMutation = useMutation({
+		mutationFn: (key: string) =>
+			trpcClient.workflowStatuses.update.mutate({
+				key,
+				label: editDraft.label,
+				agentType: editDraft.agentType || null,
+				sortOrder: editDraft.sortOrder,
+			}),
+		onSuccess: () => {
+			setEditingKey(null);
+			queryClient.invalidateQueries({ queryKey });
+		},
+	});
+
+	const deleteMutation = useMutation({
+		mutationFn: (key: string) => trpcClient.workflowStatuses.delete.mutate({ key }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey });
+		},
+	});
+
+	const agentTypes = getStatusDispatchAgentTypes(agentDefinitionsQuery.data ?? []);
+	const statuses = statusesQuery.data ?? [];
+
+	function beginEdit(row: WorkflowStatusRow) {
+		setEditingKey(row.key);
+		setEditDraft({
+			label: row.label,
+			agentType: row.agentType ?? '',
+			sortOrder: row.sortOrder,
+		});
+	}
+
+	return (
+		<div className="space-y-4">
+			<div className="overflow-x-auto rounded-lg border border-border">
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead>Key</TableHead>
+							<TableHead>Label</TableHead>
+							<TableHead>Agent</TableHead>
+							<TableHead className="w-28">Order</TableHead>
+							<TableHead>Type</TableHead>
+							<TableHead className="w-28" />
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{statusesQuery.isLoading && (
+							<TableRow>
+								<TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+									Loading workflow statuses...
+								</TableCell>
+							</TableRow>
+						)}
+						{statuses.map((row) => {
+							const isEditing = editingKey === row.key;
+							return (
+								<TableRow key={row.key}>
+									<TableCell className="font-mono text-sm">{row.key}</TableCell>
+									<TableCell>
+										{isEditing ? (
+											<input
+												value={editDraft.label}
+												onChange={(e) =>
+													setEditDraft((prev) => ({ ...prev, label: e.target.value }))
+												}
+												className="h-8 w-full rounded-md border border-input bg-background px-2"
+											/>
+										) : (
+											row.label
+										)}
+									</TableCell>
+									<TableCell>
+										{isEditing ? (
+											<select
+												value={editDraft.agentType}
+												onChange={(e) =>
+													setEditDraft((prev) => ({ ...prev, agentType: e.target.value }))
+												}
+												className="h-8 w-full rounded-md border border-input bg-background px-2"
+											>
+												<option value="">No dispatch</option>
+												{agentTypes.map((agentType) => (
+													<option key={agentType} value={agentType}>
+														{agentType}
+													</option>
+												))}
+											</select>
+										) : (
+											<span className="font-mono text-sm">{row.agentType ?? 'none'}</span>
+										)}
+									</TableCell>
+									<TableCell>
+										{isEditing ? (
+											<input
+												type="number"
+												value={editDraft.sortOrder}
+												onChange={(e) =>
+													setEditDraft((prev) => ({
+														...prev,
+														sortOrder: Number(e.target.value),
+													}))
+												}
+												className="h-8 w-full rounded-md border border-input bg-background px-2"
+											/>
+										) : (
+											row.sortOrder
+										)}
+									</TableCell>
+									<TableCell>
+										{row.isBuiltin ? (
+											<Badge>Built-in</Badge>
+										) : (
+											<Badge variant="outline">Custom</Badge>
+										)}
+									</TableCell>
+									<TableCell>
+										{!row.isBuiltin && (
+											<div className="flex gap-1">
+												{isEditing ? (
+													<>
+														<button
+															type="button"
+															onClick={() => updateMutation.mutate(row.key)}
+															className="p-1 text-muted-foreground hover:text-foreground"
+															title="Save workflow status"
+														>
+															<Save className="h-4 w-4" />
+														</button>
+														<button
+															type="button"
+															onClick={() => setEditingKey(null)}
+															className="p-1 text-muted-foreground hover:text-foreground"
+															title="Cancel"
+														>
+															<X className="h-4 w-4" />
+														</button>
+													</>
+												) : (
+													<>
+														<button
+															type="button"
+															onClick={() => beginEdit(row)}
+															className="p-1 text-muted-foreground hover:text-foreground"
+															title="Edit workflow status"
+														>
+															<Pencil className="h-4 w-4" />
+														</button>
+														<button
+															type="button"
+															onClick={() => {
+																if (confirm(`Delete workflow status "${row.key}"?`)) {
+																	deleteMutation.mutate(row.key);
+																}
+															}}
+															className="p-1 text-muted-foreground hover:text-destructive"
+															title="Delete workflow status"
+														>
+															<Trash2 className="h-4 w-4" />
+														</button>
+													</>
+												)}
+											</div>
+										)}
+									</TableCell>
+								</TableRow>
+							);
+						})}
+					</TableBody>
+				</Table>
+			</div>
+
+			<div className="grid gap-2 rounded-lg border border-border p-3 md:grid-cols-[1fr_1fr_1fr_8rem_auto]">
+				<input
+					value={draft.key}
+					onChange={(e) => setDraft((prev) => ({ ...prev, key: e.target.value }))}
+					placeholder="status-key"
+					className="h-9 rounded-md border border-input bg-background px-3"
+				/>
+				<input
+					value={draft.label}
+					onChange={(e) => setDraft((prev) => ({ ...prev, label: e.target.value }))}
+					placeholder="Status label"
+					className="h-9 rounded-md border border-input bg-background px-3"
+				/>
+				<select
+					value={draft.agentType}
+					onChange={(e) => setDraft((prev) => ({ ...prev, agentType: e.target.value }))}
+					className="h-9 rounded-md border border-input bg-background px-3"
+				>
+					<option value="">No dispatch</option>
+					{agentTypes.map((agentType) => (
+						<option key={agentType} value={agentType}>
+							{agentType}
+						</option>
+					))}
+				</select>
+				<input
+					type="number"
+					value={draft.sortOrder}
+					onChange={(e) => setDraft((prev) => ({ ...prev, sortOrder: Number(e.target.value) }))}
+					className="h-9 rounded-md border border-input bg-background px-3"
+				/>
+				<button
+					type="button"
+					onClick={() => createMutation.mutate()}
+					className="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+				>
+					<Plus className="h-4 w-4" />
+					Add
+				</button>
+			</div>
 		</div>
 	);
 }

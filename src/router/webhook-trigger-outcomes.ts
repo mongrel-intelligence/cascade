@@ -5,7 +5,7 @@ import { logger } from '../utils/logging.js';
 import { clearAgentTypeEnqueued, clearRecentlyDispatched } from './agent-type-lock.js';
 import type { RouterProjectConfig } from './config.js';
 import type { ParsedWebhookEvent, RouterPlatformAdapter } from './platform-adapter.js';
-import { addJob, scheduleCoalescedJob } from './queue.js';
+import { addJob, getPendingCoalescedJobData, scheduleCoalescedJob } from './queue.js';
 import {
 	checkDispatchLocks,
 	markCoalescedDispatchEnqueued,
@@ -190,6 +190,27 @@ async function maybeHandleCoalescedDispatch({
 	}
 
 	try {
+		const pendingJobData = await getPendingCoalescedJobData(result.coalesceKey);
+		const shouldIgnorePendingOwnLock = shouldIgnorePendingOwnLocks({
+			pendingJobData,
+			projectId: project.id,
+			result: result as TriggerResult & { agentType: string },
+		});
+
+		const lockCheck = await checkDispatchLocks({
+			adapterType: adapter.type,
+			projectId: project.id,
+			result: result as TriggerResult & { agentType: string },
+			ignorePendingOwnLock: shouldIgnorePendingOwnLock,
+		});
+		if (lockCheck.blocked) {
+			return {
+				shouldProcess: true,
+				projectId: project.id,
+				decisionReason: lockCheck.decisionReason,
+			};
+		}
+
 		const { superseded, supersededJobData } = await scheduleCoalescedJob(
 			job,
 			result.coalesceKey,
@@ -247,6 +268,26 @@ async function maybeHandleCoalescedDispatch({
 		projectId: project.id,
 		decisionReason: `Coalesced dispatch scheduled: ${result.agentType} agent for work item ${resolveWorkItemLabel(result, event)}`,
 	};
+}
+
+function shouldIgnorePendingOwnLocks({
+	pendingJobData,
+	projectId,
+	result,
+}: {
+	pendingJobData: Awaited<ReturnType<typeof getPendingCoalescedJobData>>;
+	projectId: string;
+	result: TriggerResult & { agentType: string };
+}): boolean {
+	if (!pendingJobData || pendingJobData.type === 'github') return false;
+	if (pendingJobData.projectId !== projectId) return false;
+
+	const pendingResult = pendingJobData.triggerResult;
+	if (pendingResult?.agentType !== result.agentType) return false;
+
+	const pendingLockKey = pendingResult.lockKey ?? pendingResult.workItemId;
+	const newLockKey = result.lockKey ?? result.workItemId;
+	return pendingLockKey !== undefined && pendingLockKey === newLockKey;
 }
 
 function releaseSupersededJobLocks(

@@ -1,5 +1,5 @@
 import type { LifecycleHooks } from '../../agents/definitions/schema.js';
-import type { PMLifecycleManager } from '../../pm/index.js';
+import type { PMLifecycleManager, PMProvider } from '../../pm/index.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import type { TriggerResult } from '../types.js';
 
@@ -56,6 +56,12 @@ export interface AgentExecutionContext {
 	executionConfig: AgentExecutionConfig;
 	agentType: string;
 	logLabel: string;
+	/**
+	 * Active PM provider for the project. Reused by the freshness gate so it
+	 * does not have to instantiate a parallel provider state. Mirrors what
+	 * the lifecycle manager already wraps internally.
+	 */
+	pmProvider: PMProvider;
 	lifecycle: PMLifecycleManager;
 	lifecycleHooks: LifecycleHooks;
 	workItemId: string | undefined;

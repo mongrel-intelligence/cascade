@@ -1,15 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/agents/registry.js', () => ({
-	runAgent: vi.fn(),
+vi.mock('../../../src/agents/definitions/loader.js', () => ({
+	isPMFocusedAgent: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getRunById: vi.fn(),
-}));
-
-vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
-	createWorkItem: vi.fn(),
 }));
 
 // Default: agent is enabled (has a config row)
@@ -52,12 +48,16 @@ vi.mock('../../../src/utils/lifecycle.js', () => ({
 	startWatchdog: vi.fn(),
 }));
 
-import { runAgent } from '../../../src/agents/registry.js';
+vi.mock('../../../src/triggers/shared/agent-execution.js', () => ({
+	runAgentExecutionPipeline: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { isPMFocusedAgent } from '../../../src/agents/definitions/loader.js';
 import { isAgentEnabledForProject } from '../../../src/db/repositories/agentConfigsRepository.js';
-import { createWorkItem } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import { getRunById } from '../../../src/db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
 import { createPMProvider, withPMProvider } from '../../../src/pm/index.js';
+import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
 import {
 	clearTriggerTracking,
 	isTriggerRunning,
@@ -65,7 +65,6 @@ import {
 	triggerRetryRun,
 } from '../../../src/triggers/shared/manual-runner.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
-import { logger } from '../../../src/utils/logging.js';
 
 const mockProject: ProjectConfig = {
 	id: 'test-project',
@@ -85,6 +84,8 @@ const mockConfig = {} as CascadeConfig;
 describe('triggerManualRun', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		vi.mocked(runAgentExecutionPipeline).mockResolvedValue(undefined);
+		vi.mocked(isPMFocusedAgent).mockResolvedValue(false);
 		clearTriggerTracking();
 	});
 
@@ -105,9 +106,8 @@ describe('triggerManualRun', () => {
 	});
 
 	it('throws when trigger is already running for same project+agent+card', async () => {
-		vi.mocked(runAgent).mockImplementation(() => new Promise(() => {})); // Never resolves
+		vi.mocked(runAgentExecutionPipeline).mockImplementation(() => new Promise(() => {}));
 
-		// Start first trigger (don't await — runAgent never resolves)
 		const firstRun = triggerManualRun(
 			{
 				projectId: 'test-project',
@@ -138,17 +138,11 @@ describe('triggerManualRun', () => {
 		void firstRun;
 	});
 
-	it('calls runAgent with correct input including triggerType: manual', async () => {
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			runId: 'run-1',
-		});
-
+	it('runs through the shared agent execution pipeline with manual trigger input', async () => {
 		await triggerManualRun(
 			{
 				projectId: 'test-project',
-				agentType: 'implementation',
+				agentType: 'plan-implement',
 				workItemId: 'card-1',
 				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
 				workItemTitle: 'Implement example',
@@ -158,86 +152,26 @@ describe('triggerManualRun', () => {
 			mockConfig,
 		);
 
-		expect(runAgent).toHaveBeenCalledWith(
-			'implementation',
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
+				agentType: 'plan-implement',
 				workItemId: 'card-1',
 				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
 				workItemTitle: 'Implement example',
-				modelOverride: 'claude-3-5-sonnet-20241022',
-				triggerType: 'manual',
-				project: mockProject,
-				config: mockConfig,
+				agentInput: expect.objectContaining({
+					workItemId: 'card-1',
+					workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
+					workItemTitle: 'Implement example',
+					modelOverride: 'claude-3-5-sonnet-20241022',
+					triggerType: 'manual',
+				}),
 			}),
-		);
-
-		expect(createWorkItem).toHaveBeenCalledWith('test-project', 'card-1', {
-			workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
-			workItemTitle: 'Implement example',
-		});
-	});
-
-	it('does not create a work item link when manual metadata is omitted', async () => {
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			runId: 'run-no-metadata',
-		});
-
-		await triggerManualRun(
-			{
-				projectId: 'test-project',
-				agentType: 'implementation',
-				workItemId: 'card-1',
-			},
 			mockProject,
 			mockConfig,
 		);
-
-		expect(createWorkItem).not.toHaveBeenCalled();
 	});
 
-	it('continues running the agent when work item metadata persistence fails', async () => {
-		vi.mocked(createWorkItem).mockRejectedValueOnce(new Error('db unavailable'));
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			runId: 'run-metadata-failed',
-		});
-
-		await triggerManualRun(
-			{
-				projectId: 'test-project',
-				agentType: 'implementation',
-				workItemId: 'card-1',
-				workItemUrl: 'https://linear.app/org/issue/TEAM-123/example',
-				workItemTitle: 'Implement example',
-			},
-			mockProject,
-			mockConfig,
-		);
-
-		expect(logger.warn).toHaveBeenCalledWith('Failed to persist work-item row for manual run', {
-			projectId: 'test-project',
-			workItemId: 'card-1',
-			error: 'Error: db unavailable',
-		});
-		expect(runAgent).toHaveBeenCalledWith(
-			'implementation',
-			expect.objectContaining({
-				workItemId: 'card-1',
-				triggerType: 'manual',
-			}),
-		);
-	});
-
-	it('calls runAgent with PR fields when provided', async () => {
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			runId: 'run-2',
-		});
-
+	it('passes PR fields through the shared execution pipeline when provided', async () => {
 		await triggerManualRun(
 			{
 				projectId: 'test-project',
@@ -251,25 +185,55 @@ describe('triggerManualRun', () => {
 			mockConfig,
 		);
 
-		expect(runAgent).toHaveBeenCalledWith(
-			'review',
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
+				agentType: 'review',
 				prNumber: 42,
-				prBranch: 'feature/test',
-				repoFullName: 'owner/repo',
-				headSha: 'abc123',
-				triggerType: 'manual',
+				agentInput: expect.objectContaining({
+					prNumber: 42,
+					prBranch: 'feature/test',
+					repoFullName: 'owner/repo',
+					headSha: 'abc123',
+					triggerType: 'manual',
+				}),
 			}),
+			mockProject,
+			mockConfig,
+			{
+				skipPrepareForAgent: true,
+				skipHandleFailure: true,
+				handleSuccessOnlyForAgentType: 'implementation',
+				logLabel: 'GitHub manual agent',
+			},
+		);
+	});
+
+	it('keeps PM lifecycle defaults for PR-based manual runs owned by PM-focused agents', async () => {
+		vi.mocked(isPMFocusedAgent).mockResolvedValueOnce(true);
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'backlog-manager',
+				workItemId: 'card-1',
+				prNumber: 42,
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'backlog-manager',
+				workItemId: 'card-1',
+				prNumber: 42,
+			}),
+			mockProject,
+			mockConfig,
 		);
 	});
 
 	it('wraps runAgent with PM credential and provider context', async () => {
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			runId: 'run-pm',
-		});
-
 		await triggerManualRun(
 			{ projectId: 'test-project', agentType: 'review', prNumber: 42 },
 			mockProject,
@@ -296,12 +260,6 @@ describe('triggerManualRun', () => {
 		const agentType = 'implementation';
 		const workItemId = 'card-complete';
 
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Done',
-			runId: 'run-complete',
-		});
-
 		await triggerManualRun({ projectId, agentType, workItemId }, mockProject, mockConfig);
 
 		// After awaiting triggerManualRun, trigger should already be complete
@@ -314,7 +272,7 @@ describe('triggerManualRun', () => {
 		const agentType = 'implementation';
 		const workItemId = 'card-fail';
 
-		vi.mocked(runAgent).mockRejectedValue(new Error('Agent error'));
+		vi.mocked(runAgentExecutionPipeline).mockRejectedValue(new Error('Agent error'));
 
 		await triggerManualRun({ projectId, agentType, workItemId }, mockProject, mockConfig);
 
@@ -326,6 +284,9 @@ describe('triggerManualRun', () => {
 
 describe('triggerRetryRun', () => {
 	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.mocked(runAgentExecutionPipeline).mockResolvedValue(undefined);
+		vi.mocked(isPMFocusedAgent).mockResolvedValue(false);
 		clearTriggerTracking();
 	});
 
@@ -359,21 +320,20 @@ describe('triggerRetryRun', () => {
 			model: 'claude-sonnet-4-5-20250929',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Retried',
-			runId: 'run-2',
-		});
-
 		await triggerRetryRun('run-1', mockProject, mockConfig);
 
-		expect(runAgent).toHaveBeenCalledWith(
-			'implementation',
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
+				agentType: 'implementation',
 				workItemId: 'card-1',
-				modelOverride: 'claude-sonnet-4-5-20250929',
-				triggerType: 'manual',
+				agentInput: expect.objectContaining({
+					workItemId: 'card-1',
+					modelOverride: 'claude-sonnet-4-5-20250929',
+					triggerType: 'manual',
+				}),
 			}),
+			mockProject,
+			mockConfig,
 		);
 	});
 
@@ -387,19 +347,24 @@ describe('triggerRetryRun', () => {
 			model: 'claude-sonnet-4-5-20250929',
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
-		vi.mocked(runAgent).mockResolvedValue({
-			success: true,
-			output: 'Retried',
-			runId: 'run-3',
-		});
-
 		await triggerRetryRun('run-1', mockProject, mockConfig, 'claude-3-5-sonnet-20241022');
 
-		expect(runAgent).toHaveBeenCalledWith(
-			'review',
+		expect(runAgentExecutionPipeline).toHaveBeenCalledWith(
 			expect.objectContaining({
-				modelOverride: 'claude-3-5-sonnet-20241022',
+				agentType: 'review',
+				prNumber: 10,
+				agentInput: expect.objectContaining({
+					modelOverride: 'claude-3-5-sonnet-20241022',
+				}),
 			}),
+			mockProject,
+			mockConfig,
+			{
+				skipPrepareForAgent: true,
+				skipHandleFailure: true,
+				handleSuccessOnlyForAgentType: 'implementation',
+				logLabel: 'GitHub manual agent',
+			},
 		);
 	});
 });

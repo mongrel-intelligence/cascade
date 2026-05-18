@@ -32,7 +32,7 @@ describe('createWorkItem', () => {
 			description: 'A new feature',
 		});
 		expect(result).toBe(
-			'Work item created successfully: "New Feature" - https://trello.com/c/item1',
+			'Work item created successfully: "New Feature" [id: item1] - https://trello.com/c/item1',
 		);
 	});
 
@@ -51,7 +51,7 @@ describe('createWorkItem', () => {
 		});
 
 		expect(result).toBe(
-			'Work item created successfully: "Simple Item" - https://trello.com/c/item2',
+			'Work item created successfully: "Simple Item" [id: item2] - https://trello.com/c/item2',
 		);
 	});
 

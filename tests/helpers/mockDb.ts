@@ -41,6 +41,7 @@ export function createMockDb(
 
 	// Terminal methods that return results
 	chain.returning = vi.fn().mockResolvedValue([]);
+	chain.orderBy = vi.fn().mockResolvedValue([]);
 
 	// Limit support — limit is the terminal when present, where is a chaining step
 	if (opts.withLimit) {
@@ -61,6 +62,7 @@ export function createMockDb(
 	chain.from = vi.fn().mockReturnValue({
 		where: chain.where,
 		innerJoin: chain.innerJoin,
+		orderBy: chain.orderBy,
 	});
 
 	// Update chain

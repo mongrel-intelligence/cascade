@@ -1,8 +1,13 @@
 import { getTrelloConfig } from '../../pm/config.js';
 import { invalidateSnapshot } from '../../router/snapshot-manager.js';
 import { logger } from '../../utils/logging.js';
+import { BUILTIN_WORKFLOW_STATUS_KEYS } from '../../workflow/statusDefinitions.js';
 import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
-import { buildPMStatusDispatchResult, shouldFirePMStatusEvent } from '../shared/pm-status.js';
+import {
+	buildPMStatusDispatchResult,
+	resolvePMStatusAgentByIdFromWorkflowDefinitions,
+	shouldFirePMStatusEvent,
+} from '../shared/pm-status.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../types.js';
 import { isTrelloWebhookPayload, type TrelloWebhookPayload } from './types.js';
@@ -155,3 +160,153 @@ export const TrelloStatusChangedMergedTrigger = createStatusChangedTrigger({
 	agentType: 'backlog-manager',
 	invalidateSnapshotOnMove: true,
 });
+
+// ============================================================================
+// Custom Status Changed Trigger (Trello)
+//
+// Companion to the built-in per-list triggers above. Matches createCard /
+// updateCard events whose destination list ID is configured under a CUSTOM
+// (non-built-in) workflow status key. Built-in keys (backlog/splitting/
+// planning/todo/inProgress/inReview/done/merged/alerts/friction) are
+// excluded — the per-list triggers above already handle the ones that
+// dispatch, and the others have a null agentType so dispatch would be a
+// no-op anyway.
+//
+// Custom statuses are resolved through `resolveWorkflowStatusDefinition`,
+// matching the JIRA / Linear pattern (MNG-1066). The trigger preserves the
+// existing enablement, `onCreate` / `onMove` gating, capacity gate, coalesce
+// key, URL/title extraction, and logging conventions of the built-in
+// triggers.
+// ============================================================================
+
+function findCascadeStatusKeyForListId(
+	listId: string,
+	lists: Record<string, string>,
+): string | undefined {
+	for (const [cascadeStatus, configuredListId] of Object.entries(lists)) {
+		if (configuredListId === listId) return cascadeStatus;
+	}
+	return undefined;
+}
+
+function resolveDestinationListId(payload: TrelloWebhookPayload): string | undefined {
+	if (payload.action.type === 'createCard') return payload.action.data.list?.id;
+	if (payload.action.type === 'updateCard') return payload.action.data.listAfter?.id;
+	return undefined;
+}
+
+function isDestinationListChange(payload: TrelloWebhookPayload, destListId: string): boolean {
+	if (payload.action.type === 'createCard') return true;
+	if (payload.action.type === 'updateCard') {
+		return payload.action.data.listBefore?.id !== destListId;
+	}
+	return false;
+}
+
+export class TrelloCustomStatusChangedTrigger implements TriggerHandler {
+	name = 'trello-status-changed-custom';
+	description =
+		'Triggers custom agent when a card is moved or created in a list mapped to a custom workflow status';
+
+	matches(ctx: TriggerContext): boolean {
+		if (ctx.source !== 'trello') return false;
+		if (!isTrelloWebhookPayload(ctx.payload)) return false;
+
+		const trelloConfig = getTrelloConfig(ctx.project);
+		if (!trelloConfig?.lists) return false;
+
+		const payload = ctx.payload;
+		const destListId = resolveDestinationListId(payload);
+		if (!destListId) return false;
+
+		// Only handle real destination changes (createCard, or updateCard with a
+		// different listBefore).
+		if (!isDestinationListChange(payload, destListId)) return false;
+
+		const cascadeStatus = findCascadeStatusKeyForListId(destListId, trelloConfig.lists);
+		if (!cascadeStatus) return false;
+
+		// Built-in cascade status keys are handled by the per-list triggers
+		// above (or have no agentType). Only claim custom keys here.
+		return !BUILTIN_WORKFLOW_STATUS_KEYS.has(cascadeStatus);
+	}
+
+	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
+		const payload = ctx.payload as TrelloWebhookPayload;
+		const trelloConfig = getTrelloConfig(ctx.project);
+		if (!trelloConfig?.lists) return null;
+
+		const destListId = resolveDestinationListId(payload);
+		if (!destListId) return null;
+
+		const resolved = await resolvePMStatusAgentByIdFromWorkflowDefinitions({
+			statusId: destListId,
+			configuredStatuses: trelloConfig.lists,
+		});
+		if (!resolved) {
+			logger.debug('Trello custom status-change does not map to any agent', {
+				trigger: this.name,
+				destListId,
+				configuredLists: trelloConfig.lists,
+			});
+			return null;
+		}
+		const { agentType, cascadeStatus: matchedCascadeStatus } = resolved;
+
+		const { enabled, parameters } = await checkTriggerEnabledWithParams(
+			ctx.project.id,
+			agentType,
+			'pm:status-changed',
+			this.name,
+		);
+		if (!enabled) return null;
+
+		const isCreate = payload.action.type === 'createCard';
+		if (!shouldFirePMStatusEvent(isCreate, parameters)) {
+			logger.debug('Trello custom status-changed event gated by trigger params', {
+				trigger: this.name,
+				eventKind: isCreate ? 'create' : 'move',
+				parameters,
+			});
+			return null;
+		}
+
+		const cardId = payload.action.data.card?.id;
+		if (!cardId) {
+			logger.warn('No card ID in Trello custom status-changed payload', { trigger: this.name });
+			return null;
+		}
+
+		if (
+			await shouldBlockForPipelineCapacity({
+				project: ctx.project,
+				agentType,
+				workItemId: cardId,
+				source: 'trello',
+			})
+		) {
+			return null;
+		}
+
+		const cardShortLink = payload.action.data.card?.shortLink;
+		const cardName = payload.action.data.card?.name;
+		const workItemUrl = cardShortLink ? `https://trello.com/c/${cardShortLink}` : undefined;
+		const workItemTitle = cardName ?? undefined;
+
+		logger.info('Trello card entered custom agent-triggering list', {
+			cardId,
+			destListId,
+			eventKind: isCreate ? 'create' : 'move',
+			cascadeStatus: matchedCascadeStatus,
+			agentType,
+		});
+
+		return buildPMStatusDispatchResult({
+			projectId: ctx.project.id,
+			agentType,
+			workItemId: cardId,
+			workItemUrl,
+			workItemTitle,
+		});
+	}
+}

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
 	mockAcknowledgmentsModule,
 	mockConfigProvider,
@@ -8,6 +8,15 @@ import {
 	mockTrelloClientModule,
 	mockTriggerCheckModule,
 } from '../../helpers/sharedMocks.js';
+
+const { mockGetCustomWorkflowStatusDefinition } = vi.hoisted(() => ({
+	mockGetCustomWorkflowStatusDefinition: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/workflowStatusDefinitionsRepository.js', () => ({
+	getCustomWorkflowStatusDefinition: mockGetCustomWorkflowStatusDefinition,
+	listCustomWorkflowStatusDefinitions: vi.fn().mockResolvedValue([]),
+}));
 
 vi.mock('../../../src/triggers/config-resolver.js', () => mockConfigResolverModule);
 vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckModule);
@@ -99,6 +108,11 @@ function buildCtx(overrides: {
 }
 
 describe('JiraReadyToProcessLabelTrigger', () => {
+	beforeEach(() => {
+		mockGetCustomWorkflowStatusDefinition.mockReset();
+		mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
+	});
+
 	describe('matches()', () => {
 		it('matches when cascade-ready label is added', () => {
 			expect(trigger.matches(buildCtx({}))).toBe(true);
@@ -295,6 +309,149 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 			const payload = ctx.payload as { issue: { fields: Record<string, unknown> } };
 			payload.issue.fields.status = undefined;
 			const result = await trigger.handle(ctx);
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('custom workflow status mapping', () => {
+		const customProject = {
+			...baseProject,
+			jira: {
+				...baseJiraConfig,
+				statuses: {
+					...baseJiraConfig.statuses,
+					prd: 'PRD Review',
+					ux: 'UX Mocks',
+				},
+			},
+		} as TriggerContext['project'];
+
+		it('dispatches a custom agent when the issue is in a custom status', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			const result = await trigger.handle(
+				buildCtx({ project: customProject, statusName: 'PRD Review' }),
+			);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('prd');
+			expect(result?.workItemId).toBe('TEST-42');
+			expect(result?.workItemUrl).toBe('https://test.atlassian.net/browse/TEST-42');
+			expect(result?.workItemTitle).toBe('Test issue');
+			expect(result?.agentInput.triggerEvent).toBe('pm:label-added');
+		});
+
+		it('matches custom status names case-insensitively', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			const result = await trigger.handle(
+				buildCtx({ project: customProject, statusName: 'prd review' }),
+			);
+			expect(result?.agentType).toBe('prd');
+		});
+
+		it('returns null when a custom status has no dispatch agent configured', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'ux') {
+					return {
+						id: 2,
+						key: 'ux',
+						label: 'UX',
+						agentType: null,
+						sortOrder: 2000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			const result = await trigger.handle(
+				buildCtx({ project: customProject, statusName: 'UX Mocks' }),
+			);
+			expect(result).toBeNull();
+		});
+
+		it('returns null when a custom status is missing from workflow definitions', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockResolvedValue(null);
+
+			const result = await trigger.handle(
+				buildCtx({ project: customProject, statusName: 'PRD Review' }),
+			);
+			expect(result).toBeNull();
+		});
+
+		it('checks trigger enablement for the resolved custom agent', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			await trigger.handle(buildCtx({ project: customProject, statusName: 'PRD Review' }));
+
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'prd',
+				'pm:label-added',
+				'jira-ready-to-process-label-added',
+			);
+		});
+
+		it('returns null when trigger is disabled for the resolved custom agent', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+
+			const result = await trigger.handle(
+				buildCtx({ project: customProject, statusName: 'PRD Review' }),
+			);
 			expect(result).toBeNull();
 		});
 	});

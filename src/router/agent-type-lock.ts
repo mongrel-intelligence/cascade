@@ -45,8 +45,10 @@ export async function isAgentTypeLocked(
 	projectId: string,
 	agentType: string,
 	maxConcurrency: number,
+	options: { ignoreInMemoryCount?: number } = {},
 ): Promise<{ locked: boolean; reason?: string }> {
 	const key = makeKey(projectId, agentType);
+	const ignoreInMemoryCount = options.ignoreInMemoryCount ?? 0;
 
 	// Lazy TTL cleanup
 	const entry = concurrencyMap.get(key);
@@ -57,10 +59,10 @@ export async function isAgentTypeLocked(
 				projectId,
 				agentType,
 			});
-		} else if (entry.count >= maxConcurrency) {
+		} else if (Math.max(0, entry.count - ignoreInMemoryCount) >= maxConcurrency) {
 			return {
 				locked: true,
-				reason: `in-memory: ${entry.count} enqueued (max ${maxConcurrency})`,
+				reason: `in-memory: ${Math.max(0, entry.count - ignoreInMemoryCount)} enqueued (max ${maxConcurrency})`,
 			};
 		}
 	}
@@ -69,7 +71,9 @@ export async function isAgentTypeLocked(
 	const maxAgeMs = 2 * routerConfig.workerTimeoutMs;
 	const activeCount = await countActiveRuns({ projectId, agentType, maxAgeMs });
 	const inMemoryCount =
-		entry && Date.now() - entry.timestamp <= CONCURRENCY_TTL_MS ? entry.count : 0;
+		entry && Date.now() - entry.timestamp <= CONCURRENCY_TTL_MS
+			? Math.max(0, entry.count - ignoreInMemoryCount)
+			: 0;
 	const effectiveCount = Math.max(activeCount, inMemoryCount);
 
 	if (effectiveCount >= maxConcurrency) {
@@ -201,6 +205,7 @@ export async function checkAgentTypeConcurrency(
 	agentType: string,
 	logLabel?: string,
 	dedupScope?: string,
+	options: { ignoreInMemoryCount?: number; ignoreRecentDispatch?: boolean } = {},
 ): Promise<{ maxConcurrency: number | null; blocked: boolean }> {
 	let maxConcurrency: number | null;
 	try {
@@ -215,7 +220,7 @@ export async function checkAgentTypeConcurrency(
 	}
 	if (maxConcurrency === null) return { maxConcurrency: null, blocked: false };
 
-	if (wasRecentlyDispatched(projectId, agentType, dedupScope)) {
+	if (!options.ignoreRecentDispatch && wasRecentlyDispatched(projectId, agentType, dedupScope)) {
 		logger.info(`${logLabel ?? 'Agent'} recently dispatched, skipping (dedup)`, {
 			projectId,
 			agentType,
@@ -223,7 +228,9 @@ export async function checkAgentTypeConcurrency(
 		});
 		return { maxConcurrency, blocked: true };
 	}
-	const lockStatus = await isAgentTypeLocked(projectId, agentType, maxConcurrency);
+	const lockStatus = await isAgentTypeLocked(projectId, agentType, maxConcurrency, {
+		ignoreInMemoryCount: options.ignoreInMemoryCount,
+	});
 	if (lockStatus.locked) {
 		logger.info(`${logLabel ?? 'Agent'} type concurrency limit reached, skipping`, {
 			projectId,

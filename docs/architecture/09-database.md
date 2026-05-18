@@ -130,6 +130,7 @@ erDiagram
 | `agent_configs` | Per-agent-type overrides per project | UNIQUE(`project_id`, `agent_type`), `project_id NOT NULL` |
 | `agent_definitions` | Agent YAML definitions (built-in + custom) | UNIQUE(`agent_type`) |
 | `agent_trigger_configs` | Trigger enable/disable + parameters per project/agent/event | UNIQUE(`project_id`, `agent_type`, `event`) |
+| `workflow_status_definitions` | Custom workflow status definitions (key, label, optional dispatch `agent_type`, sort order). Built-in statuses live in code (`BUILTIN_WORKFLOW_STATUSES`); this table only stores custom definitions. | UNIQUE(`status_key`) |
 | `agent_runs` | Agent execution records with status, cost, duration | Indexed on `project_id`, `status`, `started_at` |
 | `agent_run_logs` | Cascade log + engine log per run | One-to-one with `agent_runs` |
 | `agent_run_llm_calls` | LLM request/response pairs with token/cost tracking | — |
@@ -157,6 +158,7 @@ Each table has a dedicated repository providing typed query methods. Key reposit
 | `agentConfigsRepository` | Per-agent settings CRUD |
 | `agentDefinitionsRepository` | Agent definition CRUD (YAML ↔ JSONB) |
 | `agentTriggerConfigsRepository` | Trigger enable/disable/params per project/agent/event |
+| `workflowStatusDefinitionsRepository` | Custom workflow status definition CRUD; backs `cascade workflow-statuses *` and the `workflowStatuses` tRPC router |
 | `integrationsRepository` | Query integration configuration |
 | `projectsRepository` | Project CRUD |
 | `organizationsRepository` | Organization CRUD |
