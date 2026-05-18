@@ -96,6 +96,45 @@ active PM provider; if that scope is missing the gate fails closed and captures
 Sentry under `pipeline_capacity_gate_no_pm_provider`. See
 `src/triggers/shared/pipeline-capacity-gate.ts`.
 
+### Custom workflow status mappings
+
+Operators can register custom workflow statuses (e.g. `prd`, `story`,
+`phased-plan`) through `cascade workflow-statuses create` or the superadmin
+`workflowStatuses.create` tRPC mutation. The definition itself — `key`,
+`label`, optional dispatch `agentType`, `sortOrder` — lives in the
+`workflow_status_definitions` table alongside the built-in catalog
+(`BUILTIN_WORKFLOW_STATUSES` in `src/workflow/statusDefinitions.ts`). See
+[`04-agent-system.md`](./04-agent-system.md#custom-workflow-statuses-across-pm-providers)
+for the dispatch contract.
+
+The provider-native mapping for each custom key is stored in
+`project_integrations.config` under the same key shape used for built-in
+slots — there is no separate side table for custom keys:
+
+| Provider | Custom key location | Value shape |
+|---|---|---|
+| Trello | `lists.<customKey>` | Trello list ID |
+| JIRA | `statuses.<customKey>` | JIRA status name |
+| Linear | `statuses.<customKey>` | Linear workflow state UUID |
+
+For example, after `cascade workflow-statuses create --key prd --label PRD
+--agent-type prd`, a Trello project might persist `lists.prd: "5f8a..."`
+in the integration config, while the equivalent JIRA project persists
+`statuses.prd: "PRD Ready"` and the Linear project persists
+`statuses.prd: "f3c1-..."`. The lifecycle config resolvers in
+`src/pm/trello/integration.ts`, `src/pm/jira/integration.ts`, and
+`src/pm/linear/integration.ts` spread the full `lists` / `statuses` record so
+custom keys survive normalization and reach the `moveOnPrepare` /
+`moveOnSuccess` lifecycle hooks for custom agents.
+
+A custom mapped status only dispatches an agent when its definition has a
+non-null `agentType` AND the project has an enabled `pm:status-changed`
+trigger config for that agent. The PM wizard's save path auto-creates the
+missing trigger config when the operator maps a dispatch-capable custom
+status, via `buildMissingStatusTriggerConfigs`. Custom statuses with
+`agentType: null` render and save normally but the trigger handlers return
+`null` instead of dispatching.
+
 ## Credential Resolution
 
 CASCADE uses a two-tier credential resolution system, selecting the appropriate resolver based on execution context.

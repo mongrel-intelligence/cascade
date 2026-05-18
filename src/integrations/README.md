@@ -219,6 +219,63 @@ All three real providers are now on the hardened contracts. Plan 009/4 also ship
 
 ---
 
+## Custom workflow status — provider parity contract
+
+CASCADE supports custom workflow statuses (e.g. `prd`, `story`, `phased-plan`) on top of the built-in `BUILTIN_WORKFLOW_STATUSES` catalog in `src/workflow/statusDefinitions.ts`. Trello, JIRA, and Linear all offer the **same** wizard + dispatch contract; new PM providers should follow it for parity.
+
+### What lives where
+
+| Concern | Storage | File |
+|---|---|---|
+| Status definition (`key`, `label`, dispatch `agentType`, `sortOrder`) | `workflow_status_definitions` table; managed via `cascade workflow-statuses *` or `workflowStatuses.create/update/delete` (superadmin tRPC) | `src/db/repositories/workflowStatusDefinitionsRepository.ts`, `src/api/routers/workflowStatuses.ts` |
+| Provider-native mapping for each custom key | `project_integrations.config` JSON, under the same key shape as built-in slots | per-provider |
+| Trello provider-native value | `lists.<customKey>` → Trello list ID | `src/pm/trello/integration.ts` |
+| JIRA provider-native value | `statuses.<customKey>` → JIRA status name | `src/pm/jira/integration.ts` |
+| Linear provider-native value | `statuses.<customKey>` → Linear workflow state UUID | `src/pm/linear/integration.ts` |
+
+The lifecycle config resolver on each `PMIntegration` (`resolveLifecycleConfig`) **must** spread the full `lists` / `statuses` record so custom keys survive normalization and are available to `moveOnPrepare` / `moveOnSuccess` lifecycle hooks for custom agents. Look at `LinearIntegration.resolveLifecycleConfig` for the canonical shape — `statuses: { ...(linearConfig?.statuses ?? {}) }` rather than handpicked built-in keys.
+
+### Wizard path — metadata-driven, shared between providers
+
+The PM wizards consume the workflow status definition list through a single tRPC query (`trpc.workflowStatuses.list`) and render mapping rows for every key — built-in and custom alike. The provider's `useProviderHooks` resolves the list and forwards it as `workflowStatuses` on the hook return; the shared `StatusMappingStep` renders rows in the returned order. Reference implementations:
+
+- **Trello** — `web/src/components/projects/pm-providers/trello/wizard.ts` (`TrelloStatusMappingAdapter`, `useProviderHooks` → `workflowStatuses`)
+- **JIRA** — `web/src/components/projects/pm-providers/jira/wizard.ts` (`JiraStatusMappingAdapter`, `useProviderHooks` → `workflowStatuses`)
+- **Linear** — `web/src/components/projects/pm-providers/linear/wizard.ts` (`LinearStatusMappingAdapter`, `useProviderHooks` → `workflowStatuses`)
+
+Save-time trigger-config materialization is shared too. Every `ProviderWizardDefinition.buildSaveTriggerConfigs` delegates to `buildMissingStatusTriggerConfigs` (`web/src/components/projects/pm-providers/save-trigger-configs.ts`), which:
+
+1. Walks the workflow status list returned by `trpc.workflowStatuses.list`.
+2. For every custom (or auto-enabled built-in) status the operator just mapped to a provider-native value, emits a `{ agentType, triggerEvent: 'pm:status-changed', enabled: true }` entry — if not already present in `agent_trigger_configs`.
+
+This means the operator never has to manually run `cascade projects trigger-set --agent <custom> --event pm:status-changed --enable` after mapping a custom dispatch-capable status in the wizard. The wizard does it. New PM providers inherit this for free by wiring `buildSaveTriggerConfigs: ({ state, workflowStatuses, existingConfigs }) => buildMissingStatusTriggerConfigs({ statusMappings: state.<provider>StatusMappings, workflowStatuses, existingConfigs })`.
+
+### Dispatch path — three converging routes, one resolver
+
+Custom-status dispatch reuses the same `pm:status-changed` trigger registry that built-in statuses use:
+
+- **Trello** (`src/triggers/trello/status-changed.ts`) — `TrelloCustomStatusChangedTrigger` claims `createCard` / `updateCard` events whose destination list ID maps to a custom (non-built-in) key in `trello.lists`. Built-in keys are still handled by the per-list triggers (`TrelloStatusChangedTodoTrigger`, etc.).
+- **JIRA** (`src/triggers/jira/status-changed.ts`) — `JiraStatusChangedTrigger` resolves the new status name against `jira.statuses` via `resolvePMStatusAgentByNameFromWorkflowDefinitions`, picking up custom keys alongside built-ins in a single handler.
+- **Linear** (`src/triggers/linear/status-changed.ts`) — `LinearStatusChangedTrigger` resolves the new state UUID against `linear.statuses` via `resolvePMStatusAgentByIdFromWorkflowDefinitions`, also a single handler.
+
+All three resolve through the shared `resolvePMStatusAgentFromWorkflowDefinitions` in `src/triggers/shared/pm-status.ts` and obey one dispatch precondition: a status only dispatches an agent when **both** of the following hold:
+
+1. The workflow status definition has a non-null `agentType`.
+2. The project has an enabled `agent_trigger_configs` row for `(agentType, pm:status-changed)`.
+
+A custom status with `agentType: null` (created without `--agent-type` or updated with `--no-agent`) **renders in the wizard and persists in the provider config but does not dispatch any agent** — the trigger handler returns `null` and the registry continues. Use this for board columns CASCADE should know about for wizard parity but never act on.
+
+### What a new PM provider needs to do for parity
+
+1. **Lifecycle resolver** — `PMIntegration.resolveLifecycleConfig` must spread the full provider-native status/list record (custom keys included), not handpicked built-in keys. Mirror `LinearIntegration.resolveLifecycleConfig`.
+2. **Status-changed trigger** — call the workflow-definition-aware resolver (`resolvePMStatusAgentByName*FromWorkflowDefinitions` or `resolvePMStatusAgentById*FromWorkflowDefinitions`) instead of the built-in `STATUS_TO_AGENT` map. Built-in providers above are the reference. Optionally add a dedicated custom-status trigger like `TrelloCustomStatusChangedTrigger` if your provider's matching semantics need it.
+3. **Wizard hook** — return `workflowStatuses` from `useProviderHooks` (sourced via `trpc.workflowStatuses.list`) and pass it as `cascadeStatuses` into the shared `StatusMappingStep` (falling back to your provider's built-in slot array when the query is still loading).
+4. **Save path** — declare `buildSaveTriggerConfigs` on the `ProviderWizardDefinition` delegating to `buildMissingStatusTriggerConfigs`.
+
+With those four pieces in place, custom workflow statuses get full wizard mapping + auto trigger-config + dispatch with zero additional code per provider.
+
+---
+
 ## Adding a new PM provider (step by step)
 
 Spec 009 AC #10: **a new PM provider PR should not need to edit shared router / worker / CLI / dashboard / configMapper / central schema files**. The orchestration and schema work lives in your provider folder + your wizard folder + one import in `src/integrations/pm/index.ts` + one import in `web/src/components/projects/pm-providers/index.ts`. The shared wizard orchestration files (`pm-wizard.tsx`, `pm-wizard-hooks.ts`, `pm-wizard-common-steps.tsx`) are guarded shared surface and should not change for a new provider. The one shared dashboard file that still requires a new-provider edit is `pm-wizard-state.ts` (step 4 below) — it composes the provider's state slice into `WizardState`, `WizardAction`, initial state, and reducer delegation. Edit-mode config hydration belongs on the provider's `ProviderWizardDefinition.buildEditState`; save-payload serialization belongs on `ProviderWizardDefinition.buildIntegrationConfig`; provider hook auth and mutation wiring belong in provider-owned metadata/hooks. The `tests/unit/integrations/new-provider-surface.test.ts` guard enforces the shared-file invariant for orchestration and schema files; `pm-wizard-state.ts` is the deliberate exception.

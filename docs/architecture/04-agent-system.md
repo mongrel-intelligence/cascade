@@ -131,6 +131,23 @@ cascade workflow-statuses update prd --no-agent
 Built-in workflow statuses cannot be modified through the CLI; create custom
 statuses for project-specific workflows and map them in the PM integration.
 
+### Custom workflow statuses across PM providers
+
+CASCADE separates two concepts that custom workflows need both of:
+
+1. **The status definition itself** — `key`, `label`, dispatch `agentType`, and `sortOrder`. Built-in definitions live in `BUILTIN_WORKFLOW_STATUSES` (`src/workflow/statusDefinitions.ts`); custom ones live in the `workflow_status_definitions` table and are managed via `cascade workflow-statuses {create,list,update,delete}` or the superadmin tRPC router at `src/api/routers/workflowStatuses.ts`.
+2. **The provider-native mapping** — the actual Trello list, JIRA status, or Linear workflow state that the custom status corresponds to on the board. This lives in the PM integration config (`project_integrations.config`) under the same provider-native key shape used for built-in statuses; see [`08-config-credentials.md`](./08-config-credentials.md#custom-workflow-status-mappings) for the per-provider storage layout.
+
+All three production providers (Trello, JIRA, Linear) support custom statuses with the same dispatch contract:
+
+- **Trello** (`src/triggers/trello/status-changed.ts`) — `TrelloCustomStatusChangedTrigger` matches `createCard` / `updateCard` events whose destination list ID maps to a custom (non-built-in) key in `trello.lists.<customKey>`, then resolves the dispatch agent through `resolvePMStatusAgentByIdFromWorkflowDefinitions`. Built-in keys (e.g. `todo`, `planning`) continue to flow through the per-list `TrelloStatusChanged*Trigger` handlers.
+- **JIRA** (`src/triggers/jira/status-changed.ts`) — `JiraStatusChangedTrigger` resolves the new status name against `jira.statuses` via `resolvePMStatusAgentByNameFromWorkflowDefinitions`, picking up custom keys alongside built-ins.
+- **Linear** (`src/triggers/linear/status-changed.ts`) — `LinearStatusChangedTrigger` resolves the new state UUID against `linear.statuses` via `resolvePMStatusAgentByIdFromWorkflowDefinitions`.
+
+All three paths share `resolvePMStatusAgentFromWorkflowDefinitions` in `src/triggers/shared/pm-status.ts` and obey the same dispatch precondition: a custom status only dispatches an agent when its definition has a non-null `agentType` AND a `pm:status-changed` trigger config is enabled for that agent. A custom status with `agentType: null` (created via `cascade workflow-statuses update <key> --no-agent` or set without `--agent-type`) renders in the wizard and persists in the provider config, but the trigger handlers return `null` instead of dispatching — useful for board columns that should appear in CASCADE's wizard without spawning agents.
+
+The PM wizards (Trello, JIRA, Linear) pull the full definition list via `trpc.workflowStatuses.list` and render mapping rows for every key — built-in and custom alike. Saving the wizard auto-enables the `pm:status-changed` trigger config for any custom-status agent the operator mapped, through `buildMissingStatusTriggerConfigs` (`web/src/components/projects/pm-providers/save-trigger-configs.ts`). See `src/integrations/README.md` for the provider parity contract.
+
 ## Built-in Agents
 
 | Agent | Capabilities | Persona | Key Triggers |
