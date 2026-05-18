@@ -231,7 +231,6 @@ export class TrelloCustomStatusChangedTrigger implements TriggerHandler {
 		return !BUILTIN_WORKFLOW_STATUS_KEYS.has(cascadeStatus);
 	}
 
-	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: sequential guard checks mirror the built-in factory shape
 	async handle(ctx: TriggerContext): Promise<TriggerResult | null> {
 		const payload = ctx.payload as TrelloWebhookPayload;
 		const trelloConfig = getTrelloConfig(ctx.project);
