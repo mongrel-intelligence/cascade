@@ -718,6 +718,204 @@ describe('linearProviderWizard.buildIntegrationConfig', () => {
 });
 
 // ============================================================================
+// trelloProviderWizard.buildSaveTriggerConfigs
+// ============================================================================
+
+describe('trelloProviderWizard.buildSaveTriggerConfigs', () => {
+	function seed(overrides: Partial<WizardState> = {}): WizardState {
+		return {
+			...createInitialState(),
+			provider: 'trello',
+			trelloBoardId: 'board-1',
+			trelloListMappings: { todo: 'list-todo' },
+			...overrides,
+		};
+	}
+
+	it('creates a status-changed trigger for a mapped custom status with a dispatch agent', () => {
+		const configs = trelloProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				trelloListMappings: {
+					todo: 'list-todo',
+					prd: 'list-prd',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'todo', agentType: 'implementation', isBuiltin: true },
+				{ key: 'prd', agentType: 'prd', isBuiltin: false },
+			],
+			existingConfigs: [],
+		});
+
+		expect(configs).toEqual([
+			{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+			{ agentType: 'prd', triggerEvent: 'pm:status-changed', enabled: true },
+		]);
+	});
+
+	it('does not overwrite existing trigger configs', () => {
+		const configs = trelloProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				trelloListMappings: {
+					todo: 'list-todo',
+					prd: 'list-prd',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'todo', agentType: 'implementation', isBuiltin: true },
+				{ key: 'prd', agentType: 'prd', isBuiltin: false },
+			],
+			existingConfigs: [{ agentType: 'prd', triggerEvent: 'pm:status-changed' }],
+		});
+
+		expect(configs).toEqual([
+			{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+		]);
+	});
+
+	it('preserves built-in splitting/planning/todo defaults when mapped', () => {
+		const configs = trelloProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				trelloListMappings: {
+					splitting: 'list-splitting',
+					planning: 'list-planning',
+					todo: 'list-todo',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'splitting', agentType: 'splitting', isBuiltin: true },
+				{ key: 'planning', agentType: 'planning', isBuiltin: true },
+				{ key: 'todo', agentType: 'implementation', isBuiltin: true },
+			],
+			existingConfigs: [],
+		});
+
+		expect(configs).toEqual([
+			{ agentType: 'splitting', triggerEvent: 'pm:status-changed', enabled: true },
+			{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
+			{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+		]);
+	});
+
+	it('does not create a config for a status with no agentType', () => {
+		const configs = trelloProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				trelloListMappings: {
+					alerts: 'list-alerts',
+					friction: 'list-friction',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'alerts', agentType: null, isBuiltin: true },
+				{ key: 'friction', agentType: null, isBuiltin: true },
+			],
+			existingConfigs: [],
+		});
+
+		expect(configs).toEqual([]);
+	});
+});
+
+// ============================================================================
+// jiraProviderWizard.buildSaveTriggerConfigs
+// ============================================================================
+
+describe('jiraProviderWizard.buildSaveTriggerConfigs', () => {
+	function seed(overrides: Partial<WizardState> = {}): WizardState {
+		return {
+			...createInitialState(),
+			provider: 'jira',
+			jiraProjectKey: 'PROJ',
+			jiraStatusMappings: { todo: 'To Do' },
+			...overrides,
+		};
+	}
+
+	it('creates a status-changed trigger for a mapped custom status with a dispatch agent', () => {
+		const configs = jiraProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				jiraStatusMappings: {
+					todo: 'To Do',
+					prd: 'PRD',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'todo', agentType: 'implementation', isBuiltin: true },
+				{ key: 'prd', agentType: 'prd', isBuiltin: false },
+			],
+			existingConfigs: [],
+		});
+
+		expect(configs).toEqual([
+			{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+			{ agentType: 'prd', triggerEvent: 'pm:status-changed', enabled: true },
+		]);
+	});
+
+	it('does not overwrite existing trigger configs', () => {
+		const configs = jiraProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				jiraStatusMappings: {
+					todo: 'To Do',
+					prd: 'PRD',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'todo', agentType: 'implementation', isBuiltin: true },
+				{ key: 'prd', agentType: 'prd', isBuiltin: false },
+			],
+			existingConfigs: [{ agentType: 'prd', triggerEvent: 'pm:status-changed' }],
+		});
+
+		expect(configs).toEqual([
+			{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+		]);
+	});
+
+	it('preserves built-in splitting/planning/todo defaults when mapped', () => {
+		const configs = jiraProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				jiraStatusMappings: {
+					splitting: 'Splitting',
+					planning: 'Planning',
+					todo: 'To Do',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'splitting', agentType: 'splitting', isBuiltin: true },
+				{ key: 'planning', agentType: 'planning', isBuiltin: true },
+				{ key: 'todo', agentType: 'implementation', isBuiltin: true },
+			],
+			existingConfigs: [],
+		});
+
+		expect(configs).toEqual([
+			{ agentType: 'splitting', triggerEvent: 'pm:status-changed', enabled: true },
+			{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
+			{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
+		]);
+	});
+
+	it('does not create a config for a status with no agentType', () => {
+		const configs = jiraProviderWizard.buildSaveTriggerConfigs?.({
+			state: seed({
+				jiraStatusMappings: {
+					alerts: 'Alerts',
+					friction: 'Friction',
+				},
+			}),
+			workflowStatuses: [
+				{ key: 'alerts', agentType: null, isBuiltin: true },
+				{ key: 'friction', agentType: null, isBuiltin: true },
+			],
+			existingConfigs: [],
+		});
+
+		expect(configs).toEqual([]);
+	});
+});
+
+// ============================================================================
 // runPerLabelCreations
 // ============================================================================
 

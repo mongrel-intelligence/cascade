@@ -22,6 +22,7 @@ import { useState } from 'react';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import type { WizardState } from '../../pm-wizard-state.js';
+import { buildMissingStatusTriggerConfigs } from '../save-trigger-configs.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
 import { CustomFieldMappingStep } from '../steps/custom-field-mapping.js';
 import { LabelMappingStep } from '../steps/label-mapping.js';
@@ -155,6 +156,7 @@ interface TrelloProviderHooks {
 	readonly createError: string | undefined;
 	readonly deleteTrelloWebhook: (callbackBaseUrl: string) => void;
 	readonly deleteLoading: boolean;
+	readonly workflowStatuses: ReadonlyArray<{ readonly key: string; readonly label: string }>;
 }
 
 function asTrelloHooks(providerHooks: Record<string, unknown> | undefined): TrelloProviderHooks {
@@ -190,7 +192,7 @@ function TrelloStatusMappingAdapter({
 	return StatusMappingStep({
 		step: { kind: 'status-mapping', id: 'trello-statuses' },
 		providerId: 'trello',
-		cascadeStatuses: TRELLO_LIST_SLOTS,
+		cascadeStatuses: h.workflowStatuses.length > 0 ? h.workflowStatuses : TRELLO_LIST_SLOTS,
 		providerStates: h.providerStates,
 		mappings: state.trelloListMappings,
 		onMappingChange: (key, value) => dispatch({ type: 'SET_TRELLO_LIST_MAPPING', key, value }),
@@ -299,14 +301,12 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		...(state.trelloCostFieldId ? { customFields: { cost: state.trelloCostFieldId } } : {}),
 	}),
 
-	buildSaveTriggerConfigs: ({ state }) =>
-		state.isEditing
-			? []
-			: [
-					{ agentType: 'implementation', triggerEvent: 'pm:status-changed', enabled: true },
-					{ agentType: 'splitting', triggerEvent: 'pm:status-changed', enabled: true },
-					{ agentType: 'planning', triggerEvent: 'pm:status-changed', enabled: true },
-				],
+	buildSaveTriggerConfigs: ({ state, workflowStatuses, existingConfigs }) =>
+		buildMissingStatusTriggerConfigs({
+			statusMappings: state.trelloListMappings,
+			workflowStatuses,
+			existingConfigs,
+		}),
 
 	buildEditState: (initialConfig, configuredKeys) => {
 		const editState = {
@@ -387,6 +387,12 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
 		const activeTrelloWebhooks = normalizeTrelloActiveWebhooks(webhooksQuery.data);
 
+		// Load workflow status definitions so the status-mapping step can
+		// render rows for custom statuses (e.g. `prd`) alongside the
+		// built-in CASCADE stages. Falls back to `TRELLO_LIST_SLOTS` while
+		// loading or when the query has no data.
+		const workflowStatusesQuery = useQuery(trpc.workflowStatuses.list.queryOptions());
+
 		const createWebhookMutation = useMutation({
 			mutationFn: () =>
 				trpcClient.webhooks.create.mutate({
@@ -448,6 +454,11 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 				: undefined,
 			deleteTrelloWebhook: (baseUrl: string) => deleteWebhookMutation.mutate(baseUrl),
 			deleteLoading: deleteWebhookMutation.isPending,
+			workflowStatuses:
+				workflowStatusesQuery.data?.map((status) => ({
+					key: status.key,
+					label: status.label,
+				})) ?? TRELLO_LIST_SLOTS,
 		} satisfies TrelloProviderHooks & Record<string, unknown>;
 	},
 };
