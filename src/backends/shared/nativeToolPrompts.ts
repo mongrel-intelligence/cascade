@@ -15,6 +15,15 @@ You are operating in a native-tool environment, not a gadget/function-call envir
 - If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.
 - Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.
 
+## Guaranteed runtime tools
+
+The worker image bakes the following baseline tools so you can rely on them in any shell command without installing anything:
+
+- \`python\` and \`python3\` — interchangeable; both resolve to the same Debian-owned Python 3. Use either for ad-hoc JSON shaping (\`python -c 'import json; ...'\`), small parsing scripts, or library smoke checks. Do NOT \`pip install\` packages at runtime — the image's stdlib is the contract.
+- \`jq\`, \`rg\` (ripgrep), \`fd\`, \`git\`, \`tmux\` — preferred for JSON queries, content/file search, version-control, and persistent shell sessions respectively.
+- \`cascade-tools\` — the CASCADE CLI documented in the "CASCADE Tools" section below. Use it (not \`gh\` / raw curl) for PM, SCM, and session operations.
+- Playwright Chromium — installed at \`$PLAYWRIGHT_BROWSERS_PATH\` (\`/ms-playwright\`). \`@playwright/test\` is available globally; \`NODE_PATH=$(npm root -g) node -e 'require("@playwright/test")...'\` or \`npx playwright test\` from a repo with a local pin both work without re-downloading the browser.
+
 ## Termination protocol
 
 When you have completed all required side-effects for this task — per the hooks declared on this agent (e.g. commits pushed, PR opened, review submitted, checklist created, PM comment posted) — call the \`Finish\` tool with a one-paragraph summary of what you did.

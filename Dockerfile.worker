@@ -24,6 +24,13 @@ LABEL cascade.managed=true
 RUN npm install -g pnpm --force
 
 # Install system packages needed by agent runtime
+#
+# `python3` plus `python-is-python3` provide a Debian-owned Python shim so
+# both `python` and `python3` work predictably for `python -c 'import json'`
+# and other lightweight scripting agents reach for. The package ownership is
+# load-bearing — manual `ln -s python3 python` symlinks drift on base-image
+# changes; the apt package survives those cleanly. See MNG-1055 (and the
+# friction cluster MNG-887/897/926/934/947/957/973/1010/1024/1033/1039/1044).
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
@@ -36,6 +43,8 @@ RUN apt-get update && apt-get install -y \
     postgresql-client \
     procps \
     psutils \
+    python3 \
+    python-is-python3 \
     redis-tools \
     ripgrep \
     ruby \
@@ -43,7 +52,10 @@ RUN apt-get update && apt-get install -y \
     tmux \
     unzip \
     && rm -rf /var/lib/apt/lists/* \
-    && ln -s $(which fdfind) /usr/local/bin/fd
+    && ln -s $(which fdfind) /usr/local/bin/fd \
+    && python3 --version \
+    && python --version \
+    && python -c 'import json; print(json.dumps({"ok": True}))'
 
 # Configure tmux to keep panes alive after command exits
 # This allows capturing output and exit code from fast-exiting commands
@@ -64,6 +76,27 @@ RUN npm install -g \
     @anthropic-ai/claude-code@2.1.119 \
     @openai/codex@0.125.0 \
     opencode-ai@1.14.25
+
+# Playwright browser cache.
+#
+# Workers regularly review PRs that include UI/Playwright tests, and review
+# agents call `playwright test` / `playwright launch chromium` in shell
+# sessions. Without a baseline browser cache they hit
+# `browserType.launch: Executable doesn't exist` and waste budget trying to
+# install Chromium themselves (often into `~/.cache/ms-playwright` for the
+# wrong user, or while offline). See friction cluster MNG-998 / MNG-1048.
+#
+# The cache lives at a stable non-home path so:
+#   - Chromium binaries are owned by root and readable by all users.
+#   - The `USER node` switch below does not invalidate or duplicate the cache.
+#   - `PLAYWRIGHT_BROWSERS_PATH` can be allowlisted by the native-tool env
+#     filter (`src/backends/shared/envFilter.ts`) and forwarded to agent
+#     subprocesses without leaking any other Playwright config.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN npm install -g @playwright/test@1.49.1 \
+    && PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
+       npx --yes playwright@1.49.1 install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
 
 # Switch to non-root user for running workers.
 # Claude Code CLI refuses --dangerously-skip-permissions when running as root.

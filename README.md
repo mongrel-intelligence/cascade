@@ -133,7 +133,7 @@ The included `docker-compose.yml` runs all services with a single command. Worke
 |-------|-----------|---------|
 | Dashboard + Frontend | `Dockerfile.selfhosted` | API server + web UI (combined) |
 | Router | `Dockerfile.router` | Webhook receiver, worker orchestration |
-| Worker | `Dockerfile.worker` | Full agent runtime (clones repos, runs AI) |
+| Worker | `Dockerfile.worker` | Full agent runtime (clones repos, runs AI). Ships a baseline native-session toolchain (`python`/`python3`, `jq`, `rg`, `fd`, `git`, `tmux`, `cascade-tools`) and a shared Playwright Chromium cache at `$PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`. See [engine-backends](./docs/architecture/05-engine-backends.md#worker-image-runtime-baseline-mng-1055). |
 
 **Required production environment variables:**
 

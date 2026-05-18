@@ -39,7 +39,7 @@ jobs:
           docker run --rm ${{ env.ROUTER_IMAGE }}:${{ github.sha }} \
             node --check dist/router/index.js
 
-      - name: Build and push worker image
+      - name: Build worker image
         run: |
           docker build \
             --label org.opencontainers.image.revision=${{ github.sha }} \
@@ -47,6 +47,17 @@ jobs:
             -f Dockerfile.worker \
             -t ${{ env.WORKER_IMAGE }}:latest \
             -t ${{ env.WORKER_IMAGE }}:${{ github.sha }} .
+
+      # MNG-1055: gate the production worker push on the same runtime smoke
+      # test CI runs. A worker image without `python`, Playwright Chromium,
+      # or a working `PLAYWRIGHT_BROWSERS_PATH` would break agents the
+      # moment it reached production, so we fail before publishing the
+      # `:latest` / SHA tags.
+      - name: Smoke-test worker runtime tools
+        run: WORKER_IMAGE=${{ env.WORKER_IMAGE }}:${{ github.sha }} tests/docker/worker-runtime-tools/run-test.sh
+
+      - name: Push worker image
+        run: |
           docker push ${{ env.WORKER_IMAGE }}:latest
           docker push ${{ env.WORKER_IMAGE }}:${{ github.sha }}
 

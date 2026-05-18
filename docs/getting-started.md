@@ -7,7 +7,7 @@ This guide walks you through setting up Cascade using Docker Compose — from ze
 ## Prerequisites
 
 - **Docker** and **Docker Compose** (v2+)
-- ~6 GB disk space (the worker image includes Claude Code CLI and other agent tools)
+- ~8 GB disk space (the worker image ships agent CLIs, a Python shim, and a shared Playwright Chromium cache at `$PLAYWRIGHT_BROWSERS_PATH=/ms-playwright` — see [engine-backends](./architecture/05-engine-backends.md#worker-image-runtime-baseline-mng-1055))
 - A GitHub repository you want Cascade to work on
 - At least one LLM API key (OpenRouter, Anthropic, or OpenAI) or a Claude Max subscription
 

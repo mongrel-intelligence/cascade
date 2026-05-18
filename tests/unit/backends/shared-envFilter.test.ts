@@ -178,6 +178,34 @@ describe('SHARED_ALLOWED_ENV_EXACT', () => {
 		expect(result[GITHUB_ACK_COMMENT_ID_ENV_VAR]).toBe('12345');
 	});
 
+	// MNG-1055: the worker image bakes a shared Playwright Chromium cache at
+	// /ms-playwright and exports PLAYWRIGHT_BROWSERS_PATH=/ms-playwright. The
+	// native-tool env filter must forward this single exact variable so
+	// `playwright launch chromium` from agent shells uses the prebuilt cache.
+	// The broader `PLAYWRIGHT_*` prefix is deliberately NOT allowlisted — we
+	// pass exactly the browser cache path and nothing else.
+	describe('PLAYWRIGHT_BROWSERS_PATH allowlist (MNG-1055)', () => {
+		it('is in SHARED_ALLOWED_ENV_EXACT', () => {
+			expect(SHARED_ALLOWED_ENV_EXACT.has('PLAYWRIGHT_BROWSERS_PATH')).toBe(true);
+		});
+
+		it('survives filterProcessEnv round-trip', () => {
+			const result = filterProcessEnv({ PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright' });
+			expect(result.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+		});
+
+		it('does not silently allow other PLAYWRIGHT_* variables', () => {
+			const result = filterProcessEnv({
+				PLAYWRIGHT_BROWSERS_PATH: '/ms-playwright',
+				PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
+				PLAYWRIGHT_TEST_BASE_URL: 'https://example.com',
+			});
+			expect(result.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+			expect(result.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD).toBeUndefined();
+			expect(result.PLAYWRIGHT_TEST_BASE_URL).toBeUndefined();
+		});
+	});
+
 	// Regression net for prod incidents MNG-741 / MNG-736 / MNG-739 (2026-05-12):
 	// `sidecarManager` injected `CASCADE_PM_WRITE_SIDECAR_PATH` into projectSecrets
 	// but the allowlist here dropped it on the way to the subprocess, so the

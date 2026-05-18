@@ -478,6 +478,61 @@ describe('buildSystemPrompt', () => {
 		const result = buildSystemPrompt('Agent prompt.', []);
 		expect(result).toContain('Never write pseudo tool calls');
 	});
+
+	// MNG-1055: the worker image guarantees a baseline of native-session
+	// tools — Python shim, jq/rg/fd/git/tmux/cascade-tools, and a shared
+	// Playwright Chromium cache at $PLAYWRIGHT_BROWSERS_PATH. The system
+	// prompt must communicate that contract so agents reach for these
+	// directly instead of trying to install or work around them. Pinned
+	// here so future trim-the-prompt edits do not silently drop the
+	// guarantees that the friction clusters (MNG-887…1044, MNG-998,
+	// MNG-1048) were originally filed about.
+	describe('runtime-tool guarantees (MNG-1055)', () => {
+		it('lists Python shim guarantee with both python and python3 names', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('Guaranteed runtime tools');
+			expect(result).toContain('`python`');
+			expect(result).toContain('`python3`');
+		});
+
+		it('lists the other baseline shell tools agents should reach for', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('`jq`');
+			expect(result).toContain('`rg`');
+			expect(result).toContain('`fd`');
+			expect(result).toContain('`git`');
+			expect(result).toContain('`tmux`');
+			expect(result).toContain('`cascade-tools`');
+		});
+
+		it('points at the shared Playwright Chromium cache via PLAYWRIGHT_BROWSERS_PATH', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('Playwright');
+			expect(result).toContain('$PLAYWRIGHT_BROWSERS_PATH');
+		});
+
+		it('runtime guarantees render even when no cascade-tools are wired', () => {
+			// The guarantees are part of the static execution rules, not the
+			// CASCADE Tools section — so they render whether or not the
+			// caller passes a tool manifest. This keeps the contract visible
+			// for engines that mount zero cascade-tools (early debug runs).
+			const noTools = buildSystemPrompt('Agent prompt.', []);
+			const withTools = buildSystemPrompt('Agent prompt.', [makeManifest()]);
+			expect(noTools).toContain('Guaranteed runtime tools');
+			expect(withTools).toContain('Guaranteed runtime tools');
+		});
+
+		it('does not alter the rendered cascade-tools CLI documentation', () => {
+			// Pins that the prompt addition is purely additive — the
+			// CreatePRReview / ReadWorkItem command bodies the generator
+			// emits are unchanged. Catches accidental reorderings that
+			// would push agents back to the pre-014 pseudo-tool surface.
+			const result = buildSystemPrompt('Agent prompt.', [makeManifest({ name: 'ReadWorkItem' })]);
+			expect(result).toContain('### ReadWorkItem');
+			expect(result).toContain('cascade-tools pm read-work-item');
+			expect(result).toContain('--workItemId <string>');
+		});
+	});
 });
 
 // ───────── buildTaskPrompt ─────────
