@@ -141,7 +141,7 @@ describe('GetPRDiff command', () => {
 		const cmd = new GetPRDiff(['--prNumber', '15'], makeMockConfig() as never);
 		await cmd.run();
 
-		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, undefined);
+		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, undefined, undefined);
 	});
 
 	it('resolves owner/repo from env vars', async () => {
@@ -150,7 +150,7 @@ describe('GetPRDiff command', () => {
 		const cmd = new GetPRDiff(['--prNumber', '99'], makeMockConfig() as never);
 		await cmd.run();
 
-		expect(getPRDiff).toHaveBeenCalledWith('acme', 'webapp', 99, undefined);
+		expect(getPRDiff).toHaveBeenCalledWith('acme', 'webapp', 99, undefined, undefined);
 	});
 
 	it('passes optional path to getPRDiff', async () => {
@@ -160,7 +160,7 @@ describe('GetPRDiff command', () => {
 		);
 		await cmd.run();
 
-		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, 'src/old.ts');
+		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, 'src/old.ts', undefined);
 	});
 
 	it('outputs JSON success result', async () => {
@@ -171,6 +171,43 @@ describe('GetPRDiff command', () => {
 
 		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
 		expect(output.success).toBe(true);
+	});
+
+	// MNG-1059: --outputFile mode streams the raw multiline diff to disk and
+	// returns a compact summary, sidestepping stdout truncation on big diffs.
+	it('passes --output-file alias through to getPRDiff', async () => {
+		vi.mocked(getPRDiff).mockResolvedValue({
+			outputFile: '/tmp/diff.md',
+			fileCount: 1,
+			bytes: 1234,
+		} as never);
+		const cmd = new GetPRDiff(
+			['--prNumber', '15', '--output-file', '/tmp/diff.md'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, undefined, '/tmp/diff.md');
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output.success).toBe(true);
+		expect(output.data).toEqual({ outputFile: '/tmp/diff.md', fileCount: 1, bytes: 1234 });
+	});
+
+	it('passes --outputFile combined with --path to getPRDiff', async () => {
+		vi.mocked(getPRDiff).mockResolvedValue({
+			outputFile: '/tmp/diff.md',
+			fileCount: 1,
+			bytes: 50,
+			pathFilter: 'src/big.json',
+		} as never);
+		const cmd = new GetPRDiff(
+			['--prNumber', '15', '--path', 'src/big.json', '--outputFile', '/tmp/diff.md'],
+			makeMockConfig() as never,
+		);
+		await cmd.run();
+
+		expect(getPRDiff).toHaveBeenCalledWith('owner', 'repo', 15, 'src/big.json', '/tmp/diff.md');
 	});
 });
 

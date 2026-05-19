@@ -301,6 +301,36 @@ describe('CreatePR --body-file', () => {
 		process.env = originalEnv;
 	});
 
+	// MNG-1059: file inputs preserve shell-sensitive markdown exactly. Confirms
+	// the friction cluster (MNG-908 / MNG-910 / MNG-1046 / MNG-1048) does not
+	// regress — content with backticks, code fences, $() reaches the core fn
+	// byte-for-byte identical to what's on disk.
+	it('preserves backticks, code fences, $() and multiline content exactly', async () => {
+		const shellSensitive = [
+			'## Summary',
+			'',
+			'Use `npm test` to verify the fix.',
+			'',
+			'```bash',
+			'echo "$(date)" > /tmp/now',
+			'```',
+			'',
+			'Reproducer: `cascade-tools scm get-pr-diff --prNumber $(gh pr view --json number -q .number)`',
+		].join('\n');
+		const filePath = writeTempFile('shell-sensitive.md', shellSensitive);
+		const cmd = new CreatePR(
+			['--title', 'feat: x', '--head', 'feat/x', '--body-file', filePath],
+			mockConfig as never,
+		);
+		await cmd.run();
+
+		expect(createPR).toHaveBeenCalledWith(
+			expect.objectContaining({
+				body: shellSensitive,
+			}),
+		);
+	});
+
 	it('reads PR body from file', async () => {
 		const filePath = writeTempFile('pr-body.md', '## Summary\n\nPR description');
 		const cmd = new CreatePR(
@@ -383,6 +413,32 @@ describe('CreatePRReview --body-file', () => {
 
 	afterEach(() => {
 		process.env = originalEnv;
+	});
+
+	// MNG-1059: stdin (fd 0) is single-consumer. Passing `--body-file - --comments-file -`
+	// silently drained one of the two payloads (whichever ran first won; the
+	// other got an empty string). Reject this combination structurally before
+	// any read occurs.
+	it('rejects --body-file - AND --comments-file - in a single invocation', async () => {
+		const cmd = new CreatePRReview(
+			['--prNumber', '42', '--event', 'COMMENT', '--body-file', '-', '--comments-file', '-'],
+			mockConfig as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await expect(cmd.run()).rejects.toThrow();
+
+		// The core function must not be invoked — guard runs pre-read.
+		expect(createPRReview).not.toHaveBeenCalled();
+
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string) as {
+			success: boolean;
+			error: { type: string; flag?: string; message?: string; hint?: string };
+		};
+		expect(output.success).toBe(false);
+		expect(output.error.type).toBe('flag-parse');
+		expect(output.error.flag).toBe('body-file,comments-file');
+		expect(output.error.message).toContain('stdin can only be drained once');
+		expect(output.error.hint).toContain('temp file');
 	});
 
 	it('reads review body from file', async () => {

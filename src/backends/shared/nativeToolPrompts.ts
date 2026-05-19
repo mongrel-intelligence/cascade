@@ -15,6 +15,22 @@ You are operating in a native-tool environment, not a gadget/function-call envir
 - If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.
 - Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.
 
+### cascade-tools shell-safety rules
+
+- For markdown, multiline text, backticks (\`\`\` \` \`\`\`), code fences (\`\`\` \`\`\`\`\`\`), \`$(...)\`, \`\\\`...\\\`\`, or other shell-sensitive content, prefer the \`--*-file <path>\` form (e.g. \`--body-file /tmp/body.md\`) or a single heredoc via \`--*-file -\` over inline \`--body '...'\` / \`--text '...'\` / \`--description '...'\` arguments. Shells expand backticks and \`$(...)\` even inside single quotes when nested inside double quotes, and newlines fight your shell's argv parser.
+- Only **one** \`--*-file -\` flag is allowed per command — stdin (fd 0) can only be drained once. Pass at most one payload through stdin; write the others to temp files and reference them with \`--*-file <path>\`. The CLI rejects multiple \`-\` consumers with a structured \`flag-parse\` error before any read occurs.
+- Pattern for a single heredoc: \`cascade-tools scm post-pr-comment --prNumber 42 --body-file - <<'EOF' \\n ...markdown... \\nEOF\`.
+- Pattern for two payloads: write one to a temp file first, then pass the other via stdin. Example: \`cat >/tmp/body.md <<'EOF' \\n ...markdown body... \\nEOF\` followed by \`cascade-tools scm create-pr-review --prNumber 42 --event REQUEST_CHANGES --body-file /tmp/body.md --comments-file - <<'EOF' \\n [{"path":"src/x.ts","line":12,"body":"please handle null"}] \\nEOF\`.
+
+## Guaranteed runtime tools
+
+The worker image bakes the following baseline tools so you can rely on them in any shell command without installing anything:
+
+- \`python\` and \`python3\` — interchangeable; both resolve to the same Debian-owned Python 3. Use either for ad-hoc JSON shaping (\`python -c 'import json; ...'\`), small parsing scripts, or library smoke checks. Do NOT \`pip install\` packages at runtime — the image's stdlib is the contract.
+- \`jq\`, \`rg\` (ripgrep), \`fd\`, \`git\`, \`tmux\` — preferred for JSON queries, content/file search, version-control, and persistent shell sessions respectively.
+- \`cascade-tools\` — the CASCADE CLI documented in the "CASCADE Tools" section below. Use it (not \`gh\` / raw curl) for PM, SCM, and session operations.
+- Playwright Chromium — installed at \`$PLAYWRIGHT_BROWSERS_PATH\` (\`/ms-playwright\`). \`@playwright/test\` is available globally; \`NODE_PATH=$(npm root -g) node -e 'require("@playwright/test")...'\` or \`npx playwright test\` from a repo with a local pin can use the cache, and project setup can install a missing pinned revision into that writable path.
+
 ## Termination protocol
 
 When you have completed all required side-effects for this task — per the hooks declared on this agent (e.g. commits pushed, PR opened, review submitted, checklist created, PM comment posted) — call the \`Finish\` tool with a one-paragraph summary of what you did.
@@ -32,7 +48,32 @@ type PromptParamSchema = {
 	items?: string;
 	aliases?: readonly string[];
 	example?: unknown;
+	fileInputFor?: string;
+	fileInputAlternative?: string;
 };
+
+/**
+ * MNG-1059: a string example is "shell-sensitive" when it contains any of the
+ * tokens shells expand or that fight argv parsing — backticks, dollar-paren
+ * subshells, code fences, or any newline. When the parameter has a file-input
+ * alternative declared, the prompt renderer should suppress the inline example
+ * (which would teach the agent a footgun) and point at the safer companion.
+ *
+ * This deliberately does not flag every shell metachar (the `formatShellScalar`
+ * helper already wraps scalars containing spaces or other delimiters in single
+ * quotes). It targets the cluster surfaced in MNG-908 / MNG-910 / MNG-1046 /
+ * MNG-1048: markdown bodies and friction details containing backticks / code
+ * fences, multi-line PR descriptions, and command-substitution patterns that
+ * survive shell quoting in pathological ways.
+ */
+function isShellSensitiveExample(value: unknown): boolean {
+	if (typeof value !== 'string') return false;
+	if (value.includes('\n')) return true;
+	if (value.includes('`')) return true;
+	if (value.includes('$(') || value.includes('${')) return true;
+	if (value.includes('```')) return true;
+	return false;
+}
 
 function formatExampleInvocation(key: string, schema: PromptParamSchema): string | undefined {
 	if (schema.example === undefined) return undefined;
@@ -50,6 +91,17 @@ function formatExampleInvocation(key: string, schema: PromptParamSchema): string
 		const examples = Array.isArray(schema.example) ? schema.example : [schema.example];
 		if (examples.length === 0) return undefined;
 		return examples.map((value) => `--${key} ${formatShellScalar(value)}`).join(' ');
+	}
+
+	// MNG-1059: when a direct text param has a file-input companion and the
+	// example contains shell-sensitive tokens, redirect the agent at the file
+	// flag instead of teaching them a quoting footgun.
+	if (
+		schema.type === 'string' &&
+		schema.fileInputAlternative &&
+		isShellSensitiveExample(schema.example)
+	) {
+		return `--${schema.fileInputAlternative} <path>  # write the markdown/multiline content to a temp file (shell-sensitive: contains backticks, code fences, $(...), or newlines)`;
 	}
 
 	return `--${key} ${formatShellScalar(schema.example)}`;

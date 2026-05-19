@@ -109,6 +109,17 @@ interface BaseParameterDefinition {
 	 */
 	gadgetOnly?: boolean;
 	/**
+	 * If `true`, this parameter is exposed only via the CLI surface (e.g. output
+	 * destination flags like `--outputFile` that have no in-process equivalent
+	 * for an SDK gadget). The flag is included in the CLI, in the agent-facing
+	 * tool manifest (so the prompt shows it), and in oclif help output — but is
+	 * EXCLUDED from the Zod schema the SDK Gadget exposes.
+	 *
+	 * Mutually exclusive with `gadgetOnly`. Used by MNG-1059 for the
+	 * `get-pr-diff --outputFile <path>` escape hatch.
+	 */
+	cliOnly?: boolean;
+	/**
 	 * CLI environment variable that can auto-populate this parameter.
 	 * Maps to `env` in oclif `Flags` definition.
 	 *

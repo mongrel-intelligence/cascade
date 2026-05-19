@@ -148,6 +148,14 @@ New domain commands should not add branches in these helpers. They declare behav
 
 Core functions passed to `createCLICommand()` own domain work only. On fatal runtime/API/provider failures they throw, and the shared factory converts that exception into the structured `{"success":false,"error":{"type":"runtime","message":"..."}}` stdout envelope plus exit code 1. A returned value is always serialized as successful `data`, so gadgets must not return sentinel error strings such as `Error reading work item: ...` for fatal failures. Non-fatal command states that are part of the contract, such as guarded PM move no-ops or friction retry queueing, remain successful returns.
 
+### Shell-safety contract (MNG-1059)
+
+cascade-tools commands that accept text bodies, descriptions, or markdown payloads declare a `--*-file <path>` companion via `cli.fileInputAlternatives` (`--body-file`, `--text-file`, `--description-file`, `--details-file`, `--comments-file`). Agents are instructed to prefer the file form for any content containing backticks, code fences, `$(...)`, or newlines — shells expand those tokens even inside single quotes when the command is layered through `bash -c`, and newlines break argv parsing.
+
+**Single-stdin-consumer invariant.** stdin (fd 0) can only be drained once per process. The shared CLI factory at `src/gadgets/shared/cli/params.ts` (`rejectMultipleStdinConsumers`) scans file-input flags for the literal `-` value and rejects any invocation with two or more stdin consumers — *before* any `readFileSync(0, ...)` call. The rejection emits a structured `flag-parse` error envelope so the agent can self-correct on the next attempt (write one payload to a temp file via `--*-file <path>` and stream the other via `--*-file -`). Direct file paths remain pairwise-compatible; only the dual-stdin combination is blocked.
+
+**Large-diff escape hatch.** `cascade-tools scm get-pr-diff` accepts an optional `--outputFile <path>` flag (`cliOnly: true`). When set, the full multiline Markdown diff is written to disk and stdout contains only a compact summary `{outputFile, fileCount, bytes, pathFilter}`. This sidesteps terminal-truncation issues with one-line JSON patches that can be hundreds of kilobytes (see MNG-1045). Default behavior is preserved: without `--outputFile`, `get-pr-diff` returns the formatted Markdown directly.
+
 ## Session State
 
 `src/gadgets/sessionState.ts`

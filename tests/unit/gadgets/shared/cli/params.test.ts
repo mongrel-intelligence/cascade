@@ -6,7 +6,10 @@ import { Writable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ErrorSink } from '../../../../../src/gadgets/shared/cli/errorSink.js';
-import { resolveDirectParams } from '../../../../../src/gadgets/shared/cli/params.js';
+import {
+	rejectMultipleStdinConsumers,
+	resolveDirectParams,
+} from '../../../../../src/gadgets/shared/cli/params.js';
 import type {
 	CLIAutoResolved,
 	FileInputAlternative,
@@ -171,5 +174,134 @@ describe('CLI parameter resolution', () => {
 				makeSink(),
 			),
 		).toThrow('exit');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1059: multiple-stdin-consumer guard
+// ---------------------------------------------------------------------------
+
+describe('rejectMultipleStdinConsumers (MNG-1059)', () => {
+	const fileAlts: FileInputAlternative[] = [
+		{ paramName: 'body', fileFlag: 'body-file' },
+		{ paramName: 'comments', fileFlag: 'comments-file', parseAs: 'json' },
+	];
+
+	it('no-ops when no file flags are set', () => {
+		const sink = makeSink();
+		rejectMultipleStdinConsumers(fileAlts, { body: 'hello' }, sink);
+		expect(sink.exit).not.toHaveBeenCalled();
+	});
+
+	it('no-ops when only one file flag is set to "-"', () => {
+		const sink = makeSink();
+		rejectMultipleStdinConsumers(
+			fileAlts,
+			{ 'body-file': '-', 'comments-file': '/tmp/comments.json' },
+			sink,
+		);
+		expect(sink.exit).not.toHaveBeenCalled();
+	});
+
+	it('no-ops when both file flags resolve to real paths (not stdin)', () => {
+		const sink = makeSink();
+		rejectMultipleStdinConsumers(
+			fileAlts,
+			{ 'body-file': '/tmp/body.md', 'comments-file': '/tmp/comments.json' },
+			sink,
+		);
+		expect(sink.exit).not.toHaveBeenCalled();
+	});
+
+	it('emits flag-parse envelope when two file flags are both set to "-"', () => {
+		const stdoutChunks: string[] = [];
+		const sink: ErrorSink = {
+			stdout: new Writable({
+				write(chunk, _enc, cb) {
+					stdoutChunks.push(chunk.toString());
+					cb();
+				},
+			}),
+			stderr: new Writable({
+				write(_chunk, _enc, cb) {
+					cb();
+				},
+			}),
+			exit: vi.fn<(code: number) => never>(() => {
+				throw new Error('exit');
+			}),
+		};
+
+		expect(() =>
+			rejectMultipleStdinConsumers(fileAlts, { 'body-file': '-', 'comments-file': '-' }, sink),
+		).toThrow('exit');
+
+		expect(sink.exit).toHaveBeenCalledWith(1);
+		const envelope = JSON.parse(stdoutChunks.join('').trim()) as {
+			success: boolean;
+			error: { type: string; flag?: string; message?: string; hint?: string };
+		};
+		expect(envelope.success).toBe(false);
+		expect(envelope.error.type).toBe('flag-parse');
+		expect(envelope.error.flag).toBe('body-file,comments-file');
+		expect(envelope.error.message).toContain('stdin can only be drained once');
+		expect(envelope.error.hint).toContain('temp file');
+	});
+
+	it('does not emit when only one of three file flags is "-"', () => {
+		const sink = makeSink();
+		const alts: FileInputAlternative[] = [
+			{ paramName: 'body', fileFlag: 'body-file' },
+			{ paramName: 'comments', fileFlag: 'comments-file' },
+			{ paramName: 'description', fileFlag: 'description-file' },
+		];
+		rejectMultipleStdinConsumers(
+			alts,
+			{
+				'body-file': '-',
+				'comments-file': '/tmp/c.json',
+				'description-file': '/tmp/d.md',
+			},
+			sink,
+		);
+		expect(sink.exit).not.toHaveBeenCalled();
+	});
+
+	it('emits when three file flags all set to "-"', () => {
+		const stdoutChunks: string[] = [];
+		const sink: ErrorSink = {
+			stdout: new Writable({
+				write(chunk, _enc, cb) {
+					stdoutChunks.push(chunk.toString());
+					cb();
+				},
+			}),
+			stderr: new Writable({
+				write(_chunk, _enc, cb) {
+					cb();
+				},
+			}),
+			exit: vi.fn<(code: number) => never>(() => {
+				throw new Error('exit');
+			}),
+		};
+		const alts: FileInputAlternative[] = [
+			{ paramName: 'body', fileFlag: 'body-file' },
+			{ paramName: 'comments', fileFlag: 'comments-file' },
+			{ paramName: 'description', fileFlag: 'description-file' },
+		];
+
+		expect(() =>
+			rejectMultipleStdinConsumers(
+				alts,
+				{ 'body-file': '-', 'comments-file': '-', 'description-file': '-' },
+				sink,
+			),
+		).toThrow('exit');
+
+		const envelope = JSON.parse(stdoutChunks.join('').trim()) as {
+			error: { flag?: string };
+		};
+		expect(envelope.error.flag).toBe('body-file,comments-file,description-file');
 	});
 });

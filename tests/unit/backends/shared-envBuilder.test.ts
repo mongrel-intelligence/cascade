@@ -194,6 +194,52 @@ describe('buildEngineEnv', () => {
 		});
 	});
 
+	// MNG-1055: the worker image exports PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+	// so the prebuilt Chromium cache is reachable. The native-tool env filter
+	// must forward that exact variable to engine subprocesses; otherwise
+	// `playwright launch chromium` in agent shell commands fails with
+	// `Executable doesn't exist` and the cache is wasted. Pinning this in the
+	// env-builder test (not just the env-filter test) catches future
+	// regressions where someone tightens the engine-specific allowlist
+	// without touching the shared one.
+	describe('PLAYWRIGHT_BROWSERS_PATH propagation (MNG-1055)', () => {
+		it('forwards PLAYWRIGHT_BROWSERS_PATH from process.env through buildEngineEnv', () => {
+			process.env.PLAYWRIGHT_BROWSERS_PATH = '/ms-playwright';
+			const env = buildEngineEnv({ allowedEnvExact: new Set() });
+			expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+		});
+
+		it('forwards PLAYWRIGHT_BROWSERS_PATH for every engine allowlist shape', () => {
+			process.env.PLAYWRIGHT_BROWSERS_PATH = '/ms-playwright';
+
+			const claudeEnv = buildEngineEnv({
+				allowedEnvExact: new Set(['CLAUDE_CODE_OAUTH_TOKEN', 'ANTHROPIC_API_KEY']),
+			});
+			expect(claudeEnv.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+
+			const codexEnv = buildEngineEnv({
+				allowedEnvExact: new Set(['OPENAI_API_KEY']),
+				extraVars: { CI: 'true', CODEX_DISABLE_UPDATE_NOTIFIER: '1' },
+			});
+			expect(codexEnv.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+
+			const opencodeEnv = buildEngineEnv({
+				allowedEnvExact: new Set(['OPENAI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY']),
+				extraVars: { CI: 'true' },
+			});
+			expect(opencodeEnv.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+		});
+
+		it('keeps blocked secret vars filtered even with PLAYWRIGHT_BROWSERS_PATH present', () => {
+			process.env.PLAYWRIGHT_BROWSERS_PATH = '/ms-playwright';
+			const env = buildEngineEnv({ allowedEnvExact: new Set() });
+			expect(env.PLAYWRIGHT_BROWSERS_PATH).toBe('/ms-playwright');
+			expect(env.DATABASE_URL).toBeUndefined();
+			expect(env.REDIS_URL).toBeUndefined();
+			expect(env.MY_SECRET).toBeUndefined();
+		});
+	});
+
 	describe('security invariants', () => {
 		it('always blocks all SHARED_BLOCKED_ENV_EXACT vars regardless of allowedEnvExact', () => {
 			// Even if someone accidentally adds a blocked key to the engine allowlist,

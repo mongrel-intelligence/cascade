@@ -365,6 +365,38 @@ describe('createGadgetClass', () => {
 		expect(instance.examples?.[0]?.comment).toBe('Basic usage');
 	});
 
+	it('filters examples that use CLI-only params out of SDK gadget examples', () => {
+		const coreFn: GadgetCoreFn = async () => 'ok';
+		const def: ToolDefinition = {
+			name: 'CliOnlyExampleTool',
+			description: 'A tool with a CLI-only example',
+			parameters: {
+				value: { type: 'string', describe: 'A value', required: true },
+				outputFile: {
+					type: 'string',
+					describe: 'Write output to a file',
+					optional: true,
+					cliOnly: true,
+				},
+			},
+			examples: [
+				{
+					params: { value: 'visible' },
+					comment: 'SDK-safe example',
+				},
+				{
+					params: { value: 'cli', outputFile: '/tmp/out.txt' },
+					comment: 'CLI-only example',
+				},
+			],
+		};
+		const GadgetClass = createGadgetClass(def, coreFn);
+
+		const instance = new GadgetClass();
+		expect(instance.examples).toHaveLength(1);
+		expect(instance.examples?.[0]?.params).toEqual({ value: 'visible' });
+	});
+
 	it('handles definition with no examples', () => {
 		const coreFn: GadgetCoreFn = async () => 'ok';
 		const noExamplesDef: ToolDefinition = {
@@ -1066,6 +1098,149 @@ describe('createCLICommand — spec 014 additions', () => {
 });
 
 // ---------------------------------------------------------------------------
+// MNG-1059: multiple-stdin-consumer rejection at the factory level
+// ---------------------------------------------------------------------------
+
+describe('createCLICommand — multiple stdin consumer rejection (MNG-1059)', () => {
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	const dualFileInputDef: ToolDefinition = {
+		name: 'TestReviewWithBoth',
+		description: 'Review a PR with both body and comments file inputs.',
+		parameters: {
+			body: { type: 'string', describe: 'Body', required: true },
+			comments: {
+				type: 'array',
+				items: 'object',
+				describe: 'Inline comments',
+				optional: true,
+			},
+		},
+		cli: {
+			fileInputAlternatives: [
+				{ paramName: 'body', fileFlag: 'body-file' },
+				{
+					paramName: 'comments',
+					fileFlag: 'comments-file',
+					parseAs: 'json',
+				},
+			],
+		},
+	};
+
+	it('rejects --body-file - and --comments-file - with a flag-parse envelope', async () => {
+		const coreFn = vi.fn();
+		const CommandClass = createCLICommand(dualFileInputDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: undefined,
+				comments: undefined,
+				'body-file': '-',
+				'comments-file': '-',
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		const logSpy = vi.spyOn(instance, 'log').mockImplementation(() => {});
+		vi.spyOn(instance, 'exit').mockImplementation(() => {
+			throw new Error('exit');
+		});
+
+		await expect(instance.execute()).rejects.toThrow('exit');
+
+		// Core function must NOT have been called — the guard runs before any
+		// stdin read, so neither payload gets consumed (and corrupted).
+		expect(coreFn).not.toHaveBeenCalled();
+
+		const logged = logSpy.mock.calls.map((c) => c[0]).join('\n');
+		const jsonLine = logged.split('\n').find((l) => l.startsWith('{')) ?? '';
+		const parsed = JSON.parse(jsonLine) as {
+			success: boolean;
+			error: { type: string; flag?: string; message?: string; hint?: string };
+		};
+		expect(parsed.success).toBe(false);
+		expect(parsed.error.type).toBe('flag-parse');
+		expect(parsed.error.flag).toBe('body-file,comments-file');
+		expect(parsed.error.message).toContain('stdin can only be drained once');
+		expect(parsed.error.hint).toContain('temp file');
+	});
+
+	it('allows --body-file - paired with --comments-file <path>', async () => {
+		mockReadFileSync.mockImplementation((target: unknown) => {
+			if (target === 0) return 'stdin body';
+			if (target === '/tmp/comments.json') return '[{"path":"x.ts","line":1,"body":"nit"}]';
+			throw new Error(`unexpected readFileSync target: ${String(target)}`);
+		});
+		let capturedParams: Record<string, unknown> = {};
+		const coreFn: CLICoreFn = async (params) => {
+			capturedParams = params as Record<string, unknown>;
+			return 'ok';
+		};
+		const CommandClass = createCLICommand(dualFileInputDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: undefined,
+				comments: undefined,
+				'body-file': '-',
+				'comments-file': '/tmp/comments.json',
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		vi.spyOn(instance, 'log').mockImplementation(() => {});
+
+		await instance.execute();
+
+		expect(capturedParams.body).toBe('stdin body');
+		expect(capturedParams.comments).toEqual([{ path: 'x.ts', line: 1, body: 'nit' }]);
+	});
+
+	it('allows --body-file <path> paired with --comments-file -', async () => {
+		mockReadFileSync.mockImplementation((target: unknown) => {
+			if (target === 0) return '[{"path":"x.ts","line":1,"body":"nit"}]';
+			if (target === '/tmp/body.md') return 'review body from file';
+			throw new Error(`unexpected readFileSync target: ${String(target)}`);
+		});
+		let capturedParams: Record<string, unknown> = {};
+		const coreFn: CLICoreFn = async (params) => {
+			capturedParams = params as Record<string, unknown>;
+			return 'ok';
+		};
+		const CommandClass = createCLICommand(dualFileInputDef, coreFn);
+		const instance = new CommandClass([], {});
+
+		vi.spyOn(instance, 'parse').mockResolvedValue({
+			flags: {
+				body: undefined,
+				comments: undefined,
+				'body-file': '/tmp/body.md',
+				'comments-file': '-',
+			},
+			args: {},
+			argv: [],
+			raw: [],
+		} as unknown as Awaited<ReturnType<typeof instance.parse>>);
+
+		vi.spyOn(instance, 'log').mockImplementation(() => {});
+
+		await instance.execute();
+
+		expect(capturedParams.body).toBe('review body from file');
+		expect(capturedParams.comments).toEqual([{ path: 'x.ts', line: 1, body: 'nit' }]);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // generateToolManifest tests
 // ---------------------------------------------------------------------------
 
@@ -1405,5 +1580,99 @@ describe('generateToolManifest — widened fields (spec 014)', () => {
 		const manifest = generateToolManifest(def);
 		const commentsParam = manifest.parameters.comments as { example?: unknown };
 		expect(commentsParam).not.toHaveProperty('example');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1059: manifest threads fileInputFor / fileInputAlternative cross-refs
+// ---------------------------------------------------------------------------
+
+describe('generateToolManifest — file-input metadata threading (MNG-1059)', () => {
+	it('threads fileInputAlternative onto the direct text parameter when a file companion is declared', () => {
+		const def: ToolDefinition = {
+			name: 'PostPRComment',
+			description: 'Post a PR comment.',
+			parameters: {
+				prNumber: { type: 'number', describe: 'PR number', required: true },
+				body: { type: 'string', describe: 'The comment body', required: true },
+			},
+			cli: {
+				fileInputAlternatives: [
+					{
+						paramName: 'body',
+						fileFlag: 'body-file',
+						description: 'Read body from file (use - for stdin)',
+					},
+				],
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const bodyParam = manifest.parameters.body as { fileInputAlternative?: string };
+		expect(bodyParam.fileInputAlternative).toBe('body-file');
+	});
+
+	it('threads fileInputFor onto the synthesized --*-file flag entry', () => {
+		const def: ToolDefinition = {
+			name: 'PostPRComment',
+			description: 'Post a PR comment.',
+			parameters: {
+				body: { type: 'string', describe: 'The comment body', required: true },
+			},
+			cli: {
+				fileInputAlternatives: [{ paramName: 'body', fileFlag: 'body-file' }],
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const bodyFileParam = manifest.parameters['body-file'] as { fileInputFor?: string };
+		expect(bodyFileParam.fileInputFor).toBe('body');
+	});
+
+	it('does not attach fileInputAlternative when no file companion is declared', () => {
+		const def: ToolDefinition = {
+			name: 'Simple',
+			description: 'Simple tool.',
+			parameters: {
+				body: { type: 'string', describe: 'body', required: true },
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const bodyParam = manifest.parameters.body as { fileInputAlternative?: string };
+		expect(bodyParam.fileInputAlternative).toBeUndefined();
+	});
+
+	it('handles multiple file companions in a single definition', () => {
+		const def: ToolDefinition = {
+			name: 'ReviewPR',
+			description: 'Review a PR.',
+			parameters: {
+				body: { type: 'string', describe: 'Review body', required: true },
+				comments: {
+					type: 'array',
+					items: 'object',
+					describe: 'Inline comments',
+					optional: true,
+				},
+			},
+			cli: {
+				fileInputAlternatives: [
+					{ paramName: 'body', fileFlag: 'body-file' },
+					{ paramName: 'comments', fileFlag: 'comments-file', parseAs: 'json' },
+				],
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		const bodyParam = manifest.parameters.body as { fileInputAlternative?: string };
+		const commentsParam = manifest.parameters.comments as { fileInputAlternative?: string };
+		const bodyFile = manifest.parameters['body-file'] as { fileInputFor?: string };
+		const commentsFile = manifest.parameters['comments-file'] as { fileInputFor?: string };
+
+		expect(bodyParam.fileInputAlternative).toBe('body-file');
+		expect(commentsParam.fileInputAlternative).toBe('comments-file');
+		expect(bodyFile.fileInputFor).toBe('body');
+		expect(commentsFile.fileInputFor).toBe('comments');
 	});
 });

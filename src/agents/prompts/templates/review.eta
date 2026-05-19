@@ -198,7 +198,9 @@ Use CreatePRReview with:
 - `body`: Summary of findings (or "LGTM" if no issues)
 - `comments`: Inline comments for specific issues
 
-**CRITICAL**: Inline comments can ONLY be placed on files in the PR diff. If you comment on a file path not in the diff, or use line numbers outside the changed ranges, the entire review will fail. Only add inline comments for files you saw in GetPRDiffContext output or files you verified by fetching a skipped file on demand via `cascade-tools scm get-pr-diff --path`.
+**CRITICAL**: Inline comments can ONLY be placed on files in the PR diff. If you comment on a file path not in the diff, or use line numbers outside the changed ranges, the entire review will fail. Only add inline comments for files you saw in GetPRDiffContext output or files you verified by fetching a skipped file on demand via `cascade-tools scm get-pr-diff --path`. For very large or one-line JSON diffs that would truncate stdout, add `--outputFile /tmp/pr-diff.md` and then `Read` that file — the CLI returns a compact summary while the full diff stays on disk.
+
+**Submitting markdown review bodies with backticks, code fences, or multi-line content**: pass `--body-file <path>` (or `--body-file -` heredoc) instead of inline `--body '...'` — shells expand backticks and `$(...)` even inside quotes, and newlines fight argv parsing. If you also need to pass `--comments` JSON, write the body to a temp file and stream the comments via stdin: `--body-file /tmp/body.md --comments-file -` (only one `--*-file -` per command — stdin can only be drained once).
 
 ### Review Body Format
 

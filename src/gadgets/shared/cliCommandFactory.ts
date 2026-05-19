@@ -15,7 +15,11 @@ import { deriveCLICommand } from './cli/commandNames.js';
 import { buildSink } from './cli/errorSink.js';
 import { buildOclifExamples } from './cli/examples.js';
 import { buildFlagsRecord, collectBooleanFlagNames, collectCandidateFlags } from './cli/flags.js';
-import { resolveDirectParams, resolveGitRemoteParams } from './cli/params.js';
+import {
+	rejectMultipleStdinConsumers,
+	resolveDirectParams,
+	resolveGitRemoteParams,
+} from './cli/params.js';
 import { classifyParseError, isNonexistentFlagError, suggestFlag } from './cli/parseErrors.js';
 import type { ParsedFlags } from './cli/types.js';
 import { emitCliError } from './errorEnvelope.js';
@@ -128,6 +132,12 @@ export function createCLICommand(
 				throw err;
 			}
 			const parsedFlags = flags as ParsedFlags;
+
+			// Reject `--*-file -` for two or more file-input flags *before* the
+			// first stdin read, otherwise the first consumer drains fd 0 and the
+			// second silently gets an empty payload (MNG-1059).
+			rejectMultipleStdinConsumers(fileInputAlts, parsedFlags, sink);
+
 			const resolvedParams = resolveDirectParams(
 				def,
 				parsedFlags,

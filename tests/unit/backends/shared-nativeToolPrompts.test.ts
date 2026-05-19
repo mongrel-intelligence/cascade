@@ -433,6 +433,124 @@ describe('buildToolGuidance', () => {
 			expect(paramLine).not.toContain('#');
 		});
 	});
+
+	// -------------------------------------------------------------------------
+	// MNG-1059: shell-sensitive multiline example suppression
+	// -------------------------------------------------------------------------
+	describe('formatParam — shell-sensitive example suppression (MNG-1059)', () => {
+		it('suppresses inline example for direct text param when example contains backticks AND a file-input companion is declared', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						body: {
+							type: 'string',
+							required: true,
+							example: 'Use `npm test` to verify',
+							fileInputAlternative: 'body-file',
+						},
+						'body-file': {
+							type: 'string',
+							fileInputFor: 'body',
+							description: 'Read body from file (use - for stdin)',
+						},
+					},
+				}),
+			]);
+
+			expect(result).not.toContain("--body 'Use `npm test` to verify'");
+			expect(result).toContain('--body-file <path>');
+			expect(result).toContain('shell-sensitive');
+		});
+
+		it('suppresses inline example for direct text param when example contains $(...) AND a file-input companion is declared', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						details: {
+							type: 'string',
+							required: true,
+							example: 'Detected $(whoami) running unexpectedly',
+							fileInputAlternative: 'details-file',
+						},
+						'details-file': {
+							type: 'string',
+							fileInputFor: 'details',
+							description: 'Read details from file (use - for stdin)',
+						},
+					},
+				}),
+			]);
+
+			expect(result).not.toContain("'Detected $(whoami)");
+			expect(result).toContain('--details-file <path>');
+		});
+
+		it('suppresses inline example for direct text param when example contains a newline AND a file-input companion is declared', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						body: {
+							type: 'string',
+							required: true,
+							example: '## Summary\n\nMultiline content',
+							fileInputAlternative: 'body-file',
+						},
+						'body-file': {
+							type: 'string',
+							fileInputFor: 'body',
+							description: 'Read body from file (use - for stdin)',
+						},
+					},
+				}),
+			]);
+
+			expect(result).not.toContain("'## Summary");
+			expect(result).toContain('--body-file <path>');
+		});
+
+		it('keeps inline example for shell-safe scalar values even when a file companion exists', () => {
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						body: {
+							type: 'string',
+							required: true,
+							example: 'LGTM',
+							fileInputAlternative: 'body-file',
+						},
+						'body-file': {
+							type: 'string',
+							fileInputFor: 'body',
+							description: 'Read body from file (use - for stdin)',
+						},
+					},
+				}),
+			]);
+
+			// LGTM is shell-safe — renderer keeps it inline (bare, no quotes).
+			expect(result).toContain('# example: --body LGTM');
+			expect(result).not.toContain('--body-file <path>  #');
+		});
+
+		it('keeps inline example for shell-sensitive content when NO file-input companion is declared', () => {
+			// Without a fileInputAlternative the renderer has no safer flag to
+			// redirect to — preserve the original behavior so existing gadgets
+			// without a file companion still render their examples.
+			const result = buildToolGuidance([
+				makeManifest({
+					parameters: {
+						body: {
+							type: 'string',
+							required: true,
+							example: 'Use `code` here',
+						},
+					},
+				}),
+			]);
+
+			expect(result).toContain("--body 'Use `code` here'");
+		});
+	});
 });
 
 // ───────── buildSystemPrompt ─────────
@@ -477,6 +595,97 @@ describe('buildSystemPrompt', () => {
 	it('blocks pseudo tool call instruction is included', () => {
 		const result = buildSystemPrompt('Agent prompt.', []);
 		expect(result).toContain('Never write pseudo tool calls');
+	});
+
+	// MNG-1055: the worker image guarantees a baseline of native-session
+	// tools — Python shim, jq/rg/fd/git/tmux/cascade-tools, and a shared
+	// Playwright Chromium cache at $PLAYWRIGHT_BROWSERS_PATH. The system
+	// prompt must communicate that contract so agents reach for these
+	// directly instead of trying to install or work around them. Pinned
+	// here so future trim-the-prompt edits do not silently drop the
+	// guarantees that the friction clusters (MNG-887…1044, MNG-998,
+	// MNG-1048) were originally filed about.
+	describe('runtime-tool guarantees (MNG-1055)', () => {
+		it('lists Python shim guarantee with both python and python3 names', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('Guaranteed runtime tools');
+			expect(result).toContain('`python`');
+			expect(result).toContain('`python3`');
+		});
+
+		it('lists the other baseline shell tools agents should reach for', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('`jq`');
+			expect(result).toContain('`rg`');
+			expect(result).toContain('`fd`');
+			expect(result).toContain('`git`');
+			expect(result).toContain('`tmux`');
+			expect(result).toContain('`cascade-tools`');
+		});
+
+		it('points at the shared Playwright Chromium cache via PLAYWRIGHT_BROWSERS_PATH', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('Playwright');
+			expect(result).toContain('$PLAYWRIGHT_BROWSERS_PATH');
+		});
+
+		it('runtime guarantees render even when no cascade-tools are wired', () => {
+			// The guarantees are part of the static execution rules, not the
+			// CASCADE Tools section — so they render whether or not the
+			// caller passes a tool manifest. This keeps the contract visible
+			// for engines that mount zero cascade-tools (early debug runs).
+			const noTools = buildSystemPrompt('Agent prompt.', []);
+			const withTools = buildSystemPrompt('Agent prompt.', [makeManifest()]);
+			expect(noTools).toContain('Guaranteed runtime tools');
+			expect(withTools).toContain('Guaranteed runtime tools');
+		});
+
+		it('does not alter the rendered cascade-tools CLI documentation', () => {
+			// Pins that the prompt addition is purely additive — the
+			// CreatePRReview / ReadWorkItem command bodies the generator
+			// emits are unchanged. Catches accidental reorderings that
+			// would push agents back to the pre-014 pseudo-tool surface.
+			const result = buildSystemPrompt('Agent prompt.', [makeManifest({ name: 'ReadWorkItem' })]);
+			expect(result).toContain('### ReadWorkItem');
+			expect(result).toContain('cascade-tools pm read-work-item');
+			expect(result).toContain('--workItemId <string>');
+		});
+	});
+
+	// MNG-1059: the cascade-tools shell-safety rules must be visible in the
+	// rendered system prompt so agents know to prefer --*-file paths and to
+	// avoid passing two stdin consumers in a single command.
+	describe('cascade-tools shell-safety rules (MNG-1059)', () => {
+		it('renders the shell-safety section header', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('### cascade-tools shell-safety rules');
+		});
+
+		it('tells agents to prefer --*-file <path> for markdown / multiline / backticks', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('--body-file');
+			expect(result).toContain('markdown');
+			expect(result).toContain('multiline');
+		});
+
+		it('warns about the one-stdin-consumer invariant', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('Only **one**');
+			expect(result).toContain('stdin (fd 0)');
+			expect(result).toContain('drained once');
+		});
+
+		it('shows the heredoc pattern for one payload', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('post-pr-comment');
+			expect(result).toContain('--body-file -');
+		});
+
+		it('shows the two-payload pattern (one temp file + one heredoc)', () => {
+			const result = buildSystemPrompt('Agent prompt.', []);
+			expect(result).toContain('create-pr-review');
+			expect(result).toContain('--comments-file -');
+		});
 	});
 });
 

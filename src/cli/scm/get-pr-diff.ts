@@ -8,5 +8,6 @@ export default createCLICommand(getPRDiffDef, async (params) => {
 		params.repo as string,
 		params.prNumber as number,
 		params.path as string | undefined,
+		params.outputFile as string | undefined,
 	);
 });

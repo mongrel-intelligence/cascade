@@ -86,6 +86,16 @@ export const SHARED_ALLOWED_ENV_EXACT = new Set([
 	'NO_COLOR',
 	'TERM_PROGRAM',
 	'COLORTERM',
+
+	// Worker-image runtime baseline (MNG-1055). The Docker image bakes a
+	// shared Playwright Chromium cache at /ms-playwright and exports
+	// `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`. Native-tool engines sanitize
+	// subprocess env via this allowlist before spawning shell commands, so
+	// without an exact-match entry the var is dropped and `playwright launch
+	// chromium` re-downloads (or fails when offline). Only the exact name is
+	// allowlisted — broad `PLAYWRIGHT_*` prefix matching would weaken the
+	// defense-in-depth posture for the rest of Playwright's env surface.
+	'PLAYWRIGHT_BROWSERS_PATH',
 ]);
 
 /** Prefix patterns — any var starting with one of these passes through. */

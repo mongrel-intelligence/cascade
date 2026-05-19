@@ -61,6 +61,20 @@ cli: {
 
 `-` as the file path reads from stdin. The generated flag is always optional (the direct flag remains accepted).
 
+**One-stdin-consumer rule (MNG-1059).** stdin (fd 0) can only be drained once per process. If a command declares two file-input alternatives and the agent passes `--body-file - --comments-file -` in one invocation, the first `readFileSync(0, ...)` consumes every byte and the second consumer silently gets an empty string — one of the agent's payloads is dropped without any error.
+
+The shared CLI factory rejects this combination structurally *before* any read occurs: it emits a `flag-parse` envelope with `error.flag: 'body-file,comments-file'` and a hint to write one payload to a temp file. Direct file paths remain compatible — `--body-file - --comments-file /tmp/comments.json` and `--body-file /tmp/body.md --comments-file -` both work as before. The guard is automatic; gadget authors do not call it directly.
+
+Description text on `--*-file` flags should explicitly call out markdown / multiline / backticks / `$(...)` so the manifest renderer and `--help` output steer agents toward the file form before they hit a quoting bug. The single-stdin rule is automatically surfaced in the rendered system prompt under "cascade-tools shell-safety rules"; per-command examples should also model the safe pattern when relevant.
+
+### `cliOnly: true` on a parameter
+
+`ParameterDefinition.cliOnly` flags a parameter as a CLI-only surface — included in the CLI flags and in the agent-facing tool manifest (so the prompt shows it), but **excluded** from the Zod schema the SDK Gadget exposes. Use this for output destination flags that have no meaningful in-process equivalent.
+
+Reference: `getPRDiffDef.parameters.outputFile` in `src/gadgets/github/definitions.ts`. When `--outputFile <path>` is set, the CLI writes the full Markdown diff to disk and returns a compact summary (`{outputFile, fileCount, bytes, pathFilter}`) instead of pumping the full multi-megabyte payload through stdout. The SDK gadget would have no clean way to deliver that file back through its return-string contract, so the flag is marked `cliOnly`.
+
+`cliOnly` is mutually exclusive with `gadgetOnly` — the former excludes from the gadget; the latter excludes from the CLI + manifest.
+
 ### `examples`
 
 A list of `{ params, comment, output? }` invocations. The first example that populates a given parameter becomes that parameter's **concrete example**, surfaced in three places:

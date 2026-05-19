@@ -39,13 +39,22 @@ jobs:
           docker run --rm ${{ env.ROUTER_IMAGE }}:dev-${{ github.sha }} \
             node --check dist/router/index.js
 
-      - name: Build and push worker image
+      - name: Build worker image
         run: |
           docker build \
             --label org.opencontainers.image.revision=${{ github.sha }} \
             -f Dockerfile.worker \
             -t ${{ env.WORKER_IMAGE }}:dev \
             -t ${{ env.WORKER_IMAGE }}:dev-${{ github.sha }} .
+
+      # MNG-1055: gate the dev worker push on the same runtime smoke test
+      # CI runs so dev never publishes an image lacking python, Playwright
+      # Chromium, or a working PLAYWRIGHT_BROWSERS_PATH.
+      - name: Smoke-test worker runtime tools
+        run: WORKER_IMAGE=${{ env.WORKER_IMAGE }}:dev-${{ github.sha }} tests/docker/worker-runtime-tools/run-test.sh
+
+      - name: Push worker image
+        run: |
           docker push ${{ env.WORKER_IMAGE }}:dev
           docker push ${{ env.WORKER_IMAGE }}:dev-${{ github.sha }}
 

@@ -136,6 +136,16 @@ jobs:
       - name: Build worker image
         run: docker build -f Dockerfile.worker -t cascade-worker:ci-check .
 
+      # MNG-1055: the worker image must include the baseline native-session
+      # runtime (Python shim + Playwright Chromium cache + the env var the
+      # native-tool env filter forwards to agent shells). The smoke script
+      # below fails loudly if any of those are missing — keeps the worker
+      # image aligned with the contract documented in
+      # docs/architecture/05-engine-backends.md and surfaced to agents in
+      # the native-tool prompts.
+      - name: Smoke-test worker runtime tools
+        run: WORKER_IMAGE=cascade-worker:ci-check tests/docker/worker-runtime-tools/run-test.sh
+
   enforce-dev-to-main:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.base_ref == 'main'

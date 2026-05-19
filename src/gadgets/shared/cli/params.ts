@@ -16,6 +16,42 @@ function readFileInput(fileFlagValue: string): string {
 	return fileFlagValue === '-' ? readFileSync(0, 'utf-8') : readFileSync(fileFlagValue, 'utf-8');
 }
 
+/**
+ * Spec MNG-1059: stdin (fd 0) can only be drained once per process. When a
+ * cascade-tools call passes `-` as the path for two or more file-input flags
+ * (e.g. `--body-file - --comments-file -`), the first `readFileSync(0, ...)`
+ * consumes every byte of stdin and the second consumer reads an empty string —
+ * silently truncating one of the agent's payloads. Detect that combination
+ * before any read occurs and emit a structured `flag-parse` envelope the agent
+ * can self-correct from on the next attempt.
+ *
+ * Returns `never` (via `emitCliError`) when two or more file-input flags are
+ * set to `-`; returns normally when at most one is.
+ */
+export function rejectMultipleStdinConsumers(
+	fileInputAlts: readonly FileInputAlternative[],
+	flags: ParsedFlags,
+	sink: ErrorSink,
+): void {
+	const stdinFlags = fileInputAlts
+		.map((a) => a.fileFlag)
+		.filter((fileFlag) => flags[fileFlag] === '-');
+
+	if (stdinFlags.length < 2) return;
+
+	emitCliError({
+		type: 'flag-parse',
+		flag: stdinFlags.join(','),
+		message: `Multiple file-input flags read from stdin: ${stdinFlags
+			.map((f) => `--${f} -`)
+			.join(' and ')}. stdin can only be drained once per process.`,
+		hint: `Pass at most one --*-file -; for the others, write the payload to a temp file and pass --<flag>-file <path>.`,
+		stdout: sink.stdout,
+		stderr: sink.stderr,
+		exit: sink.exit,
+	});
+}
+
 function parseJsonOrError(
 	raw: string,
 	flag: string,

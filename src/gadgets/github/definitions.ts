@@ -148,7 +148,8 @@ If hooks fail, the full output will be shown.`,
 			{
 				paramName: 'body',
 				fileFlag: 'body-file',
-				description: 'Read PR body from file (use - for stdin)',
+				description:
+					'Read PR body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
@@ -240,14 +241,15 @@ export const createPRReviewDef: ToolDefinition = {
 			{
 				paramName: 'body',
 				fileFlag: 'body-file',
-				description: 'Read review body from file (use - for stdin)',
+				description:
+					'Read review body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 			{
 				paramName: 'comments',
 				fileFlag: 'comments-file',
 				parseAs: 'json',
 				description:
-					'Read --comments JSON from file (use - for stdin). Prefer this for long payloads.',
+					'Read --comments JSON from file (use - for stdin). Prefer this for long JSON payloads. Note: cannot pair `--body-file -` AND `--comments-file -` in one invocation — stdin is single-consumer; write one payload to a temp file and pass --*-file <path>.',
 			},
 		],
 	},
@@ -302,7 +304,7 @@ export const getPRDetailsDef: ToolDefinition = {
 export const getPRDiffDef: ToolDefinition = {
 	name: 'GetPRDiff',
 	description:
-		'Get the unified diff of all file changes in a GitHub pull request. Shows each file with additions, deletions, and the patch content.',
+		'Get the unified diff of all file changes in a GitHub pull request. Shows each file with additions, deletions, and the patch content. CLI/native-tool users can pass --outputFile <path> to write large diffs or one-line JSON patches to disk and return a compact summary.',
 	timeoutMs: 30000,
 	parameters: {
 		comment: {
@@ -334,6 +336,14 @@ export const getPRDiffDef: ToolDefinition = {
 				'Optional changed-file path to fetch. Matches either the current filename or previous filename for renames.',
 			optional: true,
 		},
+		outputFile: {
+			type: 'string',
+			describe:
+				'Optional path: when set, write the raw multiline diff text to this file and return a compact JSON summary {outputFile, fileCount, bytes, pathFilter} instead of the full payload. Use this for large diffs / one-line JSON patches that would truncate stdout.',
+			optional: true,
+			cliOnly: true,
+			cliAliases: ['output-file'],
+		},
 	},
 	examples: [
 		{
@@ -344,6 +354,17 @@ export const getPRDiffDef: ToolDefinition = {
 				prNumber: 42,
 			},
 			comment: 'Get all file changes in PR #42',
+		},
+		{
+			params: {
+				comment: 'Reviewing a large single-file diff that would truncate stdout',
+				owner: 'acme',
+				repo: 'myapp',
+				prNumber: 42,
+				path: 'src/big-generated.json',
+				outputFile: '/tmp/pr-42-diff.md',
+			},
+			comment: 'Stream a large diff to disk and read it on demand',
 		},
 	],
 	cli: {
@@ -496,7 +517,8 @@ export const postPRCommentDef: ToolDefinition = {
 			{
 				paramName: 'body',
 				fileFlag: 'body-file',
-				description: 'Read comment body from file (use - for stdin)',
+				description:
+					'Read comment body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
@@ -555,7 +577,8 @@ export const updatePRCommentDef: ToolDefinition = {
 			{
 				paramName: 'body',
 				fileFlag: 'body-file',
-				description: 'Read comment body from file (use - for stdin)',
+				description:
+					'Read comment body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
@@ -620,7 +643,8 @@ export const replyToReviewCommentDef: ToolDefinition = {
 			{
 				paramName: 'body',
 				fileFlag: 'body-file',
-				description: 'Read reply body from file (use - for stdin)',
+				description:
+					'Read reply body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},

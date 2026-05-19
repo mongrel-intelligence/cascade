@@ -6,6 +6,7 @@ import {
 	formatPRDiff,
 	formatPRIssueComments,
 	formatPRReviews,
+	formatSkippedFilesInjection,
 	type PRDiff,
 	type SkippedFile,
 } from '../../../../src/agents/shared/prFormatting.js';
@@ -286,6 +287,19 @@ describe('formatPRIssueComments', () => {
 
 		expect(result).toContain('Comment #1 by @alice');
 		expect(result).toContain('Comment #2 by @bob');
+	});
+});
+
+describe('formatSkippedFilesInjection', () => {
+	it('uses a slash-safe output file path for large skipped diffs', () => {
+		const result = formatSkippedFilesInjection(
+			[{ filename: 'src/big.json', reason: 'patch-too-large' }],
+			1092,
+		);
+
+		expect(result).toContain('--path <path> --outputFile /tmp/pr-diff.md');
+		expect(result).toContain('Read /tmp/pr-diff.md');
+		expect(result).not.toContain('/tmp/diff-<path>.md');
 	});
 });
 

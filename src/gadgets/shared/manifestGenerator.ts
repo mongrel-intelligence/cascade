@@ -98,6 +98,12 @@ export function generateToolManifest(
 ): ToolManifest {
 	const parameters: Record<string, unknown> = {};
 
+	// MNG-1059: build a quick lookup of paramName → fileFlag so the manifest
+	// can tell the prompt renderer "this direct param has a safer file companion."
+	const fileInputAltMap = new Map<string, string>(
+		(def.cli?.fileInputAlternatives ?? []).map((a) => [a.paramName, a.fileFlag]),
+	);
+
 	for (const [name, paramDef] of Object.entries(def.parameters)) {
 		// Skip gadgetOnly params
 		if (paramDef.gadgetOnly) continue;
@@ -108,6 +114,13 @@ export function generateToolManifest(
 			const example = findExampleForParam(def.examples, name);
 			if (example !== undefined) {
 				entry.example = example;
+			}
+			// MNG-1059: point this direct text/array-of-object param at its
+			// safer file companion so the prompt renderer can steer agents away
+			// from shell-sensitive inline values.
+			const safeCompanion = fileInputAltMap.get(name);
+			if (safeCompanion) {
+				entry.fileInputAlternative = safeCompanion;
 			}
 			parameters[name] = entry;
 		}
@@ -122,6 +135,9 @@ export function generateToolManifest(
 			parameters[alt.fileFlag] = {
 				type: 'string',
 				description,
+				// MNG-1059: cross-reference back to the direct text param so the
+				// prompt renderer can group `--body` and `--body-file` semantically.
+				fileInputFor: alt.paramName,
 				// File flags are always optional (they are alternatives to the direct param)
 			};
 		}

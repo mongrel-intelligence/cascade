@@ -107,12 +107,16 @@ function buildZodField(def: ParameterDefinition) {
 
 /**
  * Convert a ParameterMap to a Zod object schema.
- * Gadget schemas include ALL parameters (including gadgetOnly params like `comment`).
+ * Gadget schemas include `gadgetOnly` params (like `comment`) but EXCLUDE
+ * `cliOnly` params (CLI-only output destination flags such as
+ * `get-pr-diff --outputFile`) — those have no meaningful in-process semantics.
  */
 export function buildZodSchema(parameters: ParameterMap) {
 	const shape: Record<string, ReturnType<typeof buildZodField>> = {};
 
 	for (const [name, def] of Object.entries(parameters)) {
+		// MNG-1059: cliOnly params are not part of the SDK gadget surface.
+		if (def.cliOnly) continue;
 		shape[name] = buildZodField(def);
 	}
 
@@ -149,13 +153,20 @@ export type GadgetCoreFn<TParams extends Record<string, unknown> = Record<string
  */
 export function createGadgetClass(def: ToolDefinition, coreFn: GadgetCoreFn): GadgetClass {
 	const schema = buildZodSchema(def.parameters);
+	const cliOnlyParams = new Set(
+		Object.entries(def.parameters)
+			.filter(([, paramDef]) => paramDef.cliOnly)
+			.map(([name]) => name),
+	);
 
 	// Map ToolExample to GadgetExample
-	const examples: GadgetExample<GadgetExampleParams>[] | undefined = def.examples?.map((ex) => ({
-		params: ex.params as GadgetExampleParams,
-		output: ex.output,
-		comment: ex.comment,
-	}));
+	const examples: GadgetExample<GadgetExampleParams>[] | undefined = def.examples
+		?.filter((ex) => !Object.keys(ex.params).some((paramName) => cliOnlyParams.has(paramName)))
+		.map((ex) => ({
+			params: ex.params as GadgetExampleParams,
+			output: ex.output,
+			comment: ex.comment,
+		}));
 
 	const postExecute: GadgetPostExecuteHook | undefined = def.gadgetPostExecute;
 

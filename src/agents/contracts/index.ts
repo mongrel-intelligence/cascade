@@ -49,6 +49,21 @@ export interface ToolManifestParameter {
 	 * prompt renderer and CLI help to show agents a runnable shape.
 	 */
 	example?: unknown;
+	/**
+	 * MNG-1059: the canonical text parameter name this file-input flag is an
+	 * alternative for. Present only on the synthesized `--*-file` manifest
+	 * entries (e.g. `body-file` carries `fileInputFor: 'body'`). The prompt
+	 * renderer uses this to point agents from a shell-sensitive direct flag at
+	 * its safer companion.
+	 */
+	fileInputFor?: string;
+	/**
+	 * MNG-1059: the file-input flag name agents should prefer when the payload
+	 * for this direct parameter contains markdown, multiline text, backticks,
+	 * code fences, `$(...)`, or other shell-sensitive tokens. Present on the
+	 * direct text parameter (e.g. `body` carries `fileInputAlternative: 'body-file'`).
+	 */
+	fileInputAlternative?: string;
 }
 
 /**

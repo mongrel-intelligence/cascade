@@ -301,6 +301,16 @@ describe('getPRDiffDef', () => {
 		expect(getPRDiffDef.parameters.path?.required).toBeUndefined();
 	});
 
+	it('outputFile is CLI-only and accepts the kebab-case alias', () => {
+		const outputFile = getPRDiffDef.parameters.outputFile as {
+			cliOnly?: boolean;
+			cliAliases?: readonly string[];
+		};
+
+		expect(outputFile.cliOnly).toBe(true);
+		expect(outputFile.cliAliases).toEqual(['output-file']);
+	});
+
 	it('generated schema accepts a call without path (full-PR behavior unchanged)', () => {
 		const schema = buildZodSchema(getPRDiffDef.parameters);
 		const result = schema.safeParse({

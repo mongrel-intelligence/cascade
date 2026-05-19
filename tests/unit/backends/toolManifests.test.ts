@@ -167,8 +167,11 @@ describe('getToolManifests', () => {
 			body: { type: 'string', required: true },
 			'body-file': {
 				type: 'string',
-				description: 'Read reply body from file (use - for stdin)',
 			},
 		});
+		const params = replyToReviewComment?.parameters as Record<string, { description?: string }>;
+		// MNG-1059: description now calls out markdown / multiline guidance.
+		expect(params['body-file'].description).toContain('Read reply body from file');
+		expect(params['body-file'].description).toContain('markdown');
 	});
 });

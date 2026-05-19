@@ -67,7 +67,8 @@ export const postCommentDef: ToolDefinition = {
 			{
 				paramName: 'text',
 				fileFlag: 'text-file',
-				description: 'Read comment text from file (use - for stdin)',
+				description:
+					'Read comment text from file (use - for stdin). Strongly preferred over --text for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
@@ -115,7 +116,8 @@ export const updateWorkItemDef: ToolDefinition = {
 			{
 				paramName: 'description',
 				fileFlag: 'description-file',
-				description: 'Read description from file (use - for stdin)',
+				description:
+					'Read description from file (use - for stdin). Strongly preferred over --description for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
@@ -159,7 +161,8 @@ export const createWorkItemDef: ToolDefinition = {
 			{
 				paramName: 'description',
 				fileFlag: 'description-file',
-				description: 'Read description from file (use - for stdin)',
+				description:
+					'Read description from file (use - for stdin). Strongly preferred over --description for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
@@ -216,7 +219,8 @@ export const reportFrictionDef: ToolDefinition = {
 			{
 				paramName: 'details',
 				fileFlag: 'details-file',
-				description: 'Read friction details from file (use - for stdin)',
+				description:
+					'Read friction details from file (use - for stdin). Strongly preferred over --details for markdown / multiline content with backticks, code fences, $(...) or newlines.',
 			},
 		],
 	},
