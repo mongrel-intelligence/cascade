@@ -151,3 +151,71 @@ export function abortedResult(args: {
 	if (args.message) result.message = args.message;
 	return result;
 }
+
+// ─── Checklist mutation result contracts (MNG-1424) ─────────────────────────
+//
+// PM checklist mutations have action-specific outcome statuses (`created`,
+// `updated`, `deleted`) rather than the generic `'ok' | 'no-op' | 'aborted'`
+// outcomes used for work-item/comment mutations. They live in this shared
+// module so consumers can import all PM mutation result shapes from a single
+// surface; `pickTimestamp` / `currentTimestamp` above are reused as-is.
+//
+// Timestamp policy mirrors the parent contract: provider-supplied timestamps
+// win when available; we fall back to `currentTimestamp()` only when the
+// provider's read-back omits an `updatedAt` (e.g. legacy code paths). The
+// mutation itself already succeeded, so the structured result never throws
+// just because the timestamp can't be sourced from the provider.
+
+/**
+ * Result returned by `addChecklist`. Carries the freshly-created checklist's
+ * identity (`checklistId`, `checklistName`), the parent work-item context
+ * (`workItemId`, `workItemUrl`), the action status (`'created'`),
+ * provider-preferred `updatedAt`, the number of items written, and the per-item
+ * IDs the provider surfaced.
+ *
+ * `itemIds` is best-effort — the inline-description providers (Linear, JIRA)
+ * return deterministic hashed IDs from `createChecklistWithItems`, while
+ * Trello's native-checklist per-item fallback path does not surface IDs from
+ * `addChecklistItem`. The field is always present (as an array) so consumers
+ * never branch on `undefined`; it may be empty when the provider did not
+ * return IDs.
+ */
+export interface ChecklistCreatedResult {
+	status: 'created';
+	checklistId: string;
+	checklistName: string;
+	workItemId: string;
+	workItemUrl: string;
+	updatedAt: string;
+	itemCount: number;
+	itemIds: string[];
+}
+
+/**
+ * Result returned by `updateChecklistItem`. Surfaces the work-item context
+ * (`workItemId`, `workItemUrl`), the affected item ID (`checkItemId`), the
+ * resulting boolean state (`complete`), the action status (`'updated'`),
+ * and a provider-preferred `updatedAt`. Used by consumers that want to
+ * confirm both the request was acknowledged AND the resulting state.
+ */
+export interface ChecklistItemUpdatedResult {
+	status: 'updated';
+	workItemId: string;
+	workItemUrl: string;
+	checkItemId: string;
+	complete: boolean;
+	updatedAt: string;
+}
+
+/**
+ * Result returned by `deleteChecklistItem`. Surfaces the work-item context
+ * (`workItemId`, `workItemUrl`), the deleted item ID (`checkItemId`), the
+ * action status (`'deleted'`), and a provider-preferred `updatedAt`.
+ */
+export interface ChecklistItemDeletedResult {
+	status: 'deleted';
+	workItemId: string;
+	workItemUrl: string;
+	checkItemId: string;
+	updatedAt: string;
+}
