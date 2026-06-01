@@ -72,6 +72,25 @@ export const postCommentDef: ToolDefinition = {
 			},
 		],
 	},
+	outputShape: {
+		summary: 'PostComment returns the new or updated progress comment context.',
+		fields: [
+			{
+				name: 'status',
+				type: '"created" | "updated"',
+				description:
+					'`"created"` when a new comment was added; `"updated"` when an existing progress comment was edited.',
+			},
+			{ name: 'id', type: 'string', description: 'Provider-side comment ID.' },
+			{ name: 'workItemId', type: 'string', description: 'Parent work item ID.' },
+			{ name: 'workItemUrl', type: 'string', description: 'Parent work item URL.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 timestamp of when the comment was written.',
+			},
+		],
+	},
 };
 
 export const updateWorkItemDef: ToolDefinition = {
@@ -121,6 +140,42 @@ export const updateWorkItemDef: ToolDefinition = {
 			},
 		],
 	},
+	outputShape: {
+		summary:
+			'UpdateWorkItem returns the affected work item along with the fields that were actually changed.',
+		fields: [
+			{
+				name: 'status',
+				type: '"updated" | "noop"',
+				description:
+					'`"updated"` if the provider accepted at least one field; `"noop"` when no title/description/labels were supplied.',
+			},
+			{ name: 'id', type: 'string', description: 'Work item ID.' },
+			{ name: 'title', type: 'string', description: 'Current title read back from the provider.' },
+			{ name: 'url', type: 'string', description: 'Work item URL.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 timestamp of the update (synthesised on `"noop"`).',
+			},
+			{
+				name: 'changedFields',
+				type: '("title" | "description")[]',
+				description: 'Fields that were sent to the provider; empty array on `"noop"`.',
+			},
+			{
+				name: 'addedLabelIds',
+				type: 'string[]',
+				description: 'Label IDs successfully attached; empty array when no labels were supplied.',
+			},
+			{
+				name: 'message',
+				type: 'string',
+				optional: true,
+				description: 'Optional human-readable note (used on `"noop"`).',
+			},
+		],
+	},
 };
 
 export const createWorkItemDef: ToolDefinition = {
@@ -163,6 +218,36 @@ export const createWorkItemDef: ToolDefinition = {
 				fileFlag: 'description-file',
 				description:
 					'Read description from file (use - for stdin). Strongly preferred over --description for markdown / multiline content with backticks, code fences, $(...) or newlines.',
+			},
+		],
+	},
+	outputShape: {
+		summary: 'CreateWorkItem returns the newly-created work item.',
+		fields: [
+			{
+				name: 'status',
+				type: '"created"',
+				description: 'Always `"created"` when the provider accepted the new work item.',
+			},
+			{ name: 'id', type: 'string', description: 'New work item ID.' },
+			{ name: 'title', type: 'string', description: 'Persisted title.' },
+			{ name: 'url', type: 'string', description: 'Work item URL.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 creation timestamp from the provider.',
+			},
+			{
+				name: 'workflowStatus',
+				type: 'string',
+				optional: true,
+				description: 'Human-readable workflow state when the provider surfaces one on create.',
+			},
+			{
+				name: 'workflowStatusId',
+				type: 'string',
+				optional: true,
+				description: 'Provider-native workflow state ID (Trello list ID, Linear state UUID, etc.).',
 			},
 		],
 	},
@@ -297,6 +382,48 @@ export const moveWorkItemDef: ToolDefinition = {
 				'Backlog-manager moving a freshly-picked item to TODO — guarded so a parallel run that already moved it cannot duplicate the move.',
 		},
 	],
+	outputShape: {
+		summary: 'MoveWorkItem reports whether the provider accepted the move, skipped it, or aborted.',
+		fields: [
+			{
+				name: 'status',
+				type: '"moved" | "noop" | "aborted"',
+				description:
+					'`"moved"` on a successful move; `"noop"` when the work item was already in `destination`; `"aborted"` when `expectedSourceState` did not match the current state.',
+			},
+			{ name: 'id', type: 'string', description: 'Work item ID.' },
+			{ name: 'url', type: 'string', description: 'Work item URL.' },
+			{
+				name: 'destination',
+				type: 'string',
+				description: 'The destination passed to the provider (list ID or status name).',
+			},
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 timestamp; synthesised for `"noop"` and `"aborted"` outcomes.',
+			},
+			{
+				name: 'previousStatus',
+				type: 'string',
+				optional: true,
+				description:
+					'Current human-readable workflow status read back from the provider on the guarded path.',
+			},
+			{
+				name: 'previousStatusId',
+				type: 'string',
+				optional: true,
+				description: 'Native ID of the previous status (Trello list ID, Linear state UUID, etc.).',
+			},
+			{
+				name: 'message',
+				type: 'string',
+				optional: true,
+				description: 'Optional human-readable note explaining the outcome.',
+			},
+		],
+	},
 };
 
 export const addChecklistDef: ToolDefinition = {
@@ -344,6 +471,40 @@ export const addChecklistDef: ToolDefinition = {
 			comment: 'Add implementation steps with descriptions to a JIRA issue',
 		},
 	],
+	outputShape: {
+		summary: 'AddChecklist returns the freshly-created checklist and its item identities.',
+		fields: [
+			{
+				name: 'status',
+				type: '"created"',
+				description: 'Always `"created"` when the provider accepted the checklist write.',
+			},
+			{ name: 'checklistId', type: 'string', description: 'New checklist ID.' },
+			{
+				name: 'checklistName',
+				type: 'string',
+				description: 'Persisted checklist name (matches the `checklistName` argument).',
+			},
+			{ name: 'workItemId', type: 'string', description: 'Parent work item ID.' },
+			{ name: 'workItemUrl', type: 'string', description: 'Parent work item URL.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 timestamp from the provider read-back.',
+			},
+			{
+				name: 'itemCount',
+				type: 'number',
+				description: 'Count of checklist items written by the provider.',
+			},
+			{
+				name: 'itemIds',
+				type: 'string[]',
+				description:
+					"Per-item IDs surfaced by the provider. Best-effort: inline-description providers (Linear, JIRA) return deterministic hashed IDs; Trello's native fallback may return an empty array.",
+			},
+		],
+	},
 };
 
 export const pmUpdateChecklistItemDef: ToolDefinition = {
@@ -379,6 +540,25 @@ export const pmUpdateChecklistItemDef: ToolDefinition = {
 			comment: 'Mark an item as complete',
 		},
 	],
+	outputShape: {
+		summary: 'PMUpdateChecklistItem confirms the resulting checklist item state.',
+		fields: [
+			{ name: 'status', type: '"updated"', description: 'Always `"updated"` on success.' },
+			{ name: 'workItemId', type: 'string', description: 'Parent work item ID.' },
+			{ name: 'workItemUrl', type: 'string', description: 'Parent work item URL.' },
+			{ name: 'checkItemId', type: 'string', description: 'The affected checklist item ID.' },
+			{
+				name: 'complete',
+				type: 'boolean',
+				description: 'Resulting state — `true` for `"complete"`, `false` for `"incomplete"`.',
+			},
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 timestamp from the provider read-back.',
+			},
+		],
+	},
 };
 
 export const pmDeleteChecklistItemDef: ToolDefinition = {
@@ -407,4 +587,18 @@ export const pmDeleteChecklistItemDef: ToolDefinition = {
 			comment: 'Delete a descoped subtask from a JIRA issue',
 		},
 	],
+	outputShape: {
+		summary: 'PMDeleteChecklistItem confirms the removed checklist item.',
+		fields: [
+			{ name: 'status', type: '"deleted"', description: 'Always `"deleted"` on success.' },
+			{ name: 'workItemId', type: 'string', description: 'Parent work item ID.' },
+			{ name: 'workItemUrl', type: 'string', description: 'Parent work item URL.' },
+			{ name: 'checkItemId', type: 'string', description: 'The deleted checklist item ID.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'ISO 8601 timestamp from the provider read-back.',
+			},
+		],
+	},
 };

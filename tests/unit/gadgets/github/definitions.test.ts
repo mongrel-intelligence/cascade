@@ -336,6 +336,88 @@ describe('getPRDiffDef', () => {
 });
 
 // ---------------------------------------------------------------------------
+// MNG-1427: GitHub mutation output-shape coverage
+// ---------------------------------------------------------------------------
+
+describe('GitHub mutation output shapes (MNG-1427)', () => {
+	const MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE: ToolDefinition[] = [
+		createPRDef,
+		createPRReviewDef,
+		postPRCommentDef,
+		updatePRCommentDef,
+		replyToReviewCommentDef,
+	];
+
+	const READ_ONLY_DEFS_WITHOUT_OUTPUT_SHAPE: ToolDefinition[] = [
+		getPRDetailsDef,
+		getPRDiffDef,
+		getPRChecksDef,
+		getPRCommentsDef,
+		getCIRunLogsDef,
+	];
+
+	it('every SCM mutation definition declares an outputShape with at least one field', () => {
+		for (const def of MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE) {
+			expect(def.outputShape, `${def.name} must declare outputShape`).toBeDefined();
+			expect(
+				def.outputShape?.fields.length,
+				`${def.name} outputShape must list at least one field`,
+			).toBeGreaterThan(0);
+		}
+	});
+
+	it('every output-shape field has a non-empty name and type', () => {
+		for (const def of MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE) {
+			for (const field of def.outputShape?.fields ?? []) {
+				expect(typeof field.name).toBe('string');
+				expect(field.name.length).toBeGreaterThan(0);
+				expect(typeof field.type).toBe('string');
+				expect(field.type.length).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	it('read-only SCM definitions do not declare an outputShape', () => {
+		for (const def of READ_ONLY_DEFS_WITHOUT_OUTPUT_SHAPE) {
+			expect(def.outputShape, `${def.name} must NOT declare outputShape`).toBeUndefined();
+		}
+	});
+
+	it('CreatePR output shape mirrors the CreatePRResult contract', () => {
+		const names = createPRDef.outputShape?.fields.map((f) => f.name) ?? [];
+		expect(names).toContain('prNumber');
+		expect(names).toContain('prUrl');
+		expect(names).toContain('repoFullName');
+		expect(names).toContain('alreadyExisted');
+	});
+
+	it('CreatePR pushOutput / commitOutput are optional', () => {
+		const fieldsByName = new Map((createPRDef.outputShape?.fields ?? []).map((f) => [f.name, f]));
+		expect(fieldsByName.get('pushOutput')?.optional).toBe(true);
+		expect(fieldsByName.get('commitOutput')?.optional).toBe(true);
+	});
+
+	it('CreatePRReview output shape includes reviewUrl + inlineCommentCount', () => {
+		const names = createPRReviewDef.outputShape?.fields.map((f) => f.name) ?? [];
+		expect(names).toContain('reviewUrl');
+		expect(names).toContain('inlineCommentCount');
+		expect(names).toContain('event');
+	});
+
+	it('CreatePRReview event type covers the APPROVE / REQUEST_CHANGES / COMMENT union', () => {
+		const event = createPRReviewDef.outputShape?.fields.find((f) => f.name === 'event');
+		expect(event?.type).toContain('APPROVE');
+		expect(event?.type).toContain('REQUEST_CHANGES');
+		expect(event?.type).toContain('COMMENT');
+	});
+
+	it('UpdatePRComment prNumber is `number | null`', () => {
+		const prNumber = updatePRCommentDef.outputShape?.fields.find((f) => f.name === 'prNumber');
+		expect(prNumber?.type).toBe('number | null');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Spec 014 plan 2: createPRReviewDef declarative opt-in
 // ---------------------------------------------------------------------------
 

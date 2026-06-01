@@ -312,4 +312,104 @@ describe('PM gadget definitions', () => {
 			expect(pmDeleteChecklistItemDef.parameters.checkItemId?.required).toBe(true);
 		});
 	});
+
+	// ─── Output shape coverage (MNG-1427) ──────────────────────────────────────
+	describe('output shape coverage (MNG-1427)', () => {
+		const MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE: ToolDefinition[] = [
+			postCommentDef,
+			updateWorkItemDef,
+			createWorkItemDef,
+			moveWorkItemDef,
+			addChecklistDef,
+			pmUpdateChecklistItemDef,
+			pmDeleteChecklistItemDef,
+		];
+
+		const READ_ONLY_DEFS_WITHOUT_OUTPUT_SHAPE: ToolDefinition[] = [
+			readWorkItemDef,
+			listWorkItemsDef,
+		];
+
+		it('every PM mutation definition declares an outputShape with at least one field', () => {
+			for (const def of MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE) {
+				expect(def.outputShape, `${def.name} must declare outputShape`).toBeDefined();
+				expect(
+					def.outputShape?.fields.length,
+					`${def.name} outputShape must list at least one field`,
+				).toBeGreaterThan(0);
+			}
+		});
+
+		it('every output-shape field has a non-empty name and type', () => {
+			for (const def of MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE) {
+				for (const field of def.outputShape?.fields ?? []) {
+					expect(typeof field.name).toBe('string');
+					expect(field.name.length).toBeGreaterThan(0);
+					expect(typeof field.type).toBe('string');
+					expect(field.type.length).toBeGreaterThan(0);
+				}
+			}
+		});
+
+		it('read-only definitions do not declare an outputShape', () => {
+			for (const def of READ_ONLY_DEFS_WITHOUT_OUTPUT_SHAPE) {
+				expect(def.outputShape, `${def.name} must NOT declare outputShape`).toBeUndefined();
+			}
+		});
+
+		it('PostComment output shape mirrors the CommentPostedResult contract', () => {
+			const names = postCommentDef.outputShape?.fields.map((f) => f.name) ?? [];
+			expect(names).toContain('status');
+			expect(names).toContain('id');
+			expect(names).toContain('workItemId');
+			expect(names).toContain('workItemUrl');
+			expect(names).toContain('updatedAt');
+		});
+
+		it('UpdateWorkItem output shape mirrors the WorkItemUpdatedResult contract', () => {
+			const fieldsByName = new Map(
+				(updateWorkItemDef.outputShape?.fields ?? []).map((f) => [f.name, f]),
+			);
+			expect(fieldsByName.get('status')?.type).toBe('"updated" | "noop"');
+			expect(fieldsByName.get('changedFields')?.type).toBe('("title" | "description")[]');
+			expect(fieldsByName.get('addedLabelIds')?.type).toBe('string[]');
+			expect(fieldsByName.get('message')?.optional).toBe(true);
+		});
+
+		it('MoveWorkItem output shape encodes the moved/noop/aborted union', () => {
+			const status = moveWorkItemDef.outputShape?.fields.find((f) => f.name === 'status');
+			expect(status?.type).toBe('"moved" | "noop" | "aborted"');
+			const previousStatus = moveWorkItemDef.outputShape?.fields.find(
+				(f) => f.name === 'previousStatus',
+			);
+			expect(previousStatus?.optional).toBe(true);
+		});
+
+		it('CreateWorkItem output shape includes workflowStatus / workflowStatusId as optional', () => {
+			const fieldsByName = new Map(
+				(createWorkItemDef.outputShape?.fields ?? []).map((f) => [f.name, f]),
+			);
+			expect(fieldsByName.get('workflowStatus')?.optional).toBe(true);
+			expect(fieldsByName.get('workflowStatusId')?.optional).toBe(true);
+		});
+
+		it('AddChecklist output shape carries checklistId + itemIds', () => {
+			const names = addChecklistDef.outputShape?.fields.map((f) => f.name) ?? [];
+			expect(names).toContain('checklistId');
+			expect(names).toContain('itemIds');
+			expect(names).toContain('itemCount');
+		});
+
+		it('PMUpdateChecklistItem output shape surfaces the resulting boolean state', () => {
+			const complete = pmUpdateChecklistItemDef.outputShape?.fields.find(
+				(f) => f.name === 'complete',
+			);
+			expect(complete?.type).toBe('boolean');
+		});
+
+		it('PMDeleteChecklistItem output shape uses status="deleted"', () => {
+			const status = pmDeleteChecklistItemDef.outputShape?.fields.find((f) => f.name === 'status');
+			expect(status?.type).toBe('"deleted"');
+		});
+	});
 });

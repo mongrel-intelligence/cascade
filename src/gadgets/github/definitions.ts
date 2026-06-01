@@ -153,6 +153,32 @@ If hooks fail, the full output will be shown.`,
 			},
 		],
 	},
+	outputShape: {
+		summary: 'CreatePR returns the new (or pre-existing) PR identity.',
+		fields: [
+			{ name: 'prNumber', type: 'number', description: 'GitHub pull request number.' },
+			{ name: 'prUrl', type: 'string', description: 'Pull request HTML URL.' },
+			{ name: 'repoFullName', type: 'string', description: '`owner/repo` of the pull request.' },
+			{
+				name: 'alreadyExisted',
+				type: 'boolean',
+				description:
+					'`true` when GitHub returned an existing PR for the branch instead of creating one.',
+			},
+			{
+				name: 'pushOutput',
+				type: 'string',
+				optional: true,
+				description: 'Captured stdout+stderr of `git push` (includes pre-push hook output).',
+			},
+			{
+				name: 'commitOutput',
+				type: 'string',
+				optional: true,
+				description: 'Captured stdout+stderr of `git commit` (includes pre-commit hook output).',
+			},
+		],
+	},
 };
 
 export const createPRReviewDef: ToolDefinition = {
@@ -250,6 +276,48 @@ export const createPRReviewDef: ToolDefinition = {
 				parseAs: 'json',
 				description:
 					'Read --comments JSON from file (use - for stdin). Prefer this for long JSON payloads. Note: cannot pair `--body-file -` AND `--comments-file -` in one invocation — stdin is single-consumer; write one payload to a temp file and pass --*-file <path>.',
+			},
+		],
+	},
+	outputShape: {
+		summary:
+			'CreatePRReview returns the submitted review identity, event, and inline-comment count.',
+		fields: [
+			{
+				name: 'status',
+				type: '"ok" | "no-op" | "aborted"',
+				description: 'Generic GitHub mutation status — `"ok"` when the review was submitted.',
+			},
+			{ name: 'id', type: 'string', description: 'Review ID (numeric, stringified).' },
+			{ name: 'url', type: 'string', optional: true, description: 'Review HTML URL.' },
+			{
+				name: 'reviewUrl',
+				type: 'string',
+				description: 'Alias of `url`, retained for downstream session-state code.',
+			},
+			{
+				name: 'event',
+				type: '"APPROVE" | "REQUEST_CHANGES" | "COMMENT"',
+				description: 'The review event that was submitted.',
+			},
+			{ name: 'repoFullName', type: 'string', description: '`owner/repo` of the pull request.' },
+			{ name: 'prNumber', type: 'number', description: 'Pull request number.' },
+			{
+				name: 'submittedAt',
+				type: 'string',
+				description: 'GitHub-supplied `submitted_at` ISO 8601 timestamp.',
+			},
+			{ name: 'updatedAt', type: 'string', description: 'ISO 8601 timestamp.' },
+			{
+				name: 'inlineCommentCount',
+				type: 'number',
+				description: 'Number of inline review comments accepted by GitHub.',
+			},
+			{
+				name: 'message',
+				type: 'string',
+				optional: true,
+				description: 'Optional human-readable note explaining the outcome.',
 			},
 		],
 	},
@@ -522,6 +590,31 @@ export const postPRCommentDef: ToolDefinition = {
 			},
 		],
 	},
+	outputShape: {
+		summary: 'PostPRComment returns the posted comment identity.',
+		fields: [
+			{
+				name: 'status',
+				type: '"ok" | "no-op" | "aborted"',
+				description: 'Generic GitHub mutation status — `"ok"` when the comment was posted.',
+			},
+			{ name: 'id', type: 'string', description: 'New comment ID (numeric, stringified).' },
+			{ name: 'url', type: 'string', optional: true, description: 'Comment HTML URL.' },
+			{ name: 'repoFullName', type: 'string', description: '`owner/repo` of the pull request.' },
+			{ name: 'prNumber', type: 'number', description: 'Pull request number.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'GitHub-supplied `updated_at` ISO 8601 timestamp.',
+			},
+			{
+				name: 'message',
+				type: 'string',
+				optional: true,
+				description: 'Optional human-readable note explaining the outcome.',
+			},
+		],
+	},
 };
 
 export const updatePRCommentDef: ToolDefinition = {
@@ -579,6 +672,36 @@ export const updatePRCommentDef: ToolDefinition = {
 				fileFlag: 'body-file',
 				description:
 					'Read comment body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
+			},
+		],
+	},
+	outputShape: {
+		summary: 'UpdatePRComment returns the updated comment identity.',
+		fields: [
+			{
+				name: 'status',
+				type: '"ok" | "no-op" | "aborted"',
+				description: 'Generic GitHub mutation status — `"ok"` when the comment body was edited.',
+			},
+			{ name: 'id', type: 'string', description: 'Comment ID (numeric, stringified).' },
+			{ name: 'url', type: 'string', optional: true, description: 'Comment HTML URL.' },
+			{ name: 'repoFullName', type: 'string', description: '`owner/repo` of the pull request.' },
+			{
+				name: 'prNumber',
+				type: 'number | null',
+				description:
+					'Pull request number when GitHub returns one in the comment html_url; `null` for issue-only comments.',
+			},
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'GitHub-supplied `updated_at` ISO 8601 timestamp.',
+			},
+			{
+				name: 'message',
+				type: 'string',
+				optional: true,
+				description: 'Optional human-readable note explaining the outcome.',
 			},
 		],
 	},
@@ -645,6 +768,31 @@ export const replyToReviewCommentDef: ToolDefinition = {
 				fileFlag: 'body-file',
 				description:
 					'Read reply body from file (use - for stdin). Strongly preferred over --body for markdown / multiline content with backticks, code fences, $(...) or newlines.',
+			},
+		],
+	},
+	outputShape: {
+		summary: 'ReplyToReviewComment returns the threaded reply identity.',
+		fields: [
+			{
+				name: 'status',
+				type: '"ok" | "no-op" | "aborted"',
+				description: 'Generic GitHub mutation status — `"ok"` when the reply was posted.',
+			},
+			{ name: 'id', type: 'string', description: 'New reply comment ID (numeric, stringified).' },
+			{ name: 'url', type: 'string', optional: true, description: 'Reply HTML URL.' },
+			{ name: 'repoFullName', type: 'string', description: '`owner/repo` of the pull request.' },
+			{ name: 'prNumber', type: 'number', description: 'Pull request number.' },
+			{
+				name: 'updatedAt',
+				type: 'string',
+				description: 'GitHub-supplied `updated_at` ISO 8601 timestamp.',
+			},
+			{
+				name: 'message',
+				type: 'string',
+				optional: true,
+				description: 'Optional human-readable note explaining the outcome.',
 			},
 		],
 	},

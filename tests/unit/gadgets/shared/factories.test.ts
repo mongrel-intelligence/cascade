@@ -1584,6 +1584,218 @@ describe('generateToolManifest — widened fields (spec 014)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// MNG-1427: createCLICommand surfaces outputShape in oclif description (`--help`)
+// ---------------------------------------------------------------------------
+
+describe('createCLICommand — outputShape in --help description (MNG-1427)', () => {
+	it('appends "Output shape (success.data):" to the oclif description when declared', () => {
+		const def: ToolDefinition = {
+			name: 'PostComment',
+			description: 'Post a comment to a work item.',
+			parameters: {
+				workItemId: { type: 'string', describe: 'Work item ID', required: true },
+				text: { type: 'string', describe: 'Comment text', required: true },
+			},
+			outputShape: {
+				summary: 'PostComment returns the new comment context.',
+				fields: [
+					{ name: 'status', type: '"created" | "updated"', description: 'Outcome.' },
+					{ name: 'id', type: 'string', description: 'Comment ID.' },
+				],
+			},
+		};
+
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(def, coreFn);
+
+		expect(CommandClass.description).toContain('Post a comment to a work item.');
+		expect(CommandClass.description).toContain('Output shape (success.data):');
+		expect(CommandClass.description).toContain('PostComment returns the new comment context.');
+		expect(CommandClass.description).toContain('- status ("created" | "updated") — Outcome.');
+		expect(CommandClass.description).toContain('- id (string) — Comment ID.');
+	});
+
+	it('keeps the oclif description unchanged when no outputShape is declared', () => {
+		const def: ToolDefinition = {
+			name: 'ReadOnlyTool',
+			description: 'Read-only operation, no mutation result.',
+			parameters: {
+				workItemId: { type: 'string', describe: 'Work item ID', required: true },
+			},
+		};
+
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(def, coreFn);
+
+		expect(CommandClass.description).toBe('Read-only operation, no mutation result.');
+		expect(CommandClass.description).not.toContain('Output shape');
+	});
+
+	it('marks optional fields with a trailing `?` in the help block', () => {
+		const def: ToolDefinition = {
+			name: 'CreateWorkItem',
+			description: 'Create a new work item.',
+			parameters: {
+				containerId: { type: 'string', describe: 'Container', required: true },
+				title: { type: 'string', describe: 'Title', required: true },
+			},
+			outputShape: {
+				fields: [
+					{ name: 'id', type: 'string', description: 'Required.' },
+					{
+						name: 'workflowStatus',
+						type: 'string',
+						optional: true,
+						description: 'Provider-dependent.',
+					},
+				],
+			},
+		};
+
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(def, coreFn);
+		expect(CommandClass.description).toContain('- id (string) — Required.');
+		expect(CommandClass.description).toContain('- workflowStatus? (string) — Provider-dependent.');
+	});
+
+	it('omits markdown emphasis to keep oclif word-wrap clean', () => {
+		const def: ToolDefinition = {
+			name: 'Plain',
+			description: 'A plain mutation.',
+			parameters: {
+				value: { type: 'string', describe: 'value', required: true },
+			},
+			outputShape: {
+				fields: [{ name: 'id', type: 'string' }],
+			},
+		};
+
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(def, coreFn);
+		// The help renderer is intentionally plain text — no `**` emphasis, no
+		// backtick-wrapped field names. Help formatting is provided by oclif.
+		expect(CommandClass.description).not.toContain('**Output shape**');
+		expect(CommandClass.description).not.toContain('`id`');
+	});
+
+	it('renders the empty-fields placeholder when fields: [] is declared', () => {
+		const def: ToolDefinition = {
+			name: 'EmptyShape',
+			description: 'Mutation with no documented fields.',
+			parameters: {
+				value: { type: 'string', describe: 'value', required: true },
+			},
+			outputShape: { fields: [] },
+		};
+
+		const coreFn: CLICoreFn = async () => 'ok';
+		const CommandClass = createCLICommand(def, coreFn);
+		expect(CommandClass.description).toContain('Output shape (success.data):');
+		expect(CommandClass.description).toContain('- (shape declared but no fields documented)');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1427: generateToolManifest threads outputShape into the manifest
+// ---------------------------------------------------------------------------
+
+describe('generateToolManifest — outputShape propagation (MNG-1427)', () => {
+	it('threads outputShape onto the manifest when the definition declares one', () => {
+		const def: ToolDefinition = {
+			name: 'PostComment',
+			description: 'Post a comment.',
+			parameters: {
+				workItemId: { type: 'string', describe: 'Work item ID', required: true },
+				text: { type: 'string', describe: 'Comment text', required: true },
+			},
+			outputShape: {
+				summary: 'PostComment returns the new comment context.',
+				fields: [
+					{ name: 'status', type: '"created" | "updated"', description: 'Outcome.' },
+					{ name: 'id', type: 'string', description: 'Comment ID.' },
+				],
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		expect(manifest.outputShape).toEqual({
+			summary: 'PostComment returns the new comment context.',
+			fields: [
+				{ name: 'status', type: '"created" | "updated"', description: 'Outcome.' },
+				{ name: 'id', type: 'string', description: 'Comment ID.' },
+			],
+		});
+	});
+
+	it('omits manifest.outputShape when the definition has no outputShape', () => {
+		const def: ToolDefinition = {
+			name: 'ReadOnlyTool',
+			description: 'A read-only tool.',
+			parameters: {
+				workItemId: { type: 'string', describe: 'Work item ID', required: true },
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		expect(manifest.outputShape).toBeUndefined();
+	});
+
+	it('omits empty summary keys while preserving the rest of the shape', () => {
+		const def: ToolDefinition = {
+			name: 'SilentOutcome',
+			description: 'Mutation without a summary.',
+			parameters: {
+				value: { type: 'string', describe: 'value', required: true },
+			},
+			outputShape: {
+				fields: [{ name: 'id', type: 'string' }],
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		expect(manifest.outputShape).toEqual({ fields: [{ name: 'id', type: 'string' }] });
+		expect(manifest.outputShape).not.toHaveProperty('summary');
+	});
+
+	it('preserves the optional flag on output-shape fields end-to-end', () => {
+		const def: ToolDefinition = {
+			name: 'WithOptionalField',
+			description: 'Definition with an optional output field.',
+			parameters: {
+				value: { type: 'string', describe: 'value', required: true },
+			},
+			outputShape: {
+				fields: [
+					{ name: 'id', type: 'string', description: 'always present' },
+					{ name: 'message', type: 'string', optional: true, description: 'only on error' },
+				],
+			},
+		};
+
+		const manifest = generateToolManifest(def);
+		expect(manifest.outputShape?.fields[0]?.optional).toBeUndefined();
+		expect(manifest.outputShape?.fields[1]?.optional).toBe(true);
+	});
+
+	it('rejects mutation of the source definition (manifest is a fresh clone)', () => {
+		const fields = [{ name: 'id', type: 'string' }];
+		const def: ToolDefinition = {
+			name: 'Mutated',
+			description: 'Mutation definition.',
+			parameters: {
+				value: { type: 'string', describe: 'value', required: true },
+			},
+			outputShape: { fields },
+		};
+
+		const manifest = generateToolManifest(def);
+		// Mutating the manifest output must not propagate back to the source.
+		manifest.outputShape?.fields.push({ name: 'extra', type: 'string' });
+		expect(fields).toHaveLength(1);
+	});
+});
+
+// ---------------------------------------------------------------------------
 // MNG-1059: manifest threads fileInputFor / fileInputAlternative cross-refs
 // ---------------------------------------------------------------------------
 

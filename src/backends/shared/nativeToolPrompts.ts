@@ -1,3 +1,7 @@
+import type {
+	ToolManifestOutputShape,
+	ToolManifestOutputShapeField,
+} from '../../agents/contracts/index.js';
 import { formatJsonExample, formatShellScalar } from '../../gadgets/shared/cli/shellValues.js';
 import type { ContextInjection, ToolManifest } from '../types.js';
 import { buildInlineContextSection, offloadLargeContext } from './contextFiles.js';
@@ -167,6 +171,45 @@ function formatParam(key: string, schema: PromptParamSchema): string {
 }
 
 /**
+ * MNG-1427: render a tool manifest's `outputShape` as a concise, parseable
+ * block beneath the command snippet. The intent is to give native-tool agents
+ * the JSON field contract for `success.data` without forcing them to run the
+ * tool first or rely on provider docs.
+ *
+ * Rendered shape:
+ *
+ *   **Output shape** (`success.data`):
+ *   <optional summary line>
+ *   - `<field>` (`<type>`) — <description>
+ *   - `<optional field>?` (`<type>`) — <description>
+ *
+ * The renderer is intentionally lossless: every field in the manifest's
+ * `outputShape.fields` is emitted in declared order. Empty `fields` arrays
+ * render as a single placeholder so a definition that opted in but forgot to
+ * populate fields is loudly visible to the maintainer (and to the agent).
+ */
+function formatOutputShape(shape: ToolManifestOutputShape): string {
+	let out = '\n**Output shape** (`success.data`):\n';
+	if (shape.summary) {
+		out += `${shape.summary}\n`;
+	}
+	if (shape.fields.length === 0) {
+		out += '- (shape declared but no fields documented)\n';
+		return out;
+	}
+	for (const field of shape.fields) {
+		out += `${formatOutputShapeFieldLine(field)}\n`;
+	}
+	return out;
+}
+
+function formatOutputShapeFieldLine(field: ToolManifestOutputShapeField): string {
+	const nameSuffix = field.optional ? '?' : '';
+	const head = `- \`${field.name}${nameSuffix}\` (\`${field.type}\`)`;
+	return field.description ? `${head} — ${field.description}` : head;
+}
+
+/**
  * Build prompt guidance for CASCADE-specific CLI tools.
  * Native-tool engines invoke these via shell commands.
  */
@@ -191,7 +234,15 @@ export function buildToolGuidance(tools: ToolManifest[]): string {
 			guidance += formatParam(key, schema as PromptParamSchema);
 		}
 
-		guidance += '\n```\n\n';
+		guidance += '\n```\n';
+
+		// MNG-1427: render the JSON output contract after the command block so
+		// agents see `success.data` field-list inline with the command.
+		if (tool.outputShape) {
+			guidance += formatOutputShape(tool.outputShape);
+		}
+
+		guidance += '\n';
 	}
 
 	return guidance;

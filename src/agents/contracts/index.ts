@@ -67,6 +67,35 @@ export interface ToolManifestParameter {
 }
 
 /**
+ * MNG-1427: a single field inside the `success.data` JSON payload a CLI
+ * command returns. Mirrors `OutputShapeField` on {@link ToolDefinition} so
+ * downstream consumers (prompt renderer, generated help, integration tests)
+ * can read the same shape without depending on `src/gadgets/`.
+ */
+export interface ToolManifestOutputShapeField {
+	/** Field key as it appears in `success.data`. */
+	name: string;
+	/** Type description, e.g. `'string'`, `'number'`, or `'"created" | "updated"'`. */
+	type: string;
+	/** Optional human-readable explanation. */
+	description?: string;
+	/** Whether the field may be absent. Defaults to `false`. */
+	optional?: boolean;
+}
+
+/**
+ * MNG-1427: declarative description of the `success.data` payload returned
+ * by a CLI command. Surfaced on each {@link ToolManifest} so agents can learn
+ * which JSON keys to parse without running the tool first.
+ */
+export interface ToolManifestOutputShape {
+	/** Optional one-line summary of what `success.data` represents. */
+	summary?: string;
+	/** Field-by-field description of `success.data`. */
+	fields: ToolManifestOutputShapeField[];
+}
+
+/**
  * Describes a CASCADE-specific CLI tool available to the agent.
  */
 export interface ToolManifest {
@@ -83,6 +112,12 @@ export interface ToolManifest {
 	 * index with ad-hoc shapes — new code should cast to `ToolManifestParameter`.
 	 */
 	parameters: Record<string, unknown>;
+	/**
+	 * MNG-1427: optional declarative description of the shape of `success.data`
+	 * returned by the CLI command. Populated for mutation commands so agents
+	 * know which JSON fields to parse without inspecting the response prose.
+	 */
+	outputShape?: ToolManifestOutputShape;
 }
 
 /**

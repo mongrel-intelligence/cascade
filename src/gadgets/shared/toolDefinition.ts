@@ -247,6 +247,71 @@ export interface ToolExample {
 }
 
 // ---------------------------------------------------------------------------
+// Output shape (MNG-1427)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single field inside the `success.data` payload returned by the CLI.
+ *
+ * Output-shape fields are declarative metadata — the same descriptor flows
+ * unchanged through the generated manifest, the native-tool prompt guidance,
+ * and the generated `cascade-tools <group> <command> --help` output. Agents
+ * use them to learn which JSON keys to parse without having to run the tool
+ * first or read provider docs.
+ *
+ * @example
+ * { name: 'id', type: 'string', description: 'The comment ID' }
+ * { name: 'status', type: '"created" | "updated"', description: 'Whether a new comment was created or an existing one was updated' }
+ * { name: 'workflowStatus', type: 'string', optional: true, description: 'Human-readable workflow state' }
+ */
+export interface OutputShapeField {
+	/** Field key as it appears in `success.data` (camelCase by convention). */
+	name: string;
+	/**
+	 * Type description rendered into prompts/help verbatim. Use simple JSON-ish
+	 * notation: `'string'`, `'number'`, `'boolean'`, `'string[]'`, or a literal
+	 * union like `'"created" | "updated"'`.
+	 */
+	type: string;
+	/** Optional one-line explanation of the field. */
+	description?: string;
+	/** Whether the field may be absent from `success.data`. Defaults to `false`. */
+	optional?: boolean;
+}
+
+/**
+ * Declarative description of the shape of `success.data` returned by a tool.
+ *
+ * The metadata is rendered (not interpreted) by the prompt and help layers,
+ * so the same descriptor populates:
+ * - Native-tool prompt guidance (a concise field-list rendered after the
+ *   command block in the system prompt).
+ * - `cascade-tools <group> <command> --help` output (an "OUTPUT SHAPE"
+ *   section appended to the description).
+ * - Generated manifests (so downstream consumers can re-render or assert on
+ *   the contract).
+ *
+ * Omit on read-only commands whose response shapes are already self-evident
+ * from their underlying read API. Populate on mutation commands so agents can
+ * confirm affected IDs / URLs / statuses without parsing free-form prose.
+ */
+export interface OutputShape {
+	/**
+	 * Optional one-line summary of what `success.data` represents. Rendered as
+	 * a single sentence above the field list.
+	 *
+	 * @example 'A PostComment success returns the new (or updated) progress comment context.'
+	 */
+	summary?: string;
+	/**
+	 * Field-by-field description of `success.data`. At least one entry is
+	 * expected; an empty array is treated as "shape declared but unspecified"
+	 * and rendered with a note.
+	 */
+	fields: OutputShapeField[];
+}
+
+// ---------------------------------------------------------------------------
 // Hook types
 // ---------------------------------------------------------------------------
 
@@ -383,4 +448,17 @@ export interface ToolDefinition {
 	 * Use for gadgets that signal session termination (e.g., Finish).
 	 */
 	exclusive?: boolean;
+
+	/**
+	 * MNG-1427: declarative description of `success.data` shape returned by
+	 * this tool. When set, the field is propagated unchanged into the generated
+	 * manifest, rendered into native-tool prompt guidance, and surfaced in
+	 * `cascade-tools <group> <command> --help` output so agents know which
+	 * JSON fields to parse.
+	 *
+	 * Populate on mutation commands (PostComment, CreatePR, etc.). Read-only
+	 * commands typically omit this field; their response shapes are already
+	 * conveyed by the description and the underlying read API.
+	 */
+	outputShape?: OutputShape;
 }
