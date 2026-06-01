@@ -179,6 +179,33 @@ describe('LinearPMProvider', () => {
 			const result = await provider.getWorkItem('issue-uuid');
 			expect(result.inlineMedia).toBeUndefined();
 		});
+
+		it('preserves Linear createdAt and updatedAt on the work item', async () => {
+			mockGetIssue.mockResolvedValue(
+				makeIssue({
+					createdAt: '2026-04-01T08:00:00Z',
+					updatedAt: '2026-04-15T09:30:00Z',
+				}),
+			);
+
+			const result = await provider.getWorkItem('issue-uuid');
+
+			expect(result.createdAt).toBe('2026-04-01T08:00:00Z');
+			expect(result.updatedAt).toBe('2026-04-15T09:30:00Z');
+		});
+
+		it('leaves createdAt/updatedAt undefined when Linear returns empty strings', async () => {
+			// LinearClient normalizes missing timestamps to '' — the adapter
+			// treats empties as "no provider value" so downstream mutation-
+			// result helpers fall through cleanly instead of round-tripping
+			// empty strings.
+			mockGetIssue.mockResolvedValue(makeIssue({ createdAt: '', updatedAt: '' }));
+
+			const result = await provider.getWorkItem('issue-uuid');
+
+			expect(result.createdAt).toBeUndefined();
+			expect(result.updatedAt).toBeUndefined();
+		});
 	});
 
 	// =========================================================================
@@ -278,6 +305,26 @@ describe('LinearPMProvider', () => {
 			const result = await provider.getWorkItemComments('issue-uuid');
 
 			expect(result[0].inlineMedia).toBeUndefined();
+		});
+
+		it('preserves Linear createdAt and updatedAt on comments', async () => {
+			mockGetIssueComments.mockResolvedValue([
+				{
+					id: 'c-ts',
+					body: 'Timestamped',
+					createdAt: '2026-05-01T10:00:00Z',
+					updatedAt: '2026-05-02T11:00:00Z',
+					issueId: 'issue-uuid',
+					user: null,
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('issue-uuid');
+
+			expect(result[0]).toMatchObject({
+				createdAt: '2026-05-01T10:00:00Z',
+				updatedAt: '2026-05-02T11:00:00Z',
+			});
 		});
 	});
 

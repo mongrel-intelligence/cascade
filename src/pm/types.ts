@@ -101,6 +101,20 @@ export interface WorkItem {
 	labels: WorkItemLabel[];
 	/** Inline media references parsed from the work item description */
 	inlineMedia?: MediaReference[];
+	/**
+	 * ISO 8601 timestamp of when the work item was created, as reported by the
+	 * provider. Optional because some providers (or legacy code paths) may not
+	 * surface this. Downstream mutation-result helpers prefer this over
+	 * synthetic timestamps — see `src/gadgets/pm/core/mutationResults.ts`.
+	 */
+	createdAt?: string;
+	/**
+	 * ISO 8601 timestamp of the last provider-reported update. Optional for the
+	 * same reasons as `createdAt`. Mutation-result helpers fall back to the
+	 * current ISO timestamp only when the mutation was a synthetic no-op or
+	 * aborted outcome — never to pretend a provider actually wrote new data.
+	 */
+	updatedAt?: string;
 }
 
 export interface WorkItemLabel {
@@ -120,6 +134,20 @@ export interface WorkItemComment {
 	};
 	/** Inline media references parsed from the comment text */
 	inlineMedia?: MediaReference[];
+	/**
+	 * ISO 8601 timestamp of when the comment was created, as reported by the
+	 * provider. Optional — when present, mutation-result helpers prefer this
+	 * over synthetic timestamps. Trello/JIRA derive this from the comment's
+	 * `date`/`created` field; Linear surfaces it from `createdAt`.
+	 */
+	createdAt?: string;
+	/**
+	 * ISO 8601 timestamp of the last provider-reported update on the comment.
+	 * Optional. Linear exposes this distinctly from `createdAt`; Trello/JIRA
+	 * may map this to the same value as `createdAt` when no edit history is
+	 * surfaced.
+	 */
+	updatedAt?: string;
 }
 
 export interface Checklist {

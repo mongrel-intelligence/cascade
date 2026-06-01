@@ -60,6 +60,11 @@ export const jiraClient = {
 				'subtasks',
 				'attachment',
 				'comment',
+				// MNG-1422: surface provider timestamps so the PM adapter can
+				// hydrate `WorkItem.createdAt` / `updatedAt`. JIRA exposes
+				// `created` / `updated` directly on the issue fields object.
+				'created',
+				'updated',
 			],
 		});
 	},
@@ -212,7 +217,10 @@ export const jiraClient = {
 		return (issue.fields?.labels as string[]) ?? [];
 	},
 
-	async searchIssues(jql: string, fields: string[] = ['summary', 'status', 'labels']) {
+	async searchIssues(
+		jql: string,
+		fields: string[] = ['summary', 'status', 'labels', 'created', 'updated'],
+	) {
 		logger.debug('Searching JIRA issues', { jql });
 		const result = await getClient().issueSearch.searchForIssuesUsingJql({
 			jql,
