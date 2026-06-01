@@ -43,7 +43,29 @@ export interface PRReviewComment {
 		login: string;
 	};
 	createdAt: string;
+	/**
+	 * GitHub-supplied timestamp for the last update of the comment. Optional —
+	 * only present on writes (createReplyForReviewComment) where GitHub returns
+	 * `updated_at` alongside the new comment. Read paths
+	 * (`listReviewComments`) don't surface it because the consumer doesn't need
+	 * it for context shaping.
+	 */
+	updatedAt?: string;
 	inReplyToId?: number;
+}
+
+/**
+ * Result shape for issue-comment write mutations (`createPRComment`,
+ * `updatePRComment`). Includes the GitHub-supplied `updated_at` so downstream
+ * structured-mutation helpers can surface a real provider timestamp rather
+ * than a synthetic `new Date().toISOString()` (MNG-1425 / spec MNG-1422).
+ */
+export interface CreatedIssueComment {
+	id: number;
+	htmlUrl: string;
+	body: string;
+	createdAt: string;
+	updatedAt: string;
 }
 
 export interface PRReview {
@@ -114,6 +136,22 @@ export interface CreatedPR {
 	number: number;
 	htmlUrl: string;
 	title: string;
+}
+
+/**
+ * Result shape for `createPRReview`. Surfaces the GitHub-supplied `state`
+ * (e.g. `APPROVED`, `CHANGES_REQUESTED`, `COMMENTED`) and `submitted_at` so
+ * downstream structured-mutation helpers can record the real provider
+ * timestamp (MNG-1425 / spec MNG-1422). `submittedAt` is nullable because
+ * `pulls.createReview` returns `null` for `PENDING` reviews even though
+ * gadget callers always submit (event != null).
+ */
+export interface CreatedPRReview {
+	id: number;
+	htmlUrl: string;
+	body: string;
+	state: string;
+	submittedAt: string | null;
 }
 
 export const githubClient = {
@@ -191,6 +229,7 @@ export const githubClient = {
 				login: data.user?.login || 'unknown',
 			},
 			createdAt: data.created_at,
+			updatedAt: data.updated_at,
 			inReplyToId: data.in_reply_to_id,
 		};
 	},
@@ -200,7 +239,7 @@ export const githubClient = {
 		repo: string,
 		prNumber: number,
 		body: string,
-	): Promise<{ id: number; htmlUrl: string }> {
+	): Promise<CreatedIssueComment> {
 		logger.debug('Creating PR comment', { owner, repo, prNumber });
 		const { data } = await getClient().issues.createComment({
 			owner,
@@ -211,6 +250,9 @@ export const githubClient = {
 		return {
 			id: data.id,
 			htmlUrl: data.html_url,
+			body: data.body ?? '',
+			createdAt: data.created_at,
+			updatedAt: data.updated_at,
 		};
 	},
 
@@ -219,7 +261,7 @@ export const githubClient = {
 		repo: string,
 		commentId: number,
 		body: string,
-	): Promise<{ id: number; htmlUrl: string }> {
+	): Promise<CreatedIssueComment> {
 		logger.debug('Updating PR comment', { owner, repo, commentId });
 		const { data } = await getClient().issues.updateComment({
 			owner,
@@ -230,6 +272,9 @@ export const githubClient = {
 		return {
 			id: data.id,
 			htmlUrl: data.html_url,
+			body: data.body ?? '',
+			createdAt: data.created_at,
+			updatedAt: data.updated_at,
 		};
 	},
 
@@ -401,7 +446,7 @@ export const githubClient = {
 		event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
 		body: string,
 		comments?: Array<{ path: string; line?: number; body: string }>,
-	): Promise<{ id: number; htmlUrl: string }> {
+	): Promise<CreatedPRReview> {
 		logger.debug('Creating PR review', { owner, repo, prNumber, event });
 		const { data } = await getClient().pulls.createReview({
 			owner,
@@ -418,6 +463,9 @@ export const githubClient = {
 		return {
 			id: data.id,
 			htmlUrl: data.html_url,
+			body: data.body ?? '',
+			state: data.state,
+			submittedAt: data.submitted_at ?? null,
 		};
 	},
 

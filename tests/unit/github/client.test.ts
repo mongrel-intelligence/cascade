@@ -233,7 +233,7 @@ describe('githubClient', () => {
 	});
 
 	describe('replyToReviewComment', () => {
-		it('creates reply and returns mapped result', async () => {
+		it('creates reply and returns mapped result including updatedAt', async () => {
 			mockPulls.createReplyForReviewComment.mockResolvedValue({
 				data: {
 					id: 99,
@@ -243,6 +243,7 @@ describe('githubClient', () => {
 					html_url: 'https://github.com/...',
 					user: { login: 'bot' },
 					created_at: '2024-01-01',
+					updated_at: '2024-01-01T00:01:00Z',
 					in_reply_to_id: 1,
 				},
 			});
@@ -253,6 +254,7 @@ describe('githubClient', () => {
 
 			expect(result.id).toBe(99);
 			expect(result.inReplyToId).toBe(1);
+			expect(result.updatedAt).toBe('2024-01-01T00:01:00Z');
 			expect(mockPulls.createReplyForReviewComment).toHaveBeenCalledWith({
 				owner: 'owner',
 				repo: 'repo',
@@ -264,11 +266,14 @@ describe('githubClient', () => {
 	});
 
 	describe('createPRComment', () => {
-		it('creates issue comment and returns id and url', async () => {
+		it('creates issue comment and returns id, url, body and timestamps', async () => {
 			mockIssues.createComment.mockResolvedValue({
 				data: {
 					id: 200,
 					html_url: 'https://github.com/owner/repo/pull/42#issuecomment-200',
+					body: 'Hello',
+					created_at: '2026-05-01T10:00:00Z',
+					updated_at: '2026-05-01T10:00:00Z',
 				},
 			});
 
@@ -279,6 +284,9 @@ describe('githubClient', () => {
 			expect(result).toEqual({
 				id: 200,
 				htmlUrl: 'https://github.com/owner/repo/pull/42#issuecomment-200',
+				body: 'Hello',
+				createdAt: '2026-05-01T10:00:00Z',
+				updatedAt: '2026-05-01T10:00:00Z',
 			});
 			expect(mockIssues.createComment).toHaveBeenCalledWith({
 				owner: 'owner',
@@ -290,11 +298,14 @@ describe('githubClient', () => {
 	});
 
 	describe('updatePRComment', () => {
-		it('updates comment and returns result', async () => {
+		it('updates comment and returns id, url, body and timestamps', async () => {
 			mockIssues.updateComment.mockResolvedValue({
 				data: {
 					id: 200,
 					html_url: 'https://github.com/...',
+					body: 'Updated',
+					created_at: '2026-05-01T10:00:00Z',
+					updated_at: '2026-05-02T11:00:00Z',
 				},
 			});
 
@@ -302,7 +313,13 @@ describe('githubClient', () => {
 				githubClient.updatePRComment('owner', 'repo', 200, 'Updated'),
 			);
 
-			expect(result.id).toBe(200);
+			expect(result).toEqual({
+				id: 200,
+				htmlUrl: 'https://github.com/...',
+				body: 'Updated',
+				createdAt: '2026-05-01T10:00:00Z',
+				updatedAt: '2026-05-02T11:00:00Z',
+			});
 			expect(mockIssues.updateComment).toHaveBeenCalledWith({
 				owner: 'owner',
 				repo: 'repo',
@@ -812,11 +829,14 @@ describe('githubClient', () => {
 	});
 
 	describe('createPRReview', () => {
-		it('creates review and returns result', async () => {
+		it('creates review and returns id, url, body, state and submittedAt', async () => {
 			mockPulls.createReview.mockResolvedValue({
 				data: {
 					id: 500,
 					html_url: 'https://github.com/...',
+					body: 'LGTM',
+					state: 'APPROVED',
+					submitted_at: '2026-05-01T10:00:00Z',
 				},
 			});
 
@@ -827,6 +847,9 @@ describe('githubClient', () => {
 			expect(result).toEqual({
 				id: 500,
 				htmlUrl: 'https://github.com/...',
+				body: 'LGTM',
+				state: 'APPROVED',
+				submittedAt: '2026-05-01T10:00:00Z',
 			});
 			expect(mockPulls.createReview).toHaveBeenCalledWith({
 				owner: 'owner',
@@ -840,7 +863,13 @@ describe('githubClient', () => {
 
 		it('passes file comments when provided', async () => {
 			mockPulls.createReview.mockResolvedValue({
-				data: { id: 501, html_url: 'url' },
+				data: {
+					id: 501,
+					html_url: 'url',
+					body: 'Please fix',
+					state: 'CHANGES_REQUESTED',
+					submitted_at: '2026-05-01T10:00:00Z',
+				},
 			});
 
 			await withGitHubToken('test-token', () =>
@@ -854,6 +883,25 @@ describe('githubClient', () => {
 					comments: [{ path: 'src/index.ts', line: 10, body: 'Fix this line' }],
 				}),
 			);
+		});
+
+		it('returns submittedAt=null when GitHub responds with a null submitted_at', async () => {
+			mockPulls.createReview.mockResolvedValue({
+				data: {
+					id: 502,
+					html_url: 'url',
+					body: 'pending',
+					state: 'PENDING',
+					submitted_at: null,
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.createPRReview('owner', 'repo', 42, 'COMMENT', 'pending'),
+			);
+
+			expect(result.submittedAt).toBeNull();
+			expect(result.body).toBe('pending');
 		});
 	});
 

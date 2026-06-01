@@ -33,6 +33,22 @@ const BASE_PARAMS = {
 	body: 'LGTM!',
 };
 
+function structuredReviewResult(overrides: Partial<{ reviewUrl: string; event: string }> = {}) {
+	return {
+		id: '1',
+		status: 'ok' as const,
+		updatedAt: '2026-05-01T10:00:00Z',
+		url: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+		reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+		event: 'APPROVE' as const,
+		repoFullName: 'acme/myapp',
+		prNumber: 42,
+		submittedAt: '2026-05-01T10:00:00Z',
+		inlineCommentCount: 0,
+		...overrides,
+	};
+}
+
 describe('CreatePRReview', () => {
 	let gadget: InstanceType<typeof CreatePRReview>;
 
@@ -41,10 +57,7 @@ describe('CreatePRReview', () => {
 	});
 
 	it('submits review, records it, and deletes ack comment on success', async () => {
-		mockCreatePRReview.mockResolvedValue({
-			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
-			event: 'APPROVE',
-		});
+		mockCreatePRReview.mockResolvedValue(structuredReviewResult());
 
 		const result = await gadget.execute(BASE_PARAMS);
 
@@ -66,10 +79,7 @@ describe('CreatePRReview', () => {
 	});
 
 	it('does not fail if deleteInitialComment throws', async () => {
-		mockCreatePRReview.mockResolvedValue({
-			reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
-			event: 'APPROVE',
-		});
+		mockCreatePRReview.mockResolvedValue(structuredReviewResult());
 		// deleteInitialComment itself handles errors internally, but simulate it throwing
 		mockDeleteInitialComment.mockRejectedValueOnce(new Error('GitHub API error'));
 

@@ -22,18 +22,26 @@ describe('postPRComment', () => {
 		vi.clearAllMocks();
 	});
 
-	it('returns "Comment posted" with id and URL on success (no run link footer)', async () => {
+	it('returns a structured PostPRCommentResult on success (no run link footer)', async () => {
 		mockBuildRunLinkFooter.mockReturnValue(null);
 		mockGithub.createPRComment.mockResolvedValue({
 			id: 123,
 			htmlUrl: 'https://github.com/owner/repo/pull/42#issuecomment-123',
+			body: 'Hello from test',
+			createdAt: '2026-05-01T10:00:00Z',
+			updatedAt: '2026-05-01T10:00:00Z',
 		} as Awaited<ReturnType<typeof mockGithub.createPRComment>>);
 
 		const result = await postPRComment('owner', 'repo', 42, 'Hello from test');
 
-		expect(result).toBe(
-			'Comment posted (id: 123): https://github.com/owner/repo/pull/42#issuecomment-123',
-		);
+		expect(result).toEqual({
+			id: '123',
+			status: 'ok',
+			updatedAt: '2026-05-01T10:00:00Z',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-123',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		});
 		expect(mockGithub.createPRComment).toHaveBeenCalledWith('owner', 'repo', 42, 'Hello from test');
 	});
 
@@ -42,6 +50,9 @@ describe('postPRComment', () => {
 		mockGithub.createPRComment.mockResolvedValue({
 			id: 456,
 			htmlUrl: 'https://github.com/owner/repo/pull/42#issuecomment-456',
+			body: 'My comment\n\n[Run details](https://example.com/run/1)',
+			createdAt: '2026-05-01T10:00:00Z',
+			updatedAt: '2026-05-01T10:00:00Z',
 		} as Awaited<ReturnType<typeof mockGithub.createPRComment>>);
 
 		const result = await postPRComment('owner', 'repo', 42, 'My comment');
@@ -52,17 +63,34 @@ describe('postPRComment', () => {
 			42,
 			'My comment\n\n[Run details](https://example.com/run/1)',
 		);
-		expect(result).toBe(
-			'Comment posted (id: 456): https://github.com/owner/repo/pull/42#issuecomment-456',
-		);
+		expect(result).toMatchObject({
+			id: '456',
+			status: 'ok',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-456',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		});
 	});
 
-	it('returns error message string when githubClient throws', async () => {
+	it('throws when githubClient throws (no prose sentinel)', async () => {
 		mockBuildRunLinkFooter.mockReturnValue(null);
 		mockGithub.createPRComment.mockRejectedValue(new Error('Forbidden'));
 
-		const result = await postPRComment('owner', 'repo', 42, 'My comment');
+		await expect(postPRComment('owner', 'repo', 42, 'My comment')).rejects.toThrow('Forbidden');
+	});
 
-		expect(result).toBe('Error posting PR comment: Forbidden');
+	it('surfaces the GitHub-supplied updatedAt timestamp', async () => {
+		mockBuildRunLinkFooter.mockReturnValue(null);
+		mockGithub.createPRComment.mockResolvedValue({
+			id: 789,
+			htmlUrl: 'https://github.com/o/r/pull/1#issuecomment-789',
+			body: 'Body',
+			createdAt: '2025-12-01T01:02:03Z',
+			updatedAt: '2025-12-01T01:02:03Z',
+		} as Awaited<ReturnType<typeof mockGithub.createPRComment>>);
+
+		const result = await postPRComment('o', 'r', 1, 'Body');
+
+		expect(result.updatedAt).toBe('2025-12-01T01:02:03Z');
 	});
 });

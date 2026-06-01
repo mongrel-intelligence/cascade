@@ -445,3 +445,84 @@ describe('UpdatePRComment command', () => {
 		expect(output.data).toEqual({ id: 555, body: 'New content' });
 	});
 });
+
+// ---------------------------------------------------------------------------
+// MNG-1425: runtime failure envelopes
+//
+// The structured-output rewrite of post-pr-comment / update-pr-comment /
+// reply-to-review-comment cores throws on GitHub failures rather than
+// returning prose sentinel strings. The CLI factory (`createCLICommand`)
+// wraps thrown errors in the spec-014 runtime envelope. These tests pin
+// that contract per CLI so a regression here surfaces immediately.
+// ---------------------------------------------------------------------------
+describe('SCM CLI runtime failure envelopes (MNG-1425)', () => {
+	function readJsonOutput(logSpy: ReturnType<typeof vi.spyOn>) {
+		const lines = logSpy.mock.calls.map((c) => c[0] as string);
+		const jsonLine = lines.find((l) => typeof l === 'string' && l.startsWith('{')) ?? '';
+		return JSON.parse(jsonLine) as {
+			success: boolean;
+			error?: { type: string; message: string };
+		};
+	}
+
+	/**
+	 * Runtime failures emit the envelope, then call exit(1). Oclif's exit
+	 * surfaces as a thrown EEXIT error from `cmd.run()`, which is the expected
+	 * post-envelope shape — we swallow it so we can inspect the envelope.
+	 */
+	async function runExpectingExit(cmd: { run: () => Promise<void> }): Promise<void> {
+		try {
+			await cmd.run();
+		} catch (err) {
+			const status = (err as { oclif?: { exit?: number }; code?: string })?.oclif?.exit;
+			const code = (err as { code?: string })?.code;
+			if (status === 1 || code === 'EEXIT') return;
+			throw err;
+		}
+	}
+
+	it('PostPRComment surfaces a runtime envelope when postPRComment throws', async () => {
+		vi.mocked(postPRComment).mockRejectedValueOnce(new Error('Rate limited'));
+		const cmd = new PostPRComment(
+			['--prNumber', '42', '--body', 'Hello'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await runExpectingExit(cmd);
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error?.type).toBe('runtime');
+		expect(output.error?.message).toBe('Rate limited');
+	});
+
+	it('UpdatePRComment surfaces a runtime envelope when updatePRComment throws', async () => {
+		vi.mocked(updatePRComment).mockRejectedValueOnce(new Error('Not Found'));
+		const cmd = new UpdatePRComment(
+			['--commentId', '555', '--body', 'New content'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await runExpectingExit(cmd);
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error?.type).toBe('runtime');
+		expect(output.error?.message).toBe('Not Found');
+	});
+
+	it('ReplyToReviewComment surfaces a runtime envelope when replyToReviewComment throws', async () => {
+		vi.mocked(replyToReviewComment).mockRejectedValueOnce(new Error('Unprocessable Entity'));
+		const cmd = new ReplyToReviewComment(
+			['--prNumber', '42', '--commentId', '101', '--body', 'Reply'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await runExpectingExit(cmd);
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error?.type).toBe('runtime');
+		expect(output.error?.message).toBe('Unprocessable Entity');
+	});
+});
