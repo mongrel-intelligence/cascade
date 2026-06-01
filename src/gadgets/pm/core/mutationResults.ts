@@ -21,10 +21,8 @@
  *   - We always PREFER a provider-supplied timestamp when present.
  *   - We ONLY fall back to the current ISO timestamp for synthetic outcomes
  *     (`no-op` / `aborted`). For `'ok'` outcomes the caller MUST pass the
- *     provider timestamp — if the caller has no provider timestamp (legacy
- *     adapter, partial migration), they must request the synthesised fallback
- *     explicitly via `currentTimestamp()` rather than silently pretending
- *     the provider wrote data at "now".
+ *     provider timestamp. Missing provider timestamps are rejected rather than
+ *     silently pretending the provider wrote data at "now".
  */
 
 /**
@@ -73,9 +71,8 @@ export function currentTimestamp(): string {
  * timestamp only when none is available.
  *
  * IMPORTANT: this fallback is intended for synthetic outcomes (no-op,
- * aborted). For `'ok'` outcomes the caller should have a provider timestamp;
- * if it doesn't, it should pass the provider value directly (even if
- * undefined) so the result accurately reflects what the provider returned.
+ * aborted). For `'ok'` outcomes the caller must pass a provider timestamp to
+ * `okResult`; missing successful-resource timestamps are rejected.
  *
  * The helper exists to avoid littering call sites with the same `?? new
  * Date().toISOString()` expression.
@@ -87,27 +84,31 @@ export function pickTimestamp(providerTimestamp: string | undefined | null): str
 	return currentTimestamp();
 }
 
+function requireProviderTimestamp(updatedAt: string): string {
+	if (typeof updatedAt !== 'string' || updatedAt.length === 0) {
+		throw new TypeError('okResult requires a provider-supplied updatedAt timestamp');
+	}
+	return updatedAt;
+}
+
 /**
  * Build an `'ok'` mutation result. Used by mutation cores that successfully
  * wrote data through the provider.
  *
- * The provider timestamp is preferred; the fallback is intentionally
- * synthesised (current ISO) so the consumer always gets a valid ISO string,
- * even from legacy adapters that don't yet plumb `updatedAt`. Downstream
- * consumers should NOT interpret the fallback as a guarantee that the
- * provider write happened at "now" — when accuracy matters, branch on
- * presence of the provider timestamp on the upstream data shape.
+ * The provider timestamp is required so consumers can treat `updatedAt` on a
+ * successful result as provider-supplied. Synthetic timestamps are reserved
+ * for `no-op` and `aborted` results.
  */
 export function okResult(args: {
 	id: string;
-	updatedAt?: string | null;
+	updatedAt: string;
 	url?: string;
 	message?: string;
 }): PMMutationResult {
 	const result: PMMutationResult = {
 		id: args.id,
 		status: 'ok',
-		updatedAt: pickTimestamp(args.updatedAt ?? undefined),
+		updatedAt: requireProviderTimestamp(args.updatedAt),
 	};
 	if (args.url) result.url = args.url;
 	if (args.message) result.message = args.message;

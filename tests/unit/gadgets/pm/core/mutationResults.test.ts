@@ -60,10 +60,16 @@ describe('PM mutationResults', () => {
 			});
 		});
 
-		it('synthesises the timestamp when none is supplied', () => {
-			const result = okResult({ id: 'item-1' });
-			expect(result.updatedAt).toBe(FROZEN_NOW.toISOString());
-			expect(result.status).toBe('ok');
+		it('rejects an empty provider timestamp', () => {
+			expect(() => okResult({ id: 'item-1', updatedAt: '' })).toThrow(
+				'okResult requires a provider-supplied updatedAt timestamp',
+			);
+		});
+
+		it('rejects a missing provider timestamp at runtime', () => {
+			expect(() => okResult({ id: 'item-1' } as Parameters<typeof okResult>[0])).toThrow(
+				'okResult requires a provider-supplied updatedAt timestamp',
+			);
 		});
 
 		it('omits optional fields when not provided', () => {

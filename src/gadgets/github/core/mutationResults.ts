@@ -18,7 +18,7 @@
  * Status semantics:
  *   - `'ok'`        — the mutation succeeded against GitHub. The caller passes
  *                     the provider-reported timestamp (`updated_at` from the
- *                     GitHub REST API response) when available.
+ *                     GitHub REST API response).
  *   - `'no-op'`     — the mutation gadget detected nothing to do (e.g. a PR
  *                     create returning "already exists"). Timestamp is
  *                     synthesised.
@@ -71,10 +71,9 @@ export function currentTimestamp(): string {
  * Prefer a provider-supplied timestamp, falling back to the current ISO
  * timestamp only when none is available.
  *
- * IMPORTANT: GitHub's REST API always returns `updated_at` on the mutation
- * response, so `'ok'` callers should always have a real value. The fallback
- * exists to keep the helper resilient — never to silently fabricate provider
- * activity.
+ * IMPORTANT: this fallback is intended for synthetic outcomes (no-op,
+ * aborted). GitHub's REST API returns `updated_at` on mutation responses, so
+ * `'ok'` callers must pass that real provider value to `okResult`.
  */
 export function pickTimestamp(providerTimestamp: string | undefined | null): string {
 	if (providerTimestamp && providerTimestamp.length > 0) {
@@ -83,20 +82,28 @@ export function pickTimestamp(providerTimestamp: string | undefined | null): str
 	return currentTimestamp();
 }
 
+function requireProviderTimestamp(updatedAt: string): string {
+	if (typeof updatedAt !== 'string' || updatedAt.length === 0) {
+		throw new TypeError('okResult requires a GitHub-supplied updatedAt timestamp');
+	}
+	return updatedAt;
+}
+
 /**
- * Build an `'ok'` mutation result. The caller passes the GitHub response's
- * `updated_at` (or equivalent) when available.
+ * Build an `'ok'` mutation result. The caller must pass the GitHub response's
+ * `updated_at` (or equivalent) so successful results never fabricate resource
+ * timestamps.
  */
 export function okResult(args: {
 	id: string | number;
-	updatedAt?: string | null;
+	updatedAt: string;
 	url?: string;
 	message?: string;
 }): GitHubMutationResult {
 	const result: GitHubMutationResult = {
 		id: String(args.id),
 		status: 'ok',
-		updatedAt: pickTimestamp(args.updatedAt ?? undefined),
+		updatedAt: requireProviderTimestamp(args.updatedAt),
 	};
 	if (args.url) result.url = args.url;
 	if (args.message) result.message = args.message;

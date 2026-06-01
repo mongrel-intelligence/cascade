@@ -65,10 +65,16 @@ describe('GitHub mutationResults', () => {
 			expect(result.id).toBe('gh-comment-id');
 		});
 
-		it('synthesises the timestamp when none is supplied', () => {
-			const result = okResult({ id: 1 });
-			expect(result.updatedAt).toBe(FROZEN_NOW.toISOString());
-			expect(result.status).toBe('ok');
+		it('rejects an empty GitHub timestamp', () => {
+			expect(() => okResult({ id: 1, updatedAt: '' })).toThrow(
+				'okResult requires a GitHub-supplied updatedAt timestamp',
+			);
+		});
+
+		it('rejects a missing GitHub timestamp at runtime', () => {
+			expect(() => okResult({ id: 1 } as Parameters<typeof okResult>[0])).toThrow(
+				'okResult requires a GitHub-supplied updatedAt timestamp',
+			);
 		});
 
 		it('omits optional fields when not provided', () => {
