@@ -23,10 +23,11 @@ afterEach(() => {
 });
 
 describe('readWorkItemContext', () => {
-	it('returns the provider URL + updatedAt when getWorkItem succeeds', async () => {
+	it('returns the provider URL + updatedAt + title when getWorkItem succeeds', async () => {
 		mockProvider.getWorkItem.mockResolvedValue(
 			createMockWorkItem({
 				id: 'item1',
+				title: 'Mock work item',
 				url: 'https://trello.com/c/item1',
 				updatedAt: '2026-02-01T01:02:03.000Z',
 			}),
@@ -37,6 +38,7 @@ describe('readWorkItemContext', () => {
 		expect(result).toEqual({
 			workItemUrl: 'https://trello.com/c/item1',
 			updatedAt: '2026-02-01T01:02:03.000Z',
+			title: 'Mock work item',
 		});
 	});
 

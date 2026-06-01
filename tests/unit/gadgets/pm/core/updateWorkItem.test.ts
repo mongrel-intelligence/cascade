@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockPMProvider } from '../../../../helpers/mockPMProvider.js';
+import { createMockPMProvider, createMockWorkItem } from '../../../../helpers/mockPMProvider.js';
 
 const mockProvider = createMockPMProvider();
 
@@ -10,91 +10,145 @@ vi.mock('../../../../../src/pm/index.js', () => ({
 
 import { updateWorkItem } from '../../../../../src/gadgets/pm/core/updateWorkItem.js';
 
+beforeEach(() => {
+	// Default work-item read-back for the post-mutation metadata fetch.
+	mockProvider.getWorkItem.mockResolvedValue(
+		createMockWorkItem({
+			id: 'item1',
+			title: 'Stored title',
+			url: 'https://trello.com/c/item1',
+			updatedAt: '2026-03-15T12:00:00.000Z',
+		}),
+	);
+	mockProvider.getWorkItemUrl.mockReturnValue('https://trello.com/c/item1');
+});
+
 describe('updateWorkItem', () => {
-	it('returns early message when nothing to update', async () => {
-		const result = await updateWorkItem({ workItemId: 'item1' });
-		expect(result).toBe('Nothing to update - provide title, description, or labels');
-		expect(mockProvider.updateWorkItem).not.toHaveBeenCalled();
-	});
-
-	it('updates title only', async () => {
-		mockProvider.updateWorkItem.mockResolvedValue(undefined);
-
-		const result = await updateWorkItem({ workItemId: 'item1', title: 'New Title' });
-
-		expect(mockProvider.updateWorkItem).toHaveBeenCalledWith('item1', {
-			title: 'New Title',
-			description: undefined,
-		});
-		expect(result).toBe('Work item updated: title');
-	});
-
-	it('updates description only', async () => {
-		mockProvider.updateWorkItem.mockResolvedValue(undefined);
-
-		const result = await updateWorkItem({ workItemId: 'item1', description: 'New description' });
-
-		expect(mockProvider.updateWorkItem).toHaveBeenCalledWith('item1', {
-			title: undefined,
-			description: 'New description',
-		});
-		expect(result).toBe('Work item updated: description');
-	});
-
-	it('adds labels', async () => {
-		mockProvider.addLabel.mockResolvedValue(undefined);
-
-		const result = await updateWorkItem({ workItemId: 'item1', addLabelIds: ['label1', 'label2'] });
-
-		expect(mockProvider.addLabel).toHaveBeenCalledTimes(2);
-		expect(mockProvider.addLabel).toHaveBeenCalledWith('item1', 'label1');
-		expect(mockProvider.addLabel).toHaveBeenCalledWith('item1', 'label2');
-		expect(result).toBe('Work item updated: 2 label(s)');
-	});
-
-	it('updates title and description together', async () => {
-		mockProvider.updateWorkItem.mockResolvedValue(undefined);
-
-		const result = await updateWorkItem({ workItemId: 'item1', title: 'T', description: 'D' });
-
-		expect(mockProvider.updateWorkItem).toHaveBeenCalledOnce();
-		expect(result).toBe('Work item updated: title, description');
-	});
-
-	it('updates title, description, and labels together', async () => {
-		mockProvider.updateWorkItem.mockResolvedValue(undefined);
-		mockProvider.addLabel.mockResolvedValue(undefined);
-
-		const result = await updateWorkItem({
-			workItemId: 'item1',
-			title: 'T',
-			description: 'D',
-			addLabelIds: ['l1'],
+	describe('noop path (nothing to update)', () => {
+		it('returns a structured noop result when no fields are provided', async () => {
+			const result = await updateWorkItem({ workItemId: 'item1' });
+			expect(result).toMatchObject({
+				status: 'noop',
+				id: 'item1',
+				title: 'Stored title',
+				url: 'https://trello.com/c/item1',
+				changedFields: [],
+				addedLabelIds: [],
+				message: 'Nothing to update - provide title, description, or labels',
+			});
+			expect(typeof result.updatedAt).toBe('string');
+			expect(mockProvider.updateWorkItem).not.toHaveBeenCalled();
+			expect(mockProvider.addLabel).not.toHaveBeenCalled();
 		});
 
-		expect(result).toBe('Work item updated: title, description, 1 label(s)');
+		it('returns a structured noop when addLabelIds is empty', async () => {
+			const result = await updateWorkItem({ workItemId: 'item1', addLabelIds: [] });
+			expect(result.status).toBe('noop');
+			expect(result.addedLabelIds).toEqual([]);
+			expect(mockProvider.addLabel).not.toHaveBeenCalled();
+		});
 	});
 
-	it('throws an error message on failure', async () => {
-		mockProvider.updateWorkItem.mockRejectedValue(new Error('API error'));
+	describe('updated path (provider write)', () => {
+		it('updates title only and surfaces post-write metadata', async () => {
+			mockProvider.updateWorkItem.mockResolvedValue(undefined);
 
-		await expect(updateWorkItem({ workItemId: 'item1', title: 'T' })).rejects.toThrow(
-			'Error updating work item: API error',
-		);
+			const result = await updateWorkItem({ workItemId: 'item1', title: 'New Title' });
+
+			expect(mockProvider.updateWorkItem).toHaveBeenCalledWith('item1', {
+				title: 'New Title',
+				description: undefined,
+			});
+			expect(result).toEqual({
+				status: 'updated',
+				id: 'item1',
+				title: 'Stored title',
+				url: 'https://trello.com/c/item1',
+				updatedAt: '2026-03-15T12:00:00.000Z',
+				changedFields: ['title'],
+				addedLabelIds: [],
+			});
+		});
+
+		it('updates description only', async () => {
+			mockProvider.updateWorkItem.mockResolvedValue(undefined);
+
+			const result = await updateWorkItem({ workItemId: 'item1', description: 'New description' });
+
+			expect(mockProvider.updateWorkItem).toHaveBeenCalledWith('item1', {
+				title: undefined,
+				description: 'New description',
+			});
+			expect(result.status).toBe('updated');
+			expect(result.changedFields).toEqual(['description']);
+			expect(result.addedLabelIds).toEqual([]);
+		});
+
+		it('adds labels and echoes addedLabelIds without writing title/description', async () => {
+			mockProvider.addLabel.mockResolvedValue(undefined);
+
+			const result = await updateWorkItem({
+				workItemId: 'item1',
+				addLabelIds: ['label1', 'label2'],
+			});
+
+			expect(mockProvider.addLabel).toHaveBeenCalledTimes(2);
+			expect(mockProvider.addLabel).toHaveBeenCalledWith('item1', 'label1');
+			expect(mockProvider.addLabel).toHaveBeenCalledWith('item1', 'label2');
+			expect(mockProvider.updateWorkItem).not.toHaveBeenCalled();
+			expect(result.status).toBe('updated');
+			expect(result.changedFields).toEqual([]);
+			expect(result.addedLabelIds).toEqual(['label1', 'label2']);
+		});
+
+		it('combines title, description, and labels in a single result', async () => {
+			mockProvider.updateWorkItem.mockResolvedValue(undefined);
+			mockProvider.addLabel.mockResolvedValue(undefined);
+
+			const result = await updateWorkItem({
+				workItemId: 'item1',
+				title: 'T',
+				description: 'D',
+				addLabelIds: ['l1'],
+			});
+
+			expect(result.status).toBe('updated');
+			expect(result.changedFields).toEqual(['title', 'description']);
+			expect(result.addedLabelIds).toEqual(['l1']);
+		});
 	});
 
-	it('does not call updateWorkItem when only labels provided', async () => {
-		mockProvider.addLabel.mockResolvedValue(undefined);
+	describe('read-back fallback', () => {
+		it('synthesises url + timestamp when post-write read-back throws', async () => {
+			mockProvider.updateWorkItem.mockResolvedValue(undefined);
+			mockProvider.getWorkItem.mockRejectedValue(new Error('Read-back failed'));
+			mockProvider.getWorkItemUrl.mockReturnValue('https://fallback.example/item1');
 
-		await updateWorkItem({ workItemId: 'item1', addLabelIds: ['l1'] });
+			const result = await updateWorkItem({ workItemId: 'item1', title: 'T' });
 
-		expect(mockProvider.updateWorkItem).not.toHaveBeenCalled();
+			expect(result.status).toBe('updated');
+			expect(result.url).toBe('https://fallback.example/item1');
+			expect(typeof result.updatedAt).toBe('string');
+			// Title falls back to the caller-supplied title when read-back fails
+			expect(result.title).toBe('T');
+		});
 	});
 
-	it('does not add labels when addLabelIds is empty array', async () => {
-		const result = await updateWorkItem({ workItemId: 'item1', addLabelIds: [] });
+	describe('error propagation', () => {
+		it('throws on provider updateWorkItem failure (no prose sentinel)', async () => {
+			mockProvider.updateWorkItem.mockRejectedValue(new Error('API error'));
 
-		expect(result).toBe('Nothing to update - provide title, description, or labels');
-		expect(mockProvider.addLabel).not.toHaveBeenCalled();
+			await expect(updateWorkItem({ workItemId: 'item1', title: 'T' })).rejects.toThrow(
+				'API error',
+			);
+		});
+
+		it('throws on provider addLabel failure', async () => {
+			mockProvider.addLabel.mockRejectedValue(new Error('Label not found'));
+
+			await expect(updateWorkItem({ workItemId: 'item1', addLabelIds: ['l1'] })).rejects.toThrow(
+				'Label not found',
+			);
+		});
 	});
 });

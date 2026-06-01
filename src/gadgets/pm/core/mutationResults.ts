@@ -152,6 +152,133 @@ export function abortedResult(args: {
 	return result;
 }
 
+// ─── Work-item & comment mutation result contracts (MNG-1423) ───────────────
+//
+// Work-item and comment mutations expose action-specific outcome statuses
+// alongside the parent work-item identity / URL / timestamp. They live in this
+// shared module so consumers can import all PM mutation result shapes from a
+// single surface; `pickTimestamp` / `currentTimestamp` above are reused as-is.
+//
+// The acceptance criteria from MNG-1423 use action-specific status literals
+// (`created`, `updated`, `moved`, `noop`, `aborted`) instead of the generic
+// `'ok' | 'no-op' | 'aborted'` union that the original PM mutation contract
+// shipped. The earlier union (re-exported above for parity with the GitHub
+// mutation contract) is still useful to callers building their own mutations
+// — the explicit literal unions below are what the four work-item / comment
+// cores return.
+
+/**
+ * Result returned by `createWorkItem`. Surfaces the freshly-created work item's
+ * identity (`id`, `title`, `url`), the action status (`'created'`),
+ * provider-preferred `updatedAt`, and any workflow-state fields the provider
+ * surfaced on creation (`status`, `statusId`). The optional state fields are
+ * provider-dependent — Trello returns the destination list ID via `status`,
+ * Linear returns the workflow state via `statusId`, JIRA's create endpoint
+ * does not surface a status on the create response.
+ */
+export interface WorkItemCreatedResult {
+	status: 'created';
+	id: string;
+	title: string;
+	url: string;
+	updatedAt: string;
+	/** Optional human-readable workflow state name (e.g. Linear state name). */
+	workflowStatus?: string;
+	/** Optional native workflow state ID (e.g. Linear state UUID, Trello list ID). */
+	workflowStatusId?: string;
+}
+
+/**
+ * Result returned by `updateWorkItem`. Two outcomes:
+ *   - `'updated'` — the provider accepted at least one field update or label
+ *     addition. `changedFields` lists the work-item fields that were sent
+ *     (any of `'title'` / `'description'`); `addedLabelIds` lists the labels
+ *     that were applied. The current work-item metadata (`title`, `url`,
+ *     `updatedAt`) is read back from the provider after the mutation.
+ *   - `'noop'`    — the caller did not pass any updates (no title,
+ *     description, or labels). No provider write happened; `updatedAt` is
+ *     synthesised via `currentTimestamp()` and `title` / `url` are best-effort
+ *     (read back from the provider when available).
+ *
+ * `changedFields` and `addedLabelIds` are always present (as arrays) so
+ * consumers never branch on `undefined`. They may be empty on the `'noop'`
+ * outcome.
+ */
+export interface WorkItemUpdatedResult {
+	status: 'updated' | 'noop';
+	id: string;
+	title: string;
+	url: string;
+	updatedAt: string;
+	changedFields: Array<'title' | 'description'>;
+	addedLabelIds: string[];
+	/** Optional human-readable note explaining the outcome (used on `noop`). */
+	message?: string;
+}
+
+/**
+ * Result returned by `moveWorkItem`. Three outcomes:
+ *   - `'moved'`   — the provider accepted the move from the caller's source
+ *     into the requested destination. The new workflow state is reflected in
+ *     `destination` (the value passed to the provider).
+ *   - `'noop'`    — the work item was already in the requested destination
+ *     (idempotent guard via `expectedSourceState`). No provider write
+ *     happened.
+ *   - `'aborted'` — the work item's current status did not match
+ *     `expectedSourceState` (parallel-agent race guard). No provider write
+ *     happened.
+ *
+ * The work-item `url` is sourced via `provider.getWorkItemUrl(id)` (or the
+ * read-back `WorkItem.url` when the guarded path already fetched it). The
+ * `previousStatus` field surfaces the work-item's current human-readable
+ * workflow status / status ID when the guarded path read it back from the
+ * provider — useful for diagnostics on `'noop'` and `'aborted'` outcomes.
+ */
+export interface WorkItemMovedResult {
+	status: 'moved' | 'noop' | 'aborted';
+	id: string;
+	url: string;
+	destination: string;
+	updatedAt: string;
+	/**
+	 * The work item's current status / status ID at the time of the guarded
+	 * read-back. Present for `'noop'` and `'aborted'` outcomes (and for
+	 * `'moved'` outcomes that went through the guarded path); omitted for
+	 * `'moved'` outcomes that bypassed the guard (no `expectedSourceState`).
+	 */
+	previousStatus?: string;
+	/**
+	 * The previousStatus's native ID when known (e.g. Linear state UUID,
+	 * Trello list ID). Optional; consumers can fall back to `previousStatus`.
+	 */
+	previousStatusId?: string;
+	/** Optional human-readable note explaining the outcome. */
+	message?: string;
+}
+
+/**
+ * Result returned by `postComment`. Two outcomes:
+ *   - `'created'` — a new comment was added via `provider.addComment`. `id`
+ *     is the new comment's provider ID.
+ *   - `'updated'` — an existing progress comment was replaced via
+ *     `provider.updateComment`. `id` is the existing comment's provider ID.
+ *
+ * The parent work-item context (`workItemId`, `workItemUrl`) is always
+ * present so downstream consumers can correlate the comment back to its
+ * parent. `updatedAt` reflects when the comment was written; because the
+ * `PMProvider.addComment` / `updateComment` surface returns only an ID
+ * (not the full comment record), we synthesise the timestamp via
+ * `currentTimestamp()` — the comment was just written, so the synthetic
+ * "now" closely tracks the provider-side reality.
+ */
+export interface CommentPostedResult {
+	status: 'created' | 'updated';
+	id: string;
+	workItemId: string;
+	workItemUrl: string;
+	updatedAt: string;
+}
+
 // ─── Checklist mutation result contracts (MNG-1424) ─────────────────────────
 //
 // PM checklist mutations have action-specific outcome statuses (`created`,

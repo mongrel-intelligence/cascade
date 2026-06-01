@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockPMProvider } from '../../../../helpers/mockPMProvider.js';
+import { createMockPMProvider, createMockWorkItem } from '../../../../helpers/mockPMProvider.js';
 
 const mockProvider = createMockPMProvider();
 
@@ -36,28 +36,39 @@ const mockLogger = vi.mocked(logger);
 
 beforeEach(() => {
 	mockReadProgressCommentId.mockReturnValue(null);
+	mockProvider.getWorkItem.mockResolvedValue(
+		createMockWorkItem({
+			id: 'item1',
+			url: 'https://trello.com/c/item1',
+		}),
+	);
+	mockProvider.getWorkItemUrl.mockReturnValue('https://trello.com/c/item1');
 });
 
 describe('postComment', () => {
-	it('posts a comment and returns success message', async () => {
-		mockProvider.addComment.mockResolvedValue(undefined);
+	it('returns a structured created result when no progress comment exists', async () => {
+		mockProvider.addComment.mockResolvedValue('comment-new');
 
 		const result = await postComment('item1', 'Hello world');
 
 		expect(mockProvider.addComment).toHaveBeenCalledWith('item1', 'Hello world');
-		expect(result).toBe('Comment posted successfully');
+		expect(result).toMatchObject({
+			status: 'created',
+			id: 'comment-new',
+			workItemId: 'item1',
+			workItemUrl: 'https://trello.com/c/item1',
+		});
+		expect(typeof result.updatedAt).toBe('string');
 	});
 
-	it('throws an error message on failure', async () => {
+	it('throws on provider failure (no prose sentinel)', async () => {
 		mockProvider.addComment.mockRejectedValue(new Error('Network error'));
 
-		await expect(postComment('item1', 'text')).rejects.toThrow(
-			'Error posting comment: Network error',
-		);
+		await expect(postComment('item1', 'text')).rejects.toThrow('Network error');
 	});
 
-	it('passes multi-line text correctly', async () => {
-		mockProvider.addComment.mockResolvedValue(undefined);
+	it('passes multi-line text through unchanged', async () => {
+		mockProvider.addComment.mockResolvedValue('comment-multi');
 
 		const text = 'Line 1\n\nLine 2\n\nLine 3';
 		await postComment('item1', text);
@@ -65,16 +76,25 @@ describe('postComment', () => {
 		expect(mockProvider.addComment).toHaveBeenCalledWith('item1', text);
 	});
 
-	it('handles non-Error thrown value', async () => {
+	it('propagates non-Error thrown values', async () => {
 		mockProvider.addComment.mockRejectedValue('string error');
 
-		await expect(postComment('item1', 'text')).rejects.toThrow(
-			'Error posting comment: string error',
-		);
+		await expect(postComment('item1', 'text')).rejects.toThrow('string error');
+	});
+
+	it('falls back to getWorkItemUrl when read-back fails', async () => {
+		mockProvider.addComment.mockResolvedValue('comment-fallback');
+		mockProvider.getWorkItem.mockRejectedValue(new Error('Read-back failed'));
+		mockProvider.getWorkItemUrl.mockReturnValue('https://fallback.example/item1');
+
+		const result = await postComment('item1', 'text');
+
+		expect(result.status).toBe('created');
+		expect(result.workItemUrl).toBe('https://fallback.example/item1');
 	});
 
 	describe('progress comment replacement', () => {
-		it('updates existing progress comment when state matches workItemId', async () => {
+		it('returns an updated result when existing progress comment is replaced', async () => {
 			mockReadProgressCommentId.mockReturnValue({ workItemId: 'item1', commentId: 'comment-42' });
 			mockProvider.updateComment.mockResolvedValue(undefined);
 
@@ -87,26 +107,33 @@ describe('postComment', () => {
 			);
 			expect(mockProvider.addComment).not.toHaveBeenCalled();
 			expect(mockClearProgressCommentId).toHaveBeenCalled();
-			expect(result).toBe('Comment posted successfully');
+			expect(result).toMatchObject({
+				status: 'updated',
+				id: 'comment-42',
+				workItemId: 'item1',
+				workItemUrl: 'https://trello.com/c/item1',
+			});
 		});
 
-		it('does not update when workItemId does not match state', async () => {
+		it('does not update when workItemId does not match progress state', async () => {
 			mockReadProgressCommentId.mockReturnValue({
 				workItemId: 'other-item',
 				commentId: 'comment-42',
 			});
-			mockProvider.addComment.mockResolvedValue(undefined);
+			mockProvider.addComment.mockResolvedValue('comment-new');
 
-			await postComment('item1', 'My comment');
+			const result = await postComment('item1', 'My comment');
 
 			expect(mockProvider.updateComment).not.toHaveBeenCalled();
 			expect(mockProvider.addComment).toHaveBeenCalledWith('item1', 'My comment');
+			expect(result.status).toBe('created');
+			expect(result.id).toBe('comment-new');
 		});
 
-		it('falls back to addComment when updateComment fails, and clears state', async () => {
+		it('falls back to addComment when updateComment fails and surfaces a created result', async () => {
 			mockReadProgressCommentId.mockReturnValue({ workItemId: 'item1', commentId: 'comment-42' });
 			mockProvider.updateComment.mockRejectedValue(new Error('Comment not found'));
-			mockProvider.addComment.mockResolvedValue(undefined);
+			mockProvider.addComment.mockResolvedValue('comment-new');
 
 			const result = await postComment('item1', 'Final summary');
 
@@ -125,24 +152,18 @@ describe('postComment', () => {
 			);
 			expect(mockProvider.addComment).toHaveBeenCalledWith('item1', 'Final summary');
 			expect(mockClearProgressCommentId).toHaveBeenCalled();
-			expect(result).toBe('Comment posted successfully');
+			expect(result).toMatchObject({
+				status: 'created',
+				id: 'comment-new',
+				workItemId: 'item1',
+				workItemUrl: 'https://trello.com/c/item1',
+			});
 		});
 
-		it('creates new comment (no state) when no progress comment exists', async () => {
-			mockReadProgressCommentId.mockReturnValue(null);
-			mockProvider.addComment.mockResolvedValue(undefined);
-
-			const result = await postComment('item1', 'New comment');
-
-			expect(mockProvider.updateComment).not.toHaveBeenCalled();
-			expect(mockProvider.addComment).toHaveBeenCalledWith('item1', 'New comment');
-			expect(result).toBe('Comment posted successfully');
-		});
-
-		it('clears state before fallback so subsequent calls create new comments', async () => {
+		it('clears progress state before the fallback addComment runs', async () => {
 			mockReadProgressCommentId.mockReturnValue({ workItemId: 'item1', commentId: 'comment-42' });
 			mockProvider.updateComment.mockRejectedValue(new Error('gone'));
-			mockProvider.addComment.mockResolvedValue(undefined);
+			mockProvider.addComment.mockResolvedValue('comment-new');
 
 			await postComment('item1', 'text');
 

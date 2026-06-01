@@ -2,9 +2,10 @@ import { getPMProvider } from '../../../pm/index.js';
 import { pickTimestamp } from './mutationResults.js';
 
 /**
- * Shared read-back helper used by PM checklist mutation cores
- * (`addChecklist`, `updateChecklistItem`, `deleteChecklistItem`) to surface
- * the parent work-item's URL + `updatedAt` on the structured result.
+ * Shared read-back helper used by PM mutation cores (`addChecklist`,
+ * `updateChecklistItem`, `deleteChecklistItem`, `updateWorkItem`,
+ * `postComment`) to surface the parent work-item's URL + `updatedAt` (and,
+ * for callers that need it, `title`) on the structured result.
  *
  * Implements the technical-notes pattern from MNG-1424: "Use work-item
  * read-back for URL/status/timestamp where provider APIs do not return deep
@@ -18,17 +19,22 @@ import { pickTimestamp } from './mutationResults.js';
  * duplicates rows. We therefore swallow the read-back error and fall back to
  * the synchronous `getWorkItemUrl(id)` constructor plus a synthesised current
  * ISO timestamp. The mutation success is preserved; the timestamp is just
- * synthesised rather than provider-supplied.
+ * synthesised rather than provider-supplied. `title` is `undefined` on the
+ * fallback path because the synchronous `getWorkItemUrl` surface only returns
+ * a URL.
  */
-export async function readWorkItemContext(
-	workItemId: string,
-): Promise<{ workItemUrl: string; updatedAt: string }> {
+export async function readWorkItemContext(workItemId: string): Promise<{
+	workItemUrl: string;
+	updatedAt: string;
+	title?: string;
+}> {
 	const provider = getPMProvider();
 	try {
 		const item = await provider.getWorkItem(workItemId);
 		return {
 			workItemUrl: item.url,
 			updatedAt: pickTimestamp(item.updatedAt),
+			title: item.title,
 		};
 	} catch {
 		return {
