@@ -152,22 +152,20 @@ Core functions passed to `createCLICommand()` own domain work only. On fatal run
 
 Every PM and SCM mutation core returns a structured object, never prose. The CLI factory serialises that object verbatim into `{"success":true,"data":{...}}`, so consumers (downstream agents, sidecars, review/respond workflows) can read structured keys directly.
 
-Minimum fields every mutation surfaces on `success.data`:
+Every mutation surfaces these contract fields on `success.data`:
 
 | Field | Meaning |
 |---|---|
 | `status` | The MUTATION OUTCOME — `"created"`/`"updated"`/`"moved"`/`"noop"`/`"aborted"`/`"deleted"` (PM) or `"ok"`/`"no-op"`/`"aborted"` (SCM). Branch on this, not on prose. |
-| `id` | Stable identifier (work-item ID, comment ID, review ID; stringified for GitHub). |
-| `url` | Canonical URL of the affected resource. PM checklist-item mutations carry the parent URL on `workItemUrl` instead. |
-| `updatedAt` | ISO 8601 timestamp — provider-supplied for write outcomes; synthesised via `currentTimestamp()` for `"noop"`/`"aborted"`. Always parseable. |
+| `updatedAt` | ISO 8601 timestamp string. It is always present and parseable; the source varies by mutation and fallback path. |
 
-SCM mutations additionally surface `repoFullName` and `prNumber` (the latter widens to `number | null` for `UpdatePRComment` when GitHub returns an issue-only comment URL). `CreatePRReview` extends with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`. The full per-mutation shapes live on the matching `ToolDefinition.outputShape` blocks under `src/gadgets/{pm,github}/definitions.ts`.
+Identity and URL fields are mutation-specific. Work-item and comment mutations expose `id` plus their canonical resource URL (`url` or, for PM comments, `workItemUrl`). `AddChecklist` exposes `checklistId` and `workItemUrl`, plus `itemIds` / `itemCount`; `PMUpdateChecklistItem` and `PMDeleteChecklistItem` expose `checkItemId` and `workItemUrl`. SCM mutations additionally surface `id`, `url`, `repoFullName`, and `prNumber` (the latter widens to `number | null` for `UpdatePRComment` when GitHub returns an issue-only comment URL). `CreatePRReview` extends with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`. The full per-mutation shapes live on the matching `ToolDefinition.outputShape` blocks under `src/gadgets/{pm,github}/definitions.ts`.
 
 **`status` vs `workflowStatus` naming.** `status` is reserved for the mutation outcome alone. The PM provider's workflow state — Linear's "In Progress", a Trello list name, a JIRA status — lives on its own keys: `workflowStatus` (human-readable) and `workflowStatusId` (native ID). `MoveWorkItem` also exposes `previousStatus` / `previousStatusId` for the work item's pre-move workflow state on the guarded path. Mixing the two surfaces once cost ~2½ minutes of agent time (prod run `5d993b04`); the dual-key naming is now load-bearing.
 
 **Fatal failures throw.** Cores propagate runtime/API/provider errors as exceptions; the CLI factory emits the spec-014 runtime envelope (`{"success":false,"error":{"type":"runtime","message":"..."}}`). Do NOT return sentinel strings like `"Error creating work item: ..."` — the CLI cannot distinguish a string return from a successful `data` payload, so the envelope would say `success: true` and the agent would silently mis-act.
 
-**Timestamp fallback semantics.** `okResult` requires a provider-supplied `updatedAt` (rejects empty values with a `TypeError`) so successful outcomes never fabricate timestamps. `noOpResult` and `abortedResult` synthesise via `currentTimestamp()` because no provider write happened — the synthetic "now" reflects when the gadget evaluated the guard. Read-back failures after a successful mutation fall back to a synthesised URL + timestamp in `readWorkItemContext` rather than masking the mutation success and risking an idempotency retry storm (Trello native-checklist retries duplicate rows).
+**Timestamp fallback semantics.** The stable contract is that `updatedAt` is always present and parseable. `okResult` still rejects empty timestamps, so call sites using the shared success helper must provide one, but some successful PM writes synthesise timestamps today: `PostComment` uses `currentTimestamp()` for `created` / `updated`, and `MoveWorkItem` can fall back through `pickTimestamp(undefined)` for `moved`. `noOpResult` and `abortedResult` synthesise via `currentTimestamp()` because no provider write happened — the synthetic "now" reflects when the gadget evaluated the guard. Read-back failures after a successful checklist mutation fall back to a synthesised URL + timestamp in `readWorkItemContext` rather than masking the mutation success and risking an idempotency retry storm (Trello native-checklist retries duplicate rows).
 
 The regression coverage lives in `tests/unit/cli/pm/pm-commands.test.ts`, `tests/unit/cli/scm/scm-commands.test.ts`, `tests/unit/gadgets/pm/definitions.test.ts`, and `tests/unit/gadgets/github/definitions.test.ts`. Run the focused suite with:
 
