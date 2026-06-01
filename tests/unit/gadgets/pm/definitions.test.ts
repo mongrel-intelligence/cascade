@@ -412,4 +412,103 @@ describe('PM gadget definitions', () => {
 			expect(status?.type).toBe('"deleted"');
 		});
 	});
+
+	// ─── Structured-output naming contract (MNG-1428) ─────────────────────────
+	//
+	// `status` is reserved for the MUTATION OUTCOME (`"created"`, `"updated"`,
+	// `"moved"`, `"noop"`, `"aborted"`, `"deleted"`). The PROVIDER WORKFLOW
+	// STATE (e.g. Linear "In Progress", Trello list "Backlog") lives on its
+	// own keys — `workflowStatus` (human-readable) and `workflowStatusId`
+	// (native ID). Mixing the two cost ~2½ minutes of agent run time once
+	// (prod run 5d993b04) when an agent treated a Trello list name returned
+	// in `status` as a mutation outcome. These tests pin the split so a
+	// future drift can never silently collapse the two surfaces.
+	describe('status vs workflowStatus naming contract (MNG-1428)', () => {
+		it('CreateWorkItem distinguishes mutation `status` from provider `workflowStatus`', () => {
+			const fieldsByName = new Map(
+				(createWorkItemDef.outputShape?.fields ?? []).map((f) => [f.name, f]),
+			);
+			// Mutation outcome — required, always "created" on success.
+			expect(fieldsByName.get('status')?.type).toBe('"created"');
+			expect(fieldsByName.get('status')?.optional).toBeFalsy();
+			// Provider workflow state — optional human-readable name.
+			expect(fieldsByName.get('workflowStatus')?.type).toBe('string');
+			expect(fieldsByName.get('workflowStatus')?.optional).toBe(true);
+			// Provider workflow state — optional native ID.
+			expect(fieldsByName.get('workflowStatusId')?.type).toBe('string');
+			expect(fieldsByName.get('workflowStatusId')?.optional).toBe(true);
+		});
+
+		it('MoveWorkItem distinguishes mutation `status` from `previousStatus` / `previousStatusId`', () => {
+			const fieldsByName = new Map(
+				(moveWorkItemDef.outputShape?.fields ?? []).map((f) => [f.name, f]),
+			);
+			// Mutation outcome — required, union of allowed move outcomes.
+			expect(fieldsByName.get('status')?.type).toBe('"moved" | "noop" | "aborted"');
+			expect(fieldsByName.get('status')?.optional).toBeFalsy();
+			// Provider workflow read-back values — optional, distinct keys.
+			expect(fieldsByName.get('previousStatus')?.optional).toBe(true);
+			expect(fieldsByName.get('previousStatusId')?.optional).toBe(true);
+		});
+
+		// Linear has no custom-field concept and so does not surface a workflow
+		// status on AddChecklist — but the naming-collision guard still applies:
+		// `status` must remain the mutation outcome, not the parent work item's
+		// workflow state.
+		it('AddChecklist `status` field is the mutation outcome (always "created")', () => {
+			const status = addChecklistDef.outputShape?.fields.find((f) => f.name === 'status');
+			expect(status?.type).toBe('"created"');
+			expect(status?.optional).toBeFalsy();
+		});
+
+		it('PMUpdateChecklistItem `status` field is the mutation outcome (always "updated")', () => {
+			const status = pmUpdateChecklistItemDef.outputShape?.fields.find((f) => f.name === 'status');
+			expect(status?.type).toBe('"updated"');
+			expect(status?.optional).toBeFalsy();
+		});
+
+		it('PMDeleteChecklistItem `status` field is the mutation outcome (always "deleted")', () => {
+			const status = pmDeleteChecklistItemDef.outputShape?.fields.find((f) => f.name === 'status');
+			expect(status?.type).toBe('"deleted"');
+			expect(status?.optional).toBeFalsy();
+		});
+
+		it('PostComment `status` is the comment-mutation outcome, not a workflow state', () => {
+			const status = postCommentDef.outputShape?.fields.find((f) => f.name === 'status');
+			expect(status?.type).toBe('"created" | "updated"');
+			// PostComment does not carry workflowStatus at all — the parent work
+			// item's state is irrelevant to a comment write.
+			const names = postCommentDef.outputShape?.fields.map((f) => f.name) ?? [];
+			expect(names).not.toContain('workflowStatus');
+			expect(names).not.toContain('workflowStatusId');
+		});
+	});
+
+	// ─── Timestamp surface contract (MNG-1428) ────────────────────────────────
+	//
+	// Every PM mutation outputShape must declare an `updatedAt` ISO 8601 field
+	// — provider-supplied on `"created"`/`"updated"`/`"moved"`/`"deleted"`
+	// outcomes, synthesised via `currentTimestamp()` for `"noop"`/`"aborted"`.
+	// The CLI envelope round-trips that string verbatim; downstream consumers
+	// rely on it being a parseable ISO 8601 timestamp.
+	describe('updatedAt field is present on every mutation outputShape (MNG-1428)', () => {
+		const MUTATION_DEFS = [
+			postCommentDef,
+			updateWorkItemDef,
+			createWorkItemDef,
+			moveWorkItemDef,
+			addChecklistDef,
+			pmUpdateChecklistItemDef,
+			pmDeleteChecklistItemDef,
+		];
+
+		for (const def of MUTATION_DEFS) {
+			it(`${def.name} declares an updatedAt field with type "string"`, () => {
+				const updatedAt = def.outputShape?.fields.find((f) => f.name === 'updatedAt');
+				expect(updatedAt, `${def.name} must declare an updatedAt field`).toBeDefined();
+				expect(updatedAt?.type).toBe('string');
+				expect(updatedAt?.optional).toBeFalsy();
+			});
+		}
+	});
 });

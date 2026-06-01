@@ -17,8 +17,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ---------------------------------------------------------------------------
 // Mock credential-scoping dependencies
 // ---------------------------------------------------------------------------
+// CreatePRReview also calls the GitHub client directly to delete the ack
+// comment after a successful review submission, so `githubClient.deletePRComment`
+// must be defined here for that code path.
 vi.mock('../../../../src/github/client.js', () => ({
 	withGitHubToken: vi.fn((_token: string, fn: () => Promise<void>) => fn()),
+	githubClient: {
+		deletePRComment: vi.fn().mockResolvedValue(undefined),
+	},
 }));
 vi.mock('../../../../src/trello/client.js', () => ({
 	withTrelloCredentials: vi.fn(
@@ -62,7 +68,16 @@ vi.mock('../../../../src/gadgets/github/core/replyToReviewComment.js', () => ({
 vi.mock('../../../../src/gadgets/github/core/updatePRComment.js', () => ({
 	updatePRComment: vi.fn().mockResolvedValue({ id: 300, body: 'Updated' }),
 }));
+vi.mock('../../../../src/gadgets/github/core/createPRReview.js', () => ({
+	createPRReview: vi.fn().mockResolvedValue({ id: '400', reviewUrl: 'https://gh/r/400' }),
+}));
+// Suppress sidecar side effects so the structured-output assertions stay
+// focused on the CLI's JSON envelope.
+vi.mock('../../../../src/gadgets/session/core/sidecar.js', () => ({
+	writeReviewSidecar: vi.fn(() => true),
+}));
 
+import CreatePRReview from '../../../../src/cli/scm/create-pr-review.js';
 import GetCIRunLogs from '../../../../src/cli/scm/get-ci-run-logs.js';
 import GetPRChecks from '../../../../src/cli/scm/get-pr-checks.js';
 import GetPRComments from '../../../../src/cli/scm/get-pr-comments.js';
@@ -71,6 +86,7 @@ import GetPRDiff from '../../../../src/cli/scm/get-pr-diff.js';
 import PostPRComment from '../../../../src/cli/scm/post-pr-comment.js';
 import ReplyToReviewComment from '../../../../src/cli/scm/reply-to-review-comment.js';
 import UpdatePRComment from '../../../../src/cli/scm/update-pr-comment.js';
+import { createPRReview } from '../../../../src/gadgets/github/core/createPRReview.js';
 import { getCIRunLogs } from '../../../../src/gadgets/github/core/getCIRunLogs.js';
 import { getPRChecks } from '../../../../src/gadgets/github/core/getPRChecks.js';
 import { getPRComments } from '../../../../src/gadgets/github/core/getPRComments.js';
@@ -524,5 +540,238 @@ describe('SCM CLI runtime failure envelopes (MNG-1425)', () => {
 		expect(output.success).toBe(false);
 		expect(output.error?.type).toBe('runtime');
 		expect(output.error?.message).toBe('Unprocessable Entity');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1428: SCM CLI structured-output regression coverage
+//
+// Each targeted SCM mutation CLI (post-pr-comment / update-pr-comment /
+// reply-to-review-comment / create-pr-review) must serialise the GitHub
+// mutation result into the `{ success: true, data: ... }` envelope and carry
+// the minimum structured contract — `success.data.id`, `success.data.url`,
+// `success.data.status`, `success.data.updatedAt`, plus the PR/repo context
+// (`repoFullName`, `prNumber`). These tests parse stdout and pin each field so
+// a future renderer drift surfaces in CI rather than silently regressing the
+// agent-facing contract.
+//
+// CreatePRReview also exposes `reviewUrl`, `event`, `submittedAt`, and
+// `inlineCommentCount` — pinned here too because review workflows downstream
+// consume those keys directly from the structured envelope.
+// ---------------------------------------------------------------------------
+describe('SCM CLI structured-output contract (MNG-1428)', () => {
+	function readJsonOutput(logSpy: ReturnType<typeof vi.spyOn>) {
+		const lines = logSpy.mock.calls.map((c) => c[0] as string);
+		const jsonLine = lines.find((l) => typeof l === 'string' && l.startsWith('{')) ?? '';
+		return JSON.parse(jsonLine) as {
+			success: boolean;
+			data?: Record<string, unknown>;
+			error?: { type: string; message: string };
+		};
+	}
+
+	/**
+	 * Runtime failures emit the envelope, then call exit(1). Oclif's exit
+	 * surfaces as a thrown EEXIT error from `cmd.run()`. Mirrors the helper
+	 * scoped to the MNG-1425 describe — local copy avoids leaking state.
+	 */
+	async function runExpectingExit(cmd: { run: () => Promise<void> }): Promise<void> {
+		try {
+			await cmd.run();
+		} catch (err) {
+			const status = (err as { oclif?: { exit?: number }; code?: string })?.oclif?.exit;
+			const code = (err as { code?: string })?.code;
+			if (status === 1 || code === 'EEXIT') return;
+			throw err;
+		}
+	}
+
+	it('PostPRComment stdout exposes id, url, status="ok", updatedAt, repoFullName, prNumber', async () => {
+		vi.mocked(postPRComment).mockResolvedValueOnce({
+			status: 'ok',
+			id: '987654321',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-987654321',
+			updatedAt: '2026-06-01T18:00:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		} as never);
+		const cmd = new PostPRComment(
+			['--prNumber', '42', '--body', 'Working on it...'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'ok',
+			id: '987654321',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-987654321',
+			updatedAt: '2026-06-01T18:00:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		});
+	});
+
+	it('UpdatePRComment stdout exposes id, url, status, updatedAt, repoFullName, prNumber', async () => {
+		vi.mocked(updatePRComment).mockResolvedValueOnce({
+			status: 'ok',
+			id: '111222333',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-111222333',
+			updatedAt: '2026-06-01T18:30:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		} as never);
+		const cmd = new UpdatePRComment(
+			['--commentId', '111222333', '--body', 'Updated'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'ok',
+			id: '111222333',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-111222333',
+			updatedAt: '2026-06-01T18:30:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		});
+	});
+
+	it('UpdatePRComment accepts prNumber=null when the comment is not on a PR thread', async () => {
+		// The UpdatePRComment contract specifies prNumber as `number | null` —
+		// pinned in `updatePRCommentDef.outputShape` — because some issue-only
+		// comments don't expose `/pull/<N>` in their html_url. This test makes
+		// sure the CLI envelope round-trips that nullable value.
+		vi.mocked(updatePRComment).mockResolvedValueOnce({
+			status: 'ok',
+			id: '111222333',
+			url: 'https://github.com/owner/repo/issues/9#issuecomment-111222333',
+			updatedAt: '2026-06-01T18:30:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: null,
+		} as never);
+		const cmd = new UpdatePRComment(
+			['--commentId', '111222333', '--body', 'Updated'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data?.prNumber).toBeNull();
+	});
+
+	it('ReplyToReviewComment stdout exposes id, url, status, updatedAt, repoFullName, prNumber', async () => {
+		vi.mocked(replyToReviewComment).mockResolvedValueOnce({
+			status: 'ok',
+			id: '500',
+			url: 'https://github.com/owner/repo/pull/42#discussion_r500',
+			updatedAt: '2026-06-01T19:00:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		} as never);
+		const cmd = new ReplyToReviewComment(
+			['--prNumber', '42', '--commentId', '12345', '--body', 'Done'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'ok',
+			id: '500',
+			url: 'https://github.com/owner/repo/pull/42#discussion_r500',
+			updatedAt: '2026-06-01T19:00:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		});
+	});
+
+	it('CreatePRReview stdout exposes id, url, status, updatedAt, repoFullName, prNumber, reviewUrl, event, submittedAt, inlineCommentCount', async () => {
+		vi.mocked(createPRReview).mockResolvedValueOnce({
+			status: 'ok',
+			id: '700',
+			url: 'https://github.com/owner/repo/pull/42#pullrequestreview-700',
+			updatedAt: '2026-06-01T20:00:00.000Z',
+			reviewUrl: 'https://github.com/owner/repo/pull/42#pullrequestreview-700',
+			event: 'REQUEST_CHANGES',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+			submittedAt: '2026-06-01T20:00:00.000Z',
+			inlineCommentCount: 1,
+		} as never);
+		const cmd = new CreatePRReview(
+			[
+				'--prNumber',
+				'42',
+				'--event',
+				'REQUEST_CHANGES',
+				'--body',
+				'Please address inline comments.',
+			],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'ok',
+			id: '700',
+			url: 'https://github.com/owner/repo/pull/42#pullrequestreview-700',
+			updatedAt: '2026-06-01T20:00:00.000Z',
+			reviewUrl: 'https://github.com/owner/repo/pull/42#pullrequestreview-700',
+			event: 'REQUEST_CHANGES',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+			submittedAt: '2026-06-01T20:00:00.000Z',
+			inlineCommentCount: 1,
+		});
+	});
+
+	it('CreatePRReview surfaces a runtime envelope when createPRReview throws (MNG-1425 + MNG-1428)', async () => {
+		vi.mocked(createPRReview).mockRejectedValueOnce(new Error('Validation Failed'));
+		const cmd = new CreatePRReview(
+			['--prNumber', '42', '--event', 'APPROVE', '--body', 'LGTM'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await runExpectingExit(cmd);
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error?.type).toBe('runtime');
+		expect(output.error?.message).toBe('Validation Failed');
+	});
+
+	it('updatedAt values are ISO 8601 strings across SCM mutations', async () => {
+		// Pins the GitHub-supplied timestamp surface — postPRComment / replyToReviewComment /
+		// updatePRComment use the response's `updated_at`; createPRReview falls back through
+		// pickTimestamp(submitted_at). The CLI envelope must carry parseable ISO 8601 strings
+		// either way.
+		vi.mocked(postPRComment).mockResolvedValueOnce({
+			status: 'ok',
+			id: '1',
+			url: 'https://github.com/owner/repo/pull/42#issuecomment-1',
+			updatedAt: '2026-06-01T21:00:00.000Z',
+			repoFullName: 'owner/repo',
+			prNumber: 42,
+		} as never);
+		const cmd = new PostPRComment(['--prNumber', '42', '--body', 'hi'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(typeof output.data?.updatedAt).toBe('string');
+		expect(Number.isNaN(Date.parse(output.data?.updatedAt as string))).toBe(false);
 	});
 });

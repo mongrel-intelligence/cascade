@@ -142,6 +142,77 @@ Core gadget functions must throw for fatal runtime/API/provider failures. Do not
 
 ---
 
+## Mutation result contract (MNG-1422 → MNG-1428)
+
+Every PM and SCM mutation core returns a structured object — never prose. The CLI factory serialises that object verbatim into the `{ "success": true, "data": {...} }` stdout envelope, so consumers (downstream agents, sidecar tooling, review/respond workflows) can read structured keys without regex'ing sentence fragments. Mutation outcomes use the shared shapes declared in `src/gadgets/pm/core/mutationResults.ts` and `src/gadgets/github/core/mutationResults.ts`.
+
+### Minimum fields every mutation surfaces
+
+| Field | Meaning |
+|---|---|
+| `status` | The MUTATION OUTCOME — `"created"` / `"updated"` / `"moved"` / `"noop"` / `"aborted"` / `"deleted"` (PM) or `"ok"` / `"no-op"` / `"aborted"` (SCM). Branch on this, not on prose. |
+| `id` | Stable identifier of the affected resource (work-item ID, comment ID, review ID — stringified for GitHub). |
+| `url` | Canonical URL of the affected resource. Optional only on PM checklist-item mutations where the parent work-item URL lives on `workItemUrl`. |
+| `updatedAt` | ISO 8601 timestamp — provider-supplied for `"ok"` / `"created"` / `"updated"` / `"moved"` / `"deleted"` outcomes; synthesised via `currentTimestamp()` for `"noop"` / `"aborted"`. Always a parseable string. |
+
+SCM mutations additionally carry the parent context — `repoFullName` (e.g. `"acme/myapp"`) and `prNumber` (or `number | null` for the rare issue-only `UpdatePRComment` case). `CreatePRReview` extends the contract with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`.
+
+### `status` vs `workflowStatus` naming — do not conflate
+
+`status` is reserved for the **mutation outcome** alone. The PM provider's **workflow state** (e.g. Linear's "In Progress", a Trello list name, a JIRA status) lives on its own keys:
+
+- `workflowStatus` (string, optional) — human-readable workflow state name.
+- `workflowStatusId` (string, optional) — provider-native ID (Linear state UUID, Trello list ID).
+- `previousStatus` / `previousStatusId` on `MoveWorkItem` — the work item's pre-move workflow state read back from the provider on the guarded path.
+
+A historical mix-up between the two surfaces cost ~2½ minutes of agent time once (prod run `5d993b04`) when an agent treated a Trello list name surfaced through a `status` key as a mutation outcome. The dual-key naming is now load-bearing — keep mutation outcomes and workflow states on separate fields.
+
+### Fatal failures throw — no prose sentinels
+
+Mutation cores propagate runtime / API / provider errors as thrown exceptions. The shared `createCLICommand()` factory wraps them in the spec-014 runtime envelope:
+
+```json
+{ "success": false, "error": { "type": "runtime", "message": "Provider 422" } }
+```
+
+Do not return strings like `"Error creating work item: ..."` from a mutation core. The CLI cannot distinguish a sentinel-string return from a successful `data` payload, so the envelope would say `success: true` and the agent would silently mis-act on the prose.
+
+The only exceptions are intentional non-fatal outcomes that are part of the contract — e.g. `MoveWorkItem` returning `status: "noop"` when the work item is already in the destination, or `ReportFriction` returning `status: "queued_slot_missing"` when the friction slot isn't configured. These are structured returns, not prose sentinels.
+
+### Timestamp fallback semantics
+
+`pickTimestamp(providerTs)` prefers the provider-supplied timestamp; `currentTimestamp()` is the fallback. The contract:
+
+- `"ok"` / `"created"` / `"updated"` / `"moved"` / `"deleted"` — caller must pass a provider-supplied timestamp. `okResult` rejects empty values with a `TypeError` so missing-provider-timestamp bugs surface immediately.
+- `"noop"` / `"aborted"` — no provider write happened, so `currentTimestamp()` is correct. The synthetic "now" reflects when the gadget evaluated the guard, not a provider write.
+- Read-back failures after a successful mutation fall back to a synthesised URL + timestamp inside `readWorkItemContext` rather than masking the mutation success and risking an idempotency retry storm (especially on Trello's native checklists, where retries duplicate rows).
+
+### Focused verification command (MNG-1428)
+
+The regression coverage for this contract lives in three test files. To re-run them in isolation:
+
+```bash
+npx vitest run --project unit-core \
+  tests/unit/cli/pm/pm-commands.test.ts \
+  tests/unit/cli/scm/scm-commands.test.ts \
+  tests/unit/gadgets/pm/definitions.test.ts \
+  tests/unit/gadgets/github/definitions.test.ts
+```
+
+Each suite parses the CLI stdout envelope and asserts the minimum structured fields (`success.data.id`, `success.data.url`, `success.data.status`, `success.data.updatedAt`, plus `repoFullName` / `prNumber` for SCM) plus the runtime envelope shape for thrown core failures. The output-shape tests in the gadget-definition suites pin the `status` vs `workflowStatus` split as well.
+
+The full pre-PR gate is unchanged:
+
+```bash
+npm run lint        # biome check (also via lint:fix during iteration)
+npm run typecheck   # tsc --noEmit
+npm test            # all four unit projects
+```
+
+Changed surfaces touched by this contract: PM mutation cores under `src/gadgets/pm/core/`, SCM mutation cores under `src/gadgets/github/core/`, the matching CLI commands under `src/cli/pm/` and `src/cli/scm/`, and the `outputShape` blocks on the matching `ToolDefinition`s in `src/gadgets/{pm,github}/definitions.ts`.
+
+---
+
 ## Shared CLI helper layout
 
 `createCLICommand()` is intentionally the stable public facade for command files under `src/cli/**`. Its implementation delegates to focused helpers under `src/gadgets/shared/cli/`:
