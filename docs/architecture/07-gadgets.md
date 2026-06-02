@@ -150,16 +150,16 @@ Core functions passed to `createCLICommand()` own domain work only. On fatal run
 
 ### Mutation result contract (MNG-1422 → MNG-1428)
 
-Every PM and SCM mutation core returns a structured object, never prose. The CLI factory serialises that object verbatim into `{"success":true,"data":{...}}`, so consumers (downstream agents, sidecars, review/respond workflows) can read structured keys directly.
+Every PM mutation core and the SCM PR comment/reply/update/review mutation cores covered by MNG-1428 return structured objects, never prose. The CLI factory serialises those objects verbatim into `{"success":true,"data":{...}}`, so consumers (downstream agents, sidecars, review/respond workflows) can read structured keys directly.
 
-Every mutation surfaces these contract fields on `success.data`:
+These targeted mutations surface these contract fields on `success.data`:
 
 | Field | Meaning |
 |---|---|
 | `status` | The MUTATION OUTCOME — `"created"`/`"updated"`/`"moved"`/`"noop"`/`"aborted"`/`"deleted"` (PM) or `"ok"`/`"no-op"`/`"aborted"` (SCM). Branch on this, not on prose. |
 | `updatedAt` | ISO 8601 timestamp string. It is always present and parseable; the source varies by mutation and fallback path. |
 
-Identity and URL fields are mutation-specific. Work-item and comment mutations expose `id` plus their canonical resource URL (`url` or, for PM comments, `workItemUrl`). `AddChecklist` exposes `checklistId` and `workItemUrl`, plus `itemIds` / `itemCount`; `PMUpdateChecklistItem` and `PMDeleteChecklistItem` expose `checkItemId` and `workItemUrl`. SCM mutations additionally surface `id`, `url`, `repoFullName`, and `prNumber` (the latter widens to `number | null` for `UpdatePRComment` when GitHub returns an issue-only comment URL). `CreatePRReview` extends with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`. The full per-mutation shapes live on the matching `ToolDefinition.outputShape` blocks under `src/gadgets/{pm,github}/definitions.ts`.
+Identity and URL fields are mutation-specific. Work-item and comment mutations expose `id` plus their canonical resource URL (`url` or, for PM comments, `workItemUrl`). `AddChecklist` exposes `checklistId` and `workItemUrl`, plus `itemIds` / `itemCount`; `PMUpdateChecklistItem` and `PMDeleteChecklistItem` expose `checkItemId` and `workItemUrl`. Targeted SCM PR comment/reply/update/review mutations additionally surface `id`, `url`, `repoFullName`, and `prNumber` (the latter widens to `number | null` for `UpdatePRComment` when GitHub returns an issue-only comment URL). `CreatePRReview` extends with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`. `CreatePR` is also a structured SCM mutation, but it is outside MNG-1428's shared `status` / `updatedAt` / `id` / `url` contract and keeps its existing shape: `prNumber`, `prUrl`, `repoFullName`, and `alreadyExisted` plus optional commit/push details. The full per-mutation shapes live on the matching `ToolDefinition.outputShape` blocks under `src/gadgets/{pm,github}/definitions.ts`.
 
 **`status` vs `workflowStatus` naming.** `status` is reserved for the mutation outcome alone. The PM provider's workflow state — Linear's "In Progress", a Trello list name, a JIRA status — lives on its own keys: `workflowStatus` (human-readable) and `workflowStatusId` (native ID). `MoveWorkItem` also exposes `previousStatus` / `previousStatusId` for the work item's pre-move workflow state on the guarded path. Mixing the two surfaces once cost ~2½ minutes of agent time (prod run `5d993b04`); the dual-key naming is now load-bearing.
 

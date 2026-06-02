@@ -144,7 +144,7 @@ Core gadget functions must throw for fatal runtime/API/provider failures. Do not
 
 ## Mutation result contract (MNG-1422 → MNG-1428)
 
-Every PM and SCM mutation core returns a structured object — never prose. The CLI factory serialises that object verbatim into the `{ "success": true, "data": {...} }` stdout envelope, so consumers (downstream agents, sidecar tooling, review/respond workflows) can read structured keys without regex'ing sentence fragments. Mutation outcomes use the shared shapes declared in `src/gadgets/pm/core/mutationResults.ts` and `src/gadgets/github/core/mutationResults.ts`.
+Every PM mutation core and the SCM PR comment/reply/update/review mutation cores covered by MNG-1428 return structured objects — never prose. The CLI factory serialises those objects verbatim into the `{ "success": true, "data": {...} }` stdout envelope, so consumers (downstream agents, sidecar tooling, review/respond workflows) can read structured keys without regex'ing sentence fragments. Mutation outcomes use the shared shapes declared in `src/gadgets/pm/core/mutationResults.ts` and `src/gadgets/github/core/mutationResults.ts`.
 
 ### Mutation identity and status fields
 
@@ -158,7 +158,8 @@ Identity and URL fields are mutation-specific:
 - Work-item and comment mutations expose `id` plus their canonical resource URL (`url` or, for PM comments, `workItemUrl`).
 - `AddChecklist` exposes `checklistId` and `workItemUrl`, plus `itemIds` / `itemCount`.
 - `PMUpdateChecklistItem` and `PMDeleteChecklistItem` expose `checkItemId` and `workItemUrl`.
-- SCM mutations expose `id`, `url`, and the parent PR context: `repoFullName` (e.g. `"acme/myapp"`) and `prNumber` (or `number | null` for the rare issue-only `UpdatePRComment` case). `CreatePRReview` extends that shape with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`.
+- Targeted SCM PR comment/reply/update/review mutations expose `id`, `url`, and the parent PR context: `repoFullName` (e.g. `"acme/myapp"`) and `prNumber` (or `number | null` for the rare issue-only `UpdatePRComment` case). `CreatePRReview` extends that shape with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`.
+- `CreatePR` is also a structured SCM mutation, but it is outside MNG-1428's shared `status` / `updatedAt` / `id` / `url` contract and keeps its existing shape: `prNumber`, `prUrl`, `repoFullName`, and `alreadyExisted` plus optional commit/push details.
 
 ### `status` vs `workflowStatus` naming — do not conflate
 
@@ -203,7 +204,7 @@ npx vitest run --project unit-core \
   tests/unit/gadgets/github/definitions.test.ts
 ```
 
-Each suite parses the CLI stdout envelope and asserts `success.data.status`, parseable `success.data.updatedAt`, and the mutation-specific identity/URL fields (`id` / `url`, `workItemUrl`, `checklistId`, or `checkItemId` as applicable, plus `repoFullName` / `prNumber` for SCM). The suites also pin the runtime envelope shape for thrown core failures. The output-shape tests in the gadget-definition suites pin the `status` vs `workflowStatus` split as well.
+Each suite parses the CLI stdout envelope and asserts `success.data.status`, parseable `success.data.updatedAt`, and the mutation-specific identity/URL fields (`id` / `url`, `workItemUrl`, `checklistId`, or `checkItemId` as applicable, plus `repoFullName` / `prNumber` for targeted SCM PR comment/reply/update/review mutations). The suites also pin the runtime envelope shape for thrown core failures. The output-shape tests in the gadget-definition suites pin the `status` vs `workflowStatus` split as well.
 
 The full pre-PR gate is unchanged:
 
@@ -213,7 +214,7 @@ npm run typecheck   # tsc --noEmit
 npm test            # all four unit projects
 ```
 
-Changed surfaces touched by this contract: PM mutation cores under `src/gadgets/pm/core/`, SCM mutation cores under `src/gadgets/github/core/`, the matching CLI commands under `src/cli/pm/` and `src/cli/scm/`, and the `outputShape` blocks on the matching `ToolDefinition`s in `src/gadgets/{pm,github}/definitions.ts`.
+Changed surfaces touched by this contract: PM mutation cores under `src/gadgets/pm/core/`, targeted SCM PR comment/reply/update/review mutation cores under `src/gadgets/github/core/`, the matching CLI commands under `src/cli/pm/` and `src/cli/scm/`, and the `outputShape` blocks on the matching `ToolDefinition`s in `src/gadgets/{pm,github}/definitions.ts`. `CreatePR` remains documented and tested as its own structured mutation shape.
 
 ---
 
