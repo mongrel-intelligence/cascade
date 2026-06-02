@@ -1,33 +1,36 @@
-import { distance } from 'fastest-levenshtein';
-
 import type { EmitCliErrorOptions } from '../errorEnvelope.js';
-
-const MAX_FLAG_SUGGESTION_DISTANCE = 2;
-const MAX_FLAG_SUGGESTION_RATIO = 0.4;
+import { suggestClosest } from './suggestions.js';
 
 /**
  * For the given unknown flag and the command's declared flag names + aliases,
  * return the Levenshtein-closest canonical declared name if it passes the
  * distance threshold; otherwise null.
+ *
+ * Delegates scoring to the generic `suggestClosest()` helper while
+ * preserving the canonical-flag-name return contract: when an alias is the
+ * closest match, the canonical name it points at is returned (so the agent
+ * always sees a real flag spelling, not an alias).
  */
 export function suggestFlag(
 	unknown: string,
 	candidates: { canonical: string; aliases: readonly string[] }[],
 ): string | null {
-	let best: { canonical: string; dist: number } | null = null;
+	const names: string[] = [];
+	const nameToCanonical = new Map<string, string>();
 	for (const { canonical, aliases } of candidates) {
-		for (const candidate of [canonical, ...aliases]) {
-			const d = distance(unknown, candidate);
-			if (best === null || d < best.dist) {
-				best = { canonical, dist: d };
+		for (const name of [canonical, ...aliases]) {
+			names.push(name);
+			// First-write-wins so the iteration order of `candidates` (canonical
+			// before alias within each entry, and earlier candidates before later
+			// ones) controls tie-breaking — matching the previous direct-loop
+			// behavior of `suggestFlag()`.
+			if (!nameToCanonical.has(name)) {
+				nameToCanonical.set(name, canonical);
 			}
 		}
 	}
-	if (best === null) return null;
-	const target = Math.max(unknown.length, best.canonical.length);
-	if (best.dist > MAX_FLAG_SUGGESTION_DISTANCE) return null;
-	if (target > 0 && best.dist / target > MAX_FLAG_SUGGESTION_RATIO) return null;
-	return best.canonical;
+	const closest = suggestClosest(unknown, names);
+	return closest === null ? null : (nameToCanonical.get(closest) ?? null);
 }
 
 /**
