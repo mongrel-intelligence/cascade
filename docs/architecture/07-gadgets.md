@@ -138,6 +138,7 @@ The `cascade-tools` binary uses a separate oclif config (`bin/cascade-tools.js`)
 |--------|------|
 | `commandNames.ts` | Command namespace/name derivation shared by the CLI factory and manifest generator |
 | `examples.ts` | Tool example lookup, shell quoting, oclif example rendering, and JSON expected-shape hints |
+| `suggestions.ts` | Shared Levenshtein scorer for flag and command typo suggestions (MNG-1440) |
 | `flags.ts` | oclif flag construction and flag metadata collection |
 | `booleanArgv.ts` | Boolean value-form normalization before oclif parsing |
 | `parseErrors.ts` | oclif parse-error classification and unknown-flag suggestions |
@@ -147,6 +148,17 @@ The `cascade-tools` binary uses a separate oclif config (`bin/cascade-tools.js`)
 New domain commands should not add branches in these helpers. They declare behavior through their `ToolDefinition` metadata (`cliAliases`, examples, file input alternatives, auto-resolution), and the shared generators consume it.
 
 Core functions passed to `createCLICommand()` own domain work only. On fatal runtime/API/provider failures they throw, and the shared factory converts that exception into the structured `{"success":false,"error":{"type":"runtime","message":"..."}}` stdout envelope plus exit code 1. A returned value is always serialized as successful `data`, so gadgets must not return sentinel error strings such as `Error reading work item: ...` for fatal failures. Non-fatal command states that are part of the contract, such as guarded PM move no-ops or friction retry queueing, remain successful returns.
+
+### Unknown-command typo suggestions (MNG-1442)
+
+`bin/cascade-tools.js` registers an oclif `command_not_found` hook so command typos emit the same structured envelope every other CLI failure does (spec 014): JSON on stdout, prose on stderr, runnable `did you mean` hint when within the shared Levenshtein budget. Two cases the hook covers:
+
+- **Unknown top-level topic** (`cascade-tools sm get-pr-diff`) — `expected` lists topics, `hint` preserves trailing segments (`did you mean 'cascade-tools scm get-pr-diff'?`).
+- **Known topic, unknown subcommand** (`cascade-tools pm reaad-work-item`) — `expected` lists the topic's subcommands, `hint` runs the corrected form (`did you mean 'cascade-tools pm read-work-item'?`).
+
+Far-away typos drop `hint` but still surface `expected` so the agent has a concrete recovery enumeration. Exit code is **`2`** for `unknown-command` — oclif's historical `command_not_found` default — distinct from every other envelope's exit code `1`.
+
+The hook lives at `src/cli/_shared/command-not-found-hook.ts`, intentionally inside `_shared/` because `bin/cascade-tools.js`'s oclif command-discovery glob excludes `**/_shared/**`. The entrypoint wires it via `pjson.oclif.hooks.command_not_found` so oclif loads it dynamically only when needed — no static import is added, which preserves the existing friendly `dist/cli/bootstrap.js` missing path. The pure suggestion logic lives in `src/cli/_shared/commandSuggestions.ts` (MNG-1441) and is unit-tested directly without booting oclif; the hook is a thin wrapper that forwards `{config, id, argv}` into the helper and routes the envelope through `emitCliError` with an explicit exit-code-2 delegate. Candidates come strictly from the loaded oclif config (`config.commandIDs` plus non-hidden `pjson.oclif.topics`), so the `cascade-tools` binary never suggests dashboard topics that its discovery glob excludes.
 
 ### Mutation result contract (MNG-1422 → MNG-1428)
 

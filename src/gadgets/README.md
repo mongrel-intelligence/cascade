@@ -116,11 +116,11 @@ examples: [
 
 ## The error envelope
 
-Every cascade-tools failure — flag parse, JSON parse, missing-required, enum-mismatch, unknown-flag, auth, runtime — emits through the shared `emitCliError` helper:
+Every cascade-tools failure — flag parse, JSON parse, missing-required, enum-mismatch, unknown-flag, unknown-command, auth, runtime — emits through the shared `emitCliError` helper:
 
 - **Structured JSON on stdout** (`{ "success": false, "error": {...} }`) so agents parse a single stable surface.
 - **One-line prose summary on stderr** so humans running the CLI directly get a readable error without piping through `jq`.
-- **Exit code 1.**
+- **Exit code 1** for every type except `unknown-command`, which preserves oclif's historical `command_not_found` exit code **2** (see "Mistyped commands" below).
 
 The envelope shape is part of the cascade-tools contract. Renaming fields is a breaking change — agents rely on `error.type` / `error.flag` / `error.hint` to self-correct on the next attempt.
 
@@ -128,12 +128,12 @@ Envelope fields:
 
 | field | when populated |
 |---|---|
-| `type` | always; one of `flag-parse` / `json-parse` / `missing-required` / `enum-mismatch` / `unknown-flag` / `auth` / `runtime` |
+| `type` | always; one of `flag-parse` / `json-parse` / `missing-required` / `enum-mismatch` / `unknown-flag` / `unknown-command` / `auth` / `runtime` |
 | `flag` | for flag-scoped failures |
 | `message` | always; human-readable |
-| `got` | the offending input, truncated to ~80 chars |
-| `expected` | shape fragment (from `example` when available, else `describe`) |
-| `hint` | an action the agent can take (e.g. `did you mean --comments?`, `use --comments-file <path>`) |
+| `got` | the offending input, truncated to ~80 chars (for `unknown-command`, the typed command in space-separated form, e.g. `pm reaad-work-item`) |
+| `expected` | shape fragment (from `example` when available, else `describe`; for `unknown-command`, the comma-separated candidate list — topics for top-level typos, subcommands for known-topic typos) |
+| `hint` | an action the agent can take (e.g. `did you mean --comments?`, `use --comments-file <path>`, `did you mean 'cascade-tools scm get-pr-diff'?`) |
 | `example` | runnable invocation, when known |
 
 You do not call `emitCliError` directly. The shared factory routes every failure through it automatically — your job is to make the declarative metadata (describe text, examples, aliases, file alternatives) rich enough that the auto-generated envelope is actually useful.
@@ -255,7 +255,26 @@ If you find yourself opening one of those files, stop — the right fix is almos
 
 The factory intercepts oclif's `NonExistentFlagsError`, runs a Levenshtein match against every declared canonical flag name + alias, and surfaces the closest canonical name as `error.hint`. No gadget work required — just declare your flags truthfully.
 
-Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_SUGGESTION_DISTANCE` (default 2) and `MAX_FLAG_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one.
+Two tuning constants live in `src/gadgets/shared/cli/suggestions.ts` (MNG-1440 shared helper): `MAX_SUGGESTION_DISTANCE` (default 2) and `MAX_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one. The same constants gate the command-typo path described below — flag and command suggestions stay calibrated against one shared budget.
+
+---
+
+## Mistyped commands → "did you mean" (MNG-1442)
+
+`cascade-tools` registers an oclif `command_not_found` hook that turns typoed topics or subcommands into the same structured envelope every other failure emits — instead of oclif's bare `command <id> not found` message. Two cases:
+
+- **Unknown top-level topic** (e.g. `cascade-tools sm get-pr-diff`) — `expected` carries the topic enumeration, and `hint` carries the closest viable topic with the user's trailing segments preserved (`did you mean 'cascade-tools scm get-pr-diff'?`).
+- **Known topic, unknown subcommand** (e.g. `cascade-tools pm reaad-work-item`) — `expected` carries the topic's subcommand enumeration, and `hint` carries the closest viable subcommand (`did you mean 'cascade-tools pm read-work-item'?`).
+
+Far-away typos (beyond the shared distance / ratio budget) drop the `hint` field but still surface `expected` so the agent has a concrete recovery path. The exit code is **`2`** (oclif's historical `command_not_found` default) — distinct from every other envelope's exit code `1`. Existing exit-code consumers, including the `bin/cascade-tools.js` catch block, see no change.
+
+**Hook placement.** The hook lives at `src/cli/_shared/command-not-found-hook.ts`, intentionally inside `_shared/` because the oclif command-discovery glob in `bin/cascade-tools.js` excludes `**/_shared/**` — without that exclusion, a default-exported function in a discoverable directory would be loaded as a fake top-level command. The hook is wired via `pjson.oclif.hooks.command_not_found` so oclif loads it dynamically with `loadWithData` only when the hook actually fires; the entrypoint never statically imports it, which preserves the existing friendly `dist/cli/bootstrap.js` missing path.
+
+**Pure envelope builder.** The suggestion logic lives in `src/cli/_shared/commandSuggestions.ts` (MNG-1441), which is side-effect free and unit-tested directly without booting oclif. The hook is a thin oclif-side wrapper that forwards `{config, id, argv}` into the helper and routes the envelope options through `emitCliError` with an explicit exit-code-2 delegate.
+
+**Suggestion-source contract.** Candidates come strictly from the loaded oclif config (`config.commandIDs` plus `pjson.oclif.topics`, skipping `hidden` topics). The `cascade-tools` binary uses a separate oclif config that excludes the dashboard topic from its discovery glob, so dashboard commands are never suggested for `cascade-tools` typos even if they would be within edit distance.
+
+No gadget work required — declaring your command and topics in the standard oclif config is everything.
 
 ---
 
