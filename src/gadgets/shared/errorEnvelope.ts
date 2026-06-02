@@ -2,7 +2,8 @@
  * Shared cascade-tools CLI error envelope (spec 014).
  *
  * Every cascade-tools failure — flag-parse, JSON-parse, missing-required,
- * enum-mismatch, unknown-flag, auth, runtime — emits through {@link emitCliError}:
+ * enum-mismatch, unknown-flag, unknown-command, auth, runtime — emits through
+ * {@link emitCliError}:
  *
  * - Structured JSON on stdout: `{"success":false,"error":<envelope>}` so agents
  *   parsing CLI output see one stable surface.
@@ -17,6 +18,15 @@
 
 /**
  * Classification of a cascade-tools failure. Agents may branch on this.
+ *
+ * `unknown-command` is emitted when the user invokes a topic or subcommand
+ * that is not registered (e.g. `cascade-tools sm get-pr-diff` or
+ * `cascade-tools pm reaad-work-item`). The envelope's `expected` field
+ * carries the comma-separated list of valid candidates the typo was
+ * compared against; `hint` carries the runnable suggestion when one falls
+ * inside the Levenshtein-distance budget. See
+ * `src/cli/_shared/commandSuggestions.ts` for the pure helper that builds
+ * the envelope options.
  */
 export type CliErrorType =
 	| 'flag-parse'
@@ -24,6 +34,7 @@ export type CliErrorType =
 	| 'missing-required'
 	| 'enum-mismatch'
 	| 'unknown-flag'
+	| 'unknown-command'
 	| 'auth'
 	| 'runtime';
 
