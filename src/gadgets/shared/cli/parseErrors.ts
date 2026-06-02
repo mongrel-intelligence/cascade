@@ -1,36 +1,28 @@
 import type { EmitCliErrorOptions } from '../errorEnvelope.js';
-import { suggestClosest } from './suggestions.js';
+import { suggestClosestCandidate } from './suggestions.js';
 
 /**
  * For the given unknown flag and the command's declared flag names + aliases,
  * return the Levenshtein-closest canonical declared name if it passes the
  * distance threshold; otherwise null.
  *
- * Delegates scoring to the generic `suggestClosest()` helper while
- * preserving the canonical-flag-name return contract: when an alias is the
- * closest match, the canonical name it points at is returned (so the agent
- * always sees a real flag spelling, not an alias).
+ * Delegates scoring to the generic suggestion helper while preserving the
+ * canonical-flag-name return contract: when an alias is the closest match,
+ * the canonical name it points at is returned (so the agent always sees a real
+ * flag spelling, not an alias).
  */
 export function suggestFlag(
 	unknown: string,
 	candidates: { canonical: string; aliases: readonly string[] }[],
 ): string | null {
-	const names: string[] = [];
-	const nameToCanonical = new Map<string, string>();
+	const names: { name: string; canonical: string; ratioBasis: string }[] = [];
 	for (const { canonical, aliases } of candidates) {
 		for (const name of [canonical, ...aliases]) {
-			names.push(name);
-			// First-write-wins so the iteration order of `candidates` (canonical
-			// before alias within each entry, and earlier candidates before later
-			// ones) controls tie-breaking — matching the previous direct-loop
-			// behavior of `suggestFlag()`.
-			if (!nameToCanonical.has(name)) {
-				nameToCanonical.set(name, canonical);
-			}
+			names.push({ name, canonical, ratioBasis: canonical });
 		}
 	}
-	const closest = suggestClosest(unknown, names);
-	return closest === null ? null : (nameToCanonical.get(closest) ?? null);
+	const closest = suggestClosestCandidate(unknown, names);
+	return closest?.canonical ?? null;
 }
 
 /**

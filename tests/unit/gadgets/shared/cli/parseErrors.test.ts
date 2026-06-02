@@ -17,6 +17,12 @@ describe('CLI parse errors', () => {
 		expect(suggestFlag('zzzzzzzz', [{ canonical: 'comments', aliases: ['comment'] }])).toBeNull();
 	});
 
+	it('uses the canonical flag length for alias ratio gating', () => {
+		expect(suggestFlag('y', [{ canonical: 'long-flag-name', aliases: ['x'] }])).toBe(
+			'long-flag-name',
+		);
+	});
+
 	it('recognizes oclif nonexistent-flag error shapes', () => {
 		class NonExistentFlagsError extends Error {
 			public flags = ['coment'];
