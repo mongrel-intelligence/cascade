@@ -60,6 +60,14 @@ export function TrelloOAuthStep({ state, dispatch }: ProviderWizardStepProps) {
 		return () => clearInterval(interval);
 	}, [isWaitingForAuth]);
 
+	// Once a token is provided (e.g. pasted manually after granting access in the
+	// popup), authorization is complete — stop waiting even if the popup is still open.
+	useEffect(() => {
+		if (state.trelloToken && isWaitingForAuth) {
+			setIsWaitingForAuth(false);
+		}
+	}, [state.trelloToken, isWaitingForAuth]);
+
 	return (
 		<div className="space-y-4">
 			{state.isEditing && state.hasStoredCredentials && !state.trelloApiKey && (
