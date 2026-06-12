@@ -84,12 +84,12 @@ export function TrelloOAuthStep({ state, dispatch }: ProviderWizardStepProps) {
 				<p className="text-xs text-muted-foreground">
 					Find your API key at{' '}
 					<a
-						href="https://trello.com/app-key"
+						href="https://trello.com/power-ups/admin/"
 						target="_blank"
 						rel="noopener noreferrer"
 						className="underline"
 					>
-						trello.com/app-key
+						trello.com/power-ups/admin
 					</a>
 				</p>
 			</div>
