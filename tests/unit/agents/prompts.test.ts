@@ -144,6 +144,32 @@ describe('system prompts content', () => {
 		expect(prompt).toContain('INVEST');
 	});
 
+	it('splitting prompt summary instructions reference story work items, not PR creation', () => {
+		const prompt = getSystemPrompt('splitting');
+		// Regression for MNG-1084: the splitting workflow has no PR-creation
+		// capability, so the summary-comment instructions must not direct the
+		// agent to confirm or reference CreatePR output.
+		expect(prompt).not.toContain('CreatePR');
+		expect(prompt).not.toContain('confirmed PR creation');
+		expect(prompt).not.toContain('real and confirmed PR numbers');
+
+		// The replacement wording should ground the summary in confirmed
+		// CreateWorkItem story URLs.
+		expect(prompt).toContain('CreateWorkItem');
+		expect(prompt).toContain('Stories Created');
+		expect(prompt).toContain('[Story Title](URL)');
+		expect(prompt).toContain('URLs returned by `CreateWorkItem`');
+	});
+
+	it('splitting prompt preserves "one PR, one day" sizing heuristic', () => {
+		// The story-sizing language intentionally references PRs to describe
+		// the *target size* of a story; we must not strip that wording when
+		// cleaning up action-oriented PR-creation instructions.
+		const prompt = getSystemPrompt('splitting');
+		expect(prompt).toContain('One PR, One Day');
+		expect(prompt).toContain('one PR, one day of senior engineer work');
+	});
+
 	it('planning prompt includes key instructions', () => {
 		const prompt = getSystemPrompt('planning');
 		expect(prompt).toContain('ReadWorkItem');
