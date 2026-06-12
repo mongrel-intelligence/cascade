@@ -373,8 +373,6 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 			customField.createCustomFieldMutation.mutate({ name });
 		};
 
-		const webhookUrl = projectId ? `${window.location.origin}/webhooks/${projectId}/trello` : '';
-
 		// Plan 012/1 — webhook plumbing. Mirrors the legacy `useWebhookManagement`
 		// formula (plan 012/4 deletes that hook). Computes the public router URL
 		// from the Vite env (dev) or current origin (prod), fetches active
@@ -383,6 +381,12 @@ export const trelloProviderWizard: ProviderWizardDefinition = {
 		const callbackBaseUrl =
 			API_URL ||
 			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+		// Display the exact callback URL that actually gets registered — the
+		// router route is `/trello/webhook`, not a synthetic
+		// `/webhooks/<project>/trello` path the router never serves. The two had
+		// diverged, so the displayed URL pointed operators at a dead endpoint.
+		const webhookUrl = callbackBaseUrl ? `${callbackBaseUrl}/trello/webhook` : '';
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
 		const activeTrelloWebhooks = normalizeTrelloActiveWebhooks(webhooksQuery.data);

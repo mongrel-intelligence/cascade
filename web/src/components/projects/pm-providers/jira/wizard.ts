@@ -355,8 +355,6 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			customField.createJiraCustomFieldMutation.mutate({ name });
 		};
 
-		const webhookUrl = projectId ? `${window.location.origin}/webhooks/${projectId}/jira` : '';
-
 		// Plan 012/2 — webhook plumbing. Mirrors the legacy `useWebhookManagement`
 		// formula (plan 012/4 deletes that hook). The server-side
 		// `jiraEnsureLabels` side-effect fires inside
@@ -364,6 +362,12 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		const callbackBaseUrl =
 			API_URL ||
 			(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+		// Display the exact callback URL that actually gets registered — the
+		// router route is `/jira/webhook`, not a synthetic
+		// `/webhooks/<project>/jira` path the router never serves. The two had
+		// diverged, so the displayed URL pointed operators at a dead endpoint.
+		const webhookUrl = callbackBaseUrl ? `${callbackBaseUrl}/jira/webhook` : '';
 
 		const webhooksQuery = useQuery(trpc.webhooks.list.queryOptions({ projectId: projectId ?? '' }));
 		const activeJiraWebhooks = normalizeJiraActiveWebhooks(webhooksQuery.data);
