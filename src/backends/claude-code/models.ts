@@ -1,4 +1,6 @@
 export const CLAUDE_CODE_MODELS = [
+	{ value: 'claude-opus-4-8', label: 'Claude Opus 4.8' },
+	{ value: 'claude-opus-4-8[1m]', label: 'Claude Opus 4.8 (1M context)' },
 	{ value: 'claude-opus-4-7', label: 'Claude Opus 4.7' },
 	{ value: 'claude-opus-4-7[1m]', label: 'Claude Opus 4.7 (1M context)' },
 	{ value: 'claude-opus-4-6', label: 'Claude Opus 4.6' },

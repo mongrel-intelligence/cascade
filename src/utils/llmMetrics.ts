@@ -10,6 +10,8 @@ import type { TokenUsage } from 'llmist';
  */
 const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput?: number }> = {
 	// Anthropic Claude 4 family
+	'anthropic:claude-opus-4-8': { input: 5.0, output: 25.0, cachedInput: 0.5 },
+	'anthropic:claude-opus-4-8[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-7': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-7[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-6[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
