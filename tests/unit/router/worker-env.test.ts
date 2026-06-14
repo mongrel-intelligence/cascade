@@ -217,6 +217,21 @@ describe('buildWorkerEnv', () => {
 			Reflect.deleteProperty(process.env, 'DATABASE_CA_CERT');
 		}
 	});
+
+	it('prioritizes project credentials over process.env for CLAUDE_CODE_OAUTH_TOKEN', async () => {
+		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'global-default-token';
+		mockGetAllProjectCredentials.mockResolvedValue({
+			CLAUDE_CODE_OAUTH_TOKEN: 'project-specific-token',
+		});
+		try {
+			const env = await buildWorkerEnv(makeJob() as never);
+			expect(env).toContain('CLAUDE_CODE_OAUTH_TOKEN=project-specific-token');
+			// Ensure it is not overridden or duplicated at the end with the global token
+			expect(env.filter((e) => e.startsWith('CLAUDE_CODE_OAUTH_TOKEN='))).toHaveLength(1);
+		} finally {
+			Reflect.deleteProperty(process.env, 'CLAUDE_CODE_OAUTH_TOKEN');
+		}
+	});
 });
 
 // ---------------------------------------------------------------------------
