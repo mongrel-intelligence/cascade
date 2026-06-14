@@ -130,7 +130,7 @@ Create a [personal access token](https://github.com/settings/tokens) for each bo
 | **Pull requests** | Read and write | Read and write | Create/update/merge PRs **and** submit reviews + reply to review comments (reviews live under this permission, not a separate one) |
 | **Issues** | Read and write | Read and write | PR comments go through the issues API (`issues.createComment`/`updateComment`/`deleteComment`) |
 | **Actions** | Read | Read | Read CI workflow runs + job status/logs (Cascade uses the Actions API, not the Checks API) |
-| **Webhooks** | Read and write | — | One-time webhook creation (step 7). Only the token used to register the hook needs this; it can be revoked afterward. |
+| **Webhooks** | Read and write | — | One-time webhook creation (step 9). Only the token used to register the hook needs this; it can be revoked afterward. |
 
 Permissions Cascade never uses (leave unset): Commit statuses, Checks, Deployments, Collaborators, Branch protection, Releases, Workflows.
 
@@ -341,7 +341,7 @@ This creates webhooks on GitHub, Trello, and Jira when those integrations are co
 >   -d '{
 >     "name": "web",
 >     "active": true,
->     "events": ["push", "pull_request", "pull_request_review", "pull_request_review_comment", "check_suite", "issue_comment"],
+>     "events": ["pull_request", "pull_request_review", "pull_request_review_comment", "check_suite", "issue_comment"],
 >     "config": { "url": "https://your-tunnel.ngrok-free.dev/github/webhook", "content_type": "json" }
 >   }'
 > ```
