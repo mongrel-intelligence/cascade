@@ -1,4 +1,6 @@
 import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
 	HookCallbackMatcher,
 	HookEvent,
@@ -150,6 +152,16 @@ function checkUnpushedCommits(
 		timeout: 10_000,
 	}).trim();
 	if (!unpushed) return null;
+
+	// If a terminal push failure has occurred, do not block the agent from exiting.
+	// This allows the session to end cleanly with failure instead of hanging until watchdog timeout.
+	if (existsSync(join(repoDir, '.git', 'push_failed_terminal'))) {
+		logWriter(
+			'WARN',
+			'Stop hook: unpushed commits exist but allowing stop due to terminal push error',
+		);
+		return null;
+	}
 
 	logWriter('WARN', 'Stop hook blocked: unpushed commits', { commits: unpushed });
 	return {

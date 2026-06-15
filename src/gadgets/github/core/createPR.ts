@@ -1,3 +1,5 @@
+import { existsSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { githubClient } from '../../../github/client.js';
 import { runCommand } from '../../../utils/repo.js';
 import { buildRunLinkFooterFromEnv } from '../../../utils/runLink.js';
@@ -134,18 +136,51 @@ async function pushBranch(branch: string): Promise<string> {
 		undefined,
 		{ label: 'git-push', wallTimeoutMs: 0, idleTimeoutMs: 0 },
 	);
+	const output = [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();
+	const truncated = truncateHookOutput(output, 'push') ?? output;
+
 	if (pushResult.exitCode !== 0) {
-		const output = [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();
-		// Truncate before embedding in the error message — same rationale as the
-		// commit failure path above: a failing pre-push hook can emit 97+ KB of
-		// test output, and err.message gets serialised into the JSON error
-		// envelope by createCLICommand. Full output stays in the engine log.
-		const truncated = truncateHookOutput(output, 'push') ?? output;
+		// Detect authentication or permission terminal errors (e.g. 403, 401)
+		if (
+			(output.includes('Permission to') && output.includes('denied to')) ||
+			output.includes('returned error: 403') ||
+			output.includes('returned error: 401') ||
+			output.includes('Authentication failed') ||
+			output.includes('could not read Username')
+		) {
+			try {
+				writeFileSync(
+					join(process.cwd(), '.git', 'push_failed_terminal'),
+					JSON.stringify({
+						error: 'Authentication or permission denied (HTTP 403/401)',
+						output: truncated,
+						timestamp: new Date().toISOString(),
+					}),
+				);
+			} catch {
+				// ignore filesystem write errors
+			}
+			throw new Error(
+				`PUSH FAILED: Authentication or permission denied (HTTP 403/401). Please verify that GITHUB_TOKEN_IMPLEMENTER has write access (Contents: Read & write) to the repository.\n\n--- OUTPUT ---\n${truncated}`,
+			);
+		}
+
 		throw new Error(
 			`PUSH FAILED for branch '${branch}' (pre-push hooks may have failed)\n\n--- OUTPUT ---\n${truncated}`,
 		);
 	}
-	return [pushResult.stdout, pushResult.stderr].filter(Boolean).join('\n').trim();
+
+	// Success path: clear any stale terminal error indicator
+	try {
+		const indicatorFile = join(process.cwd(), '.git', 'push_failed_terminal');
+		if (existsSync(indicatorFile)) {
+			unlinkSync(indicatorFile);
+		}
+	} catch {
+		// ignore filesystem errors
+	}
+
+	return output;
 }
 
 async function verifyBranchOnRemote(branch: string): Promise<boolean> {
