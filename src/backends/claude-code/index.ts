@@ -140,11 +140,11 @@ function resolveNativeTools(nativeToolCapabilities?: string[]): string[] {
  * are omitted to preserve SDK defaults.
  */
 function buildSettingsOptions(rawSettings: {
-	effort?: 'low' | 'medium' | 'high' | 'max';
+	effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 	thinking?: 'adaptive' | 'enabled' | 'disabled';
 	thinkingBudgetTokens?: number;
 }): {
-	effort?: 'low' | 'medium' | 'high' | 'max';
+	effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 	thinking?:
 		| { type: 'adaptive' }
 		| { type: 'enabled'; budgetTokens: number }

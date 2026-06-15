@@ -1765,6 +1765,12 @@ describe('resolveClaudeCodeSettings', () => {
 			engineSettings: { 'claude-code': { effort: 'medium' } },
 		} as AgentExecutionPlan['project'];
 		expect(resolveClaudeCodeSettings(projectMedium).effort).toBe('medium');
+
+		const projectXHigh = {
+			...makeInput().project,
+			engineSettings: { 'claude-code': { effort: 'xhigh' } },
+		} as AgentExecutionPlan['project'];
+		expect(resolveClaudeCodeSettings(projectXHigh).effort).toBe('xhigh');
 	});
 
 	it('applies explicit thinking modes from project engine settings', () => {

@@ -8,7 +8,7 @@ export const CLAUDE_CODE_SETTING_DEFAULTS = {
 };
 
 export const ClaudeCodeSettingsSchema = z.object({
-	effort: z.enum(['low', 'medium', 'high', 'max']).optional(),
+	effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(),
 	thinking: z.enum(['adaptive', 'enabled', 'disabled']).optional(),
 	// TODO: Frontend 'number' field type is not yet supported (Story #2).
 	// This field is defined here for catalog registration; the dashboard will
