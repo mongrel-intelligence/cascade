@@ -17,6 +17,7 @@ import { projectsIndexRoute } from './projects/index.js';
 import { prRunsRoute } from './prs/$projectId.$prNumber.js';
 import { runDetailRoute } from './runs/$runId.js';
 import { settingsGeneralRoute } from './settings/general.js';
+import { settingsProfileRoute } from './settings/profile.js';
 import { settingsUsersRoute } from './settings/users.js';
 import { workItemRunsRoute } from './work-items/$projectId.$workItemId.js';
 
@@ -35,6 +36,7 @@ export const routeTree = rootRoute.addChildren([
 		projectLifecycleRoute,
 	]),
 	settingsGeneralRoute,
+	settingsProfileRoute,
 	settingsUsersRoute,
 	globalDefinitionsRoute,
 	globalWebhookLogsRoute,
