@@ -14,11 +14,14 @@
  */
 
 import type { Job } from 'bullmq';
+import { resolveEngineName } from '../backends/resolution.js';
+import { completeRun, createRun } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
+import type { TriggerResult } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { activeWorkers } from './active-workers.js';
 import { clearAllAgentTypeLocks } from './agent-type-lock.js';
-import { routerConfig } from './config.js';
+import { loadProjectConfig, routerConfig } from './config.js';
 import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
 import { invalidateSnapshot } from './snapshot-manager.js';
@@ -33,7 +36,7 @@ import {
 	extractProjectIdFromJob,
 	extractWorkItemId,
 } from './worker-env.js';
-import { isImageNotFoundError } from './worker-snapshots.js';
+import { isImageNotFoundError, pullImageOnce } from './worker-snapshots.js';
 import { buildWorkerContainerName, resolveSpawnSettings } from './worker-spawn-settings.js';
 
 // Re-export from sub-modules so existing callers importing from container-manager.ts
@@ -101,6 +104,120 @@ async function launchConfiguredWorkerContainer(
 }
 
 /**
+ * Launch a worker container; if the **base** image is missing, pull it once and
+ * retry. Snapshot-image 404s propagate so the snapshot fallback path in
+ * `spawnWorker` still fires — snapshot images are local commits, not in any
+ * registry, so pulling them never helps.
+ *
+ * Closes the 2026-06-15 outage class where a host-side prune of
+ * `cascade-worker:latest` produced silent terminal `UnrecoverableError`s for
+ * every spawn — see the post-mortem in `docs/specs/` and the dispatch-error
+ * classifier comment that already promised this behaviour.
+ */
+async function launchOrPullAndRetry(
+	job: Job<CascadeJob>,
+	jobId: string,
+	containerName: string,
+	projectId: string | null,
+	workItemId: string | undefined,
+	agentType: string | undefined,
+	config: WorkerContainerLaunchConfig,
+): Promise<void> {
+	try {
+		await launchConfiguredWorkerContainer(
+			job,
+			jobId,
+			containerName,
+			projectId,
+			workItemId,
+			agentType,
+			config,
+		);
+	} catch (err) {
+		if (!isImageNotFoundError(err) || config.workerImage !== routerConfig.workerImage) {
+			throw err;
+		}
+		const imageName = config.workerImage;
+		logger.info('[WorkerManager] Base worker image missing — pulling', { jobId, imageName });
+		try {
+			await pullImageOnce(imageName);
+		} catch (pullErr) {
+			logger.error('[WorkerManager] Failed to pull base worker image:', {
+				jobId,
+				imageName,
+				error: String(pullErr),
+			});
+			captureException(pullErr, {
+				tags: { source: 'worker_image_pull_fallback', jobType: job.data.type },
+				extra: { jobId, imageName },
+			});
+			throw err;
+		}
+		logger.info('[WorkerManager] Base image pulled, retrying spawn', { jobId, imageName });
+		await launchConfiguredWorkerContainer(
+			job,
+			jobId,
+			containerName,
+			projectId,
+			workItemId,
+			agentType,
+			config,
+		);
+	}
+}
+
+/**
+ * Insert a `failed` stub run row so a spawn that never produced a worker still
+ * surfaces in the dashboard and `cascade runs list`. Without this, the worker
+ * (which calls `tryCreateRun` at boot) never runs, `failOrphanedRun` no-ops
+ * because there is no `status='running'` row, and the failure is invisible
+ * outside Sentry. Best-effort: a DB failure here logs at WARN and is swallowed
+ * so it cannot mask the original spawn error.
+ */
+async function recordSpawnFailure(
+	job: Job<CascadeJob>,
+	projectId: string | null,
+	workItemId: string | undefined,
+	agentType: string | undefined,
+	err: unknown,
+): Promise<void> {
+	if (!projectId || !agentType) return;
+	try {
+		const triggerResult = (job.data as { triggerResult?: TriggerResult }).triggerResult;
+		const prNumber = triggerResult?.prNumber;
+		const triggerType = triggerResult?.agentInput?.triggerType;
+		let engine = 'unknown';
+		try {
+			const { fullProjects } = await loadProjectConfig();
+			const projectCfg = fullProjects.find((p) => p.id === projectId);
+			if (projectCfg) engine = resolveEngineName(agentType, projectCfg);
+		} catch {
+			// fall through with engine='unknown'
+		}
+		const runId = await createRun({
+			projectId,
+			workItemId,
+			prNumber,
+			agentType,
+			engine,
+			triggerType,
+		});
+		await completeRun(runId, {
+			status: 'failed',
+			durationMs: 0,
+			error: `Worker spawn failed: ${String(err)}`,
+		});
+	} catch (dbErr) {
+		logger.warn('[WorkerManager] Failed to record spawn-failure stub run:', {
+			projectId,
+			workItemId,
+			agentType,
+			error: String(dbErr),
+		});
+	}
+}
+
+/**
  * Spawn a worker container for a job.
  * Sets up timeout tracking and monitors container exit asynchronously.
  *
@@ -159,7 +276,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	};
 
 	try {
-		await launchConfiguredWorkerContainer(
+		await launchOrPullAndRetry(
 			job,
 			jobId,
 			containerName,
@@ -185,7 +302,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				workerEnv: fallbackEnv,
 			};
 			try {
-				await launchConfiguredWorkerContainer(
+				await launchOrPullAndRetry(
 					job,
 					jobId,
 					containerName,
@@ -204,6 +321,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 					tags: { source: 'worker_spawn_fallback', jobType: job.data.type },
 					extra: { jobId, staleImage: workerImage },
 				});
+				await recordSpawnFailure(job, projectId, workItemId, agentType, fallbackErr);
 				throw fallbackErr;
 			}
 		}
@@ -216,6 +334,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			tags: { source: 'worker_spawn', jobType: job.data.type },
 			extra: { jobId },
 		});
+		await recordSpawnFailure(job, projectId, workItemId, agentType, err);
 		throw err;
 	}
 }

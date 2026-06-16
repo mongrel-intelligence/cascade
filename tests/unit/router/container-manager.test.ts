@@ -8,11 +8,15 @@ const {
 	mockDockerCreateContainer,
 	mockDockerGetContainer,
 	mockDockerListContainers,
+	mockDockerPull,
+	mockFollowProgress,
 	mockLoadProjectConfig,
 } = vi.hoisted(() => ({
 	mockDockerCreateContainer: vi.fn(),
 	mockDockerGetContainer: vi.fn(),
 	mockDockerListContainers: vi.fn(),
+	mockDockerPull: vi.fn(),
+	mockFollowProgress: vi.fn(),
 	mockLoadProjectConfig: vi.fn().mockResolvedValue({ projects: [], fullProjects: [] }),
 }));
 
@@ -25,6 +29,8 @@ vi.mock('dockerode', () => ({
 		createContainer: mockDockerCreateContainer,
 		getContainer: mockDockerGetContainer,
 		listContainers: mockDockerListContainers,
+		pull: mockDockerPull,
+		modem: { followProgress: mockFollowProgress },
 	})),
 }));
 
@@ -39,9 +45,13 @@ vi.mock('../../../src/config/provider.js', () => ({
 
 const mockFailOrphanedRun = vi.fn().mockResolvedValue(null);
 const mockFailOrphanedRunFallback = vi.fn().mockResolvedValue(null);
+const mockCreateRun = vi.fn().mockResolvedValue('stub-run-id');
+const mockCompleteRun = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	failOrphanedRun: (...args: unknown[]) => mockFailOrphanedRun(...args),
 	failOrphanedRunFallback: (...args: unknown[]) => mockFailOrphanedRunFallback(...args),
+	createRun: (...args: unknown[]) => mockCreateRun(...args),
+	completeRun: (...args: unknown[]) => mockCompleteRun(...args),
 }));
 
 vi.mock('../../../src/config/configCache.js', () => ({
@@ -257,6 +267,13 @@ describe('spawnWorker', () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		mockGetAllProjectCredentials.mockResolvedValue({});
 		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
+		mockDockerPull.mockResolvedValue({} as never);
+		mockFollowProgress.mockImplementation(((_stream: unknown, cb: (err: Error | null) => void) =>
+			cb(null)) as never);
+		mockCreateRun.mockClear().mockResolvedValue('stub-run-id');
+		mockCompleteRun.mockClear().mockResolvedValue(undefined);
+		mockDockerPull.mockClear();
+		mockFollowProgress.mockClear();
 		detachAll();
 	});
 
@@ -397,6 +414,129 @@ describe('spawnWorker', () => {
 		expect(typeof instanceLabel).toBe('string');
 
 		resolveWait();
+	});
+
+	// Self-heal + visibility on missing base image — the 2026-06-15 outage class.
+	// Without these, a host-side prune of `cascade-worker:latest` produces silent
+	// `UnrecoverableError`s on every spawn and `runs list` shows nothing at all.
+
+	it('self-heals when the base image is missing: pulls once and retries spawn', async () => {
+		const notFound = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: test-worker:latest'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValueOnce(notFound);
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob({ id: 'job-pull-heal' }) as never);
+
+		expect(mockDockerPull).toHaveBeenCalledTimes(1);
+		expect(mockDockerPull).toHaveBeenCalledWith('test-worker:latest');
+		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
+		// Spawn ultimately succeeded — no stub row.
+		expect(mockCreateRun).not.toHaveBeenCalled();
+
+		resolveWait();
+	});
+
+	it('records a failed stub run when base image is missing and the pull fails', async () => {
+		const notFound = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: test-worker:latest'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValue(notFound);
+		const pullErr = new Error('registry denied');
+		mockFollowProgress.mockImplementation(((_s: unknown, cb: (e: Error | null) => void) =>
+			cb(pullErr)) as never);
+
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-pull-fail',
+					data: {
+						type: 'trello',
+						projectId: 'proj-pf',
+						workItemId: 'card-pf',
+						agentType: 'review',
+					} as CascadeJob,
+				}) as never,
+			),
+		).rejects.toThrow('No such image');
+
+		expect(mockDockerPull).toHaveBeenCalledTimes(1);
+		expect(mockCreateRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				projectId: 'proj-pf',
+				workItemId: 'card-pf',
+				agentType: 'review',
+				engine: 'unknown',
+			}),
+		);
+		expect(mockCompleteRun).toHaveBeenCalledWith(
+			'stub-run-id',
+			expect.objectContaining({
+				status: 'failed',
+				error: expect.stringContaining('No such image'),
+			}),
+		);
+	});
+
+	it('records a failed stub run on non-image terminal spawn errors', async () => {
+		mockDockerCreateContainer.mockRejectedValue(new Error('Docker daemon down'));
+
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-other-fail',
+					data: {
+						type: 'trello',
+						projectId: 'proj-oe',
+						workItemId: 'card-oe',
+						agentType: 'implementation',
+					} as CascadeJob,
+				}) as never,
+			),
+		).rejects.toThrow('Docker daemon down');
+
+		expect(mockDockerPull).not.toHaveBeenCalled();
+		expect(mockCreateRun).toHaveBeenCalledTimes(1);
+		expect(mockCompleteRun).toHaveBeenCalledWith(
+			'stub-run-id',
+			expect.objectContaining({ status: 'failed' }),
+		);
+	});
+
+	it('skips the stub row when projectId cannot be resolved', async () => {
+		mockDockerCreateContainer.mockRejectedValue(new Error('boom'));
+		// github job without repoFullName → extractProjectIdFromJob returns null
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-no-proj',
+					data: { type: 'github' } as CascadeJob,
+				}) as never,
+			),
+		).rejects.toThrow('boom');
+		expect(mockCreateRun).not.toHaveBeenCalled();
+	});
+
+	it('does not mask the original spawn error when the stub-row DB insert fails', async () => {
+		mockDockerCreateContainer.mockRejectedValue(new Error('Docker daemon down'));
+		mockCreateRun.mockRejectedValueOnce(new Error('DB down'));
+
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-db-bad',
+					data: {
+						type: 'trello',
+						projectId: 'proj-db',
+						workItemId: 'card-db',
+						agentType: 'review',
+					} as CascadeJob,
+				}) as never,
+			),
+		).rejects.toThrow('Docker daemon down');
 	});
 
 	it('uses project watchdogTimeoutMs + 2min buffer when available', async () => {
