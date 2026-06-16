@@ -77,10 +77,10 @@ app.use(
 		endpoint: '/trpc',
 		router: appRouter,
 		createContext: async (_opts, c) => {
-			const token = getCookie(c, SESSION_COOKIE_NAME);
+			const token = getCookie(c, SESSION_COOKIE_NAME) || null;
 			const user = token ? await resolveUserFromSession(token) : null;
 			const effectiveOrgId = await computeEffectiveOrgId(user, c.req.header('x-org-context'));
-			return { user, effectiveOrgId };
+			return { user, effectiveOrgId, token };
 		},
 	}),
 );

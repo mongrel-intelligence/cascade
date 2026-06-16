@@ -12,6 +12,7 @@ export interface TRPCUser {
 export interface TRPCContext {
 	user: TRPCUser | null;
 	effectiveOrgId: string | null;
+	token: string | null;
 }
 
 const t = initTRPC.context<TRPCContext>().create({
@@ -34,7 +35,11 @@ export const protectedProcedure = t.procedure.use(async (opts) => {
 		throw new TRPCError({ code: 'UNAUTHORIZED' });
 	}
 	return opts.next({
-		ctx: { user: opts.ctx.user, effectiveOrgId: opts.ctx.effectiveOrgId },
+		ctx: {
+			user: opts.ctx.user,
+			effectiveOrgId: opts.ctx.effectiveOrgId,
+			token: opts.ctx.token,
+		},
 	});
 });
 

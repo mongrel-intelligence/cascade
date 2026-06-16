@@ -243,10 +243,13 @@ export function Sidebar({ user }: SidebarProps) {
 			</nav>
 
 			{user && (
-				<div className="border-t border-sidebar-border p-4">
-					<div className="text-sm font-medium truncate">{user.name}</div>
+				<Link
+					to="/settings/profile"
+					className="block border-t border-sidebar-border p-4 hover:bg-sidebar-accent/50 transition-colors"
+				>
+					<div className="text-sm font-medium truncate text-sidebar-foreground">{user.name}</div>
 					<div className="text-xs text-muted-foreground truncate">{user.email}</div>
-				</div>
+				</Link>
 			)}
 		</div>
 	);
