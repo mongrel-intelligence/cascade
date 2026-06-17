@@ -14,14 +14,11 @@
  */
 
 import type { Job } from 'bullmq';
-import { resolveEngineName } from '../backends/resolution.js';
-import { completeRun, createRun } from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
-import type { TriggerResult } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { activeWorkers } from './active-workers.js';
 import { clearAllAgentTypeLocks } from './agent-type-lock.js';
-import { loadProjectConfig, routerConfig } from './config.js';
+import { routerConfig } from './config.js';
 import { stopOrphanCleanup } from './orphan-cleanup.js';
 import type { CascadeJob } from './queue.js';
 import { invalidateSnapshot } from './snapshot-manager.js';
@@ -151,7 +148,11 @@ async function launchOrPullAndRetry(
 				tags: { source: 'worker_image_pull_fallback', jobType: job.data.type },
 				extra: { jobId, imageName },
 			});
-			throw err;
+			// Propagate the pull error (not the original 404) so the dispatch-error
+			// classifier can see its actual shape — registry 429s, ECONNRESET, and
+			// other transient pull failures should burn a BullMQ retry instead of
+			// being misclassified as terminal via `isImageNotFoundError`.
+			throw pullErr;
 		}
 		logger.info('[WorkerManager] Base image pulled, retrying spawn', { jobId, imageName });
 		await launchConfiguredWorkerContainer(
@@ -163,57 +164,6 @@ async function launchOrPullAndRetry(
 			agentType,
 			config,
 		);
-	}
-}
-
-/**
- * Insert a `failed` stub run row so a spawn that never produced a worker still
- * surfaces in the dashboard and `cascade runs list`. Without this, the worker
- * (which calls `tryCreateRun` at boot) never runs, `failOrphanedRun` no-ops
- * because there is no `status='running'` row, and the failure is invisible
- * outside Sentry. Best-effort: a DB failure here logs at WARN and is swallowed
- * so it cannot mask the original spawn error.
- */
-async function recordSpawnFailure(
-	job: Job<CascadeJob>,
-	projectId: string | null,
-	workItemId: string | undefined,
-	agentType: string | undefined,
-	err: unknown,
-): Promise<void> {
-	if (!projectId || !agentType) return;
-	try {
-		const triggerResult = (job.data as { triggerResult?: TriggerResult }).triggerResult;
-		const prNumber = triggerResult?.prNumber;
-		const triggerType = triggerResult?.agentInput?.triggerType;
-		let engine = 'unknown';
-		try {
-			const { fullProjects } = await loadProjectConfig();
-			const projectCfg = fullProjects.find((p) => p.id === projectId);
-			if (projectCfg) engine = resolveEngineName(agentType, projectCfg);
-		} catch {
-			// fall through with engine='unknown'
-		}
-		const runId = await createRun({
-			projectId,
-			workItemId,
-			prNumber,
-			agentType,
-			engine,
-			triggerType,
-		});
-		await completeRun(runId, {
-			status: 'failed',
-			durationMs: 0,
-			error: `Worker spawn failed: ${String(err)}`,
-		});
-	} catch (dbErr) {
-		logger.warn('[WorkerManager] Failed to record spawn-failure stub run:', {
-			projectId,
-			workItemId,
-			agentType,
-			error: String(dbErr),
-		});
 	}
 }
 
@@ -321,7 +271,6 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 					tags: { source: 'worker_spawn_fallback', jobType: job.data.type },
 					extra: { jobId, staleImage: workerImage },
 				});
-				await recordSpawnFailure(job, projectId, workItemId, agentType, fallbackErr);
 				throw fallbackErr;
 			}
 		}
@@ -334,7 +283,6 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			tags: { source: 'worker_spawn', jobType: job.data.type },
 			extra: { jobId },
 		});
-		await recordSpawnFailure(job, projectId, workItemId, agentType, err);
 		throw err;
 	}
 }

@@ -17,6 +17,8 @@ const {
 	mockDockerCreateContainer,
 	mockDockerGetContainer,
 	mockDockerGetImage,
+	mockDockerPull,
+	mockFollowProgress,
 	mockLoadProjectConfig,
 	mockGetSnapshot,
 	mockRegisterSnapshot,
@@ -30,6 +32,10 @@ const {
 	mockDockerGetImage: vi.fn().mockReturnValue({
 		inspect: vi.fn().mockResolvedValue({ Size: 1_234_567_890 }),
 	}),
+	mockDockerPull: vi.fn().mockResolvedValue({}),
+	mockFollowProgress: vi
+		.fn()
+		.mockImplementation((_stream: unknown, cb: (err: Error | null) => void) => cb(null)),
 	mockLoadProjectConfig: vi.fn().mockResolvedValue({ projects: [], fullProjects: [] }),
 	mockGetSnapshot: vi.fn().mockReturnValue(undefined),
 	mockRegisterSnapshot: vi.fn(),
@@ -45,6 +51,8 @@ vi.mock('dockerode', () => ({
 		createContainer: mockDockerCreateContainer,
 		getContainer: mockDockerGetContainer,
 		getImage: mockDockerGetImage,
+		pull: mockDockerPull,
+		modem: { followProgress: mockFollowProgress },
 	})),
 }));
 
@@ -188,6 +196,12 @@ beforeEach(() => {
 	mockDockerGetImage.mockReturnValue({
 		inspect: vi.fn().mockResolvedValue({ Size: 1_234_567_890 }),
 	});
+	// Pull + followProgress defaults also get wiped by per-describe
+	// vi.restoreAllMocks() — re-arm them so the spawn self-heal path's
+	// optional pull doesn't hang on a no-op followProgress.
+	mockDockerPull.mockResolvedValue({});
+	mockFollowProgress.mockImplementation(((_stream: unknown, cb: (err: Error | null) => void) =>
+		cb(null)) as never);
 });
 
 // ---------------------------------------------------------------------------
@@ -591,22 +605,29 @@ describe('spawnWorker — stale snapshot (image not found fallback)', () => {
 		expect(mockInvalidateSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap');
 	});
 
-	it('propagates 404 without retry when base image is missing (snapshotReuse=false)', async () => {
-		// No snapshot hit — fresh run, snapshotReuse will be false
+	it('self-heals when base image is missing (snapshotReuse=false): pulls then retries spawn', async () => {
+		// No snapshot hit — fresh run, snapshotReuse will be false. The catch
+		// path now treats a missing base image as recoverable: pull once, retry
+		// once. Closes the 2026-06-15 outage class where a pruned base image
+		// produced silent UnrecoverableErrors on every spawn.
 		mockGetSnapshot.mockReturnValue(undefined);
 		const baseImageError = Object.assign(
 			new Error('(HTTP code 404) no such container - No such image: base-worker:latest'),
 			{ statusCode: 404 },
 		);
 		mockDockerCreateContainer.mockRejectedValueOnce(baseImageError);
+		const { resolveWait } = setupMockContainer();
 
-		await expect(spawnWorker(makeJob() as never)).rejects.toThrow(
-			'No such image: base-worker:latest',
-		);
+		await spawnWorker(makeJob() as never);
 
-		// Should not retry — only one createContainer call
-		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(1);
+		expect(mockDockerPull).toHaveBeenCalledTimes(1);
+		expect(mockDockerPull).toHaveBeenCalledWith('base-worker:latest');
+		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
+		// Snapshot invalidation only applies to stale snapshots; base-image
+		// recovery does not touch the snapshot registry.
 		expect(mockInvalidateSnapshot).not.toHaveBeenCalled();
+
+		resolveWait();
 	});
 });
 

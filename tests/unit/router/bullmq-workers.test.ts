@@ -16,6 +16,7 @@ vi.mock('../../../src/sentry.js', () => ({
 
 vi.mock('../../../src/router/dispatch-compensator.js', () => ({
 	releaseLocksForFailedJob: vi.fn().mockResolvedValue(undefined),
+	recordSpawnFailureStub: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock logger

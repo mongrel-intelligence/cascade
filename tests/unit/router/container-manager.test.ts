@@ -45,13 +45,9 @@ vi.mock('../../../src/config/provider.js', () => ({
 
 const mockFailOrphanedRun = vi.fn().mockResolvedValue(null);
 const mockFailOrphanedRunFallback = vi.fn().mockResolvedValue(null);
-const mockCreateRun = vi.fn().mockResolvedValue('stub-run-id');
-const mockCompleteRun = vi.fn().mockResolvedValue(undefined);
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	failOrphanedRun: (...args: unknown[]) => mockFailOrphanedRun(...args),
 	failOrphanedRunFallback: (...args: unknown[]) => mockFailOrphanedRunFallback(...args),
-	createRun: (...args: unknown[]) => mockCreateRun(...args),
-	completeRun: (...args: unknown[]) => mockCompleteRun(...args),
 }));
 
 vi.mock('../../../src/config/configCache.js', () => ({
@@ -270,8 +266,6 @@ describe('spawnWorker', () => {
 		mockDockerPull.mockResolvedValue({} as never);
 		mockFollowProgress.mockImplementation(((_stream: unknown, cb: (err: Error | null) => void) =>
 			cb(null)) as never);
-		mockCreateRun.mockClear().mockResolvedValue('stub-run-id');
-		mockCompleteRun.mockClear().mockResolvedValue(undefined);
 		mockDockerPull.mockClear();
 		mockFollowProgress.mockClear();
 		detachAll();
@@ -433,110 +427,37 @@ describe('spawnWorker', () => {
 		expect(mockDockerPull).toHaveBeenCalledTimes(1);
 		expect(mockDockerPull).toHaveBeenCalledWith('test-worker:latest');
 		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
-		// Spawn ultimately succeeded — no stub row.
-		expect(mockCreateRun).not.toHaveBeenCalled();
 
 		resolveWait();
 	});
 
-	it('records a failed stub run when base image is missing and the pull fails', async () => {
+	it('propagates the pull error (not the original 404) when pull fails so the dispatch-error classifier can retry transient pull errors', async () => {
+		// Reviewer concern: throwing the original ImageNotFound on pull failure
+		// converts transient pull errors (registry 429, ECONNRESET) into terminal
+		// classification. spawnWorker must surface the pull error itself so the
+		// classifier can examine its actual shape.
 		const notFound = Object.assign(
 			new Error('(HTTP code 404) no such container - No such image: test-worker:latest'),
 			{ statusCode: 404 },
 		);
 		mockDockerCreateContainer.mockRejectedValue(notFound);
-		const pullErr = new Error('registry denied');
+		const transientPullErr = Object.assign(new Error('registry 429'), { statusCode: 429 });
 		mockFollowProgress.mockImplementation(((_s: unknown, cb: (e: Error | null) => void) =>
-			cb(pullErr)) as never);
+			cb(transientPullErr)) as never);
 
 		await expect(
 			spawnWorker(
 				makeJob({
-					id: 'job-pull-fail',
+					id: 'job-pull-transient',
 					data: {
 						type: 'trello',
-						projectId: 'proj-pf',
-						workItemId: 'card-pf',
+						projectId: 'proj-tr',
+						workItemId: 'card-tr',
 						agentType: 'review',
 					} as CascadeJob,
 				}) as never,
 			),
-		).rejects.toThrow('No such image');
-
-		expect(mockDockerPull).toHaveBeenCalledTimes(1);
-		expect(mockCreateRun).toHaveBeenCalledWith(
-			expect.objectContaining({
-				projectId: 'proj-pf',
-				workItemId: 'card-pf',
-				agentType: 'review',
-				engine: 'unknown',
-			}),
-		);
-		expect(mockCompleteRun).toHaveBeenCalledWith(
-			'stub-run-id',
-			expect.objectContaining({
-				status: 'failed',
-				error: expect.stringContaining('No such image'),
-			}),
-		);
-	});
-
-	it('records a failed stub run on non-image terminal spawn errors', async () => {
-		mockDockerCreateContainer.mockRejectedValue(new Error('Docker daemon down'));
-
-		await expect(
-			spawnWorker(
-				makeJob({
-					id: 'job-other-fail',
-					data: {
-						type: 'trello',
-						projectId: 'proj-oe',
-						workItemId: 'card-oe',
-						agentType: 'implementation',
-					} as CascadeJob,
-				}) as never,
-			),
-		).rejects.toThrow('Docker daemon down');
-
-		expect(mockDockerPull).not.toHaveBeenCalled();
-		expect(mockCreateRun).toHaveBeenCalledTimes(1);
-		expect(mockCompleteRun).toHaveBeenCalledWith(
-			'stub-run-id',
-			expect.objectContaining({ status: 'failed' }),
-		);
-	});
-
-	it('skips the stub row when projectId cannot be resolved', async () => {
-		mockDockerCreateContainer.mockRejectedValue(new Error('boom'));
-		// github job without repoFullName → extractProjectIdFromJob returns null
-		await expect(
-			spawnWorker(
-				makeJob({
-					id: 'job-no-proj',
-					data: { type: 'github' } as CascadeJob,
-				}) as never,
-			),
-		).rejects.toThrow('boom');
-		expect(mockCreateRun).not.toHaveBeenCalled();
-	});
-
-	it('does not mask the original spawn error when the stub-row DB insert fails', async () => {
-		mockDockerCreateContainer.mockRejectedValue(new Error('Docker daemon down'));
-		mockCreateRun.mockRejectedValueOnce(new Error('DB down'));
-
-		await expect(
-			spawnWorker(
-				makeJob({
-					id: 'job-db-bad',
-					data: {
-						type: 'trello',
-						projectId: 'proj-db',
-						workItemId: 'card-db',
-						agentType: 'review',
-					} as CascadeJob,
-				}) as never,
-			),
-		).rejects.toThrow('Docker daemon down');
+		).rejects.toBe(transientPullErr);
 	});
 
 	it('uses project watchdogTimeoutMs + 2min buffer when available', async () => {

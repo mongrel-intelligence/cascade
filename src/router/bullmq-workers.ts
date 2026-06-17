@@ -10,7 +10,7 @@ import { type ConnectionOptions, type Job, Worker } from 'bullmq';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { parseRedisUrl } from '../utils/redis.js';
-import { releaseLocksForFailedJob } from './dispatch-compensator.js';
+import { recordSpawnFailureStub, releaseLocksForFailedJob } from './dispatch-compensator.js';
 
 // Re-export so existing callers (worker-manager.ts) don't need to change imports.
 export { parseRedisUrl };
@@ -70,6 +70,17 @@ export function createQueueWorker<T = unknown>(config: QueueWorkerConfig<T>): Wo
 				);
 				captureException(compErr instanceof Error ? compErr : new Error(String(compErr)), {
 					tags: { source: 'dispatch_compensator_uncaught', queue: queueName },
+				});
+			});
+			// Insert a `failed` stub run row so the dispatch is visible in the
+			// dashboard / `cascade runs list`. Fires only here, after BullMQ has
+			// either exhausted retries (transient) or wrapped UnrecoverableError
+			// (terminal) — so retryable spawn errors that BullMQ later recovers
+			// from leave no misleading row behind. Recorder never throws.
+			void recordSpawnFailureStub(job.data, err).catch((stubErr) => {
+				logger.warn('[WorkerManager] stub-row recorder threw — defensively logged', {
+					jobId: job.id,
+					error: String(stubErr),
 				});
 			});
 		}
