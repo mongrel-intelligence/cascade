@@ -1,5 +1,6 @@
 import { getPMProvider } from '../../../pm/index.js';
 import type { WorkItem } from '../../../pm/types.js';
+import { currentTimestamp, pickTimestamp, type WorkItemMovedResult } from './mutationResults.js';
 
 export interface MoveWorkItemParams {
 	workItemId: string;
@@ -43,34 +44,94 @@ function formatCurrentStatus(current: WorkItem): string {
 	return `${current.status ?? 'unknown'} (${current.statusId})`;
 }
 
-async function guardedMove(params: MoveWorkItemParams): Promise<string> {
+/**
+ * Build the previous-status fields for guarded outcomes. Keeps the result
+ * keys consistent across `'noop'` / `'aborted'` / `'moved'` returns from the
+ * guarded path.
+ */
+function buildPreviousStatusFields(current: WorkItem): {
+	previousStatus?: string;
+	previousStatusId?: string;
+} {
+	const fields: { previousStatus?: string; previousStatusId?: string } = {};
+	if (current.status) fields.previousStatus = current.status;
+	if (current.statusId) fields.previousStatusId = current.statusId;
+	return fields;
+}
+
+async function guardedMove(params: MoveWorkItemParams): Promise<WorkItemMovedResult> {
 	const provider = getPMProvider();
 	const current = await provider.getWorkItem(params.workItemId);
 	const expected = normalizeStatus(params.expectedSourceState);
 	const destination = normalizeStatus(params.destination);
+	const previousStatusFields = buildPreviousStatusFields(current);
 
 	if (isAlreadyInDestination(current, destination)) {
-		return `Work item ${params.workItemId} already in destination state '${current.status ?? current.statusId}' — no-op`;
+		return {
+			status: 'noop',
+			id: params.workItemId,
+			url: current.url || provider.getWorkItemUrl(params.workItemId),
+			destination: params.destination,
+			updatedAt: pickTimestamp(current.updatedAt),
+			...previousStatusFields,
+			message: `Work item already in destination state '${current.status ?? current.statusId}' — no-op`,
+		};
 	}
 
 	if (!matchesExpectedSource(current, expected)) {
-		return `Aborted: work item ${params.workItemId} is in '${formatCurrentStatus(current)}', expected '${params.expectedSourceState}' (likely already moved by a parallel agent — skipping to avoid duplicate downstream work)`;
+		return {
+			status: 'aborted',
+			id: params.workItemId,
+			url: current.url || provider.getWorkItemUrl(params.workItemId),
+			destination: params.destination,
+			updatedAt: currentTimestamp(),
+			...previousStatusFields,
+			message: `Aborted: work item is in '${formatCurrentStatus(current)}', expected '${params.expectedSourceState}' (likely already moved by a parallel agent — skipping to avoid duplicate downstream work)`,
+		};
 	}
 
 	await provider.moveWorkItem(params.workItemId, params.destination);
-	return `Work item ${params.workItemId} moved to ${params.destination} successfully`;
+	return {
+		status: 'moved',
+		id: params.workItemId,
+		url: current.url || provider.getWorkItemUrl(params.workItemId),
+		destination: params.destination,
+		updatedAt: pickTimestamp(undefined),
+		...previousStatusFields,
+	};
 }
 
-export async function moveWorkItem(params: MoveWorkItemParams): Promise<string> {
-	try {
-		if (params.expectedSourceState !== undefined) {
-			return await guardedMove(params);
-		}
-
-		await getPMProvider().moveWorkItem(params.workItemId, params.destination);
-		return `Work item ${params.workItemId} moved to ${params.destination} successfully`;
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Error moving work item: ${message}`);
+/**
+ * Move a work item to a different list or status.
+ *
+ * Returns a structured `WorkItemMovedResult` so downstream consumers can
+ * branch on shape rather than parsing prose. Three outcomes:
+ *   - `'moved'`   — the provider accepted the move.
+ *   - `'noop'`    — the work item was already in the destination (guarded
+ *     path only).
+ *   - `'aborted'` — the work item was in an unexpected source state and the
+ *     guarded path refused the move.
+ *
+ * `expectedSourceState` is the parallel-agent race guard introduced for the
+ * MNG-538 incident (2026-05-06). When provided, the gadget fetches the work
+ * item's current status and aborts unless it matches (case-insensitive).
+ *
+ * Runtime provider errors propagate (no internal try/catch) so the CLI
+ * factory emits the spec-014 `runtime` envelope and gadget wrappers can wrap
+ * with `formatGadgetError`.
+ */
+export async function moveWorkItem(params: MoveWorkItemParams): Promise<WorkItemMovedResult> {
+	if (params.expectedSourceState !== undefined) {
+		return guardedMove(params);
 	}
+
+	const provider = getPMProvider();
+	await provider.moveWorkItem(params.workItemId, params.destination);
+	return {
+		status: 'moved',
+		id: params.workItemId,
+		url: provider.getWorkItemUrl(params.workItemId),
+		destination: params.destination,
+		updatedAt: pickTimestamp(undefined),
+	};
 }

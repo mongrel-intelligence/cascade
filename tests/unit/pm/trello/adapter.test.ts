@@ -151,6 +151,40 @@ describe('TrelloPMProvider', () => {
 
 			expect(result.inlineMedia).toBeUndefined();
 		});
+
+		it('preserves Trello dateLastActivity as updatedAt when present', async () => {
+			mockTrelloClient.getCard.mockResolvedValue({
+				id: 'card-7',
+				name: 'With activity',
+				desc: '',
+				url: 'https://trello.com/c/abc',
+				idList: 'list-1',
+				labels: [],
+				dateLastActivity: '2026-04-01T12:00:00.000Z',
+			});
+
+			const result = await provider.getWorkItem('card-7');
+
+			expect(result.updatedAt).toBe('2026-04-01T12:00:00.000Z');
+			// Trello cards don't expose a true creation timestamp — leave
+			// `createdAt` undefined rather than synthesising one.
+			expect(result.createdAt).toBeUndefined();
+		});
+
+		it('omits updatedAt when Trello does not surface dateLastActivity', async () => {
+			mockTrelloClient.getCard.mockResolvedValue({
+				id: 'card-8',
+				name: 'No activity',
+				desc: '',
+				url: 'https://trello.com/c/abc',
+				idList: 'list-1',
+				labels: [],
+			});
+
+			const result = await provider.getWorkItem('card-8');
+
+			expect(result.updatedAt).toBeUndefined();
+		});
 	});
 
 	describe('getWorkItemComments', () => {
@@ -174,6 +208,10 @@ describe('TrelloPMProvider', () => {
 					text: 'Hello world',
 					author: { id: 'member-1', name: 'Alice', username: 'alice' },
 					inlineMedia: undefined,
+					// MNG-1422: Trello action `date` is preserved on both
+					// timestamp fields.
+					createdAt: '2024-01-01T00:00:00.000Z',
+					updatedAt: '2024-01-01T00:00:00.000Z',
 				},
 			]);
 		});
@@ -259,6 +297,24 @@ describe('TrelloPMProvider', () => {
 				expect(ref.source).toBe('comment');
 			}
 		});
+
+		it('preserves comment date as createdAt and updatedAt', async () => {
+			mockTrelloClient.getCardComments.mockResolvedValue([
+				{
+					id: 'comment-ts',
+					date: '2026-05-01T10:00:00.000Z',
+					data: { text: 'a comment' },
+					memberCreator: { id: 'm1', fullName: 'Alice', username: 'alice' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('card-1');
+
+			expect(result[0]).toMatchObject({
+				createdAt: '2026-05-01T10:00:00.000Z',
+				updatedAt: '2026-05-01T10:00:00.000Z',
+			});
+		});
 	});
 
 	describe('updateWorkItem', () => {
@@ -317,6 +373,25 @@ describe('TrelloPMProvider', () => {
 				idLabels: undefined,
 			});
 			expect(result).toMatchObject({ id: 'new-card', title: 'New Feature' });
+		});
+
+		it('uses Trello dateLastActivity as both createdAt and updatedAt on a fresh card', async () => {
+			mockTrelloClient.createCard.mockResolvedValue({
+				id: 'fresh-card',
+				name: 'Fresh',
+				desc: '',
+				url: 'https://trello.com/c/fresh',
+				labels: [],
+				dateLastActivity: '2026-04-01T12:00:00.000Z',
+			});
+
+			const result = await provider.createWorkItem({
+				containerId: 'list-1',
+				title: 'Fresh',
+			});
+
+			expect(result.createdAt).toBe('2026-04-01T12:00:00.000Z');
+			expect(result.updatedAt).toBe('2026-04-01T12:00:00.000Z');
 		});
 	});
 

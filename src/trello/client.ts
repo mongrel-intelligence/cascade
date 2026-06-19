@@ -81,6 +81,13 @@ export interface TrelloCard {
 	shortUrl: string;
 	idList: string;
 	labels: Array<{ id: string; name: string; color: string }>;
+	/**
+	 * Trello does not expose a true creation timestamp on cards; the closest
+	 * provider field is `dateLastActivity` (last touched). We surface it as
+	 * `dateLastActivity` so the PM adapter can wire it into `WorkItem.updatedAt`
+	 * without pretending it's a creation marker.
+	 */
+	dateLastActivity?: string;
 }
 
 function mapCardResponse(card: {
@@ -91,6 +98,7 @@ function mapCardResponse(card: {
 	shortUrl?: string;
 	idList?: string;
 	labels?: unknown;
+	dateLastActivity?: string;
 }): TrelloCard {
 	const labels = card.labels as Array<{ id?: string; name?: string; color?: string }> | undefined;
 	return {
@@ -101,6 +109,7 @@ function mapCardResponse(card: {
 		shortUrl: card.shortUrl || '',
 		idList: card.idList || '',
 		labels: mapLabels(labels),
+		...(card.dateLastActivity ? { dateLastActivity: card.dateLastActivity } : {}),
 	};
 }
 

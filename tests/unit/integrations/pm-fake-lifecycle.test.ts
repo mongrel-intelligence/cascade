@@ -10,12 +10,18 @@
  * they opt into `manifest.lifecycle.enabled = true` in plans 2, 3, 4.
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import {
 	createFakePMManifest,
 	createFakePMProvider,
+	resetFakeTimestamps,
 	runLifecycleScenario,
+	setNextFakeTimestamp,
 } from '../../helpers/fakePMProvider.js';
+
+beforeEach(() => {
+	resetFakeTimestamps();
+});
 
 describe('FakePMProvider — lifecycle', () => {
 	it('createFakePMProvider returns a typed PMProvider wired to an in-memory store', () => {
@@ -135,5 +141,88 @@ describe('FakePMProvider — lifecycle', () => {
 		const parsed1 = schema.parse(fixture);
 		const parsed2 = schema.parse(JSON.parse(JSON.stringify(parsed1)));
 		expect(parsed2).toEqual(parsed1);
+	});
+
+	describe('deterministic timestamps (MNG-1422)', () => {
+		it('stamps createWorkItem with provider-shaped createdAt and updatedAt', async () => {
+			const { provider, store } = createFakePMProvider();
+			const containerId = Array.from(store.containers.keys())[0];
+			if (!containerId) throw new Error('fake provider initialised without containers');
+
+			setNextFakeTimestamp('2026-01-15T00:00:00.000Z');
+			const created = await provider.createWorkItem({
+				containerId,
+				title: 'Stamped',
+			});
+
+			expect(created.createdAt).toBe('2026-01-15T00:00:00.000Z');
+			expect(created.updatedAt).toBe('2026-01-15T00:00:00.000Z');
+		});
+
+		it('bumps updatedAt on subsequent updateWorkItem without altering createdAt', async () => {
+			const { provider, store } = createFakePMProvider();
+			const containerId = Array.from(store.containers.keys())[0];
+			if (!containerId) throw new Error('fake provider initialised without containers');
+
+			setNextFakeTimestamp('2026-01-01T00:00:00.000Z');
+			const created = await provider.createWorkItem({ containerId, title: 'Item' });
+
+			setNextFakeTimestamp('2026-02-01T00:00:00.000Z');
+			await provider.updateWorkItem(created.id, { title: 'Renamed' });
+
+			const reloaded = await provider.getWorkItem(created.id);
+			expect(reloaded.createdAt).toBe('2026-01-01T00:00:00.000Z');
+			expect(reloaded.updatedAt).toBe('2026-02-01T00:00:00.000Z');
+		});
+
+		it('stamps addComment with deterministic createdAt and updatedAt', async () => {
+			const { provider, store } = createFakePMProvider();
+			const containerId = Array.from(store.containers.keys())[0];
+			if (!containerId) throw new Error('fake provider initialised without containers');
+
+			const created = await provider.createWorkItem({ containerId, title: 'Item' });
+
+			setNextFakeTimestamp('2026-03-01T00:00:00.000Z');
+			const commentId = await provider.addComment(created.id, 'hello');
+
+			const comments = await provider.getWorkItemComments(created.id);
+			const c = comments.find((x) => x.id === commentId);
+			expect(c?.createdAt).toBe('2026-03-01T00:00:00.000Z');
+			expect(c?.updatedAt).toBe('2026-03-01T00:00:00.000Z');
+		});
+
+		it('updates comment.updatedAt without changing createdAt on subsequent edit', async () => {
+			const { provider, store } = createFakePMProvider();
+			const containerId = Array.from(store.containers.keys())[0];
+			if (!containerId) throw new Error('fake provider initialised without containers');
+
+			const created = await provider.createWorkItem({ containerId, title: 'Item' });
+
+			setNextFakeTimestamp('2026-03-01T00:00:00.000Z');
+			const commentId = await provider.addComment(created.id, 'hello');
+
+			setNextFakeTimestamp('2026-04-01T00:00:00.000Z');
+			await provider.updateComment(created.id, commentId, 'edited');
+
+			const c = (await provider.getWorkItemComments(created.id)).find((x) => x.id === commentId);
+			expect(c?.createdAt).toBe('2026-03-01T00:00:00.000Z');
+			expect(c?.updatedAt).toBe('2026-04-01T00:00:00.000Z');
+		});
+
+		it('falls back to monotonic synthetic stamps when no override is queued', async () => {
+			const { provider, store } = createFakePMProvider();
+			const containerId = Array.from(store.containers.keys())[0];
+			if (!containerId) throw new Error('fake provider initialised without containers');
+
+			const a = await provider.createWorkItem({ containerId, title: 'First' });
+			const b = await provider.createWorkItem({ containerId, title: 'Second' });
+
+			expect(a.createdAt).toBeTruthy();
+			expect(b.createdAt).toBeTruthy();
+			// Synthetic stamps are strictly monotonic — second is later than first.
+			expect(new Date(b.createdAt ?? '').getTime()).toBeGreaterThan(
+				new Date(a.createdAt ?? '').getTime(),
+			);
+		});
 	});
 });

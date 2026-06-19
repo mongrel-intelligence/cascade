@@ -72,6 +72,23 @@ pjson.oclif = {
 		globPatterns: ['**/*.js', '!**/dashboard/**', '!**/_shared/**', '!base.js', '!bootstrap.js'],
 	},
 	topicSeparator: ' ',
+	// `command_not_found` hook turns command typos into the structured
+	// spec-014 envelope (JSON on stdout, prose on stderr, runnable
+	// `did you mean` hint when within budget) instead of oclif's bare
+	// `command <id> not found` message. Exit code stays 2 (oclif's
+	// historical default for command_not_found) via an explicit exit
+	// delegate inside the hook — see
+	// `src/cli/_shared/command-not-found-hook.ts` for the full rationale.
+	//
+	// The hook is wired via oclif's `pjson.oclif.hooks` so it is loaded
+	// lazily by `loadWithData` when the hook actually fires — *not*
+	// statically required at entrypoint time. This preserves the friendly
+	// `dist/cli/bootstrap.js` missing path above: if the build is absent,
+	// the bootstrap import throws ERR_MODULE_NOT_FOUND first and exits 1
+	// with the explainer, before this hook is ever resolved.
+	hooks: {
+		command_not_found: './dist/cli/_shared/command-not-found-hook.js',
+	},
 	// Explicit topic summaries. Without this block oclif borrows each topic's
 	// description from its FIRST command (see node_modules/@oclif/core
 	// /lib/config/config.js — the line `this._topics.set(name, { description:

@@ -33,7 +33,7 @@ import {
 	extractProjectIdFromJob,
 	extractWorkItemId,
 } from './worker-env.js';
-import { isImageNotFoundError } from './worker-snapshots.js';
+import { isImageNotFoundError, pullImageOnce } from './worker-snapshots.js';
 import { buildWorkerContainerName, resolveSpawnSettings } from './worker-spawn-settings.js';
 
 // Re-export from sub-modules so existing callers importing from container-manager.ts
@@ -101,6 +101,73 @@ async function launchConfiguredWorkerContainer(
 }
 
 /**
+ * Launch a worker container; if the **base** image is missing, pull it once and
+ * retry. Snapshot-image 404s propagate so the snapshot fallback path in
+ * `spawnWorker` still fires — snapshot images are local commits, not in any
+ * registry, so pulling them never helps.
+ *
+ * Closes the 2026-06-15 outage class where a host-side prune of
+ * `cascade-worker:latest` produced silent terminal `UnrecoverableError`s for
+ * every spawn — see the post-mortem in `docs/specs/` and the dispatch-error
+ * classifier comment that already promised this behaviour.
+ */
+async function launchOrPullAndRetry(
+	job: Job<CascadeJob>,
+	jobId: string,
+	containerName: string,
+	projectId: string | null,
+	workItemId: string | undefined,
+	agentType: string | undefined,
+	config: WorkerContainerLaunchConfig,
+): Promise<void> {
+	try {
+		await launchConfiguredWorkerContainer(
+			job,
+			jobId,
+			containerName,
+			projectId,
+			workItemId,
+			agentType,
+			config,
+		);
+	} catch (err) {
+		if (!isImageNotFoundError(err) || config.workerImage !== routerConfig.workerImage) {
+			throw err;
+		}
+		const imageName = config.workerImage;
+		logger.info('[WorkerManager] Base worker image missing — pulling', { jobId, imageName });
+		try {
+			await pullImageOnce(imageName);
+		} catch (pullErr) {
+			logger.error('[WorkerManager] Failed to pull base worker image:', {
+				jobId,
+				imageName,
+				error: String(pullErr),
+			});
+			captureException(pullErr, {
+				tags: { source: 'worker_image_pull_fallback', jobType: job.data.type },
+				extra: { jobId, imageName },
+			});
+			// Propagate the pull error (not the original 404) so the dispatch-error
+			// classifier can see its actual shape — registry 429s, ECONNRESET, and
+			// other transient pull failures should burn a BullMQ retry instead of
+			// being misclassified as terminal via `isImageNotFoundError`.
+			throw pullErr;
+		}
+		logger.info('[WorkerManager] Base image pulled, retrying spawn', { jobId, imageName });
+		await launchConfiguredWorkerContainer(
+			job,
+			jobId,
+			containerName,
+			projectId,
+			workItemId,
+			agentType,
+			config,
+		);
+	}
+}
+
+/**
  * Spawn a worker container for a job.
  * Sets up timeout tracking and monitors container exit asynchronously.
  *
@@ -159,7 +226,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 	};
 
 	try {
-		await launchConfiguredWorkerContainer(
+		await launchOrPullAndRetry(
 			job,
 			jobId,
 			containerName,
@@ -185,7 +252,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				workerEnv: fallbackEnv,
 			};
 			try {
-				await launchConfiguredWorkerContainer(
+				await launchOrPullAndRetry(
 					job,
 					jobId,
 					containerName,

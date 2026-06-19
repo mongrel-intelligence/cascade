@@ -64,7 +64,19 @@ vi.mock('../../../../src/gadgets/pm/core/reportFriction.js', () => ({
 vi.mock('../../../../src/gadgets/pm/core/postComment.js', () => ({
 	postComment: vi.fn().mockResolvedValue({ id: 'comment-1' }),
 }));
+vi.mock('../../../../src/gadgets/pm/core/updateWorkItem.js', () => ({
+	updateWorkItem: vi.fn().mockResolvedValue({ id: 'wi-1', status: 'updated' }),
+}));
+vi.mock('../../../../src/gadgets/pm/core/addChecklist.js', () => ({
+	addChecklist: vi.fn().mockResolvedValue({ id: 'wi-1', status: 'created' }),
+}));
+// Suppress the PM-write sidecar side effect — the structured-output assertions
+// only care about the CLI's JSON envelope.
+vi.mock('../../../../src/gadgets/session/core/sidecar.js', () => ({
+	writePMWriteSidecar: vi.fn(() => true),
+}));
 
+import AddChecklist from '../../../../src/cli/pm/add-checklist.js';
 import CreateWorkItem from '../../../../src/cli/pm/create-work-item.js';
 import DeleteChecklistItem from '../../../../src/cli/pm/delete-checklist-item.js';
 import ListWorkItems from '../../../../src/cli/pm/list-work-items.js';
@@ -73,6 +85,8 @@ import PostComment from '../../../../src/cli/pm/post-comment.js';
 import ReadWorkItem from '../../../../src/cli/pm/read-work-item.js';
 import ReportFriction from '../../../../src/cli/pm/report-friction.js';
 import UpdateChecklistItem from '../../../../src/cli/pm/update-checklist-item.js';
+import UpdateWorkItem from '../../../../src/cli/pm/update-work-item.js';
+import { addChecklist } from '../../../../src/gadgets/pm/core/addChecklist.js';
 import { createWorkItem } from '../../../../src/gadgets/pm/core/createWorkItem.js';
 import { deleteChecklistItem } from '../../../../src/gadgets/pm/core/deleteChecklistItem.js';
 import { listWorkItems } from '../../../../src/gadgets/pm/core/listWorkItems.js';
@@ -81,6 +95,7 @@ import { postComment } from '../../../../src/gadgets/pm/core/postComment.js';
 import { readWorkItem } from '../../../../src/gadgets/pm/core/readWorkItem.js';
 import { reportFriction } from '../../../../src/gadgets/pm/core/reportFriction.js';
 import { updateChecklistItem } from '../../../../src/gadgets/pm/core/updateChecklistItem.js';
+import { updateWorkItem } from '../../../../src/gadgets/pm/core/updateWorkItem.js';
 
 /** Create a fresh minimal oclif config to satisfy this.parse() in each test */
 function makeMockConfig() {
@@ -471,5 +486,489 @@ describe('PostComment command (basic params)', () => {
 				message: 'Request failed with status code 400',
 			},
 		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1428: Structured-output contract regression coverage
+//
+// Each targeted PM mutation CLI must serialise the structured core result into
+// the `{ success: true, data: ... }` envelope without rewriting it into a prose
+// sentinel. These tests parse stdout and pin `success.data.id`,
+// `success.data.url`, `success.data.status`, and `success.data.updatedAt`
+// (where applicable) so a future renderer drift that drops a field surfaces
+// loudly in CI instead of silently regressing the agent-facing contract.
+//
+// Read-only commands (read-work-item, list-work-items) are excluded — they
+// have no mutation outcome and so no required `status` / `updatedAt` fields.
+// ---------------------------------------------------------------------------
+describe('PM CLI structured-output contract (MNG-1428)', () => {
+	function readJsonOutput(logSpy: ReturnType<typeof vi.spyOn>) {
+		const lines = logSpy.mock.calls.map((c) => c[0] as string);
+		const jsonLine = lines.find((l) => typeof l === 'string' && l.startsWith('{')) ?? '';
+		return JSON.parse(jsonLine) as {
+			success: boolean;
+			data?: Record<string, unknown>;
+			error?: { type: string; message: string };
+		};
+	}
+
+	it('CreateWorkItem stdout exposes id, url, status="created", and updatedAt', async () => {
+		vi.mocked(createWorkItem).mockResolvedValue({
+			status: 'created',
+			id: 'wi-new',
+			title: 'New Card',
+			url: 'https://pm.example/card/wi-new',
+			updatedAt: '2026-06-01T12:00:00.000Z',
+			workflowStatus: 'Backlog',
+			workflowStatusId: 'list-backlog',
+		} as never);
+		const cmd = new CreateWorkItem(
+			['--containerId', 'list-1', '--title', 'New Card'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'created',
+			id: 'wi-new',
+			url: 'https://pm.example/card/wi-new',
+			updatedAt: '2026-06-01T12:00:00.000Z',
+		});
+		// Provider-specific workflow state lives on its own keys — pinning the
+		// `status` vs `workflowStatus` naming so the mutation outcome is never
+		// confused with the workflow column name.
+		expect(output.data?.workflowStatus).toBe('Backlog');
+		expect(output.data?.workflowStatusId).toBe('list-backlog');
+	});
+
+	it('PostComment stdout exposes id, workItemUrl, status, and updatedAt', async () => {
+		vi.mocked(postComment).mockResolvedValue({
+			status: 'created',
+			id: 'comment-42',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			updatedAt: '2026-06-01T12:34:56.000Z',
+		} as never);
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Status update'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'created',
+			id: 'comment-42',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			updatedAt: '2026-06-01T12:34:56.000Z',
+		});
+	});
+
+	it('PostComment exposes status="updated" when the progress comment was replaced', async () => {
+		vi.mocked(postComment).mockResolvedValue({
+			status: 'updated',
+			id: 'comment-7',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			updatedAt: '2026-06-01T12:34:56.000Z',
+		} as never);
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Final summary'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.data?.status).toBe('updated');
+		expect(output.data?.id).toBe('comment-7');
+	});
+
+	it('UpdateWorkItem stdout exposes id, url, status, updatedAt, and the changed-field arrays', async () => {
+		vi.mocked(updateWorkItem).mockResolvedValue({
+			status: 'updated',
+			id: 'card-9',
+			title: 'Renamed',
+			url: 'https://pm.example/card/card-9',
+			updatedAt: '2026-06-01T13:00:00.000Z',
+			changedFields: ['title', 'description'],
+			addedLabelIds: ['label-1'],
+		} as never);
+		const cmd = new UpdateWorkItem(
+			[
+				'--workItemId',
+				'card-9',
+				'--title',
+				'Renamed',
+				'--description',
+				'New body',
+				'--addLabelId',
+				'label-1',
+			],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'updated',
+			id: 'card-9',
+			url: 'https://pm.example/card/card-9',
+			updatedAt: '2026-06-01T13:00:00.000Z',
+			changedFields: ['title', 'description'],
+			addedLabelIds: ['label-1'],
+		});
+	});
+
+	it('UpdateWorkItem exposes status="noop" when no updates were supplied', async () => {
+		vi.mocked(updateWorkItem).mockResolvedValue({
+			status: 'noop',
+			id: 'card-9',
+			title: '',
+			url: 'https://pm.example/card/card-9',
+			updatedAt: '2026-06-01T13:00:00.000Z',
+			changedFields: [],
+			addedLabelIds: [],
+			message: 'Nothing to update - provide title, description, or labels',
+		} as never);
+		const cmd = new UpdateWorkItem(['--workItemId', 'card-9'], makeMockConfig() as never);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.data?.status).toBe('noop');
+		expect(output.data?.changedFields).toEqual([]);
+		expect(output.data?.addedLabelIds).toEqual([]);
+	});
+
+	it('MoveWorkItem stdout exposes id, url, status="moved", and updatedAt', async () => {
+		vi.mocked(moveWorkItem).mockResolvedValue({
+			status: 'moved',
+			id: 'card-2',
+			url: 'https://pm.example/card/card-2',
+			destination: 'list-done',
+			updatedAt: '2026-06-01T14:00:00.000Z',
+		} as never);
+		const cmd = new MoveWorkItem(
+			['--workItemId', 'card-2', '--destination', 'list-done'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'moved',
+			id: 'card-2',
+			url: 'https://pm.example/card/card-2',
+			destination: 'list-done',
+			updatedAt: '2026-06-01T14:00:00.000Z',
+		});
+	});
+
+	it('MoveWorkItem exposes status="noop" with previousStatus when already in destination', async () => {
+		vi.mocked(moveWorkItem).mockResolvedValue({
+			status: 'noop',
+			id: 'card-2',
+			url: 'https://pm.example/card/card-2',
+			destination: 'list-done',
+			updatedAt: '2026-06-01T14:00:00.000Z',
+			previousStatus: 'Done',
+			previousStatusId: 'list-done',
+			message: "Work item already in destination state 'Done' — no-op",
+		} as never);
+		const cmd = new MoveWorkItem(
+			['--workItemId', 'card-2', '--destination', 'list-done', '--expectedSourceState', 'Backlog'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.data?.status).toBe('noop');
+		expect(output.data?.previousStatus).toBe('Done');
+		expect(output.data?.previousStatusId).toBe('list-done');
+	});
+
+	it('MoveWorkItem exposes status="aborted" when the guard rejected the move', async () => {
+		vi.mocked(moveWorkItem).mockResolvedValue({
+			status: 'aborted',
+			id: 'card-2',
+			url: 'https://pm.example/card/card-2',
+			destination: 'list-done',
+			updatedAt: '2026-06-01T14:00:00.000Z',
+			previousStatus: 'In Progress',
+			message: "Aborted: expected 'Backlog', found 'In Progress'",
+		} as never);
+		const cmd = new MoveWorkItem(
+			['--workItemId', 'card-2', '--destination', 'list-done', '--expectedSourceState', 'Backlog'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.data?.status).toBe('aborted');
+		expect(output.data?.previousStatus).toBe('In Progress');
+	});
+
+	it('AddChecklist stdout exposes checklistId, workItemUrl, itemIds, itemCount, status, and updatedAt', async () => {
+		vi.mocked(addChecklist).mockResolvedValue({
+			status: 'created',
+			checklistId: 'cl-1',
+			checklistName: 'Acceptance Criteria',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			updatedAt: '2026-06-01T15:00:00.000Z',
+			itemCount: 2,
+			itemIds: ['item-1', 'item-2'],
+		} as never);
+		// AddChecklist's --item param is declared as `array of object`, so the
+		// CLI factory expects a single JSON-encoded array payload.
+		const cmd = new AddChecklist(
+			[
+				'--workItemId',
+				'card-1',
+				'--checklistName',
+				'Acceptance Criteria',
+				'--item',
+				JSON.stringify([{ name: 'First step' }, { name: 'Second step' }]),
+			],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'created',
+			checklistId: 'cl-1',
+			checklistName: 'Acceptance Criteria',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			updatedAt: '2026-06-01T15:00:00.000Z',
+			itemCount: 2,
+			itemIds: ['item-1', 'item-2'],
+		});
+	});
+
+	it('UpdateChecklistItem stdout exposes workItemUrl, checkItemId, status="updated", complete, and updatedAt', async () => {
+		vi.mocked(updateChecklistItem).mockResolvedValue({
+			status: 'updated',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			checkItemId: 'item-456',
+			complete: true,
+			updatedAt: '2026-06-01T16:00:00.000Z',
+		} as never);
+		const cmd = new UpdateChecklistItem(
+			['--workItemId', 'card-1', '--checkItemId', 'item-456', '--state', 'complete'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'updated',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			checkItemId: 'item-456',
+			complete: true,
+			updatedAt: '2026-06-01T16:00:00.000Z',
+		});
+	});
+
+	it('PMDeleteChecklistItem stdout exposes workItemUrl, checkItemId, status="deleted", and updatedAt', async () => {
+		vi.mocked(deleteChecklistItem).mockResolvedValue({
+			status: 'deleted',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			checkItemId: 'item-456',
+			updatedAt: '2026-06-01T16:30:00.000Z',
+		} as never);
+		const cmd = new DeleteChecklistItem(
+			['--workItemId', 'card-1', '--checkItemId', 'item-456'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(true);
+		expect(output.data).toMatchObject({
+			status: 'deleted',
+			workItemId: 'card-1',
+			workItemUrl: 'https://pm.example/card/card-1',
+			checkItemId: 'item-456',
+			updatedAt: '2026-06-01T16:30:00.000Z',
+		});
+	});
+
+	it('updatedAt values are ISO 8601 strings (regression guard against renderer drift)', async () => {
+		// Pins the timestamp surface contract: cores prefer provider-supplied
+		// timestamps and fall back to `currentTimestamp()` for synthetic outcomes.
+		// Either way the CLI envelope must carry a parseable ISO 8601 string,
+		// not a Date instance or a free-form prose value.
+		vi.mocked(createWorkItem).mockResolvedValue({
+			status: 'created',
+			id: 'wi-new',
+			title: 'X',
+			url: 'https://pm.example/card/wi-new',
+			updatedAt: '2026-06-01T17:00:00.000Z',
+		} as never);
+		const cmd = new CreateWorkItem(
+			['--containerId', 'list-1', '--title', 'X'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		const output = readJsonOutput(logSpy);
+		expect(typeof output.data?.updatedAt).toBe('string');
+		expect(Number.isNaN(Date.parse(output.data?.updatedAt as string))).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1428: Runtime failure envelopes
+//
+// Each PM mutation must surface fatal core errors as the spec-014 runtime
+// envelope (`{ success: false, error: { type: 'runtime', message: ... } }`)
+// — never as a successful prose sentinel like
+// `"Error creating work item: ..."`. These tests pin the CLI translation per
+// command so a regression that reverts to prose surfaces immediately.
+// ---------------------------------------------------------------------------
+describe('PM CLI runtime failure envelopes (MNG-1428)', () => {
+	function readJsonOutput(logSpy: ReturnType<typeof vi.spyOn>) {
+		const lines = logSpy.mock.calls.map((c) => c[0] as string);
+		const jsonLine = lines.find((l) => typeof l === 'string' && l.startsWith('{')) ?? '';
+		return JSON.parse(jsonLine) as {
+			success: boolean;
+			data?: unknown;
+			error?: { type: string; message: string };
+		};
+	}
+
+	it('CreateWorkItem surfaces a runtime envelope when createWorkItem throws', async () => {
+		vi.mocked(createWorkItem).mockRejectedValueOnce(new Error('Provider 403'));
+		const cmd = new CreateWorkItem(
+			['--containerId', 'list-1', '--title', 'New Card'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 403' });
+		expect(output.data).toBeUndefined();
+	});
+
+	it('UpdateWorkItem surfaces a runtime envelope when updateWorkItem throws', async () => {
+		vi.mocked(updateWorkItem).mockRejectedValueOnce(new Error('Provider 422'));
+		const cmd = new UpdateWorkItem(
+			['--workItemId', 'card-9', '--title', 'New'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 422' });
+	});
+
+	it('MoveWorkItem surfaces a runtime envelope when moveWorkItem throws', async () => {
+		vi.mocked(moveWorkItem).mockRejectedValueOnce(new Error('Provider 500'));
+		const cmd = new MoveWorkItem(
+			['--workItemId', 'card-2', '--destination', 'list-done'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 500' });
+	});
+
+	it('AddChecklist surfaces a runtime envelope when addChecklist throws', async () => {
+		vi.mocked(addChecklist).mockRejectedValueOnce(new Error('Provider 429'));
+		const cmd = new AddChecklist(
+			[
+				'--workItemId',
+				'card-1',
+				'--checklistName',
+				'CL',
+				'--item',
+				JSON.stringify([{ name: 'step' }]),
+			],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 429' });
+	});
+
+	it('UpdateChecklistItem surfaces a runtime envelope when updateChecklistItem throws', async () => {
+		vi.mocked(updateChecklistItem).mockRejectedValueOnce(new Error('Provider 503'));
+		const cmd = new UpdateChecklistItem(
+			['--workItemId', 'card-1', '--checkItemId', 'item-456', '--state', 'complete'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 503' });
+	});
+
+	it('PMDeleteChecklistItem surfaces a runtime envelope when deleteChecklistItem throws', async () => {
+		vi.mocked(deleteChecklistItem).mockRejectedValueOnce(new Error('Provider 404'));
+		const cmd = new DeleteChecklistItem(
+			['--workItemId', 'card-1', '--checkItemId', 'item-456'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		const exitSpy = vi.spyOn(cmd, 'exit');
+
+		await runExpectingExit(cmd);
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		const output = readJsonOutput(logSpy);
+		expect(output.success).toBe(false);
+		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 404' });
 	});
 });

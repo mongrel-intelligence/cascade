@@ -25,11 +25,26 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+const mockCreateRun = vi.fn().mockResolvedValue('stub-run-id');
+const mockCompleteRun = vi.fn().mockResolvedValue(undefined);
+vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
+	createRun: (...args: unknown[]) => mockCreateRun(...args),
+	completeRun: (...args: unknown[]) => mockCompleteRun(...args),
+}));
+
+const mockLoadProjectConfig = vi.fn().mockResolvedValue({ projects: [], fullProjects: [] });
+vi.mock('../../../src/router/config.js', () => ({
+	loadProjectConfig: (...args: unknown[]) => mockLoadProjectConfig(...args),
+}));
+
 import {
 	clearAgentTypeEnqueued,
 	clearRecentlyDispatched,
 } from '../../../src/router/agent-type-lock.js';
-import { releaseLocksForFailedJob } from '../../../src/router/dispatch-compensator.js';
+import {
+	recordSpawnFailureStub,
+	releaseLocksForFailedJob,
+} from '../../../src/router/dispatch-compensator.js';
 import { clearWorkItemEnqueued } from '../../../src/router/work-item-lock.js';
 import {
 	extractAgentType,
@@ -144,5 +159,122 @@ describe('releaseLocksForFailedJob', () => {
 		expect(mockClearWorkItemEnqueued).not.toHaveBeenCalled();
 		expect(mockClearAgentTypeEnqueued).not.toHaveBeenCalled();
 		expect(mockClearRecentlyDispatched).not.toHaveBeenCalled();
+	});
+});
+
+// Lives next to releaseLocksForFailedJob because it ALSO runs from BullMQ's
+// `worker.on('failed')` handler, fires exactly once per permanently-dead job,
+// and shares the same extractor/extraction shape. Reviewer concern from PR
+// #1408: the recorder must NOT run on retryable failures that BullMQ later
+// recovers from — that surface is guaranteed here, not in spawnWorker's catch.
+describe('recordSpawnFailureStub', () => {
+	beforeEach(() => {
+		mockExtractProjectIdFromJob.mockReset();
+		mockExtractWorkItemId.mockReset();
+		mockExtractAgentType.mockReset();
+		mockCreateRun.mockReset().mockResolvedValue('stub-run-id');
+		mockCompleteRun.mockReset().mockResolvedValue(undefined);
+		mockLoadProjectConfig.mockReset().mockResolvedValue({ projects: [], fullProjects: [] });
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('inserts a failed run row with extracted projectId, workItemId, prNumber, agentType, and triggerType', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p1');
+		mockExtractWorkItemId.mockReturnValue('w1');
+		mockExtractAgentType.mockReturnValue('review');
+
+		const err = new Error('worker died at boot');
+		await recordSpawnFailureStub(
+			{
+				type: 'github',
+				triggerResult: {
+					prNumber: 2273,
+					agentInput: { triggerType: 'review-requested' },
+				},
+			},
+			err,
+		);
+
+		expect(mockCreateRun).toHaveBeenCalledWith({
+			projectId: 'p1',
+			workItemId: 'w1',
+			prNumber: 2273,
+			agentType: 'review',
+			engine: 'unknown',
+			triggerType: 'review-requested',
+		});
+		expect(mockCompleteRun).toHaveBeenCalledWith(
+			'stub-run-id',
+			expect.objectContaining({
+				status: 'failed',
+				durationMs: 0,
+				error: expect.stringContaining('worker died at boot'),
+			}),
+		);
+	});
+
+	it('resolves the engine from project config when available', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p2');
+		mockExtractWorkItemId.mockReturnValue(undefined);
+		mockExtractAgentType.mockReturnValue('implementation');
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'p2',
+					agentEngine: { default: 'codex', overrides: { implementation: 'opencode' } },
+				},
+			],
+		});
+
+		await recordSpawnFailureStub({ type: 'trello' }, new Error('boom'));
+
+		expect(mockCreateRun).toHaveBeenCalledWith(
+			expect.objectContaining({ projectId: 'p2', agentType: 'implementation', engine: 'opencode' }),
+		);
+	});
+
+	it('falls back to engine="unknown" when loadProjectConfig throws (must not block visibility)', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p3');
+		mockExtractWorkItemId.mockReturnValue('w3');
+		mockExtractAgentType.mockReturnValue('review');
+		mockLoadProjectConfig.mockRejectedValue(new Error('config read failed'));
+
+		await recordSpawnFailureStub({ type: 'github' }, new Error('boom'));
+
+		expect(mockCreateRun).toHaveBeenCalledWith(expect.objectContaining({ engine: 'unknown' }));
+	});
+
+	it('skips the row when projectId is null', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue(null);
+		mockExtractAgentType.mockReturnValue('review');
+
+		await recordSpawnFailureStub({ type: 'github' }, new Error('boom'));
+
+		expect(mockCreateRun).not.toHaveBeenCalled();
+	});
+
+	it('skips the row when agentType cannot be resolved', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p4');
+		mockExtractAgentType.mockReturnValue(undefined);
+
+		await recordSpawnFailureStub({ type: 'github' }, new Error('boom'));
+
+		expect(mockCreateRun).not.toHaveBeenCalled();
+	});
+
+	it('never throws even if createRun rejects', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p5');
+		mockExtractWorkItemId.mockReturnValue('w5');
+		mockExtractAgentType.mockReturnValue('review');
+		mockCreateRun.mockRejectedValue(new Error('DB down'));
+
+		await expect(
+			recordSpawnFailureStub({ type: 'github' }, new Error('boom')),
+		).resolves.toBeUndefined();
+		expect(mockCompleteRun).not.toHaveBeenCalled();
 	});
 });

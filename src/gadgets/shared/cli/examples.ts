@@ -1,4 +1,10 @@
-import type { ParameterDefinition, ToolDefinition, ToolExample } from '../toolDefinition.js';
+import type {
+	OutputShape,
+	OutputShapeField,
+	ParameterDefinition,
+	ToolDefinition,
+	ToolExample,
+} from '../toolDefinition.js';
 import { formatJsonExample, formatShellScalar, shellQuote } from './shellValues.js';
 
 /**
@@ -64,4 +70,47 @@ export function expectedShapeFor(paramDef: ParameterDefinition, example?: unknow
 		return JSON.stringify(example);
 	}
 	return paramDef.describe;
+}
+
+/**
+ * MNG-1427: render an `OutputShape` as a plain-text block suitable for
+ * appending to an oclif `static description`. The block surfaces in
+ * `cascade-tools <group> <command> --help` output beneath the regular
+ * description so agents reading help text see the same `success.data`
+ * contract as in the system-prompt guidance.
+ *
+ * The renderer is intentionally minimal — no markdown emphasis, no surrounding
+ * blank lines — because oclif word-wraps and indents the description block
+ * automatically.
+ */
+export function renderOutputShapeForHelp(shape: OutputShape): string {
+	let block = 'Output shape (success.data):';
+	if (shape.summary) {
+		block += `\n${shape.summary}`;
+	}
+	if (shape.fields.length === 0) {
+		block += '\n- (shape declared but no fields documented)';
+		return block;
+	}
+	for (const field of shape.fields) {
+		block += `\n${formatOutputShapeFieldForHelp(field)}`;
+	}
+	return block;
+}
+
+function formatOutputShapeFieldForHelp(field: OutputShapeField): string {
+	const nameSuffix = field.optional ? '?' : '';
+	const head = `- ${field.name}${nameSuffix} (${field.type})`;
+	return field.description ? `${head} — ${field.description}` : head;
+}
+
+/**
+ * MNG-1427: assemble the oclif `static description` string by appending the
+ * rendered output-shape block (when declared) to the tool's base description.
+ * Used by `createCLICommand` so `--help` output picks up the contract without
+ * touching the prompt path.
+ */
+export function buildOclifDescription(def: ToolDefinition): string {
+	if (!def.outputShape) return def.description;
+	return `${def.description}\n\n${renderOutputShapeForHelp(def.outputShape)}`;
 }

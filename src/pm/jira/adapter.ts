@@ -59,6 +59,8 @@ interface JiraConfig {
 interface JiraComment {
 	id?: string;
 	created?: string;
+	/** ISO 8601 last-updated timestamp. JIRA exposes this on the comment payload as `updated`. */
+	updated?: string;
 	body?: unknown;
 	author?: { accountId?: string; displayName?: string; emailAddress?: string };
 }
@@ -73,6 +75,10 @@ interface JiraSearchIssue {
 		labels?: string[];
 		subtasks?: JiraSubtask[];
 		attachment?: JiraAttachment[];
+		/** ISO 8601 timestamp of issue creation. JIRA exposes this on `fields.created`. */
+		created?: string;
+		/** ISO 8601 timestamp of last issue update. JIRA exposes this on `fields.updated`. */
+		updated?: string;
 	};
 }
 
@@ -116,6 +122,13 @@ export class JiraPMProvider implements PMProvider {
 				? resolveJiraMediaUrls(mediaRefs, attachments, 'description')
 				: undefined;
 
+		// MNG-1422: JIRA returns `fields.created` / `fields.updated` as ISO
+		// timestamps when those fields are requested (the client requests them
+		// by default). Surface them as optional fields without altering
+		// existing behavior when the values are missing.
+		const created = (fields as { created?: string }).created;
+		const updated = (fields as { updated?: string }).updated;
+
 		return {
 			id: issue.key ?? id,
 			title: (fields.summary as string) ?? '',
@@ -129,6 +142,8 @@ export class JiraPMProvider implements PMProvider {
 				}),
 			),
 			...(inlineMedia !== undefined && inlineMedia.length > 0 ? { inlineMedia } : {}),
+			...(created ? { createdAt: created } : {}),
+			...(updated ? { updatedAt: updated } : {}),
 		};
 	}
 
@@ -143,6 +158,11 @@ export class JiraPMProvider implements PMProvider {
 				name: c.author?.displayName ?? '',
 				username: c.author?.emailAddress ?? '',
 			},
+			// JIRA comments carry both `created` and `updated` ISO timestamps.
+			// Preserve them on the normalized shape; fall back to `created`
+			// for `updatedAt` when JIRA hasn't recorded a separate edit.
+			...(c.created ? { createdAt: c.created } : {}),
+			...((c.updated ?? c.created) ? { updatedAt: c.updated ?? c.created } : {}),
 		}));
 	}
 
@@ -230,6 +250,8 @@ export class JiraPMProvider implements PMProvider {
 			labels: ((issue.fields?.labels as string[]) ?? []).map(
 				(l: string): WorkItemLabel => ({ id: l, name: l }),
 			),
+			...(issue.fields?.created ? { createdAt: issue.fields.created } : {}),
+			...(issue.fields?.updated ? { updatedAt: issue.fields.updated } : {}),
 		}));
 	}
 

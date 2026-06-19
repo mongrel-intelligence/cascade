@@ -13,7 +13,7 @@ import { CredentialScopedCommand } from '../../cli/base.js';
 import { massageBooleanFlagValues } from './cli/booleanArgv.js';
 import { deriveCLICommand } from './cli/commandNames.js';
 import { buildSink } from './cli/errorSink.js';
-import { buildOclifExamples } from './cli/examples.js';
+import { buildOclifDescription, buildOclifExamples } from './cli/examples.js';
 import { buildFlagsRecord, collectBooleanFlagNames, collectCandidateFlags } from './cli/flags.js';
 import {
 	rejectMultipleStdinConsumers,
@@ -81,10 +81,11 @@ export function createCLICommand(
 
 	const commandPrefix = deriveCLICommand(def.name);
 	const staticExamples = buildOclifExamples(def, commandPrefix);
+	const staticDescription = buildOclifDescription(def);
 	const booleanFlagNames = collectBooleanFlagNames(def);
 
 	class FactoryCommand extends CredentialScopedCommand {
-		static override description = def.description;
+		static override description = staticDescription;
 		static override flags = flagsRecord;
 		static override examples = staticExamples;
 

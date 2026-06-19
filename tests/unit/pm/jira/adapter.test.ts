@@ -188,6 +188,42 @@ describe('JiraPMProvider', () => {
 			);
 			expect(result.inlineMedia).toEqual(resolvedMedia);
 		});
+
+		it('preserves JIRA fields.created and fields.updated as work-item timestamps', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-301',
+				fields: {
+					summary: 'Timestamped issue',
+					description: { type: 'doc' },
+					status: { name: 'To Do' },
+					labels: [],
+					created: '2026-04-01T08:00:00.000Z',
+					updated: '2026-04-15T09:30:00.000Z',
+				},
+			});
+
+			const result = await provider.getWorkItem('PROJ-301');
+
+			expect(result.createdAt).toBe('2026-04-01T08:00:00.000Z');
+			expect(result.updatedAt).toBe('2026-04-15T09:30:00.000Z');
+		});
+
+		it('leaves createdAt and updatedAt undefined when JIRA omits them', async () => {
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-302',
+				fields: {
+					summary: 'No timestamps',
+					description: { type: 'doc' },
+					status: { name: 'Done' },
+					labels: [],
+				},
+			});
+
+			const result = await provider.getWorkItem('PROJ-302');
+
+			expect(result.createdAt).toBeUndefined();
+			expect(result.updatedAt).toBeUndefined();
+		});
 	});
 
 	describe('getWorkItemComments', () => {
@@ -218,6 +254,10 @@ describe('JiraPMProvider', () => {
 						name: 'Alice',
 						username: 'alice@example.com',
 					},
+					// MNG-1422: JIRA comments expose `created`; absent `updated`
+					// falls back to `created` so consumers always see a value.
+					createdAt: '2024-01-01T00:00:00.000Z',
+					updatedAt: '2024-01-01T00:00:00.000Z',
 				},
 			]);
 		});
@@ -236,6 +276,26 @@ describe('JiraPMProvider', () => {
 					author: { id: '', name: '', username: '' },
 				},
 			]);
+		});
+
+		it('uses comment `updated` when present, falling back to `created` otherwise', async () => {
+			mockAdfToPlainText.mockReturnValue('Edited text');
+			mockJiraClient.getIssueComments.mockResolvedValue([
+				{
+					id: 'c-edit',
+					created: '2024-01-01T00:00:00.000Z',
+					updated: '2024-01-05T00:00:00.000Z',
+					body: { type: 'doc' },
+					author: { accountId: 'u', displayName: 'A', emailAddress: 'a@example.com' },
+				},
+			]);
+
+			const result = await provider.getWorkItemComments('PROJ-123');
+
+			expect(result[0]).toMatchObject({
+				createdAt: '2024-01-01T00:00:00.000Z',
+				updatedAt: '2024-01-05T00:00:00.000Z',
+			});
 		});
 
 		it('does not include inlineMedia on comments (comment media resolution is not supported)', async () => {
@@ -475,6 +535,28 @@ describe('JiraPMProvider', () => {
 				expect(mockJiraClient.searchIssues).toHaveBeenCalledWith(
 					expect.stringContaining(`status = "Custom Status"`),
 				);
+			});
+		});
+
+		it('preserves JIRA timestamps on listed items', async () => {
+			mockJiraClient.searchIssues.mockResolvedValue([
+				{
+					key: 'PROJ-T',
+					fields: {
+						summary: 'Timestamped',
+						status: { name: 'To Do' },
+						labels: [],
+						created: '2026-04-01T08:00:00.000Z',
+						updated: '2026-04-15T09:30:00.000Z',
+					},
+				},
+			]);
+
+			const result = await provider.listWorkItems('PROJ');
+
+			expect(result[0]).toMatchObject({
+				createdAt: '2026-04-01T08:00:00.000Z',
+				updatedAt: '2026-04-15T09:30:00.000Z',
 			});
 		});
 	});

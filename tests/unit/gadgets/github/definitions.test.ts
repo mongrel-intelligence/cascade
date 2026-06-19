@@ -336,6 +336,155 @@ describe('getPRDiffDef', () => {
 });
 
 // ---------------------------------------------------------------------------
+// MNG-1427: GitHub mutation output-shape coverage
+// ---------------------------------------------------------------------------
+
+describe('GitHub mutation output shapes (MNG-1427)', () => {
+	const MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE: ToolDefinition[] = [
+		createPRDef,
+		createPRReviewDef,
+		postPRCommentDef,
+		updatePRCommentDef,
+		replyToReviewCommentDef,
+	];
+
+	const READ_ONLY_DEFS_WITHOUT_OUTPUT_SHAPE: ToolDefinition[] = [
+		getPRDetailsDef,
+		getPRDiffDef,
+		getPRChecksDef,
+		getPRCommentsDef,
+		getCIRunLogsDef,
+	];
+
+	it('every SCM mutation definition declares an outputShape with at least one field', () => {
+		for (const def of MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE) {
+			expect(def.outputShape, `${def.name} must declare outputShape`).toBeDefined();
+			expect(
+				def.outputShape?.fields.length,
+				`${def.name} outputShape must list at least one field`,
+			).toBeGreaterThan(0);
+		}
+	});
+
+	it('every output-shape field has a non-empty name and type', () => {
+		for (const def of MUTATION_DEFS_WITH_REQUIRED_OUTPUT_SHAPE) {
+			for (const field of def.outputShape?.fields ?? []) {
+				expect(typeof field.name).toBe('string');
+				expect(field.name.length).toBeGreaterThan(0);
+				expect(typeof field.type).toBe('string');
+				expect(field.type.length).toBeGreaterThan(0);
+			}
+		}
+	});
+
+	it('read-only SCM definitions do not declare an outputShape', () => {
+		for (const def of READ_ONLY_DEFS_WITHOUT_OUTPUT_SHAPE) {
+			expect(def.outputShape, `${def.name} must NOT declare outputShape`).toBeUndefined();
+		}
+	});
+
+	it('CreatePR output shape mirrors the CreatePRResult contract', () => {
+		const names = createPRDef.outputShape?.fields.map((f) => f.name) ?? [];
+		expect(names).toContain('prNumber');
+		expect(names).toContain('prUrl');
+		expect(names).toContain('repoFullName');
+		expect(names).toContain('alreadyExisted');
+	});
+
+	it('CreatePR pushOutput / commitOutput are optional', () => {
+		const fieldsByName = new Map((createPRDef.outputShape?.fields ?? []).map((f) => [f.name, f]));
+		expect(fieldsByName.get('pushOutput')?.optional).toBe(true);
+		expect(fieldsByName.get('commitOutput')?.optional).toBe(true);
+	});
+
+	it('CreatePRReview output shape includes reviewUrl + inlineCommentCount', () => {
+		const names = createPRReviewDef.outputShape?.fields.map((f) => f.name) ?? [];
+		expect(names).toContain('reviewUrl');
+		expect(names).toContain('inlineCommentCount');
+		expect(names).toContain('event');
+	});
+
+	it('CreatePRReview event type covers the APPROVE / REQUEST_CHANGES / COMMENT union', () => {
+		const event = createPRReviewDef.outputShape?.fields.find((f) => f.name === 'event');
+		expect(event?.type).toContain('APPROVE');
+		expect(event?.type).toContain('REQUEST_CHANGES');
+		expect(event?.type).toContain('COMMENT');
+	});
+
+	it('UpdatePRComment prNumber is `number | null`', () => {
+		const prNumber = updatePRCommentDef.outputShape?.fields.find((f) => f.name === 'prNumber');
+		expect(prNumber?.type).toBe('number | null');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// MNG-1428: SCM minimum structured-output contract
+//
+// Every SCM PR comment / reply / update / review mutation must declare the
+// minimum structured-output fields (`status`, `id`, `url`, `updatedAt`) plus
+// the PR/repo context (`repoFullName`, `prNumber`). These tests pin each
+// minimum field as a regression guard — a future drift that drops a key from
+// outputShape (or changes the type) surfaces in CI rather than silently
+// breaking the documented agent-facing contract.
+//
+// The CLI envelope round-trips these fields verbatim through stdout; consumers
+// (CLI sidecars, downstream review/respond flows) read them as structured
+// data and don't have to parse prose.
+// ---------------------------------------------------------------------------
+describe('SCM minimum structured-output contract (MNG-1428)', () => {
+	const PR_MUTATION_DEFS = [
+		postPRCommentDef,
+		updatePRCommentDef,
+		replyToReviewCommentDef,
+		createPRReviewDef,
+	];
+
+	for (const def of PR_MUTATION_DEFS) {
+		describe(`${def.name}`, () => {
+			it('declares the minimum structured-output fields (id, url, status, updatedAt)', () => {
+				const fieldsByName = new Map((def.outputShape?.fields ?? []).map((f) => [f.name, f]));
+				expect(fieldsByName.get('id'), `${def.name} must declare id`).toBeDefined();
+				expect(fieldsByName.get('id')?.type).toBe('string');
+				expect(fieldsByName.get('url'), `${def.name} must declare url`).toBeDefined();
+				expect(fieldsByName.get('url')?.type).toBe('string');
+				expect(fieldsByName.get('status'), `${def.name} must declare status`).toBeDefined();
+				expect(fieldsByName.get('updatedAt'), `${def.name} must declare updatedAt`).toBeDefined();
+				expect(fieldsByName.get('updatedAt')?.type).toBe('string');
+			});
+
+			it('declares the PR/repo context fields (repoFullName, prNumber)', () => {
+				const fieldsByName = new Map((def.outputShape?.fields ?? []).map((f) => [f.name, f]));
+				expect(
+					fieldsByName.get('repoFullName'),
+					`${def.name} must declare repoFullName`,
+				).toBeDefined();
+				expect(fieldsByName.get('repoFullName')?.type).toBe('string');
+				expect(fieldsByName.get('prNumber'), `${def.name} must declare prNumber`).toBeDefined();
+				// UpdatePRComment widens to `number | null` because some issue-only
+				// comments don't expose a /pull/<N> segment in html_url — but the
+				// field is still always present on the output shape.
+				expect(['number', 'number | null']).toContain(fieldsByName.get('prNumber')?.type);
+			});
+
+			it('declares the generic GitHub mutation status union on `status`', () => {
+				const status = def.outputShape?.fields.find((f) => f.name === 'status');
+				// All four PR-mutation outputs reuse the shared
+				// `GitHubMutationStatus` union (`"ok" | "no-op" | "aborted"`).
+				expect(status?.type).toBe('"ok" | "no-op" | "aborted"');
+			});
+		});
+	}
+
+	it('CreatePRReview additionally declares reviewUrl, event, submittedAt, inlineCommentCount', () => {
+		const names = createPRReviewDef.outputShape?.fields.map((f) => f.name) ?? [];
+		expect(names).toContain('reviewUrl');
+		expect(names).toContain('event');
+		expect(names).toContain('submittedAt');
+		expect(names).toContain('inlineCommentCount');
+	});
+});
+
+// ---------------------------------------------------------------------------
 // Spec 014 plan 2: createPRReviewDef declarative opt-in
 // ---------------------------------------------------------------------------
 

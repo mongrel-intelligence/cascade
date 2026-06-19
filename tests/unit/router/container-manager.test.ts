@@ -8,11 +8,15 @@ const {
 	mockDockerCreateContainer,
 	mockDockerGetContainer,
 	mockDockerListContainers,
+	mockDockerPull,
+	mockFollowProgress,
 	mockLoadProjectConfig,
 } = vi.hoisted(() => ({
 	mockDockerCreateContainer: vi.fn(),
 	mockDockerGetContainer: vi.fn(),
 	mockDockerListContainers: vi.fn(),
+	mockDockerPull: vi.fn(),
+	mockFollowProgress: vi.fn(),
 	mockLoadProjectConfig: vi.fn().mockResolvedValue({ projects: [], fullProjects: [] }),
 }));
 
@@ -25,6 +29,8 @@ vi.mock('dockerode', () => ({
 		createContainer: mockDockerCreateContainer,
 		getContainer: mockDockerGetContainer,
 		listContainers: mockDockerListContainers,
+		pull: mockDockerPull,
+		modem: { followProgress: mockFollowProgress },
 	})),
 }));
 
@@ -257,6 +263,11 @@ describe('spawnWorker', () => {
 		vi.spyOn(console, 'error').mockImplementation(() => {});
 		mockGetAllProjectCredentials.mockResolvedValue({});
 		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [] });
+		mockDockerPull.mockResolvedValue({} as never);
+		mockFollowProgress.mockImplementation(((_stream: unknown, cb: (err: Error | null) => void) =>
+			cb(null)) as never);
+		mockDockerPull.mockClear();
+		mockFollowProgress.mockClear();
 		detachAll();
 	});
 
@@ -397,6 +408,56 @@ describe('spawnWorker', () => {
 		expect(typeof instanceLabel).toBe('string');
 
 		resolveWait();
+	});
+
+	// Self-heal + visibility on missing base image — the 2026-06-15 outage class.
+	// Without these, a host-side prune of `cascade-worker:latest` produces silent
+	// `UnrecoverableError`s on every spawn and `runs list` shows nothing at all.
+
+	it('self-heals when the base image is missing: pulls once and retries spawn', async () => {
+		const notFound = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: test-worker:latest'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValueOnce(notFound);
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob({ id: 'job-pull-heal' }) as never);
+
+		expect(mockDockerPull).toHaveBeenCalledTimes(1);
+		expect(mockDockerPull).toHaveBeenCalledWith('test-worker:latest');
+		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
+
+		resolveWait();
+	});
+
+	it('propagates the pull error (not the original 404) when pull fails so the dispatch-error classifier can retry transient pull errors', async () => {
+		// Reviewer concern: throwing the original ImageNotFound on pull failure
+		// converts transient pull errors (registry 429, ECONNRESET) into terminal
+		// classification. spawnWorker must surface the pull error itself so the
+		// classifier can examine its actual shape.
+		const notFound = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: test-worker:latest'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValue(notFound);
+		const transientPullErr = Object.assign(new Error('registry 429'), { statusCode: 429 });
+		mockFollowProgress.mockImplementation(((_s: unknown, cb: (e: Error | null) => void) =>
+			cb(transientPullErr)) as never);
+
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-pull-transient',
+					data: {
+						type: 'trello',
+						projectId: 'proj-tr',
+						workItemId: 'card-tr',
+						agentType: 'review',
+					} as CascadeJob,
+				}) as never,
+			),
+		).rejects.toBe(transientPullErr);
 	});
 
 	it('uses project watchdogTimeoutMs + 2min buffer when available', async () => {

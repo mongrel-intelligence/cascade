@@ -154,6 +154,12 @@ export class LinearPMProvider implements PMProvider {
 				}),
 			),
 			inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
+			// Linear surfaces `createdAt` / `updatedAt` directly on the issue
+			// payload (see `LinearIssue` in `src/linear/types.ts`). Preserve
+			// empty-string sentinels as undefined to keep callers from
+			// branching on falsy strings.
+			...(issue.createdAt ? { createdAt: issue.createdAt } : {}),
+			...(issue.updatedAt ? { updatedAt: issue.updatedAt } : {}),
 		};
 	}
 
@@ -171,6 +177,8 @@ export class LinearPMProvider implements PMProvider {
 					username: c.user?.email ?? '',
 				},
 				inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
+				...(c.createdAt ? { createdAt: c.createdAt } : {}),
+				...(c.updatedAt ? { updatedAt: c.updatedAt } : {}),
 			};
 		});
 	}
@@ -217,6 +225,8 @@ export class LinearPMProvider implements PMProvider {
 			description: issue.description ?? '',
 			url: issue.url,
 			labels: [],
+			...(issue.createdAt ? { createdAt: issue.createdAt } : {}),
+			...(issue.updatedAt ? { updatedAt: issue.updatedAt } : {}),
 		};
 	}
 
@@ -248,6 +258,8 @@ export class LinearPMProvider implements PMProvider {
 					color: l.color,
 				}),
 			),
+			...(issue.createdAt ? { createdAt: issue.createdAt } : {}),
+			...(issue.updatedAt ? { updatedAt: issue.updatedAt } : {}),
 		}));
 	}
 

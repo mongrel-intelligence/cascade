@@ -278,74 +278,96 @@ describe('getPRComments', () => {
 });
 
 describe('postPRComment', () => {
-	it('returns success with comment ID and URL', async () => {
+	it('returns success with structured fields', async () => {
 		mockGithub.createPRComment.mockResolvedValue({
 			id: 50,
 			htmlUrl: 'https://github.com/o/r/pull/1#issuecomment-50',
+			body: 'Nice work!',
+			createdAt: '2026-05-01T10:00:00Z',
+			updatedAt: '2026-05-01T10:00:00Z',
 		} as Awaited<ReturnType<typeof mockGithub.createPRComment>>);
 
 		const result = await postPRComment('o', 'r', 1, 'Nice work!');
 
-		expect(result).toContain('id: 50');
-		expect(result).toContain('issuecomment-50');
+		expect(result.id).toBe('50');
+		expect(result.url).toBe('https://github.com/o/r/pull/1#issuecomment-50');
+		expect(result.status).toBe('ok');
+		expect(result.prNumber).toBe(1);
+		expect(result.repoFullName).toBe('o/r');
 	});
 
-	it('returns error on failure', async () => {
+	it('throws on failure', async () => {
 		mockGithub.createPRComment.mockRejectedValue(new Error('Rate limited'));
 
-		const result = await postPRComment('o', 'r', 1, 'Comment');
-
-		expect(result).toBe('Error posting PR comment: Rate limited');
+		await expect(postPRComment('o', 'r', 1, 'Comment')).rejects.toThrow('Rate limited');
 	});
 });
 
 describe('updatePRComment', () => {
-	it('returns success with comment ID and URL', async () => {
+	it('returns success with structured fields', async () => {
 		mockGithub.updatePRComment.mockResolvedValue({
 			id: 50,
 			htmlUrl: 'https://github.com/o/r/pull/1#issuecomment-50',
+			body: 'Updated content',
+			createdAt: '2026-05-01T10:00:00Z',
+			updatedAt: '2026-05-02T11:00:00Z',
 		} as Awaited<ReturnType<typeof mockGithub.updatePRComment>>);
 
 		const result = await updatePRComment('o', 'r', 50, 'Updated content');
 
-		expect(result).toContain('id: 50');
-		expect(result).toContain('Comment updated');
+		expect(result.id).toBe('50');
+		expect(result.status).toBe('ok');
+		expect(result.url).toBe('https://github.com/o/r/pull/1#issuecomment-50');
+		expect(result.updatedAt).toBe('2026-05-02T11:00:00Z');
+		expect(result.prNumber).toBe(1);
+		expect(result.repoFullName).toBe('o/r');
 	});
 
-	it('returns error on failure', async () => {
+	it('throws on failure', async () => {
 		mockGithub.updatePRComment.mockRejectedValue(new Error('Not found'));
 
-		const result = await updatePRComment('o', 'r', 50, 'Content');
-
-		expect(result).toBe('Error updating PR comment: Not found');
+		await expect(updatePRComment('o', 'r', 50, 'Content')).rejects.toThrow('Not found');
 	});
 });
 
 describe('replyToReviewComment', () => {
-	it('returns success with reply URL', async () => {
+	it('returns success with structured fields', async () => {
 		mockGithub.replyToReviewComment.mockResolvedValue({
+			id: 200,
+			body: 'Acknowledged',
+			path: 'src/index.ts',
+			line: 5,
 			htmlUrl: 'https://github.com/o/r/pull/1#reply-200',
+			user: { login: 'bot' },
+			createdAt: '2026-05-01T10:00:00Z',
+			updatedAt: '2026-05-01T10:00:00Z',
+			inReplyToId: 100,
 		} as Awaited<ReturnType<typeof mockGithub.replyToReviewComment>>);
 
 		const result = await replyToReviewComment('o', 'r', 1, 100, 'Acknowledged');
 
-		expect(result).toContain('Reply posted successfully');
-		expect(result).toContain('reply-200');
+		expect(result.id).toBe('200');
+		expect(result.status).toBe('ok');
+		expect(result.url).toBe('https://github.com/o/r/pull/1#reply-200');
+		expect(result.prNumber).toBe(1);
+		expect(result.repoFullName).toBe('o/r');
 	});
 
-	it('returns error on failure', async () => {
+	it('throws on failure', async () => {
 		mockGithub.replyToReviewComment.mockRejectedValue(new Error('Not found'));
 
-		const result = await replyToReviewComment('o', 'r', 1, 100, 'Reply');
-
-		expect(result).toBe('Error replying to comment: Not found');
+		await expect(replyToReviewComment('o', 'r', 1, 100, 'Reply')).rejects.toThrow('Not found');
 	});
 });
 
 describe('createPRReview', () => {
-	it('creates review and returns reviewUrl + event', async () => {
+	it('creates review and returns structured fields', async () => {
 		mockGithub.createPRReview.mockResolvedValue({
+			id: 300,
 			htmlUrl: 'https://github.com/o/r/pull/1#pullrequestreview-300',
+			body: 'LGTM',
+			state: 'APPROVED',
+			submittedAt: '2026-05-01T10:00:00Z',
 		} as Awaited<ReturnType<typeof mockGithub.createPRReview>>);
 
 		const result = await createPRReview({
@@ -356,19 +378,34 @@ describe('createPRReview', () => {
 			body: 'LGTM',
 		});
 
-		expect(result).toEqual({
+		expect(result).toMatchObject({
+			id: '300',
+			status: 'ok',
+			updatedAt: '2026-05-01T10:00:00Z',
+			url: 'https://github.com/o/r/pull/1#pullrequestreview-300',
 			reviewUrl: 'https://github.com/o/r/pull/1#pullrequestreview-300',
 			event: 'APPROVE',
+			repoFullName: 'o/r',
+			prNumber: 1,
+			submittedAt: '2026-05-01T10:00:00Z',
+			inlineCommentCount: 0,
 		});
 	});
 
-	it('passes inline comments when provided', async () => {
+	it('passes inline comments through and reports their count', async () => {
 		mockGithub.createPRReview.mockResolvedValue({
-			htmlUrl: 'https://github.com/o/r/pull/1#pullrequestreview-300',
+			id: 301,
+			htmlUrl: 'https://github.com/o/r/pull/1#pullrequestreview-301',
+			body: 'Needs work',
+			state: 'CHANGES_REQUESTED',
+			submittedAt: '2026-05-01T10:00:00Z',
 		} as Awaited<ReturnType<typeof mockGithub.createPRReview>>);
 
-		const comments = [{ path: 'file.ts', line: 10, body: 'Fix' }];
-		await createPRReview({
+		const comments = [
+			{ path: 'file.ts', line: 10, body: 'Fix' },
+			{ path: 'other.ts', line: 5, body: 'Also fix' },
+		];
+		const result = await createPRReview({
 			owner: 'o',
 			repo: 'r',
 			prNumber: 1,
@@ -385,6 +422,8 @@ describe('createPRReview', () => {
 			'Needs work',
 			comments,
 		);
+		expect(result.inlineCommentCount).toBe(2);
+		expect(result.event).toBe('REQUEST_CHANGES');
 	});
 
 	it('throws on failure (no try/catch)', async () => {
@@ -399,5 +438,26 @@ describe('createPRReview', () => {
 				body: 'ok',
 			}),
 		).rejects.toThrow('Forbidden');
+	});
+
+	it('synthesises a submittedAt timestamp when GitHub omits it', async () => {
+		mockGithub.createPRReview.mockResolvedValue({
+			id: 302,
+			htmlUrl: 'https://github.com/o/r/pull/1#pullrequestreview-302',
+			body: 'pending',
+			state: 'PENDING',
+			submittedAt: null,
+		} as Awaited<ReturnType<typeof mockGithub.createPRReview>>);
+
+		const result = await createPRReview({
+			owner: 'o',
+			repo: 'r',
+			prNumber: 1,
+			event: 'COMMENT',
+			body: 'pending',
+		});
+
+		expect(result.submittedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+		expect(result.updatedAt).toBe(result.submittedAt);
 	});
 });

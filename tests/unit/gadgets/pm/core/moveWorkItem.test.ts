@@ -13,40 +13,52 @@ import { moveWorkItem } from '../../../../../src/gadgets/pm/core/moveWorkItem.js
 describe('moveWorkItem', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockProvider.getWorkItemUrl.mockReturnValue('https://trello.com/c/card1');
 	});
 
-	it('calls provider.moveWorkItem with correct args and returns success message', async () => {
-		mockProvider.moveWorkItem.mockResolvedValue(undefined);
+	describe('unguarded path (no expectedSourceState)', () => {
+		it('returns a structured moved result on success', async () => {
+			mockProvider.moveWorkItem.mockResolvedValue(undefined);
 
-		const result = await moveWorkItem({
-			workItemId: 'card1',
-			destination: 'list2',
+			const result = await moveWorkItem({
+				workItemId: 'card1',
+				destination: 'list2',
+			});
+
+			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('card1', 'list2');
+			expect(mockProvider.getWorkItem).not.toHaveBeenCalled();
+			expect(result).toMatchObject({
+				status: 'moved',
+				id: 'card1',
+				url: 'https://trello.com/c/card1',
+				destination: 'list2',
+			});
+			expect(typeof result.updatedAt).toBe('string');
+			expect(result.previousStatus).toBeUndefined();
+			expect(result.previousStatusId).toBeUndefined();
 		});
 
-		expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('card1', 'list2');
-		expect(result).toBe('Work item card1 moved to list2 successfully');
-	});
+		it('throws on provider failure (no prose sentinel)', async () => {
+			mockProvider.moveWorkItem.mockRejectedValue(new Error('API error'));
 
-	it('throws an error message on failure', async () => {
-		mockProvider.moveWorkItem.mockRejectedValue(new Error('API error'));
+			await expect(
+				moveWorkItem({
+					workItemId: 'card1',
+					destination: 'list2',
+				}),
+			).rejects.toThrow('API error');
+		});
 
-		await expect(
-			moveWorkItem({
-				workItemId: 'card1',
-				destination: 'list2',
-			}),
-		).rejects.toThrow('Error moving work item: API error');
-	});
+		it('propagates non-Error throws', async () => {
+			mockProvider.moveWorkItem.mockRejectedValue('network timeout');
 
-	it('handles non-Error throws', async () => {
-		mockProvider.moveWorkItem.mockRejectedValue('network timeout');
-
-		await expect(
-			moveWorkItem({
-				workItemId: 'card1',
-				destination: 'list2',
-			}),
-		).rejects.toThrow('Error moving work item: network timeout');
+			await expect(
+				moveWorkItem({
+					workItemId: 'card1',
+					destination: 'list2',
+				}),
+			).rejects.toThrow('network timeout');
+		});
 	});
 
 	// ── expectedSourceState guard ────────────────────────────────────────────
@@ -64,7 +76,7 @@ describe('moveWorkItem', () => {
 			labels: [],
 		};
 
-		it('proceeds with move when current status matches expectedSourceState', async () => {
+		it('returns a moved result when current status matches expectedSourceState', async () => {
 			mockProvider.getWorkItem.mockResolvedValue({
 				...baseItem,
 				status: 'Backlog',
@@ -79,7 +91,13 @@ describe('moveWorkItem', () => {
 
 			expect(mockProvider.getWorkItem).toHaveBeenCalledWith('MNG-538');
 			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('MNG-538', 'todo-state-id');
-			expect(result).toContain('moved');
+			expect(result).toMatchObject({
+				status: 'moved',
+				id: 'MNG-538',
+				url: 'https://linear.app/mongrel/issue/MNG-538',
+				destination: 'todo-state-id',
+				previousStatus: 'Backlog',
+			});
 		});
 
 		it('proceeds with move when current statusId matches expectedSourceState', async () => {
@@ -97,10 +115,12 @@ describe('moveWorkItem', () => {
 			});
 
 			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('MNG-538', 'state-todo');
-			expect(result).toContain('moved');
+			expect(result.status).toBe('moved');
+			expect(result.previousStatus).toBe('Ready');
+			expect(result.previousStatusId).toBe('state-backlog');
 		});
 
-		it('aborts move when current status differs from expectedSourceState', async () => {
+		it('returns aborted result when current status differs from expectedSourceState', async () => {
 			mockProvider.getWorkItem.mockResolvedValue({
 				...baseItem,
 				status: 'In Progress',
@@ -113,12 +133,18 @@ describe('moveWorkItem', () => {
 			});
 
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
-			expect(result).toMatch(/Aborted|aborted|skipped/);
-			expect(result).toContain('In Progress');
-			expect(result).toContain('Backlog');
+			expect(result).toMatchObject({
+				status: 'aborted',
+				id: 'MNG-538',
+				url: 'https://linear.app/mongrel/issue/MNG-538',
+				destination: 'todo-state-id',
+				previousStatus: 'In Progress',
+			});
+			expect(result.message).toContain('In Progress');
+			expect(result.message).toContain('Backlog');
 		});
 
-		it('aborts move when Linear issue is in an unmapped Ideas statusId', async () => {
+		it('aborts when Linear issue is in an unmapped Ideas statusId', async () => {
 			mockProvider.getWorkItem.mockResolvedValue({
 				...baseItem,
 				status: 'Ideas',
@@ -132,8 +158,11 @@ describe('moveWorkItem', () => {
 			});
 
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
-			expect(result).toContain('Ideas (state-ideas)');
-			expect(result).toContain('state-backlog');
+			expect(result.status).toBe('aborted');
+			expect(result.previousStatus).toBe('Ideas');
+			expect(result.previousStatusId).toBe('state-ideas');
+			expect(result.message).toContain('Ideas (state-ideas)');
+			expect(result.message).toContain('state-backlog');
 		});
 
 		it('matches expectedSourceState case-insensitively (Linear vs Trello casing drift)', async () => {
@@ -150,10 +179,10 @@ describe('moveWorkItem', () => {
 			});
 
 			expect(mockProvider.moveWorkItem).toHaveBeenCalled();
-			expect(result).toContain('moved');
+			expect(result.status).toBe('moved');
 		});
 
-		it('skips silently when current status is already the destination (idempotency)', async () => {
+		it('returns noop when current status is already the destination (idempotency)', async () => {
 			// expectedSourceState matches but current status equals destination —
 			// rare race where a parallel agent already moved the item. Treat as
 			// no-op rather than firing a redundant Linear API call.
@@ -169,7 +198,9 @@ describe('moveWorkItem', () => {
 			});
 
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
-			expect(result).toMatch(/already|no-op|aborted/i);
+			expect(result.status).toBe('noop');
+			expect(result.previousStatus).toBe('Todo');
+			expect(result.message).toMatch(/already|no-op/i);
 		});
 
 		it('does NOT call getWorkItem when expectedSourceState is omitted (back-compat)', async () => {
@@ -184,7 +215,7 @@ describe('moveWorkItem', () => {
 			expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('card1', 'list2');
 		});
 
-		it('throws a structured error if getWorkItem throws', async () => {
+		it('throws when guarded read-back throws (no prose sentinel)', async () => {
 			mockProvider.getWorkItem.mockRejectedValue(new Error('API down'));
 
 			await expect(
@@ -193,7 +224,7 @@ describe('moveWorkItem', () => {
 					destination: 'todo-state-id',
 					expectedSourceState: 'Backlog',
 				}),
-			).rejects.toThrow('Error moving work item: API down');
+			).rejects.toThrow('API down');
 
 			expect(mockProvider.moveWorkItem).not.toHaveBeenCalled();
 		});

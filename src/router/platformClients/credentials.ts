@@ -73,7 +73,7 @@ export async function resolveLinearCredentials(
  * - `'github'`: resolves the `webhook_secret` credential from the SCM integration.
  * - `'trello'`: resolves the `api_secret` credential from the PM integration.
  *   Trello computes webhook HMAC signatures using the API Secret (shown below the
- *   API Key at https://trello.com/app-key), not the public API Key.
+ *   API Key at https://trello.com/power-ups/admin/), not the public API Key.
  * - `'jira'`: resolves the `webhook_secret` credential from the PM integration.
  * - `'linear'`: resolves the `webhook_secret` credential from the PM integration.
  *

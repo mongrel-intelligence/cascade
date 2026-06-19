@@ -67,6 +67,11 @@ export class TrelloPMProvider implements PMProvider {
 				}),
 			),
 			inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
+			// Trello surfaces only `dateLastActivity` — map it to `updatedAt`
+			// when present. No `createdAt` is reliably available (cards expose
+			// only the most recent activity), so we leave it undefined rather
+			// than synthesising one.
+			...(card.dateLastActivity ? { updatedAt: card.dateLastActivity } : {}),
 		};
 	}
 
@@ -84,6 +89,11 @@ export class TrelloPMProvider implements PMProvider {
 					username: c.memberCreator.username,
 				},
 				inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
+				// Trello's action `date` is the creation/edit time for the
+				// commentCard action. Surface it on both timestamp fields so
+				// downstream consumers don't need to re-encode the `date`
+				// field they already see.
+				...(c.date ? { createdAt: c.date, updatedAt: c.date } : {}),
 			};
 		});
 	}
@@ -124,6 +134,12 @@ export class TrelloPMProvider implements PMProvider {
 					color: l.color,
 				}),
 			),
+			// New cards have a fresh `dateLastActivity`. Surface it on both
+			// timestamp fields — for a newly-created card the activity timestamp
+			// is effectively the creation timestamp.
+			...(card.dateLastActivity
+				? { createdAt: card.dateLastActivity, updatedAt: card.dateLastActivity }
+				: {}),
 		};
 	}
 
@@ -148,6 +164,7 @@ export class TrelloPMProvider implements PMProvider {
 					color: l.color,
 				}),
 			),
+			...(card.dateLastActivity ? { updatedAt: card.dateLastActivity } : {}),
 		}));
 	}
 

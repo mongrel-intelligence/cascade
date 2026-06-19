@@ -12,10 +12,14 @@
  * - The `cliCommand` is derived from the definition name (kebab-cased)
  */
 
-import type { ToolManifest, ToolManifestParameter } from '../../agents/contracts/index.js';
+import type {
+	ToolManifest,
+	ToolManifestOutputShape,
+	ToolManifestParameter,
+} from '../../agents/contracts/index.js';
 import { deriveCLICommand } from './cli/commandNames.js';
 import { findExampleForParam } from './cli/examples.js';
-import type { ParameterDefinition, ToolDefinition } from './toolDefinition.js';
+import type { OutputShape, ParameterDefinition, ToolDefinition } from './toolDefinition.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -96,6 +100,32 @@ export function generateToolManifest(
 	def: ToolDefinition,
 	cliCommandOverride?: string,
 ): ToolManifest {
+	const parameters = buildManifestParameters(def);
+	const cliCommand = deriveCLICommand(def.name, cliCommandOverride);
+
+	// MNG-1427: thread the optional output-shape descriptor unchanged into the
+	// manifest so downstream consumers (prompt renderer, generated help,
+	// integration tests) see the same shape declared on the definition.
+	const outputShape = buildManifestOutputShape(def.outputShape);
+
+	return {
+		name: def.name,
+		description: def.description,
+		cliCommand,
+		parameters,
+		...(outputShape ? { outputShape } : {}),
+	};
+}
+
+/**
+ * Build the `parameters` map for a manifest — including direct params from the
+ * definition AND file-input alternative flags. Extracted from
+ * {@link generateToolManifest} so the top-level function stays under the
+ * cognitive-complexity budget; the rendering rules (gadgetOnly exclusion,
+ * file-input cross-references, examples) are unchanged from the original
+ * inline code.
+ */
+function buildManifestParameters(def: ToolDefinition): Record<string, unknown> {
 	const parameters: Record<string, unknown> = {};
 
 	// MNG-1059: build a quick lookup of paramName → fileFlag so the manifest
@@ -127,28 +157,34 @@ export function generateToolManifest(
 	}
 
 	// Add file-input alternative flags to the manifest
-	if (def.cli?.fileInputAlternatives) {
-		for (const alt of def.cli.fileInputAlternatives) {
-			const description =
-				alt.description ??
-				`Path to file with ${alt.paramName} (prefer over --${alt.paramName} for long content)`;
-			parameters[alt.fileFlag] = {
-				type: 'string',
-				description,
-				// MNG-1059: cross-reference back to the direct text param so the
-				// prompt renderer can group `--body` and `--body-file` semantically.
-				fileInputFor: alt.paramName,
-				// File flags are always optional (they are alternatives to the direct param)
-			};
-		}
+	for (const alt of def.cli?.fileInputAlternatives ?? []) {
+		const description =
+			alt.description ??
+			`Path to file with ${alt.paramName} (prefer over --${alt.paramName} for long content)`;
+		parameters[alt.fileFlag] = {
+			type: 'string',
+			description,
+			// MNG-1059: cross-reference back to the direct text param so the
+			// prompt renderer can group `--body` and `--body-file` semantically.
+			fileInputFor: alt.paramName,
+			// File flags are always optional (they are alternatives to the direct param)
+		};
 	}
 
-	const cliCommand = deriveCLICommand(def.name, cliCommandOverride);
+	return parameters;
+}
 
+function buildManifestOutputShape(
+	outputShape: OutputShape | undefined,
+): ToolManifestOutputShape | undefined {
+	if (!outputShape) return undefined;
 	return {
-		name: def.name,
-		description: def.description,
-		cliCommand,
-		parameters,
+		...(outputShape.summary ? { summary: outputShape.summary } : {}),
+		fields: outputShape.fields.map((f) => ({
+			name: f.name,
+			type: f.type,
+			...(f.description ? { description: f.description } : {}),
+			...(f.optional ? { optional: true } : {}),
+		})),
 	};
 }

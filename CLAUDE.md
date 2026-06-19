@@ -179,7 +179,7 @@ Required:
 
 Optional:
 
-- `DATABASE_SSL=false` to disable SSL locally; `DATABASE_CA_CERT` for managed DBs with a private CA.
+- `DATABASE_SSL` — `false` disables SSL (local dev); `no-verify` keeps TLS but skips certificate verification — required for managed Postgres that requires TLS yet presents a self-signed/private-CA cert (e.g. Supabase's connection pooler), where `DATABASE_CA_CERT` can't help because spawned worker containers get `DATABASE_*` env but no mounted cert file; unset → TLS with verification. `DATABASE_CA_CERT` pins a CA for managed DBs with a private CA (verification mode only).
 - `CREDENTIAL_MASTER_KEY` — 64-char hex (AES-256 key) to encrypt project credentials at rest. Without it, credentials are stored as plaintext; both modes coexist.
 - `GITHUB_WEBHOOK_SECRET` — opt-in HMAC verification; store as the `webhook_secret` role on the GitHub SCM integration.
 - `SENTRY_DSN`, `SENTRY_ENVIRONMENT`, `SENTRY_RELEASE`, `SENTRY_TRACES_SAMPLE_RATE` — observability.

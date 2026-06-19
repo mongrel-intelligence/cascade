@@ -553,6 +553,130 @@ describe('buildToolGuidance', () => {
 	});
 });
 
+// -------------------------------------------------------------------------
+// MNG-1427: output-shape rendering after the command block
+// -------------------------------------------------------------------------
+describe('outputShape — render after the command block (MNG-1427)', () => {
+	it('renders an Output shape section when the manifest declares one', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				name: 'PostComment',
+				outputShape: {
+					summary: 'PostComment returns the new comment context.',
+					fields: [
+						{ name: 'status', type: '"created" | "updated"', description: 'Outcome.' },
+						{ name: 'id', type: 'string', description: 'Comment ID.' },
+					],
+				},
+			}),
+		]);
+
+		expect(result).toContain('**Output shape** (`success.data`):');
+		expect(result).toContain('PostComment returns the new comment context.');
+		expect(result).toContain('- `status` (`"created" | "updated"`) — Outcome.');
+		expect(result).toContain('- `id` (`string`) — Comment ID.');
+	});
+
+	it('renders the output shape after the closing code fence (parseable order)', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				name: 'CreateWorkItem',
+				outputShape: {
+					fields: [{ name: 'id', type: 'string', description: 'New work item ID.' }],
+				},
+			}),
+		]);
+
+		const fenceIndex = result.indexOf('\n```\n');
+		const outputIndex = result.indexOf('**Output shape**');
+		expect(fenceIndex).toBeGreaterThan(-1);
+		expect(outputIndex).toBeGreaterThan(fenceIndex);
+	});
+
+	it('marks optional fields with a trailing `?`', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				outputShape: {
+					fields: [
+						{ name: 'id', type: 'string' },
+						{
+							name: 'workflowStatus',
+							type: 'string',
+							optional: true,
+							description: 'Provider-dependent.',
+						},
+					],
+				},
+			}),
+		]);
+
+		expect(result).toContain('- `id` (`string`)');
+		expect(result).toContain('- `workflowStatus?` (`string`) — Provider-dependent.');
+	});
+
+	it('does not render Output shape section when no shape is declared', () => {
+		const result = buildToolGuidance([makeManifest({ name: 'ReadOnlyTool' })]);
+		expect(result).not.toContain('**Output shape**');
+	});
+
+	it('renders a placeholder line when fields array is empty', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				outputShape: { fields: [] },
+			}),
+		]);
+
+		expect(result).toContain('**Output shape**');
+		expect(result).toContain('- (shape declared but no fields documented)');
+	});
+
+	it('omits the summary line when none is declared', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				outputShape: {
+					fields: [{ name: 'id', type: 'string' }],
+				},
+			}),
+		]);
+
+		expect(result).toContain('**Output shape**');
+		expect(result).toContain('- `id` (`string`)');
+	});
+
+	it('renders fields without descriptions as bare name/type entries', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				outputShape: {
+					fields: [{ name: 'workItemId', type: 'string' }],
+				},
+			}),
+		]);
+
+		expect(result).toContain('- `workItemId` (`string`)');
+		expect(result).not.toContain('- `workItemId` (`string`) —');
+	});
+
+	it('preserves declared field order', () => {
+		const result = buildToolGuidance([
+			makeManifest({
+				outputShape: {
+					fields: [
+						{ name: 'first', type: 'string' },
+						{ name: 'second', type: 'string' },
+						{ name: 'third', type: 'string' },
+					],
+				},
+			}),
+		]);
+
+		const firstIdx = result.indexOf('- `first`');
+		const secondIdx = result.indexOf('- `second`');
+		const thirdIdx = result.indexOf('- `third`');
+		expect(firstIdx).toBeLessThan(secondIdx);
+		expect(secondIdx).toBeLessThan(thirdIdx);
+	});
+});
+
 // ───────── buildSystemPrompt ─────────
 describe('buildSystemPrompt', () => {
 	it('prepends native tool execution rules', () => {

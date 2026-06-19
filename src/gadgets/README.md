@@ -116,11 +116,11 @@ examples: [
 
 ## The error envelope
 
-Every cascade-tools failure — flag parse, JSON parse, missing-required, enum-mismatch, unknown-flag, auth, runtime — emits through the shared `emitCliError` helper:
+Every cascade-tools failure — flag parse, JSON parse, missing-required, enum-mismatch, unknown-flag, unknown-command, auth, runtime — emits through the shared `emitCliError` helper:
 
 - **Structured JSON on stdout** (`{ "success": false, "error": {...} }`) so agents parse a single stable surface.
 - **One-line prose summary on stderr** so humans running the CLI directly get a readable error without piping through `jq`.
-- **Exit code 1.**
+- **Exit code 1** for every type except `unknown-command`, which preserves oclif's historical `command_not_found` exit code **2** (see "Mistyped commands" below).
 
 The envelope shape is part of the cascade-tools contract. Renaming fields is a breaking change — agents rely on `error.type` / `error.flag` / `error.hint` to self-correct on the next attempt.
 
@@ -128,17 +128,93 @@ Envelope fields:
 
 | field | when populated |
 |---|---|
-| `type` | always; one of `flag-parse` / `json-parse` / `missing-required` / `enum-mismatch` / `unknown-flag` / `auth` / `runtime` |
+| `type` | always; one of `flag-parse` / `json-parse` / `missing-required` / `enum-mismatch` / `unknown-flag` / `unknown-command` / `auth` / `runtime` |
 | `flag` | for flag-scoped failures |
 | `message` | always; human-readable |
-| `got` | the offending input, truncated to ~80 chars |
-| `expected` | shape fragment (from `example` when available, else `describe`) |
-| `hint` | an action the agent can take (e.g. `did you mean --comments?`, `use --comments-file <path>`) |
+| `got` | the offending input, truncated to ~80 chars (for `unknown-command`, the typed command in space-separated form, e.g. `pm reaad-work-item`) |
+| `expected` | shape fragment (from `example` when available, else `describe`; for `unknown-command`, the comma-separated candidate list — topics for top-level typos, subcommands for known-topic typos) |
+| `hint` | an action the agent can take (e.g. `did you mean --comments?`, `use --comments-file <path>`, `did you mean 'cascade-tools scm get-pr-diff'?`) |
 | `example` | runnable invocation, when known |
 
 You do not call `emitCliError` directly. The shared factory routes every failure through it automatically — your job is to make the declarative metadata (describe text, examples, aliases, file alternatives) rich enough that the auto-generated envelope is actually useful.
 
 Core gadget functions must throw for fatal runtime/API/provider failures. Do not return sentinel prose such as `Error posting comment: ...`; `createCLICommand()` treats returned values as successful `data`, and thrown errors as runtime failure envelopes. Intentional non-fatal outcomes may still return structured data or explicit status text when they are part of the command contract, such as guarded PM move no-ops or friction reports queued for retry.
+
+---
+
+## Mutation result contract (MNG-1422 → MNG-1428)
+
+Every PM mutation core and the SCM PR comment/reply/update/review mutation cores covered by MNG-1428 return structured objects — never prose. The CLI factory serialises those objects verbatim into the `{ "success": true, "data": {...} }` stdout envelope, so consumers (downstream agents, sidecar tooling, review/respond workflows) can read structured keys without regex'ing sentence fragments. Mutation outcomes use the shared shapes declared in `src/gadgets/pm/core/mutationResults.ts` and `src/gadgets/github/core/mutationResults.ts`.
+
+### Mutation identity and status fields
+
+| Field | Meaning |
+|---|---|
+| `status` | The MUTATION OUTCOME — `"created"` / `"updated"` / `"moved"` / `"noop"` / `"aborted"` / `"deleted"` (PM) or `"ok"` / `"no-op"` / `"aborted"` (SCM). Branch on this, not on prose. |
+| `updatedAt` | ISO 8601 timestamp string. It is always present and parseable; the source varies by mutation and fallback path. |
+
+Identity and URL fields are mutation-specific:
+
+- Work-item and comment mutations expose `id` plus their canonical resource URL (`url` or, for PM comments, `workItemUrl`).
+- `AddChecklist` exposes `checklistId` and `workItemUrl`, plus `itemIds` / `itemCount`.
+- `PMUpdateChecklistItem` and `PMDeleteChecklistItem` expose `checkItemId` and `workItemUrl`.
+- Targeted SCM PR comment/reply/update/review mutations expose `id`, `url`, and the parent PR context: `repoFullName` (e.g. `"acme/myapp"`) and `prNumber` (or `number | null` for the rare issue-only `UpdatePRComment` case). `CreatePRReview` extends that shape with `reviewUrl`, `event`, `submittedAt`, and `inlineCommentCount`.
+- `CreatePR` is also a structured SCM mutation, but it is outside MNG-1428's shared `status` / `updatedAt` / `id` / `url` contract and keeps its existing shape: `prNumber`, `prUrl`, `repoFullName`, and `alreadyExisted` plus optional commit/push details.
+
+### `status` vs `workflowStatus` naming — do not conflate
+
+`status` is reserved for the **mutation outcome** alone. The PM provider's **workflow state** (e.g. Linear's "In Progress", a Trello list name, a JIRA status) lives on its own keys:
+
+- `workflowStatus` (string, optional) — human-readable workflow state name.
+- `workflowStatusId` (string, optional) — provider-native ID (Linear state UUID, Trello list ID).
+- `previousStatus` / `previousStatusId` on `MoveWorkItem` — the work item's pre-move workflow state read back from the provider on the guarded path.
+
+A historical mix-up between the two surfaces cost ~2½ minutes of agent time once (prod run `5d993b04`) when an agent treated a Trello list name surfaced through a `status` key as a mutation outcome. The dual-key naming is now load-bearing — keep mutation outcomes and workflow states on separate fields.
+
+### Fatal failures throw — no prose sentinels
+
+Mutation cores propagate runtime / API / provider errors as thrown exceptions. The shared `createCLICommand()` factory wraps them in the spec-014 runtime envelope:
+
+```json
+{ "success": false, "error": { "type": "runtime", "message": "Provider 422" } }
+```
+
+Do not return strings like `"Error creating work item: ..."` from a mutation core. The CLI cannot distinguish a sentinel-string return from a successful `data` payload, so the envelope would say `success: true` and the agent would silently mis-act on the prose.
+
+The only exceptions are intentional non-fatal outcomes that are part of the contract — e.g. `MoveWorkItem` returning `status: "noop"` when the work item is already in the destination, or `ReportFriction` returning `status: "queued_slot_missing"` when the friction slot isn't configured. These are structured returns, not prose sentinels.
+
+### Timestamp fallback semantics
+
+The stable contract is that `updatedAt` is present and parseable. Its source varies:
+
+- `okResult(providerTs)` still rejects empty timestamps, so call sites that use the shared success helper must provide a timestamp.
+- Some successful PM writes synthesise timestamps today: `PostComment` uses `currentTimestamp()` for its `created` / `updated` outcomes, and `MoveWorkItem` can fall back through `pickTimestamp(undefined)` for `moved`.
+- `"noop"` / `"aborted"` outcomes synthesise via `currentTimestamp()` because no provider write happened. The synthetic "now" reflects when the gadget evaluated the guard, not a provider write.
+- Read-back failures after a successful checklist mutation fall back to a synthesised URL + timestamp inside `readWorkItemContext` rather than masking the mutation success and risking an idempotency retry storm (especially on Trello's native checklists, where retries duplicate rows).
+
+### Focused verification command (MNG-1428)
+
+The regression coverage for this contract lives in three test files. To re-run them in isolation:
+
+```bash
+npx vitest run --project unit-core \
+  tests/unit/cli/pm/pm-commands.test.ts \
+  tests/unit/cli/scm/scm-commands.test.ts \
+  tests/unit/gadgets/pm/definitions.test.ts \
+  tests/unit/gadgets/github/definitions.test.ts
+```
+
+Each suite parses the CLI stdout envelope and asserts `success.data.status`, parseable `success.data.updatedAt`, and the mutation-specific identity/URL fields (`id` / `url`, `workItemUrl`, `checklistId`, or `checkItemId` as applicable, plus `repoFullName` / `prNumber` for targeted SCM PR comment/reply/update/review mutations). The suites also pin the runtime envelope shape for thrown core failures. The output-shape tests in the gadget-definition suites pin the `status` vs `workflowStatus` split as well.
+
+The full pre-PR gate is unchanged:
+
+```bash
+npm run lint        # biome check (also via lint:fix during iteration)
+npm run typecheck   # tsc --noEmit
+npm test            # all four unit projects
+```
+
+Changed surfaces touched by this contract: PM mutation cores under `src/gadgets/pm/core/`, targeted SCM PR comment/reply/update/review mutation cores under `src/gadgets/github/core/`, the matching CLI commands under `src/cli/pm/` and `src/cli/scm/`, and the `outputShape` blocks on the matching `ToolDefinition`s in `src/gadgets/{pm,github}/definitions.ts`. `CreatePR` remains documented and tested as its own structured mutation shape.
 
 ---
 
@@ -179,7 +255,26 @@ If you find yourself opening one of those files, stop — the right fix is almos
 
 The factory intercepts oclif's `NonExistentFlagsError`, runs a Levenshtein match against every declared canonical flag name + alias, and surfaces the closest canonical name as `error.hint`. No gadget work required — just declare your flags truthfully.
 
-Two tuning constants live in `src/gadgets/shared/cli/parseErrors.ts`: `MAX_FLAG_SUGGESTION_DISTANCE` (default 2) and `MAX_FLAG_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one.
+Two tuning constants live in `src/gadgets/shared/cli/suggestions.ts` (MNG-1440 shared helper): `MAX_SUGGESTION_DISTANCE` (default 2) and `MAX_SUGGESTION_RATIO` (default 0.4). Wildly-off mistypes get no suggestion rather than a misleading one. The same constants gate the command-typo path described below — flag and command suggestions stay calibrated against one shared budget.
+
+---
+
+## Mistyped commands → "did you mean" (MNG-1442)
+
+`cascade-tools` registers an oclif `command_not_found` hook that turns typoed topics or subcommands into the same structured envelope every other failure emits — instead of oclif's bare `command <id> not found` message. Two cases:
+
+- **Unknown top-level topic** (e.g. `cascade-tools sm get-pr-diff`) — `expected` carries the topic enumeration, and `hint` carries the closest viable topic with the user's trailing segments preserved (`did you mean 'cascade-tools scm get-pr-diff'?`).
+- **Known topic, unknown subcommand** (e.g. `cascade-tools pm reaad-work-item`) — `expected` carries the topic's subcommand enumeration, and `hint` carries the closest viable subcommand (`did you mean 'cascade-tools pm read-work-item'?`).
+
+Far-away typos (beyond the shared distance / ratio budget) drop the `hint` field but still surface `expected` so the agent has a concrete recovery path. The exit code is **`2`** (oclif's historical `command_not_found` default) — distinct from every other envelope's exit code `1`. Existing exit-code consumers, including the `bin/cascade-tools.js` catch block, see no change.
+
+**Hook placement.** The hook lives at `src/cli/_shared/command-not-found-hook.ts`, intentionally inside `_shared/` because the oclif command-discovery glob in `bin/cascade-tools.js` excludes `**/_shared/**` — without that exclusion, a default-exported function in a discoverable directory would be loaded as a fake top-level command. The hook is wired via `pjson.oclif.hooks.command_not_found` so oclif loads it dynamically with `loadWithData` only when the hook actually fires; the entrypoint never statically imports it, which preserves the existing friendly `dist/cli/bootstrap.js` missing path.
+
+**Pure envelope builder.** The suggestion logic lives in `src/cli/_shared/commandSuggestions.ts` (MNG-1441), which is side-effect free and unit-tested directly without booting oclif. The hook is a thin oclif-side wrapper that forwards `{config, id, argv}` into the helper and routes the envelope options through `emitCliError` with an explicit exit-code-2 delegate.
+
+**Suggestion-source contract.** Candidates come strictly from the loaded oclif config (`config.commandIDs` plus `pjson.oclif.topics`, skipping `hidden` topics). The `cascade-tools` binary uses a separate oclif config that excludes the dashboard topic from its discovery glob, so dashboard commands are never suggested for `cascade-tools` typos even if they would be within edit distance.
+
+No gadget work required — declaring your command and topics in the standard oclif config is everything.
 
 ---
 

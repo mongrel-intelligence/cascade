@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { LogOut, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { type ReactNode, useEffect, useState } from 'react';
@@ -41,7 +41,12 @@ export function Header({ user, mobileMenuTrigger }: HeaderProps) {
 			</div>
 			<div className="flex items-center gap-2 md:gap-4">
 				{user && (
-					<span className="hidden sm:inline text-sm text-muted-foreground">{user.name}</span>
+					<Link
+						to="/settings/profile"
+						className="hidden sm:inline text-sm text-muted-foreground hover:text-foreground transition-colors"
+					>
+						{user.name}
+					</Link>
 				)}
 				{mounted && (
 					<button

@@ -116,6 +116,44 @@ function nextId(prefix: string): string {
 	return `${prefix}-${_idCounter}`;
 }
 
+/**
+ * Deterministic timestamp source used by the fake provider so unit tests can
+ * assert exact ISO strings without `vi.useFakeTimers()`. Tests can override
+ * the next timestamp returned via `setNextFakeTimestamp`. When no override
+ * is queued, the helper falls back to a monotonic stamp based on a fixed
+ * epoch so consecutive calls still produce stable, ordered values.
+ *
+ * MNG-1422: the mutation-result contracts pin `updatedAt` semantics; the fake
+ * must produce predictable provider timestamps so callers can verify the
+ * contract under both `'ok'` (provider stamp) and `'no-op'` (synthetic
+ * fallback) paths.
+ */
+const FAKE_EPOCH_MS = Date.UTC(2026, 0, 1, 0, 0, 0); // 2026-01-01T00:00:00.000Z
+let _timestampCounter = 0;
+const _timestampOverrides: string[] = [];
+
+function nextFakeTimestamp(): string {
+	const override = _timestampOverrides.shift();
+	if (override) return override;
+	_timestampCounter += 1;
+	return new Date(FAKE_EPOCH_MS + _timestampCounter * 1000).toISOString();
+}
+
+/**
+ * Queue a specific timestamp for the next provider write. Multiple queued
+ * values are consumed FIFO. Useful when a test needs to assert that a fresh
+ * provider write flows through to `WorkItem.updatedAt`.
+ */
+export function setNextFakeTimestamp(iso: string): void {
+	_timestampOverrides.push(iso);
+}
+
+/** Reset the deterministic timestamp counter + queue. */
+export function resetFakeTimestamps(): void {
+	_timestampCounter = 0;
+	_timestampOverrides.length = 0;
+}
+
 // ── The provider implementation ─────────────────────────────────────────
 
 export function createFakePMProvider(): { provider: PMProvider; store: FakePMStore } {
@@ -139,15 +177,19 @@ export function createFakePMProvider(): { provider: PMProvider; store: FakePMSto
 			if (!item) throw new Error(`Fake work item '${id}' not found`);
 			if (updates.title !== undefined) item.title = updates.title;
 			if (updates.description !== undefined) item.description = updates.description;
+			item.updatedAt = nextFakeTimestamp();
 		},
 
 		async addComment(id, text): Promise<string> {
 			const commentId = nextId('comment');
+			const timestamp = nextFakeTimestamp();
 			const comment: WorkItemComment = {
 				id: commentId,
-				date: new Date().toISOString(),
+				date: timestamp,
 				text,
 				author: { id: 'fake-user', name: 'Fake User', username: 'fake' },
+				createdAt: timestamp,
+				updatedAt: timestamp,
 			};
 			const list = store.comments.get(id) ?? [];
 			list.push(comment);
@@ -160,6 +202,7 @@ export function createFakePMProvider(): { provider: PMProvider; store: FakePMSto
 			const comment = list.find((c) => c.id === commentId);
 			if (!comment) throw new Error(`Fake comment '${commentId}' not found on '${id}'`);
 			comment.text = text;
+			comment.updatedAt = nextFakeTimestamp();
 		},
 
 		async createWorkItem(config): Promise<WorkItem> {
@@ -168,6 +211,7 @@ export function createFakePMProvider(): { provider: PMProvider; store: FakePMSto
 			if (!container) throw new Error(`Fake container '${containerId}' not found`);
 
 			const id = nextId('item');
+			const timestamp = nextFakeTimestamp();
 			const labels: WorkItemLabel[] = (config.labels ?? []).map((raw) => {
 				const labelId = parseLabelId(raw);
 				const existing = store.labels.get(labelId);
@@ -183,6 +227,8 @@ export function createFakePMProvider(): { provider: PMProvider; store: FakePMSto
 				status: 'Todo',
 				labels,
 				containerId,
+				createdAt: timestamp,
+				updatedAt: timestamp,
 			};
 			store.workItems.set(id, workItem);
 			container.workItemIds.add(id);
@@ -238,6 +284,7 @@ export function createFakePMProvider(): { provider: PMProvider; store: FakePMSto
 				// throw on test-provided values that aren't in the store.
 				item.status = branded;
 			}
+			item.updatedAt = nextFakeTimestamp();
 		},
 
 		async addLabel(id, labelIdOrName): Promise<void> {

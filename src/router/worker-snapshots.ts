@@ -108,3 +108,50 @@ export function isImageNotFoundError(err: unknown): boolean {
 		String(err).toLowerCase().includes('no such image')
 	);
 }
+
+/** Default budget for an on-demand image pull triggered by base-image self-heal. */
+export const IMAGE_PULL_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Single-flight in-flight pull cache. A second caller for the same image while
+ * the first pull is running awaits the same promise instead of triggering a
+ * concurrent pull. The entry is cleared on settle so a subsequent prune still
+ * triggers a fresh pull next time.
+ */
+const inFlightPulls = new Map<string, Promise<void>>();
+
+/**
+ * Pull a Docker image, deduplicating concurrent requests by image name and
+ * enforcing a wall-clock timeout.
+ *
+ * Used by the spawn self-heal path in `container-manager.ts` when the base
+ * worker image was pruned from the host between spawns. Failure cases:
+ * - Pull stream emits an error → reject with that error.
+ * - Pull exceeds `timeoutMs` → reject with a `pull timeout` error; the
+ *   underlying stream is abandoned (no cancel hook in dockerode).
+ * - Registry auth missing / network down → propagates the dockerode error;
+ *   the caller still has the original 404 to re-throw.
+ */
+export function pullImageOnce(imageName: string, timeoutMs = IMAGE_PULL_TIMEOUT_MS): Promise<void> {
+	const existing = inFlightPulls.get(imageName);
+	if (existing) return existing;
+
+	const promise = (async () => {
+		const pullStream = (await docker.pull(imageName)) as NodeJS.ReadableStream;
+		await new Promise<void>((resolve, reject) => {
+			const timer = setTimeout(() => {
+				reject(new Error(`pull timeout after ${timeoutMs}ms for ${imageName}`));
+			}, timeoutMs);
+			docker.modem.followProgress(pullStream, (err: Error | null) => {
+				clearTimeout(timer);
+				if (err) reject(err);
+				else resolve();
+			});
+		});
+	})().finally(() => {
+		inFlightPulls.delete(imageName);
+	});
+
+	inFlightPulls.set(imageName, promise);
+	return promise;
+}
