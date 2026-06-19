@@ -8,6 +8,13 @@ vi.mock('bullmq', () => ({
 	Worker: vi.fn().mockImplementation((_queueName, _processFn, _opts) => ({
 		on: vi.fn(),
 	})),
+	// Real-enough subclass so `instanceof` in the predicate works under the mock.
+	UnrecoverableError: class UnrecoverableError extends Error {
+		constructor(message?: string) {
+			super(message);
+			this.name = 'UnrecoverableError';
+		}
+	},
 }));
 
 vi.mock('../../../src/sentry.js', () => ({
@@ -16,6 +23,7 @@ vi.mock('../../../src/sentry.js', () => ({
 
 vi.mock('../../../src/router/dispatch-compensator.js', () => ({
 	releaseLocksForFailedJob: vi.fn().mockResolvedValue(undefined),
+	recordSpawnFailureStub: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock logger
@@ -32,9 +40,16 @@ vi.mock('../../../src/utils/logging.js', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { Worker } from 'bullmq';
-import { createQueueWorker, parseRedisUrl } from '../../../src/router/bullmq-workers.js';
-import { releaseLocksForFailedJob } from '../../../src/router/dispatch-compensator.js';
+import { UnrecoverableError, Worker } from 'bullmq';
+import {
+	createQueueWorker,
+	isTerminalDispatchFailure,
+	parseRedisUrl,
+} from '../../../src/router/bullmq-workers.js';
+import {
+	recordSpawnFailureStub,
+	releaseLocksForFailedJob,
+} from '../../../src/router/dispatch-compensator.js';
 import { captureException } from '../../../src/sentry.js';
 import { logger } from '../../../src/utils/logging.js';
 
@@ -42,12 +57,15 @@ const MockWorker = vi.mocked(Worker);
 const mockCaptureException = vi.mocked(captureException);
 const mockLogger = vi.mocked(logger);
 const mockReleaseLocksForFailedJob = vi.mocked(releaseLocksForFailedJob);
+const mockRecordSpawnFailureStub = vi.mocked(recordSpawnFailureStub);
 
 beforeEach(() => {
 	MockWorker.mockClear();
 	mockCaptureException.mockClear();
 	mockReleaseLocksForFailedJob.mockClear();
 	mockReleaseLocksForFailedJob.mockResolvedValue(undefined);
+	mockRecordSpawnFailureStub.mockClear();
+	mockRecordSpawnFailureStub.mockResolvedValue(undefined);
 	// Re-establish default mock so each test gets a fresh mock worker
 	MockWorker.mockImplementation(
 		(_queueName, _processFn, _opts) =>
@@ -266,5 +284,111 @@ describe('createQueueWorker', () => {
 		expect(mockReleaseLocksForFailedJob).not.toHaveBeenCalled();
 		// Existing log + Sentry behavior preserved
 		expect(mockLogger.error).toHaveBeenCalled();
+	});
+
+	// -------------------------------------------------------------------------
+	// Spawn-failure stub gating — the failed event fires on EVERY attempt
+	// (including intermediate retries); the stub must only be recorded on a
+	// terminal failure, or transient retries leave bogus `failed` run rows.
+	// -------------------------------------------------------------------------
+
+	type FailedHandler = (job: Record<string, unknown> | undefined, err: unknown) => void;
+
+	function getFailedHandler(): FailedHandler {
+		const worker = createQueueWorker(baseConfig);
+		return vi.mocked(worker.on).mock.calls.find((c) => c[0] === 'failed')?.[1] as FailedHandler;
+	}
+
+	it('records the spawn-failure stub on a terminal failure (finishedOn set)', () => {
+		const jobData = { type: 'github', payload: 'x' };
+		getFailedHandler()(
+			{ id: 'job-term', data: jobData, attemptsMade: 4, opts: { attempts: 4 }, finishedOn: 1234 },
+			new Error('image not found after fallback'),
+		);
+
+		expect(mockRecordSpawnFailureStub).toHaveBeenCalledTimes(1);
+		expect(mockRecordSpawnFailureStub).toHaveBeenCalledWith(jobData, expect.any(Error));
+	});
+
+	it('does NOT record the stub on an intermediate retry (finishedOn unset, attempts remain)', () => {
+		getFailedHandler()(
+			{ id: 'job-retry', data: { type: 'github' }, attemptsMade: 1, opts: { attempts: 4 } },
+			new Error('ECONNRESET pulling image'),
+		);
+
+		expect(mockRecordSpawnFailureStub).not.toHaveBeenCalled();
+		// Lock compensation must STILL fire on every attempt — only the run-row
+		// stub is gated.
+		expect(mockReleaseLocksForFailedJob).toHaveBeenCalledTimes(1);
+	});
+
+	it('records the stub when retries are exhausted even if finishedOn is unset (defensive fallback)', () => {
+		getFailedHandler()(
+			{ id: 'job-exhausted', data: { type: 'github' }, attemptsMade: 4, opts: { attempts: 4 } },
+			new Error('still failing'),
+		);
+
+		expect(mockRecordSpawnFailureStub).toHaveBeenCalledTimes(1);
+	});
+
+	it('records the stub for an UnrecoverableError regardless of remaining attempts', () => {
+		getFailedHandler()(
+			{ id: 'job-unrec', data: { type: 'github' }, attemptsMade: 1, opts: { attempts: 4 } },
+			new UnrecoverableError('validation failed'),
+		);
+
+		expect(mockRecordSpawnFailureStub).toHaveBeenCalledTimes(1);
+	});
+
+	it('swallows a throw from the stub recorder', async () => {
+		mockRecordSpawnFailureStub.mockRejectedValueOnce(new Error('stub boom'));
+		expect(() =>
+			getFailedHandler()(
+				{ id: 'job-stubthrow', data: { type: 'github' }, finishedOn: 99 },
+				new Error('terminal'),
+			),
+		).not.toThrow();
+		await new Promise((r) => setImmediate(r));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// isTerminalDispatchFailure — predicate behind the stub gate
+// ---------------------------------------------------------------------------
+
+describe('isTerminalDispatchFailure', () => {
+	// Minimal Job-shaped fixtures; the predicate reads only finishedOn / attemptsMade / opts.
+	const job = (over: Record<string, unknown>) => over as never;
+
+	it('is terminal when BullMQ set finishedOn', () => {
+		expect(isTerminalDispatchFailure(job({ finishedOn: 1 }), new Error('x'))).toBe(true);
+	});
+
+	it('is NOT terminal mid-retry (no finishedOn, attempts remain)', () => {
+		expect(
+			isTerminalDispatchFailure(job({ attemptsMade: 1, opts: { attempts: 4 } }), new Error('x')),
+		).toBe(false);
+	});
+
+	it('is terminal once attemptsMade reaches the attempt budget', () => {
+		expect(
+			isTerminalDispatchFailure(job({ attemptsMade: 4, opts: { attempts: 4 } }), new Error('x')),
+		).toBe(true);
+	});
+
+	it('is terminal for an UnrecoverableError even with attempts remaining', () => {
+		expect(
+			isTerminalDispatchFailure(
+				job({ attemptsMade: 1, opts: { attempts: 4 } }),
+				new UnrecoverableError('terminal'),
+			),
+		).toBe(true);
+	});
+
+	it('treats an error named UnrecoverableError as terminal (cross-realm safety)', () => {
+		const err = Object.assign(new Error('x'), { name: 'UnrecoverableError' });
+		expect(isTerminalDispatchFailure(job({ attemptsMade: 1, opts: { attempts: 4 } }), err)).toBe(
+			true,
+		);
 	});
 });

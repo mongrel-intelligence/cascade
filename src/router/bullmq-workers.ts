@@ -6,14 +6,48 @@
  * and Sentry capture).
  */
 
-import { type ConnectionOptions, type Job, Worker } from 'bullmq';
+import { type ConnectionOptions, type Job, UnrecoverableError, Worker } from 'bullmq';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { parseRedisUrl } from '../utils/redis.js';
-import { releaseLocksForFailedJob } from './dispatch-compensator.js';
+import { recordSpawnFailureStub, releaseLocksForFailedJob } from './dispatch-compensator.js';
 
 // Re-export so existing callers (worker-manager.ts) don't need to change imports.
 export { parseRedisUrl };
+
+/**
+ * BullMQ emits the `failed` event on EVERY attempt, including intermediate
+ * retries: `Worker.handleFailed` calls `job.moveToFailed(...)` and then
+ * `emit('failed', ...)` unconditionally. On a retryable attempt
+ * (`attemptsMade < attempts` and the error is not an `UnrecoverableError`),
+ * `moveToFailed` re-queues the job to `delayed` and leaves `finishedOn` UNSET;
+ * only a terminal failure (retries exhausted, or `UnrecoverableError`) sets
+ * `finishedOn`.
+ *
+ * Spec 015 deliberately propagates transient spawn errors (registry 429 /
+ * ECONNRESET / ECONNREFUSED / ENOTFOUND / 409 / SLOT_WAIT_TIMEOUT) unchanged so
+ * BullMQ retries them via `attempts: 4`. A side effect — recorded as a `failed`
+ * stub run row per emission — would therefore plant one bogus row per
+ * intermediate retry for a transient error that later succeeds. So any such
+ * side effect must run ONLY on a terminal failure.
+ *
+ * `finishedOn` is the canonical terminal signal and matches BullMQ's own
+ * retry/terminal branch; the exhausted-attempts and `UnrecoverableError` checks
+ * are defensive fallbacks should a BullMQ build leave `finishedOn` unset on a
+ * terminal emission. The name check guards against a cross-realm/duplicate-copy
+ * `UnrecoverableError` that fails `instanceof`.
+ */
+export function isTerminalDispatchFailure(job: Job, err: unknown): boolean {
+	if (typeof job.finishedOn === 'number') return true;
+	if (
+		err instanceof UnrecoverableError ||
+		(err as { name?: string } | null)?.name === 'UnrecoverableError'
+	) {
+		return true;
+	}
+	const attempts = job.opts?.attempts;
+	return typeof attempts === 'number' && attempts > 0 && job.attemptsMade >= attempts;
+}
 
 export interface QueueWorkerConfig<T = unknown> {
 	queueName: string;
@@ -72,6 +106,21 @@ export function createQueueWorker<T = unknown>(config: QueueWorkerConfig<T>): Wo
 					tags: { source: 'dispatch_compensator_uncaught', queue: queueName },
 				});
 			});
+			// Insert a `failed` stub run row so the dispatch is visible in the
+			// dashboard / `cascade runs list`. The `failed` event fires on EVERY
+			// attempt, so gate this to a TERMINAL failure — otherwise a transient
+			// spawn error (deliberately retried per spec 015) that later succeeds
+			// would leave one bogus `failed` row per intermediate retry. Lock
+			// compensation above must still run on every attempt. Recorder never
+			// throws. See `isTerminalDispatchFailure`.
+			if (isTerminalDispatchFailure(job, err)) {
+				void recordSpawnFailureStub(job.data, err).catch((stubErr) => {
+					logger.warn('[WorkerManager] stub-row recorder threw — defensively logged', {
+						jobId: job.id,
+						error: String(stubErr),
+					});
+				});
+			}
 		}
 	});
 
