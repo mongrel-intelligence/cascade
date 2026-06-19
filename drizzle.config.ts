@@ -1,8 +1,10 @@
 import { defineConfig } from 'drizzle-kit';
-// Shared SSL resolver so migrations connect identically to the runtime client.
-// Lets `DATABASE_SSL=no-verify` work against managed Postgres with self-signed
-// certs (e.g. Supabase's pooler), which strict verification would reject.
-import { resolveDbSslConfig } from './src/db/ssl-config';
+// drizzle-kit connects via the `url` below and IGNORES a `dbCredentials.ssl` object
+// when a `url` is set, so the SSL intent must be encoded in the connection string as
+// `sslmode`. `applyDbSslModeToUrl` derives it from DATABASE_SSL (shared with the runtime
+// client's resolver), letting `DATABASE_SSL=no-verify` work against managed Postgres with
+// self-signed certs (e.g. Supabase's pooler), which strict verification would reject.
+import { applyDbSslModeToUrl } from './src/db/ssl-config';
 
 export default defineConfig({
 	schema: [
@@ -18,7 +20,6 @@ export default defineConfig({
 	out: './src/db/migrations',
 	dialect: 'postgresql',
 	dbCredentials: {
-		url: process.env.DATABASE_URL ?? '',
-		ssl: resolveDbSslConfig(),
+		url: applyDbSslModeToUrl(process.env.DATABASE_URL ?? ''),
 	},
 });

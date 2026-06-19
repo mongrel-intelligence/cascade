@@ -11,7 +11,7 @@ vi.mock('node:fs', () => ({
 	existsSync: mockExistsSync,
 }));
 
-import { resolveDbSslConfig } from '../../../src/db/ssl-config.js';
+import { applyDbSslModeToUrl, resolveDbSslConfig } from '../../../src/db/ssl-config.js';
 
 describe('resolveDbSslConfig', () => {
 	afterEach(() => {
@@ -59,5 +59,44 @@ describe('resolveDbSslConfig', () => {
 		expect(() => resolveDbSslConfig()).toThrow(
 			'DATABASE_CA_CERT file not found: /nonexistent/ca.pem',
 		);
+	});
+});
+
+describe('applyDbSslModeToUrl', () => {
+	afterEach(() => vi.unstubAllEnvs());
+
+	const URL = 'postgresql://u:p@host:5432/db';
+
+	it('appends sslmode=no-verify when DATABASE_SSL=no-verify', () => {
+		vi.stubEnv('DATABASE_SSL', 'no-verify');
+		expect(applyDbSslModeToUrl(URL)).toBe(`${URL}?sslmode=no-verify`);
+	});
+
+	it('appends sslmode=disable when DATABASE_SSL=false', () => {
+		vi.stubEnv('DATABASE_SSL', 'false');
+		expect(applyDbSslModeToUrl(URL)).toBe(`${URL}?sslmode=disable`);
+	});
+
+	it('leaves the URL unchanged when DATABASE_SSL is unset (verify mode)', () => {
+		vi.stubEnv('DATABASE_SSL', '');
+		expect(applyDbSslModeToUrl(URL)).toBe(URL);
+	});
+
+	it('uses & when the URL already has a query string', () => {
+		vi.stubEnv('DATABASE_SSL', 'no-verify');
+		expect(applyDbSslModeToUrl(`${URL}?application_name=x`)).toBe(
+			`${URL}?application_name=x&sslmode=no-verify`,
+		);
+	});
+
+	it('does not override an sslmode already present in the URL', () => {
+		vi.stubEnv('DATABASE_SSL', 'no-verify');
+		const withMode = `${URL}?sslmode=require`;
+		expect(applyDbSslModeToUrl(withMode)).toBe(withMode);
+	});
+
+	it('returns an empty URL unchanged', () => {
+		vi.stubEnv('DATABASE_SSL', 'no-verify');
+		expect(applyDbSslModeToUrl('')).toBe('');
 	});
 });

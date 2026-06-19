@@ -36,3 +36,28 @@ export function resolveDbSslConfig(): DbSslConfig {
 	}
 	return sslConfig;
 }
+
+/**
+ * Encode the `DATABASE_SSL` intent as a libpq `sslmode` query param on a connection URL.
+ *
+ * Needed for **drizzle-kit migrations only**: drizzle-kit connects via the `url` in
+ * `drizzle.config.ts` but ignores a `dbCredentials.ssl` object when a `url` is set, so
+ * `resolveDbSslConfig()` can't reach it — the SSL mode has to live in the connection
+ * string instead. (The runtime client and the data-migration tools pass the resolved
+ * `ssl` object directly, where the object form is honored.)
+ *
+ *   - `DATABASE_SSL=no-verify` → append `sslmode=no-verify` (TLS, skip cert verification)
+ *   - `DATABASE_SSL=false`     → append `sslmode=disable` (no TLS)
+ *   - otherwise                → URL unchanged (driver default; verification not forced
+ *                                here to preserve existing local-dev behavior)
+ *
+ * No-ops on an empty URL or one that already pins an `sslmode`.
+ */
+export function applyDbSslModeToUrl(url: string): string {
+	const mode = process.env.DATABASE_SSL;
+	const sslmode = mode === 'false' ? 'disable' : mode === 'no-verify' ? 'no-verify' : undefined;
+	if (!url || !sslmode || /[?&]sslmode=/.test(url)) {
+		return url;
+	}
+	return `${url}${url.includes('?') ? '&' : '?'}sslmode=${sslmode}`;
+}
