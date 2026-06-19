@@ -8,28 +8,13 @@
  *   npx tsx tools/migrate-hooks.ts --apply    # Apply changes
  */
 
-import { existsSync, readFileSync } from 'node:fs';
 import pg from 'pg';
+import { resolveDbSslConfig } from '../src/db/ssl-config.js';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 if (!DATABASE_URL) {
 	console.error('DATABASE_URL is required');
 	process.exit(1);
-}
-
-function getSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {
-	if (process.env.DATABASE_SSL === 'false') {
-		return false;
-	}
-	const sslConfig: { rejectUnauthorized: boolean; ca?: string } = { rejectUnauthorized: true };
-	if (process.env.DATABASE_CA_CERT) {
-		const certPath = process.env.DATABASE_CA_CERT;
-		if (!existsSync(certPath)) {
-			throw new Error(`DATABASE_CA_CERT file not found: ${certPath}`);
-		}
-		sslConfig.ca = readFileSync(certPath, 'utf8');
-	}
-	return sslConfig;
 }
 
 const dryRun = !process.argv.includes('--apply');
@@ -140,7 +125,7 @@ async function main() {
 	const pool = new pg.Pool({
 		connectionString: DATABASE_URL,
 		max: 2,
-		ssl: getSslConfig(),
+		ssl: resolveDbSslConfig(),
 	});
 
 	try {
