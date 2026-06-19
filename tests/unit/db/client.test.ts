@@ -309,6 +309,20 @@ describe('getDb', () => {
 		expect(mockPoolConstructor).toHaveBeenCalledWith(expect.objectContaining({ ssl: false }));
 	});
 
+	it('creates pool with rejectUnauthorized:false when DATABASE_SSL=no-verify', () => {
+		// Managed Postgres that requires TLS but presents a self-signed cert
+		// (e.g. Supabase's connection pooler). No CA file is read.
+		vi.stubEnv('DATABASE_SSL', 'no-verify');
+		vi.stubEnv('DATABASE_CA_CERT', '/path/to/ca.pem');
+
+		getDb();
+
+		expect(mockReadFileSync).not.toHaveBeenCalled();
+		expect(mockPoolConstructor).toHaveBeenCalledWith(
+			expect.objectContaining({ ssl: { rejectUnauthorized: false } }),
+		);
+	});
+
 	it('returns singleton — second call returns same instance', () => {
 		const first = getDb();
 		const second = getDb();

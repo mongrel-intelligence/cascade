@@ -1,7 +1,7 @@
-import fs, { existsSync } from 'node:fs';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from './schema/index.js';
+import { resolveDbSslConfig } from './ssl-config.js';
 
 // ============================================================================
 // DatabaseContext class
@@ -47,7 +47,7 @@ export class DatabaseContext {
 export function createDatabaseContext(): DatabaseContext {
 	return new DatabaseContext({
 		connectionString: getDatabaseUrl(),
-		ssl: getSslConfig(),
+		ssl: resolveDbSslConfig(),
 	});
 }
 
@@ -133,19 +133,4 @@ function getDatabaseUrl(): string {
 	}
 
 	throw new Error('DATABASE_URL or CASCADE_POSTGRES_HOST must be set');
-}
-
-function getSslConfig(): false | { rejectUnauthorized: boolean; ca?: string } {
-	if (process.env.DATABASE_SSL === 'false') {
-		return false;
-	}
-	const sslConfig: { rejectUnauthorized: boolean; ca?: string } = { rejectUnauthorized: true };
-	if (process.env.DATABASE_CA_CERT) {
-		const certPath = process.env.DATABASE_CA_CERT;
-		if (!existsSync(certPath)) {
-			throw new Error(`DATABASE_CA_CERT file not found: ${certPath}`);
-		}
-		sslConfig.ca = fs.readFileSync(certPath, 'utf8');
-	}
-	return sslConfig;
 }

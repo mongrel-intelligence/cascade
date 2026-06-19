@@ -1,4 +1,8 @@
 import { defineConfig } from 'drizzle-kit';
+// Shared SSL resolver so migrations connect identically to the runtime client.
+// Lets `DATABASE_SSL=no-verify` work against managed Postgres with self-signed
+// certs (e.g. Supabase's pooler), which strict verification would reject.
+import { resolveDbSslConfig } from './src/db/ssl-config';
 
 export default defineConfig({
 	schema: [
@@ -15,5 +19,6 @@ export default defineConfig({
 	dialect: 'postgresql',
 	dbCredentials: {
 		url: process.env.DATABASE_URL ?? '',
+		ssl: resolveDbSslConfig(),
 	},
 });
