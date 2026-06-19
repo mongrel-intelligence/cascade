@@ -18,6 +18,14 @@ vi.mock('bullmq', () => ({
 	Worker: vi.fn().mockImplementation((_queueName, _processFn, _opts) => ({
 		on: vi.fn(),
 	})),
+	// `isTerminalDispatchFailure` does `err instanceof UnrecoverableError` —
+	// expose a real-enough subclass so the predicate works under the mock.
+	UnrecoverableError: class UnrecoverableError extends Error {
+		constructor(message?: string) {
+			super(message);
+			this.name = 'UnrecoverableError';
+		}
+	},
 }));
 
 vi.mock('../../../src/sentry.js', () => ({
