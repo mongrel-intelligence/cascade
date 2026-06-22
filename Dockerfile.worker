@@ -73,8 +73,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # All three are explicitly pinned so worker image rebuilds are reproducible —
 # upstream CLI changes can introduce subtle behavioural drift in headless mode.
 RUN npm install -g \
-    @anthropic-ai/claude-code@2.1.119 \
-    @openai/codex@0.125.0 \
+    @anthropic-ai/claude-code@2.1.185 \
+    @openai/codex@0.141.0 \
     opencode-ai@1.14.25
 
 # Playwright browser cache.
