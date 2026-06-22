@@ -45,7 +45,7 @@ export interface FrictionProjectContext {
 	id: string;
 	name?: string;
 	repo?: string;
-	pmType?: ProjectConfig['pm']['type'];
+	pmType?: NonNullable<ProjectConfig['pm']>['type'];
 }
 
 export interface FrictionAgentContext {

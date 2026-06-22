@@ -73,6 +73,7 @@ import '../../../src/sentry/register.js';
 // factory.ts was removed; createPMProvider is now an inline function in index.ts
 import { createPMProvider } from '../../../src/pm/index.js';
 import { JiraPMProvider } from '../../../src/pm/jira/adapter.js';
+import { NO_PM_PROVIDER } from '../../../src/pm/no-pm-provider.js';
 import { TrelloPMProvider } from '../../../src/pm/trello/adapter.js';
 
 describe('pm/factory', () => {
@@ -99,7 +100,7 @@ describe('pm/factory', () => {
 			expect(provider.type).toBe('trello');
 		});
 
-		it('returns TrelloPMProvider when pm.type is undefined (defaults to trello)', () => {
+		it('returns NO_PM_PROVIDER when pm is undefined (SCM-only project)', () => {
 			const project: ProjectConfig = {
 				id: 'proj1',
 				orgId: 'org1',
@@ -107,6 +108,7 @@ describe('pm/factory', () => {
 				repo: 'owner/repo',
 				baseBranch: 'main',
 				branchPrefix: 'feature/',
+				// No pm — provider selection keys off pm.type, not the trello block.
 				trello: {
 					boardId: 'board123',
 					labels: { processing: 'label-id' },
@@ -116,8 +118,8 @@ describe('pm/factory', () => {
 
 			const provider = createPMProvider(project);
 
-			expect(TrelloPMProvider).toHaveBeenCalled();
-			expect(provider.type).toBe('trello');
+			expect(provider).toBe(NO_PM_PROVIDER);
+			expect(provider.type).toBe('none');
 		});
 
 		it('returns JiraPMProvider when pm.type is jira', () => {

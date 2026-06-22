@@ -286,6 +286,20 @@ node bin/cascade.js projects integration-set my-project \
 
 If you enable the alerting agent, configure the optional `alerts` PM slot as well. For Trello this is `lists.alerts`; for Jira and Linear this is `statuses.alerts`. Sentry alerts materialize into that list/status before the alerting agent runs.
 
+### Removing an integration
+
+To detach an integration from a project — for example, when migrating from Trello to Linear — remove the stored integration config by category:
+
+```bash
+node bin/cascade.js projects integration-delete my-project --category pm --yes
+```
+
+This removes only the integration config row; project-scoped credentials (e.g. `TRELLO_TOKEN`, `LINEAR_API_KEY`) are intentionally retained so they can be reused with a replacement integration. To remove a credential as well, use `projects credentials-delete`:
+
+```bash
+node bin/cascade.js projects credentials-delete my-project --key TRELLO_TOKEN --yes
+```
+
 ---
 
 ## 9. Set Up Webhooks

@@ -126,8 +126,11 @@ export async function augmentProjectSecrets(
 	projectSecrets.CASCADE_AGENT_TYPE = agentType;
 	injectAgentInputContext(projectSecrets, input);
 
-	// Inject PM type so cascade-tools uses the correct provider
-	projectSecrets.CASCADE_PM_TYPE = project.pm?.type ?? 'trello';
+	// Inject PM type so cascade-tools uses the correct provider. Omitted for
+	// SCM-only projects (no PM provider) so the worker doesn't assume Trello.
+	if (project.pm?.type) {
+		projectSecrets.CASCADE_PM_TYPE = project.pm.type;
+	}
 
 	return projectSecrets;
 }

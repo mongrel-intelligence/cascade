@@ -95,6 +95,10 @@ function isProviderMisconfigured(project: ProjectConfig, provider: PMProvider): 
 			const linear = getLinearConfig(project);
 			return !linear?.teamId || !linear.statuses?.backlog;
 		}
+		// SCM-only projects have no PM provider (no backlog). This branch is never
+		// reached on the PM status-changed capacity path, but keeps the switch exhaustive.
+		case 'none':
+			return true;
 		default:
 			return assertNeverPMType(provider.type);
 	}

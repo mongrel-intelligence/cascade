@@ -7,6 +7,7 @@ vi.mock('../../../../src/pm/index.js', () => ({
 
 import { buildPromptContext } from '../../../../src/agents/shared/promptContext.js';
 import { getPMProviderOrNull } from '../../../../src/pm/index.js';
+import { NO_PM_PROVIDER } from '../../../../src/pm/no-pm-provider.js';
 import { createMockPMProvider } from '../../../helpers/mockPMProvider.js';
 
 const mockGetPMProvider = vi.mocked(getPMProviderOrNull);
@@ -620,6 +621,28 @@ describe('buildPromptContext', () => {
 			);
 			expect(ctx.logDir).toBe('/tmp/logs');
 			expect(ctx.detectedAgentType).toBe('implementation');
+		});
+	});
+
+	describe('with SCM-only project (NO_PM_PROVIDER in scope)', () => {
+		beforeEach(() => {
+			mockGetPMProvider.mockReturnValue(NO_PM_PROVIDER);
+		});
+
+		it('does not throw and leaves workItemUrl/pmType undefined even with a workItemId', () => {
+			// Regression: NO_PM_PROVIDER.getWorkItemUrl() throws — promptContext must
+			// normalize the sentinel to "no provider" so an SCM-only run carrying a
+			// workItemId (stale pr_work_items row / manual/retry path) still boots.
+			let ctx!: ReturnType<typeof buildPromptContext>;
+			expect(() => {
+				ctx = buildPromptContext(
+					'card123',
+					makeProject({ pm: undefined, trello: undefined }) as never,
+				);
+			}).not.toThrow();
+			expect(ctx.workItemUrl).toBeUndefined();
+			expect(ctx.pmType).toBeUndefined();
+			expect(ctx.workItemNoun).toBe('card');
 		});
 	});
 });

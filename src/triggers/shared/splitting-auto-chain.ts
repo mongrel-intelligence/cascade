@@ -44,7 +44,7 @@ export async function buildSplittingAutoChainDispatch(
 	// pmConfig.labels.auto may be a human-readable name string rather than a
 	// provider-native ID.
 	const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-	if (project.pm.type === 'linear' && !UUID_REGEX.test(autoLabelId)) {
+	if (project.pm?.type === 'linear' && !UUID_REGEX.test(autoLabelId)) {
 		logger.warn(
 			'propagateAutoLabelAfterSplitting: labels.auto is not a UUID; resolving ID from parent labels',
 			{ autoLabelId },

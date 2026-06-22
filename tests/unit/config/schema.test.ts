@@ -32,6 +32,19 @@ describe.concurrent('ProjectConfigSchema', () => {
 		expect(result.branchPrefix).toBe('feature/');
 	});
 
+	it('leaves pm undefined for an SCM-only project (no pm field, not defaulted to trello)', () => {
+		const config = {
+			id: 'scm-only',
+			orgId: 'default',
+			name: 'SCM Only',
+			repo: 'owner/repo',
+			// no pm, no trello/jira/linear — a GitHub/SCM-only project
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.pm).toBeUndefined();
+	});
+
 	it('rejects invalid repo format', () => {
 		const config = {
 			id: 'test',

@@ -273,7 +273,10 @@ async function withProjectPMCredentials<T>(
 	project: ProjectConfig,
 	fn: () => Promise<T>,
 ): Promise<T> {
-	const integration = pmRegistry.getOrNull(project.pm?.type ?? 'trello');
+	// SCM-only projects (no PM provider) need no PM credential scope.
+	const pmType = project.pm?.type;
+	if (!pmType) return fn();
+	const integration = pmRegistry.getOrNull(pmType);
 	if (!integration) return fn();
 	return integration.withCredentials(project.id, fn);
 }

@@ -201,7 +201,10 @@ export interface ListWorkItemsFilter {
 }
 
 export interface PMProvider {
-	readonly type: PMType;
+	// `'none'` is the SCM-only sentinel (see src/pm/no-pm-provider.ts); real
+	// providers narrow to their PMType. Consumers switching on `type` fall to
+	// their default branch for `'none'`.
+	readonly type: PMType | 'none';
 
 	// Core CRUD
 	getWorkItem(id: string): Promise<WorkItem>;

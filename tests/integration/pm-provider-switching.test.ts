@@ -21,6 +21,7 @@ import {
 } from '../../src/db/repositories/settingsRepository.js';
 import { withPMProvider } from '../../src/pm/context.js';
 import { createPMProvider } from '../../src/pm/index.js';
+import { NO_PM_PROVIDER } from '../../src/pm/no-pm-provider.js';
 import { pmRegistry } from '../../src/pm/registry.js';
 import { JiraStatusChangedTrigger } from '../../src/triggers/jira/status-changed.js';
 import { TrelloStatusChangedTodoTrigger } from '../../src/triggers/trello/status-changed.js';
@@ -150,9 +151,9 @@ describe('PM Provider Switching (integration)', () => {
 			expect(provider.type).toBe('jira');
 		});
 
-		it('defaults to Trello when pm.type is not set', () => {
-			// A project config without a pm.type field should default to 'trello'
-			// via pmRegistry.createProvider() → pm.type ?? 'trello'
+		it('returns the no-op PM provider when pm is not set (SCM-only project)', () => {
+			// A project with no pm field is SCM-only — createPMProvider returns the
+			// NO_PM_PROVIDER sentinel (type 'none'), NOT a phantom Trello provider.
 			const projectConfig = {
 				id: 'test-project',
 				orgId: 'test-org',
@@ -162,11 +163,12 @@ describe('PM Provider Switching (integration)', () => {
 				branchPrefix: 'feature/',
 				agentModels: {},
 				agentIterations: {},
-				// No pm field at all — the registry defaults to 'trello'
+				// No pm field at all — SCM-only.
 			};
 
 			const provider = createPMProvider(projectConfig as Parameters<typeof createPMProvider>[0]);
-			expect(provider.type).toBe('trello');
+			expect(provider).toBe(NO_PM_PROVIDER);
+			expect(provider.type).toBe('none');
 		});
 	});
 

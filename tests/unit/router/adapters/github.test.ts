@@ -324,6 +324,16 @@ describe('GitHubRouterAdapter', () => {
 				mockTriggerRegistry,
 			);
 			expect(result?.agentType).toBe('review');
+
+			// SCM-only project (p1 has no `pm`): withPMCredentials receives an
+			// undefined pmType and short-circuits — no Trello credential is resolved.
+			const { withPMCredentials } = await import('../../../../src/pm/context.js');
+			expect(vi.mocked(withPMCredentials)).toHaveBeenCalledWith(
+				'p1',
+				undefined,
+				expect.any(Function),
+				expect.any(Function),
+			);
 		});
 
 		it('returns null when no full project found', async () => {

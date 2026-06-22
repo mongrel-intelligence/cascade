@@ -153,6 +153,7 @@ function makeProject(): ProjectConfig {
 		repo: 'owner/repo',
 		baseBranch: 'main',
 		branchPrefix: 'feature/',
+		pm: { type: 'trello' },
 		trello: { boardId: 'b1', lists: {}, labels: {} },
 	};
 }

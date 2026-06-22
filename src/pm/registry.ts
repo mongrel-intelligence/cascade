@@ -19,6 +19,7 @@ import type { ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import type { PMIntegration } from './integration.js';
 import type { ProjectPMConfig } from './lifecycle.js';
+import { NO_PM_PROVIDER } from './no-pm-provider.js';
 import type { PMProvider } from './types.js';
 
 class PMIntegrationRegistry {
@@ -56,15 +57,21 @@ class PMIntegrationRegistry {
 		return listPMProviders().map((m: PMProviderManifest) => m.pmIntegration);
 	}
 
-	/** Convenience: resolve the project's PM provider and create its PMProvider. */
+	/**
+	 * Convenience: resolve the project's PM provider and create its PMProvider.
+	 * SCM-only projects (no `pm`) get the no-op {@link NO_PM_PROVIDER} sentinel —
+	 * never a phantom Trello provider.
+	 */
 	createProvider(project: ProjectConfig): PMProvider {
-		const type = project.pm?.type ?? 'trello';
+		const type = project.pm?.type;
+		if (!type) return NO_PM_PROVIDER;
 		return this.get(type).createProvider(project);
 	}
 
-	/** Convenience: resolve lifecycle config from project. */
+	/** Convenience: resolve lifecycle config from project. SCM-only → empty config. */
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig {
-		const type = project.pm?.type ?? 'trello';
+		const type = project.pm?.type;
+		if (!type) return { labels: {}, statuses: {} };
 		return this.get(type).resolveLifecycleConfig(project);
 	}
 }

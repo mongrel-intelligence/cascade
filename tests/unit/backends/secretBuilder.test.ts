@@ -110,10 +110,10 @@ describe('augmentProjectSecrets', () => {
 		});
 	});
 
-	it('injects CASCADE_PM_TYPE defaulting to trello', async () => {
+	it('omits CASCADE_PM_TYPE for SCM-only projects (no pm provider)', async () => {
 		const project = makeProject();
 		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
-		expect(secrets.CASCADE_PM_TYPE).toBe('trello');
+		expect(secrets.CASCADE_PM_TYPE).toBeUndefined();
 	});
 
 	it('injects CASCADE_PM_TYPE from project.pm.type when set', async () => {

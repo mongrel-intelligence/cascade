@@ -24,6 +24,7 @@ vi.mock('chalk', () => ({
 
 import ProjectsCreate from '../../../../../src/cli/dashboard/projects/create.js';
 import ProjectsDelete from '../../../../../src/cli/dashboard/projects/delete.js';
+import ProjectsIntegrationDelete from '../../../../../src/cli/dashboard/projects/integration-delete.js';
 import ProjectsIntegrationSet from '../../../../../src/cli/dashboard/projects/integration-set.js';
 import ProjectsIntegrations from '../../../../../src/cli/dashboard/projects/integrations.js';
 import ProjectsList from '../../../../../src/cli/dashboard/projects/list.js';
@@ -61,6 +62,7 @@ function makeClient(overrides: Record<string, unknown> = {}) {
 			integrations: {
 				list: { query: vi.fn().mockResolvedValue([]) },
 				upsert: { mutate: vi.fn().mockResolvedValue(undefined) },
+				delete: { mutate: vi.fn().mockResolvedValue(undefined) },
 			},
 		},
 		agentConfigs: {
@@ -702,6 +704,118 @@ describe('ProjectsIntegrationSet (integration-set)', () => {
 			oclifConfig as never,
 		);
 		await expect(cmd.run()).rejects.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// projects integration-delete
+// ---------------------------------------------------------------------------
+describe('ProjectsIntegrationDelete (integration-delete)', () => {
+	beforeEach(() => {
+		mockLoadConfig.mockReturnValue(baseConfig);
+	});
+
+	it('passes project ID and category to integrations delete mutate with --yes', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsIntegrationDelete(
+			['my-project', '--category', 'pm', '--yes'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.integrations.delete.mutate).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			category: 'pm',
+		});
+	});
+
+	it('deletes the scm category integration', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsIntegrationDelete(
+			['my-project', '--category', 'scm', '--yes'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.integrations.delete.mutate).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			category: 'scm',
+		});
+	});
+
+	it('deletes the alerting category integration', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsIntegrationDelete(
+			['my-project', '--category', 'alerting', '--yes'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.integrations.delete.mutate).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			category: 'alerting',
+		});
+	});
+
+	it('auto-accepts without --yes in non-TTY environments', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsIntegrationDelete(
+			['my-project', '--category', 'pm'],
+			oclifConfig as never,
+		);
+		await expect(cmd.run()).resolves.toBeUndefined();
+		expect(client.projects.integrations.delete.mutate).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			category: 'pm',
+		});
+	});
+
+	it('requires --category flag', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new ProjectsIntegrationDelete(['my-project', '--yes'], oclifConfig as never);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+
+	it('rejects an invalid --category value', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new ProjectsIntegrationDelete(
+			['my-project', '--category', 'invalid', '--yes'],
+			oclifConfig as never,
+		);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+
+	it('requires project ID argument', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new ProjectsIntegrationDelete(['--category', 'pm', '--yes'], oclifConfig as never);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+
+	it('outputs json when --json flag is set', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsIntegrationDelete(
+			['my-project', '--category', 'pm', '--yes', '--json'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.integrations.delete.mutate).toHaveBeenCalledWith({
+			projectId: 'my-project',
+			category: 'pm',
+		});
 	});
 });
 

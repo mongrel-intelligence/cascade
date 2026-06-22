@@ -71,7 +71,9 @@ function parseJsonRecord(value: string | undefined): Record<string, string> {
 }
 
 function projectFromEnv(): ProjectConfig {
-	const pmType = process.env.CASCADE_PM_TYPE as ProjectConfig['pm']['type'] | undefined;
+	const pmType = process.env.CASCADE_PM_TYPE as
+		| NonNullable<ProjectConfig['pm']>['type']
+		| undefined;
 	const base = {
 		id: process.env.CASCADE_PROJECT_ID ?? 'unknown-project',
 		orgId: process.env.CASCADE_ORG_ID ?? 'unknown-org',
@@ -80,10 +82,11 @@ function projectFromEnv(): ProjectConfig {
 			process.env.CASCADE_REPO_OWNER && process.env.CASCADE_REPO_NAME
 				? `${process.env.CASCADE_REPO_OWNER}/${process.env.CASCADE_REPO_NAME}`
 				: undefined,
-		pm: { type: pmType ?? 'trello' },
+		// SCM-only worker runs leave CASCADE_PM_TYPE unset → no synthesized PM.
+		pm: pmType ? { type: pmType } : undefined,
 	} as ProjectConfig;
 
-	if (base.pm.type === 'jira') {
+	if (base.pm?.type === 'jira') {
 		return {
 			...base,
 			jira: {
@@ -93,7 +96,7 @@ function projectFromEnv(): ProjectConfig {
 			},
 		} as ProjectConfig;
 	}
-	if (base.pm.type === 'linear') {
+	if (base.pm?.type === 'linear') {
 		return {
 			...base,
 			linear: {

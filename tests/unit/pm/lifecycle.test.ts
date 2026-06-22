@@ -154,7 +154,7 @@ describe('pm/lifecycle', () => {
 			});
 		});
 
-		it('defaults to Trello config when pm.type is undefined', () => {
+		it('returns an empty config when pm is undefined, even with a trello block (SCM-only)', () => {
 			const project: ProjectConfig = {
 				id: 'proj1',
 				orgId: 'org1',
@@ -171,7 +171,7 @@ describe('pm/lifecycle', () => {
 
 			const config = resolveProjectPMConfig(project);
 
-			expect(config.labels.processing).toBe('label-id');
+			expect(config).toEqual({ labels: {}, statuses: {} });
 		});
 
 		it('returns JIRA config with custom labels when configured', () => {
@@ -273,6 +273,7 @@ describe('pm/lifecycle', () => {
 				repo: 'owner/repo',
 				baseBranch: 'main',
 				branchPrefix: 'feature/',
+				pm: { type: 'trello' },
 				trello: {
 					boardId: 'board123',
 					labels: {},

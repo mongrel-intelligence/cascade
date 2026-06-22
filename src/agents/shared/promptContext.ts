@@ -84,7 +84,12 @@ export function buildPromptContext(
 	},
 	alertingResultsContainerId?: string,
 ): PromptContext {
-	const pmProvider = getPMProviderOrNull();
+	// An SCM-only project has NO_PM_PROVIDER (type 'none') in scope. Normalize it to
+	// `null` once so the whole context build treats it as "no PM provider" — otherwise
+	// the truthy sentinel reaches getWorkItemUrl() below (when a workItemId is carried
+	// via a stale pr_work_items row or a manual/retry path) and throws during boot.
+	const rawPmProvider = getPMProviderOrNull();
+	const pmProvider = rawPmProvider?.type === 'none' ? null : rawPmProvider;
 	const listIds = getListIds(project);
 	const terminology = getPromptTerminology(pmProvider?.type);
 
@@ -100,7 +105,7 @@ export function buildPromptContext(
 		...listIds,
 		backlogListId,
 		workItemCreateContainerId,
-		pmType: pmProvider?.type,
+		pmType: pmProvider && pmProvider.type !== 'none' ? pmProvider.type : undefined,
 		...terminology,
 		maxInFlightItems: project.maxInFlightItems ?? 1,
 		...(prContext && {

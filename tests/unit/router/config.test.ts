@@ -147,7 +147,7 @@ describe('loadProjectConfig', () => {
 		});
 	});
 
-	it('defaults pmType to trello when pm.type is not set', async () => {
+	it('leaves pmType undefined when pm is not set (SCM-only project)', async () => {
 		mockLoadConfig.mockResolvedValueOnce({
 			projects: [
 				{
@@ -165,7 +165,7 @@ describe('loadProjectConfig', () => {
 		const { loadProjectConfig: freshLoad } = await import('../../../src/router/config.js');
 		const result = await freshLoad();
 
-		expect(result.projects[0].pmType).toBe('trello');
+		expect(result.projects[0].pmType).toBeUndefined();
 	});
 
 	it('caches config for subsequent calls within the TTL window', async () => {

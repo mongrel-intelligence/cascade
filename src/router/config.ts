@@ -6,7 +6,7 @@ import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 export interface RouterProjectConfig {
 	id: string;
 	repo?: string; // owner/repo format (optional for projects without SCM integration)
-	pmType: 'trello' | 'jira' | 'linear';
+	pmType?: 'trello' | 'jira' | 'linear'; // undefined for SCM-only projects (no PM provider)
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -98,7 +98,7 @@ export async function loadProjectConfig(): Promise<{
 					return {
 						id: p.id,
 						repo: p.repo,
-						pmType: p.pm?.type ?? 'trello',
+						pmType: p.pm?.type,
 						...(trelloConfig && {
 							trello: {
 								boardId: trelloConfig.boardId,

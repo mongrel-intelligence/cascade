@@ -35,6 +35,23 @@ export function createMockProject(overrides?: Partial<ProjectConfig>): ProjectCo
 }
 
 /**
+ * Creates a mock SCM-only project config — a GitHub repo with NO PM provider
+ * (no `pm`, no trello/jira/linear block). Mirrors a project configured with
+ * only an `scm`/`github` integration; `pm` is `undefined`.
+ */
+export function createMockGitHubOnlyProject(overrides?: Partial<ProjectConfig>): ProjectConfig {
+	return {
+		id: 'test',
+		orgId: 'org-1',
+		name: 'Test',
+		repo: 'owner/repo',
+		baseBranch: 'main',
+		branchPrefix: 'feature/',
+		...overrides,
+	} as ProjectConfig;
+}
+
+/**
  * Creates a mock JIRA project config.
  */
 export function createMockJiraProject(overrides?: Partial<ProjectConfig>): ProjectConfig {

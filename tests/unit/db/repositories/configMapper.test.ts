@@ -299,6 +299,13 @@ describe('mapProjectRow', () => {
 		expect(result.pm.type).toBe('linear');
 	});
 
+	it('leaves pm undefined when no PM integration config is provided (SCM-only project)', () => {
+		const result = mapProjectRow(
+			makeInput({ trelloConfig: undefined, jiraConfig: undefined, linearConfig: undefined }),
+		);
+		expect(result.pm).toBeUndefined();
+	});
+
 	it('builds trello config with boardId, lists, labels', () => {
 		const result = mapProjectRow(makeInput());
 		expect(result.trello?.boardId).toBe('board123');

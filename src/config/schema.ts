@@ -36,11 +36,15 @@ export const ProjectConfigSchema = z.object({
 	baseBranch: z.string().default('main'),
 	branchPrefix: z.string().default('feature/'),
 
+	// Optional: SCM-only projects have no PM provider. Absent `pm` (or a project
+	// with no trello/jira/linear integration) leaves this `undefined` — it is NOT
+	// defaulted to Trello (that silently broke SCM-only projects). See
+	// src/pm/no-pm-provider.ts.
 	pm: z
 		.object({
-			type: z.enum(['trello', 'jira', 'linear']).default('trello'),
+			type: z.enum(['trello', 'jira', 'linear']),
 		})
-		.default({ type: 'trello' }),
+		.optional(),
 
 	trello: trelloConfigSchema.optional(),
 

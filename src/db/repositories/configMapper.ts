@@ -89,7 +89,7 @@ export interface ProjectConfigRaw {
 	repo?: string;
 	baseBranch: string;
 	branchPrefix: string;
-	pm: { type: string };
+	pm?: { type: string };
 	model?: string;
 	agentModels?: Record<string, string>;
 	maxIterations?: number;
@@ -232,7 +232,7 @@ function buildAgentEngineConfig(
 
 function buildBaseProjectFields(
 	row: ProjectRow,
-	pmType: 'trello' | 'jira' | 'linear',
+	pmType: 'trello' | 'jira' | 'linear' | undefined,
 ): ProjectConfigRaw {
 	return {
 		id: row.id,
@@ -241,7 +241,7 @@ function buildBaseProjectFields(
 		repo: row.repo ?? undefined,
 		baseBranch: row.baseBranch ?? 'main',
 		branchPrefix: row.branchPrefix ?? 'feature/',
-		pm: { type: pmType },
+		pm: pmType ? { type: pmType } : undefined,
 		model: row.model ?? undefined,
 		maxIterations: row.maxIterations ?? undefined,
 		watchdogTimeoutMs: row.watchdogTimeoutMs ?? undefined,
@@ -292,8 +292,16 @@ export function mapProjectRow({
 		engineSettings: agentEngineSettingsMap,
 	} = buildAgentMaps(projectAgentConfigs);
 
-	// Derive PM type from integration config
-	const pmType = jiraConfig ? 'jira' : linearConfig ? 'linear' : 'trello';
+	// Derive PM type from integration config. No PM integration → `undefined`
+	// (an SCM-only project); do NOT default to Trello. Check trelloConfig
+	// explicitly (it is no longer the catch-all).
+	const pmType = trelloConfig
+		? 'trello'
+		: jiraConfig
+			? 'jira'
+			: linearConfig
+				? 'linear'
+				: undefined;
 
 	const project: ProjectConfigRaw = {
 		...buildBaseProjectFields(row, pmType),
