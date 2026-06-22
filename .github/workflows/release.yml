@@ -107,8 +107,27 @@ jobs:
       - name: Enable auto-merge
         if: ${{ !inputs.dry_run }}
         run: |
-          gh pr merge "$PR_NUMBER" --auto --merge
-          echo "Auto-merge enabled on PR #$PR_NUMBER. It will merge once required checks pass."
+          # GitHub rejects enablePullRequestAutoMerge with "Pull request is in
+          # unstable status" for a few seconds after a PR is created (its checks /
+          # merge-state aren't registered yet) — and `gh pr merge --auto` can even
+          # exit 0 without enabling while the state is UNKNOWN. So retry AND verify
+          # that auto-merge actually stuck, rather than trusting the exit code.
+          MAX_ATTEMPTS=12
+          RETRY_DELAY_SECONDS=6
+          attempt=1
+          while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
+            gh pr merge "$PR_NUMBER" --auto --merge || true
+            enabled=$(gh pr view "$PR_NUMBER" --json autoMergeRequest --jq '.autoMergeRequest != null')
+            if [ "$enabled" = "true" ]; then
+              echo "Auto-merge enabled on PR #$PR_NUMBER. It will merge once required checks pass."
+              exit 0
+            fi
+            echo "Auto-merge not registered yet (attempt $attempt/$MAX_ATTEMPTS) — retrying in ${RETRY_DELAY_SECONDS}s..."
+            sleep "$RETRY_DELAY_SECONDS"
+            attempt=$((attempt + 1))
+          done
+          echo "::error::Failed to enable auto-merge on PR #$PR_NUMBER after $MAX_ATTEMPTS attempts."
+          exit 1
         env:
           GH_TOKEN: ${{ secrets.GHCR_PAT }}
 
