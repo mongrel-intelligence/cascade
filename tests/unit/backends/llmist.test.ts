@@ -94,13 +94,23 @@ vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
 	};
 });
 
+vi.mock('../../../src/sentry.js', () => ({
+	captureException: vi.fn(),
+	addBreadcrumb: vi.fn(),
+	setTag: vi.fn(),
+	flush: vi.fn(async () => {}),
+	sentryEnabled: false,
+}));
+
 import { runAgentLoop } from '../../../src/agents/utils/agentLoop.js';
 import { LlmistEngine } from '../../../src/backends/llmist/index.js';
 import type { AgentExecutionPlan } from '../../../src/backends/types.js';
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
+import { captureException } from '../../../src/sentry.js';
 
 const mockRunAgentLoop = vi.mocked(runAgentLoop);
 const mockGetSessionState = vi.mocked(getSessionState);
+const mockCaptureException = vi.mocked(captureException);
 
 function makeInput(agentType = 'implementation'): AgentExecutionPlan {
 	return {
@@ -427,5 +437,104 @@ describe('LlmistEngine.execute', () => {
 				progressMonitor: mockProgressReporter,
 			}),
 		);
+	});
+});
+
+describe('LlmistEngine.execute — OpenRouter provider error handling', () => {
+	beforeEach(() => {
+		mockGetSessionState.mockReturnValue({ prUrl: null } as ReturnType<typeof getSessionState>);
+		mockCaptureException.mockClear();
+	});
+
+	it('converts an OpenRouter "Insufficient credits" failure into a handled AgentEngineResult', async () => {
+		// Reproduces MNG-1646: llmist's OpenRouterProvider.executeStreamRequest re-throws
+		// HTTP 402 as `new Error("OpenRouter: Insufficient credits...")`. Without the
+		// classifier, the worker pipeline would tag this as a generic agent_execution
+		// crash and dump a stack trace onto the PM card.
+		mockRunAgentLoop.mockRejectedValueOnce(
+			new Error(
+				'OpenRouter: Insufficient credits. Add funds at https://openrouter.ai/credits\n' +
+					'Original error: 402 Payment Required',
+			),
+		);
+
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBeDefined();
+		expect(result.error).toContain('OpenRouter');
+		expect(result.error).toContain('insufficient credits');
+		// The actionable next-step link is included
+		expect(result.error).toContain('https://openrouter.ai/credits');
+		// Cost is reported as 0 (no LLM calls completed) but the call itself doesn't throw
+		expect(result.cost).toBe(0);
+		expect(result.output).toBe('');
+		expect(result.prUrl).toBeUndefined();
+	});
+
+	it('captures Sentry with a credit-exhaustion tag (not the generic agent_execution tag)', async () => {
+		mockRunAgentLoop.mockRejectedValueOnce(
+			new Error('OpenRouter: Insufficient credits. Add funds at https://openrouter.ai/credits'),
+		);
+
+		const engine = new LlmistEngine();
+		await engine.execute(makeInput('review'));
+
+		expect(mockCaptureException).toHaveBeenCalledTimes(1);
+		const [capturedErr, opts] = mockCaptureException.mock.calls[0];
+		expect(capturedErr).toBeInstanceOf(Error);
+		expect((capturedErr as Error).message).toContain('Insufficient credits');
+		expect(opts?.tags).toMatchObject({
+			openrouter_provider_error: 'openrouter_insufficient_credits',
+			engine: 'llmist',
+			agent: 'review',
+		});
+		expect(opts?.level).toBe('warning');
+	});
+
+	it('uses distinct Sentry tags for each OpenRouter error kind', async () => {
+		mockRunAgentLoop.mockRejectedValueOnce(
+			new Error(
+				'OpenRouter: Authentication failed. Check that OPENROUTER_API_KEY is set correctly.\n' +
+					'Original error: 401 Unauthorized',
+			),
+		);
+
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('OPENROUTER_API_KEY');
+		expect(mockCaptureException.mock.calls[0]?.[1]?.tags).toMatchObject({
+			openrouter_provider_error: 'openrouter_unauthorized',
+		});
+	});
+
+	it('re-throws non-OpenRouter errors so the shared pipeline can record them as agent crashes', async () => {
+		// Non-classified errors must propagate so executeAgentPipeline can tag them as
+		// `source: 'agent_execution'` and produce a stack-trace Sentry event. If this
+		// regressed, every llmist crash would silently become a handled "warning".
+		const cause = new Error('Network error: ECONNRESET while reading stream');
+		mockRunAgentLoop.mockRejectedValueOnce(cause);
+
+		const engine = new LlmistEngine();
+		await expect(engine.execute(makeInput())).rejects.toBe(cause);
+		expect(mockCaptureException).not.toHaveBeenCalled();
+	});
+
+	it('handles a bare HTTP 402 from any upstream as insufficient_credits', async () => {
+		// If llmist's wrapping ever fails (or a future provider proxies the raw error),
+		// we still want to classify HTTP 402 as a billing problem.
+		mockRunAgentLoop.mockRejectedValueOnce(new Error('Request failed: 402 Payment Required'));
+
+		const engine = new LlmistEngine();
+		const result = await engine.execute(makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toContain('insufficient credits');
+		expect(mockCaptureException.mock.calls[0]?.[1]?.tags).toMatchObject({
+			openrouter_provider_error: 'openrouter_insufficient_credits',
+		});
 	});
 });

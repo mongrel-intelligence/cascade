@@ -170,6 +170,8 @@ Auth:
 - **Codex subscription**: store `CODEX_AUTH_JSON` credential (contents of `~/.codex/auth.json` after `codex login`). CASCADE persists refreshed tokens back to the DB after each run.
 - **API-key providers**: store `OPENAI_API_KEY` / other keys as project credentials.
 
+**OpenRouter provider error classification (MNG-1646).** When llmist's OpenRouter provider returns a configuration / billing failure (HTTP 402 "Insufficient credits", 401 unauthorized, 429 rate-limited, 503 model-unavailable), the `LlmistEngine` adapter catches the error before it hits the generic `agent_execution` Sentry path. The error is classified by `classifyOpenRouterError` in `src/backends/llmist/openrouterErrors.ts`, captured under the stable Sentry tag key `openrouter_provider_error` (values such as `openrouter_insufficient_credits` for filtering), and surfaced to the PM card as an actionable plain-English summary (`OpenRouter rejected the request because the account has insufficient credits. Top up the OpenRouter balance at https://openrouter.ai/credits or switch the project to a different model/engine before retrying.`) instead of a raw stack trace. Errors that don't match the OpenRouter shape are re-thrown so the shared pipeline keeps capturing them as generic `agent_execution` crashes.
+
 ## Environment
 
 Required:
