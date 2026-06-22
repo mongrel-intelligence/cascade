@@ -1252,6 +1252,114 @@ describe('Codex subscription auth', () => {
 		);
 	});
 
+	// --- Bare OpenAI API key auth (synthesized auth.json) ---
+	// Codex does NOT read OPENAI_API_KEY from the environment; it authenticates
+	// only from ~/.codex/auth.json. cascade must synthesize the apikey auth.json
+	// shape that `codex login --with-api-key` writes so a bare key authenticates.
+	const API_KEY = 'sk-proj-test-key-123';
+	const SYNTHESIZED_AUTH = JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: API_KEY });
+
+	it('synthesizes apikey auth.json from OPENAI_API_KEY when CODEX_AUTH_JSON is absent', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: API_KEY },
+		});
+
+		await engine.execute(input);
+
+		expect(mockWriteFile).toHaveBeenCalledWith(
+			expect.stringContaining('auth.json'),
+			SYNTHESIZED_AUTH,
+			{ mode: 0o600 },
+		);
+	});
+
+	it('never persists the synthesized API-key auth.json back into CODEX_AUTH_JSON', async () => {
+		// Even if the on-disk auth.json "changes" after the run, the API-key path
+		// must never write it into the subscription credential slot.
+		mockReadFile.mockResolvedValue(
+			JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-proj-rotated' }),
+		);
+
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: API_KEY },
+		});
+
+		await engine.execute(input);
+
+		expect(mockWriteProjectCredential).not.toHaveBeenCalled();
+	});
+
+	it('prefers CODEX_AUTH_JSON over OPENAI_API_KEY when both are set', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: API_KEY, CODEX_AUTH_JSON: AUTH_JSON },
+		});
+
+		await engine.execute(input);
+
+		expect(mockWriteFile).toHaveBeenCalledWith(expect.stringContaining('auth.json'), AUTH_JSON, {
+			mode: 0o600,
+		});
+		expect(mockWriteFile).not.toHaveBeenCalledWith(
+			expect.stringContaining('auth.json'),
+			SYNTHESIZED_AUTH,
+			{ mode: 0o600 },
+		);
+	});
+
+	it('writes no auth.json when neither CODEX_AUTH_JSON nor OPENAI_API_KEY is set', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, projectSecrets: {} });
+
+		await engine.execute(input);
+
+		expect(mockWriteFile).not.toHaveBeenCalledWith(
+			expect.stringContaining('auth.json'),
+			expect.anything(),
+			expect.anything(),
+		);
+	});
+
+	it('falls back to the synthesized API-key auth.json when CODEX_AUTH_JSON is invalid JSON', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: API_KEY, CODEX_AUTH_JSON: 'sk-proj-not-json' },
+		});
+
+		await engine.execute(input);
+
+		expect(mockWriteFile).toHaveBeenCalledWith(
+			expect.stringContaining('auth.json'),
+			SYNTHESIZED_AUTH,
+			{ mode: 0o600 },
+		);
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'WARN',
+			expect.stringContaining('not valid JSON'),
+			{},
+		);
+	});
+
+	it('never logs the API key in the clear', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			projectSecrets: { OPENAI_API_KEY: API_KEY },
+		});
+
+		await engine.execute(input);
+
+		for (const call of (input.logWriter as ReturnType<typeof vi.fn>).mock.calls) {
+			expect(JSON.stringify(call)).not.toContain(API_KEY);
+		}
+	});
+
 	// Prod regression 2026-05-09 (runs 8b000cd6 + d8e31665, both
 	// cascade/implementation/codex): codex's persistent bash session breaks
 	// with `ERROR codex_core::tools::router: error=write_stdin failed: stdin

@@ -397,31 +397,70 @@ export function buildArgs(
 }
 
 /**
- * Write ~/.codex/auth.json for Codex subscription auth (ChatGPT Plus/Pro).
- * Returns the written JSON string so callers can detect post-run token refreshes.
- * Returns undefined if CODEX_AUTH_JSON is not present (API key auth path — no-op).
+ * Build the auth.json contents that `codex login --with-api-key` writes for a
+ * bare OpenAI API key. Codex authenticates ONLY from ~/.codex/auth.json — it does
+ * NOT read OPENAI_API_KEY from the environment — so a bare API key must be
+ * materialised into this file for codex to send a bearer token.
+ */
+function synthesizeApiKeyAuthJson(apiKey: string): string {
+	return JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: apiKey });
+}
+
+/**
+ * Write ~/.codex/auth.json so Codex can authenticate. Supports BOTH auth modes,
+ * mirroring claude-code's ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN duality:
+ *   - subscription token via CODEX_AUTH_JSON (ChatGPT Plus/Pro), written verbatim;
+ *   - bare API key via OPENAI_API_KEY, synthesized into the apikey auth.json shape.
+ *
+ * Returns the written JSON string ONLY for the subscription path, so the caller
+ * (captureRefreshedToken) can persist a token the Codex CLI rotated mid-run. The
+ * API-key path returns undefined: API keys never rotate, and returning undefined
+ * guarantees the synthesized blob is never written back into the CODEX_AUTH_JSON
+ * credential slot. CODEX_AUTH_JSON takes precedence when both are configured.
  */
 async function writeCodexAuthFile(
 	projectSecrets: Record<string, string> | undefined,
 	logWriter: LogWriter,
 ): Promise<string | undefined> {
 	const authJson = projectSecrets?.CODEX_AUTH_JSON;
-	if (!authJson) {
-		logWriter('DEBUG', 'No CODEX_AUTH_JSON credential — using API key auth', {});
-		return undefined;
+	const apiKey = projectSecrets?.OPENAI_API_KEY;
+
+	// 1. Subscription token wins when present and valid JSON.
+	if (authJson) {
+		let valid = true;
+		try {
+			JSON.parse(authJson);
+		} catch {
+			valid = false;
+		}
+		if (valid) {
+			await mkdir(CODEX_AUTH_DIR, { recursive: true });
+			await writeFile(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
+			logWriter('INFO', 'Writing ~/.codex/auth.json for subscription auth', {});
+			return authJson;
+		}
+		logWriter(
+			'WARN',
+			'CODEX_AUTH_JSON is not valid JSON — falling back to OPENAI_API_KEY if present',
+			{},
+		);
 	}
 
-	try {
-		JSON.parse(authJson);
-	} catch {
-		logWriter('WARN', 'CODEX_AUTH_JSON is not valid JSON — skipping subscription auth', {});
-		return undefined;
+	// 2. Bare OpenAI API key — synthesize the apikey auth.json codex requires.
+	if (apiKey) {
+		await mkdir(CODEX_AUTH_DIR, { recursive: true });
+		await writeFile(CODEX_AUTH_FILE, synthesizeApiKeyAuthJson(apiKey), { mode: 0o600 });
+		logWriter('INFO', 'Writing ~/.codex/auth.json for API key auth', {});
+		return undefined; // API keys do not rotate — nothing to capture
 	}
 
-	await mkdir(CODEX_AUTH_DIR, { recursive: true });
-	await writeFile(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
-	logWriter('INFO', 'Writing ~/.codex/auth.json for subscription auth', {});
-	return authJson;
+	// 3. Neither configured.
+	logWriter(
+		'DEBUG',
+		'No CODEX_AUTH_JSON or OPENAI_API_KEY credential — codex auth not configured',
+		{},
+	);
+	return undefined;
 }
 
 /**
@@ -433,6 +472,10 @@ async function captureRefreshedToken(
 	originalJson: string | undefined,
 	logWriter: LogWriter,
 ): Promise<void> {
+	// originalJson is undefined on the API-key path (writeCodexAuthFile returns
+	// undefined there) and when no auth was configured — so a synthesized apikey
+	// auth.json is never persisted back into the CODEX_AUTH_JSON credential slot.
+	// Only a rotated subscription token is captured.
 	if (!originalJson) return;
 
 	let newJson: string;
