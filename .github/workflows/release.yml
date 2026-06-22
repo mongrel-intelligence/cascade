@@ -51,10 +51,10 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "**Mode:** ${{ inputs.dry_run && 'Dry run (validation only)' || 'Live merge' }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "### Commits to be released (${{ env.COMMIT_COUNT }}):" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Commits to be released ($COMMIT_COUNT):" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
-          echo "${{ env.COMMITS }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "$COMMITS" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dry run - show diff summary
@@ -81,14 +81,22 @@ jobs:
       - name: Create release PR
         if: ${{ !inputs.dry_run }}
         run: |
+          # Build the PR body via a file using SHELL env vars ($COMMITS), NOT
+          # GitHub Actions expression interpolation, so a commit message that
+          # contains a double-quote or backtick is not pasted raw into the gh
+          # command (which previously aborted the release with "unknown argument").
+          BODY_FILE="$(mktemp)"
+          {
+            echo "Automated release PR created by the release workflow."
+            echo ""
+            echo "### Commits ($COMMIT_COUNT):"
+            echo '```'
+            echo "$COMMITS"
+            echo '```'
+          } > "$BODY_FILE"
           PR_URL=$(gh pr create --base main --head dev \
             --title "chore: release - merge dev into main" \
-            --body "Automated release PR created by the release workflow.
-
-          ### Commits (${{ env.COMMIT_COUNT }}):
-          \`\`\`
-          ${{ env.COMMITS }}
-          \`\`\`")
+            --body-file "$BODY_FILE")
           echo "Created PR: $PR_URL"
           PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
           echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_ENV"
