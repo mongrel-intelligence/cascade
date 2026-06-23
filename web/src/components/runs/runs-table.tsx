@@ -1,5 +1,14 @@
 import { Link } from '@tanstack/react-router';
 import { Activity, ExternalLink } from 'lucide-react';
+import { Badge } from '@/components/ui/badge.js';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
 import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
@@ -46,45 +55,33 @@ export function RunsTable({
 
 	return (
 		<div className="space-y-4">
-			<div className="overflow-x-auto rounded-lg border border-border">
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="border-b border-border bg-muted/50">
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Agent</th>
+			<div className="rounded-lg border border-border">
+				<Table>
+					<TableHeader>
+						<TableRow className="bg-muted/50 hover:bg-muted/50">
+							<TableHead className="px-4 py-3">Agent</TableHead>
 							{showOrg && (
-								<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
-									Organization
-								</th>
+								<TableHead className="hidden px-4 py-3 md:table-cell">Organization</TableHead>
 							)}
-							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
-								Project
-							</th>
-							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
-								Work Item
-							</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Started</th>
-							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
-								Duration
-							</th>
-							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
-								Cost
-							</th>
-							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
+							<TableHead className="hidden px-4 py-3 md:table-cell">Project</TableHead>
+							<TableHead className="hidden px-4 py-3 md:table-cell">Work Item</TableHead>
+							<TableHead className="px-4 py-3">Status</TableHead>
+							<TableHead className="px-4 py-3">Started</TableHead>
+							<TableHead className="hidden px-4 py-3 text-right md:table-cell">Duration</TableHead>
+							<TableHead className="hidden px-4 py-3 text-right md:table-cell">Cost</TableHead>
+							<TableHead className="hidden px-4 py-3 text-right md:table-cell">
 								Iterations
-							</th>
-							<th className="hidden px-4 py-3 text-center font-medium text-muted-foreground md:table-cell">
-								PR
-							</th>
-							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
-						</tr>
-					</thead>
-					<tbody>
+							</TableHead>
+							<TableHead className="hidden px-4 py-3 text-center md:table-cell">PR</TableHead>
+							<TableHead className="px-4 py-3 text-center">Actions</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{runs.length === 0 && (
-							<tr>
-								<td
+							<TableRow>
+								<TableCell
 									colSpan={showOrg ? 11 : 10}
-									className="px-4 py-12 text-center text-muted-foreground"
+									className="px-4 py-12 text-center whitespace-normal text-muted-foreground"
 								>
 									<div className="flex flex-col items-center gap-2">
 										<Activity className="h-8 w-8 text-muted-foreground/50" />
@@ -93,15 +90,12 @@ export function RunsTable({
 											Runs appear here when CASCADE processes work items.
 										</p>
 									</div>
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						)}
 						{runs.map((run) => (
-							<tr
-								key={run.id}
-								className="border-b border-border transition-colors hover:bg-muted/30"
-							>
-								<td className="px-4 py-3">
+							<TableRow key={run.id}>
+								<TableCell className="px-4 py-3">
 									<Link
 										to="/runs/$runId"
 										params={{ runId: run.id }}
@@ -109,16 +103,16 @@ export function RunsTable({
 									>
 										{run.agentType}
 									</Link>
-								</td>
+								</TableCell>
 								{showOrg && (
-									<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+									<TableCell className="hidden px-4 py-3 text-muted-foreground md:table-cell">
 										{run.orgName ?? '-'}
-									</td>
+									</TableCell>
 								)}
-								<td className="hidden px-4 py-3 text-muted-foreground md:table-cell">
+								<TableCell className="hidden px-4 py-3 text-muted-foreground md:table-cell">
 									{run.projectName ?? '-'}
-								</td>
-								<td className="hidden px-4 py-3 md:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 whitespace-normal md:table-cell">
 									{run.workItemUrl && run.workItemTitle ? (
 										<div className="flex flex-col gap-0.5">
 											<a
@@ -145,9 +139,7 @@ export function RunsTable({
 										</div>
 									) : run.workItemId && run.projectId ? (
 										<div className="flex flex-col gap-0.5">
-											<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-												Unlinked
-											</span>
+											<Badge variant="outline">Unlinked</Badge>
 											<Link
 												to="/work-items/$projectId/$workItemId"
 												params={{
@@ -160,31 +152,29 @@ export function RunsTable({
 											</Link>
 										</div>
 									) : (
-										<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">
-											Unlinked
-										</span>
+										<Badge variant="outline">Unlinked</Badge>
 									)}
-								</td>
-								<td className="px-4 py-3">
+								</TableCell>
+								<TableCell className="px-4 py-3">
 									<RunStatusBadge status={run.status} />
-								</td>
-								<td className="px-4 py-3 text-muted-foreground">
+								</TableCell>
+								<TableCell className="px-4 py-3 text-muted-foreground">
 									{formatRelativeTime(run.startedAt)}
-								</td>
-								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									<LiveDuration
 										startedAt={run.startedAt}
 										durationMs={run.durationMs}
 										status={run.status}
 									/>
-								</td>
-								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									{formatCost(run.costUsd)}
-								</td>
-								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									{run.llmIterations ?? '-'}
-								</td>
-								<td className="hidden px-4 py-3 text-center md:table-cell">
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 text-center md:table-cell">
 									{run.prUrl ? (
 										<div className="flex flex-col items-center gap-0.5">
 											<a
@@ -211,15 +201,15 @@ export function RunsTable({
 									) : (
 										'-'
 									)}
-								</td>
-								<td className="px-4 py-3 text-center">
+								</TableCell>
+								<TableCell className="px-4 py-3 text-center">
 									<CancelRunButton runId={run.id} status={run.status} />
 									<RetryRunButton runId={run.id} status={run.status} />
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 
 			{total > limit && (

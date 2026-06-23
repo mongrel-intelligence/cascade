@@ -1,4 +1,12 @@
 import { Edit2 } from 'lucide-react';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
 
 interface Organization {
 	id: string;
@@ -12,28 +20,31 @@ interface OrganizationsTableProps {
 
 export function OrganizationsTable({ organizations, onEdit }: OrganizationsTableProps) {
 	return (
-		<div className="overflow-x-auto rounded-lg border border-border">
-			<table className="w-full text-sm">
-				<thead>
-					<tr className="border-b border-border bg-muted/50">
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">ID</th>
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Name</th>
-						<th className="px-4 py-3 text-right font-medium text-muted-foreground">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
+		<div className="rounded-lg border border-border">
+			<Table>
+				<TableHeader>
+					<TableRow className="bg-muted/50 hover:bg-muted/50">
+						<TableHead className="px-4 py-3">ID</TableHead>
+						<TableHead className="px-4 py-3">Name</TableHead>
+						<TableHead className="px-4 py-3 text-right">Actions</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{organizations.length === 0 && (
-						<tr>
-							<td colSpan={3} className="px-4 py-8 text-center text-muted-foreground">
+						<TableRow>
+							<TableCell
+								colSpan={3}
+								className="px-4 py-8 text-center whitespace-normal text-muted-foreground"
+							>
 								No organizations found
-							</td>
-						</tr>
+							</TableCell>
+						</TableRow>
 					)}
 					{organizations.map((org) => (
-						<tr key={org.id} className="border-b border-border transition-colors hover:bg-muted/30">
-							<td className="px-4 py-3 font-mono text-xs">{org.id}</td>
-							<td className="px-4 py-3 font-medium">{org.name}</td>
-							<td className="px-4 py-3 text-right">
+						<TableRow key={org.id}>
+							<TableCell className="px-4 py-3 font-mono text-xs">{org.id}</TableCell>
+							<TableCell className="px-4 py-3 font-medium">{org.name}</TableCell>
+							<TableCell className="px-4 py-3 text-right">
 								<button
 									type="button"
 									onClick={() => onEdit(org)}
@@ -42,11 +53,11 @@ export function OrganizationsTable({ organizations, onEdit }: OrganizationsTable
 								>
 									<Edit2 className="h-4 w-4" />
 								</button>
-							</td>
-						</tr>
+							</TableCell>
+						</TableRow>
 					))}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</div>
 	);
 }

@@ -1,4 +1,12 @@
 import { Link } from '@tanstack/react-router';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
 import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
@@ -42,28 +50,25 @@ export function WorkItemRunsTable({ runs, isLoading, isError, error }: WorkItemR
 	}
 
 	return (
-		<div className="overflow-x-auto rounded-lg border border-border">
-			<table className="w-full text-sm">
-				<thead>
-					<tr className="border-b border-border bg-muted/50">
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Agent</th>
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Engine</th>
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Model</th>
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Status</th>
-						<th className="px-4 py-3 text-left font-medium text-muted-foreground">Started</th>
-						<th className="px-4 py-3 text-right font-medium text-muted-foreground">Duration</th>
-						<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
-						<th className="px-4 py-3 text-right font-medium text-muted-foreground">Iters</th>
-						<th className="px-4 py-3 text-center font-medium text-muted-foreground">Actions</th>
-					</tr>
-				</thead>
-				<tbody>
+		<div className="rounded-lg border border-border">
+			<Table>
+				<TableHeader>
+					<TableRow className="bg-muted/50 hover:bg-muted/50">
+						<TableHead className="px-4 py-3">Agent</TableHead>
+						<TableHead className="px-4 py-3">Engine</TableHead>
+						<TableHead className="px-4 py-3">Model</TableHead>
+						<TableHead className="px-4 py-3">Status</TableHead>
+						<TableHead className="px-4 py-3">Started</TableHead>
+						<TableHead className="px-4 py-3 text-right">Duration</TableHead>
+						<TableHead className="px-4 py-3 text-right">Cost</TableHead>
+						<TableHead className="px-4 py-3 text-right">Iters</TableHead>
+						<TableHead className="px-4 py-3 text-center">Actions</TableHead>
+					</TableRow>
+				</TableHeader>
+				<TableBody>
 					{runs.map((run) => (
-						<tr
-							key={run.id}
-							className="border-b border-border transition-colors hover:bg-muted/30 last:border-0"
-						>
-							<td className="px-4 py-3">
+						<TableRow key={run.id}>
+							<TableCell className="px-4 py-3">
 								<Link
 									to="/runs/$runId"
 									params={{ runId: run.id }}
@@ -71,36 +76,36 @@ export function WorkItemRunsTable({ runs, isLoading, isError, error }: WorkItemR
 								>
 									{run.agentType}
 								</Link>
-							</td>
-							<td className="px-4 py-3 text-muted-foreground">{run.engine}</td>
-							<td className="px-4 py-3 text-muted-foreground">{run.model ?? '-'}</td>
-							<td className="px-4 py-3">
+							</TableCell>
+							<TableCell className="px-4 py-3 text-muted-foreground">{run.engine}</TableCell>
+							<TableCell className="px-4 py-3 text-muted-foreground">{run.model ?? '-'}</TableCell>
+							<TableCell className="px-4 py-3">
 								<RunStatusBadge status={run.status} />
-							</td>
-							<td className="px-4 py-3 text-muted-foreground">
+							</TableCell>
+							<TableCell className="px-4 py-3 text-muted-foreground">
 								{formatRelativeTime(run.startedAt)}
-							</td>
-							<td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+							</TableCell>
+							<TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">
 								<LiveDuration
 									startedAt={run.startedAt}
 									durationMs={run.durationMs}
 									status={run.status}
 								/>
-							</td>
-							<td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+							</TableCell>
+							<TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">
 								{formatCost(run.costUsd)}
-							</td>
-							<td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+							</TableCell>
+							<TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">
 								{run.llmIterations ?? '-'}
-							</td>
-							<td className="px-4 py-3 text-center">
+							</TableCell>
+							<TableCell className="px-4 py-3 text-center">
 								<CancelRunButton runId={run.id} status={run.status} />
 								<RetryRunButton runId={run.id} status={run.status} />
-							</td>
-						</tr>
+							</TableCell>
+						</TableRow>
 					))}
-				</tbody>
-			</table>
+				</TableBody>
+			</Table>
 		</div>
 	);
 }

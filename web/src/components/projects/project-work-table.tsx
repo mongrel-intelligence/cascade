@@ -1,5 +1,13 @@
 import { useNavigate } from '@tanstack/react-router';
 import { ClipboardList, ExternalLink, GitPullRequest } from 'lucide-react';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
 import { agentTypeLabel } from '@/lib/chart-colors.js';
 import { useChartColors } from '@/lib/use-chart-colors.js';
 import { formatCostSummary } from '@/lib/utils.js';
@@ -179,47 +187,46 @@ function WorkItemRow({ item, projectId, projectAvgDurationMs }: WorkItemRowProps
 	};
 
 	return (
-		<tr
-			className="border-b border-border transition-colors hover:bg-muted/30"
+		<TableRow
 			onClick={handleClick}
 			onKeyDown={handleKeyDown}
 			style={canNavigate ? { cursor: 'pointer' } : undefined}
 		>
 			{/* Type icon */}
-			<td className="px-4 py-3 text-muted-foreground">
+			<TableCell className="px-4 py-3 text-muted-foreground">
 				<ItemIcon item={item} />
-			</td>
+			</TableCell>
 
 			{/* PR title / number + Associated work item (stacked) */}
-			<td className="px-4 py-3">
+			<TableCell className="px-4 py-3 whitespace-normal">
 				<div className="flex flex-col gap-1">
 					<PrimaryItemTitle item={item} />
 					<SecondaryItemTitle item={item} />
 				</div>
-			</td>
+			</TableCell>
 
 			{/* Duration bar */}
-			<td className="px-4 py-3 hidden sm:table-cell" style={{ minWidth: 160 }}>
+			<TableCell className="hidden px-4 py-3 sm:table-cell" style={{ minWidth: 160 }}>
 				<WorkItemDurationBar
 					runs={item.runs ?? []}
 					projectAvgDurationMs={projectAvgDurationMs ?? null}
 				/>
-			</td>
+			</TableCell>
 
 			{/* Run count */}
-			<td className="px-4 py-3 text-right tabular-nums">
+			<TableCell className="px-4 py-3 text-right tabular-nums">
 				{canNavigate ? (
 					<span className="cursor-pointer text-primary hover:underline">{item.runCount}</span>
 				) : (
 					item.runCount
 				)}
-			</td>
+			</TableCell>
 
 			{/* Cost */}
-			<td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
+			<TableCell className="px-4 py-3 text-right tabular-nums text-muted-foreground">
 				{formatCostSummary(item.totalCostUsd)}
-			</td>
-		</tr>
+			</TableCell>
+		</TableRow>
 	);
 }
 
@@ -269,28 +276,27 @@ export function ProjectWorkTable({
 				</div>
 			)}
 
-			<div className="overflow-x-auto rounded-lg border border-border">
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="border-b border-border bg-muted/50">
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground w-8" />
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">
-								Title / Associated Item
-							</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground hidden sm:table-cell">
-								Duration
-							</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Runs</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Cost</th>
-						</tr>
-					</thead>
-					<tbody>
+			<div className="rounded-lg border border-border">
+				<Table>
+					<TableHeader>
+						<TableRow className="bg-muted/50 hover:bg-muted/50">
+							<TableHead className="w-8 px-4 py-3" />
+							<TableHead className="px-4 py-3">Title / Associated Item</TableHead>
+							<TableHead className="hidden px-4 py-3 sm:table-cell">Duration</TableHead>
+							<TableHead className="px-4 py-3 text-right">Runs</TableHead>
+							<TableHead className="px-4 py-3 text-right">Cost</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{pageItems.length === 0 && (
-							<tr>
-								<td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
+							<TableRow>
+								<TableCell
+									colSpan={5}
+									className="px-4 py-8 text-center whitespace-normal text-muted-foreground"
+								>
 									No work found for this project
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						)}
 						{pageItems.map((item) => (
 							<WorkItemRow
@@ -300,8 +306,8 @@ export function ProjectWorkTable({
 								projectAvgDurationMs={projectAvgDurationMs}
 							/>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 
 			{total > limit && (

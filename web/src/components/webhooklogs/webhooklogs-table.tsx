@@ -1,4 +1,12 @@
 import { Badge } from '@/components/ui/badge.js';
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from '@/components/ui/table.js';
 import { formatRelativeTime } from '@/lib/utils.js';
 
 interface WebhookLog {
@@ -53,48 +61,49 @@ export function WebhookLogsTable({
 
 	return (
 		<div className="space-y-4">
-			<div className="overflow-x-auto rounded-lg border border-border">
-				<table className="w-full text-sm">
-					<thead>
-						<tr className="border-b border-border bg-muted/50">
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Source</th>
-							<th className="px-4 py-3 text-left font-medium text-muted-foreground">Event Type</th>
-							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
-								Method
-							</th>
-							<th className="hidden px-4 py-3 text-right font-medium text-muted-foreground md:table-cell">
-								Status
-							</th>
-							<th className="px-4 py-3 text-center font-medium text-muted-foreground">Processed</th>
-							<th className="hidden px-4 py-3 text-left font-medium text-muted-foreground md:table-cell">
-								Reason
-							</th>
-							<th className="px-4 py-3 text-right font-medium text-muted-foreground">Time</th>
-						</tr>
-					</thead>
-					<tbody>
+			<div className="rounded-lg border border-border">
+				<Table>
+					<TableHeader>
+						<TableRow className="bg-muted/50 hover:bg-muted/50">
+							<TableHead className="px-4 py-3">Source</TableHead>
+							<TableHead className="px-4 py-3">Event Type</TableHead>
+							<TableHead className="hidden px-4 py-3 md:table-cell">Method</TableHead>
+							<TableHead className="hidden px-4 py-3 text-right md:table-cell">Status</TableHead>
+							<TableHead className="px-4 py-3 text-center">Processed</TableHead>
+							<TableHead className="hidden px-4 py-3 md:table-cell">Reason</TableHead>
+							<TableHead className="px-4 py-3 text-right">Time</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
 						{logs.length === 0 && (
-							<tr>
-								<td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+							<TableRow>
+								<TableCell
+									colSpan={7}
+									className="px-4 py-8 text-center whitespace-normal text-muted-foreground"
+								>
 									No webhook logs found
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						)}
 						{logs.map((log) => (
-							<tr
+							<TableRow
 								key={log.id}
-								className="cursor-pointer border-b border-border transition-colors hover:bg-muted/30"
+								className="cursor-pointer"
 								onClick={() => onRowClick(log.id)}
 								onKeyDown={(e) => {
 									if (e.key === 'Enter' || e.key === ' ') onRowClick(log.id);
 								}}
 							>
-								<td className="px-4 py-3">
+								<TableCell className="px-4 py-3">
 									<SourceBadge source={log.source} />
-								</td>
-								<td className="px-4 py-3 text-muted-foreground">{log.eventType ?? '-'}</td>
-								<td className="hidden px-4 py-3 font-mono text-xs md:table-cell">{log.method}</td>
-								<td className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
+								</TableCell>
+								<TableCell className="px-4 py-3 text-muted-foreground">
+									{log.eventType ?? '-'}
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 font-mono text-xs md:table-cell">
+									{log.method}
+								</TableCell>
+								<TableCell className="hidden px-4 py-3 text-right tabular-nums md:table-cell">
 									{log.statusCode != null ? (
 										<span
 											className={
@@ -108,8 +117,8 @@ export function WebhookLogsTable({
 									) : (
 										'-'
 									)}
-								</td>
-								<td className="px-4 py-3 text-center">
+								</TableCell>
+								<TableCell className="px-4 py-3 text-center">
 									{log.processed ? (
 										<Badge variant="default" className="text-xs">
 											Yes
@@ -119,20 +128,20 @@ export function WebhookLogsTable({
 											No
 										</Badge>
 									)}
-								</td>
-								<td
-									className="hidden px-4 py-3 text-muted-foreground max-w-[200px] truncate md:table-cell"
+								</TableCell>
+								<TableCell
+									className="hidden max-w-[200px] truncate px-4 py-3 text-muted-foreground md:table-cell"
 									title={log.decisionReason ?? undefined}
 								>
 									{log.decisionReason ?? '-'}
-								</td>
-								<td className="px-4 py-3 text-right text-muted-foreground">
+								</TableCell>
+								<TableCell className="px-4 py-3 text-right text-muted-foreground">
 									{formatRelativeTime(log.receivedAt)}
-								</td>
-							</tr>
+								</TableCell>
+							</TableRow>
 						))}
-					</tbody>
-				</table>
+					</TableBody>
+				</Table>
 			</div>
 
 			{total > limit && (

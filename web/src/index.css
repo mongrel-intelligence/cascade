@@ -20,7 +20,8 @@
 	--color-accent: oklch(0.97 0 0);
 	--color-accent-foreground: oklch(0.205 0 0);
 	--color-destructive: oklch(0.577 0.245 27.325);
-	--color-destructive-foreground: oklch(0.577 0.245 27.325);
+	/* Light neutral so text on bg-destructive is legible (was red-on-red). */
+	--color-destructive-foreground: oklch(0.985 0 0);
 	--color-border: oklch(0.922 0 0);
 	--color-input: oklch(0.922 0 0);
 	--color-ring: oklch(0.708 0 0);
@@ -37,6 +38,7 @@
 	--color-sidebar-accent-foreground: oklch(0.205 0 0);
 	--color-sidebar-border: oklch(0.922 0 0);
 	--color-sidebar-ring: oklch(0.708 0 0);
+	--radius: 0.625rem;
 	--radius-sm: 0.25rem;
 	--radius-md: 0.375rem;
 	--radius-lg: 0.5rem;
@@ -55,11 +57,13 @@
 	--color-secondary: oklch(0.269 0 0);
 	--color-secondary-foreground: oklch(0.985 0 0);
 	--color-muted: oklch(0.269 0 0);
-	--color-muted-foreground: oklch(0.708 0 0);
+	/* Lifted from 0.708 for legible secondary text on dark surfaces. */
+	--color-muted-foreground: oklch(0.75 0 0);
 	--color-accent: oklch(0.269 0 0);
 	--color-accent-foreground: oklch(0.985 0 0);
 	--color-destructive: oklch(0.396 0.141 25.723);
-	--color-destructive-foreground: oklch(0.637 0.237 25.331);
+	/* Light neutral so text on bg-destructive is legible (was red-on-red). */
+	--color-destructive-foreground: oklch(0.985 0 0);
 	--color-border: oklch(0.269 0 0);
 	--color-input: oklch(0.269 0 0);
 	--color-ring: oklch(0.439 0 0);
