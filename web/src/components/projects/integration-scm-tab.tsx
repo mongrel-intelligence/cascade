@@ -99,6 +99,37 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 // GitHub Webhook Management
 // ============================================================================
 
+/**
+ * Build the manual `curl` command an operator can run to register the GitHub
+ * webhook by hand.
+ *
+ * Extracted as a pure function (no React Query / tRPC providers required) so it
+ * can be unit-tested in isolation — see `tests/unit/web/scm-github-webhook.test.ts`.
+ *
+ * The `secret` field is always the literal placeholder `<YOUR_WEBHOOK_SECRET>`;
+ * plaintext secrets are NEVER interpolated here or returned to the browser. The
+ * operator substitutes the real value (the same one saved in the Webhook Signing
+ * Secret field) before running the command, or uses the dashboard's create-webhook
+ * button, which injects it server-side from the stored credential.
+ */
+export function buildGithubWebhookCurl(webhookCallbackUrl: string): string {
+	return [
+		'curl -X POST "https://api.github.com/repos/<OWNER>/<REPO>/hooks" \\',
+		'  -H "Authorization: Bearer <YOUR_GITHUB_TOKEN>" \\',
+		'  -H "Content-Type: application/json" \\',
+		"  -d '{",
+		'    "name": "web",',
+		'    "active": true,',
+		'    "events": ["push", "pull_request", "pull_request_review", "pull_request_review_comment", "check_suite", "issue_comment"],',
+		'    "config": {',
+		`      "url": "${webhookCallbackUrl}",`,
+		'      "content_type": "json",',
+		'      "secret": "<YOUR_WEBHOOK_SECRET>"',
+		'    }',
+		"  }'",
+	].join('\n');
+}
+
 function GitHubWebhookSection({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
@@ -150,20 +181,7 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 	const webhookCallbackUrl = callbackBaseUrl
 		? `${callbackBaseUrl}/github/webhook`
 		: '<YOUR_CALLBACK_URL>/github/webhook';
-	const githubCurlCommand = [
-		'curl -X POST "https://api.github.com/repos/<OWNER>/<REPO>/hooks" \\',
-		'  -H "Authorization: Bearer <YOUR_GITHUB_TOKEN>" \\',
-		'  -H "Content-Type: application/json" \\',
-		"  -d '{",
-		'    "name": "web",',
-		'    "active": true,',
-		'    "events": ["push", "pull_request", "pull_request_review", "pull_request_review_comment", "check_suite", "issue_comment"],',
-		'    "config": {',
-		`      "url": "${webhookCallbackUrl}",`,
-		'      "content_type": "json"',
-		'    }',
-		"  }'",
-	].join('\n');
+	const githubCurlCommand = buildGithubWebhookCurl(webhookCallbackUrl);
 
 	return (
 		<div className="space-y-4">
@@ -264,6 +282,19 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 							{githubCurlCommand}
 						</pre>
 					</div>
+					<p className="text-xs text-blue-600 dark:text-blue-400 pl-6">
+						Replace <code>&lt;YOUR_WEBHOOK_SECRET&gt;</code> with the same value you saved in the{' '}
+						<strong>Webhook Signing Secret</strong> field above — it enables HMAC-SHA256 signature
+						verification on every delivery. The <strong>Create GitHub Webhook</strong> button
+						injects this secret automatically once it's saved (the server resolves it from your
+						stored credentials), so manual substitution is only needed for this curl fallback. CLI
+						equivalent:{' '}
+						<code className="break-all">
+							cascade projects credentials-set &lt;id&gt; --key GITHUB_WEBHOOK_SECRET --value
+							&lt;secret&gt;
+						</code>
+						.
+					</p>
 				</div>
 			</details>
 
