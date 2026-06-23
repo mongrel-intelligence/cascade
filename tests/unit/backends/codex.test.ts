@@ -959,8 +959,9 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onToolCall).toHaveBeenCalledWith('bash', {
 			command: 'cascade-tools session finish --comment done',
 		});
-		// Exactly ONE storeLlmCall row per completed turn
-		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
+		// Two realtime per-item rows (text + tool) + one turn.completed cost row.
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(3);
+		// The cost row carries the turn usage.
 		expect(mockStoreLlmCall).toHaveBeenCalledWith(
 			expect.objectContaining({ inputTokens: 100, outputTokens: 50 }),
 		);
@@ -1041,17 +1042,26 @@ describe('CodexEngine', () => {
 		const result = await engine.execute(input);
 
 		expect(result.success).toBe(true);
-		// Exactly two rows — one per completed turn
-		expect(mockStoreLlmCall).toHaveBeenCalledTimes(2);
-		// Codex emits CUMULATIVE session usage; rows must store per-turn DELTAS.
+		// Two realtime text rows (one per agent_message) interleaved with two
+		// turn.completed cost rows = 4 rows total.
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(4);
+		// Row 1 = 'First.' text row — a content-block array, no tokens.
+		const firstTextRow = mockStoreLlmCall.mock.calls[0][0] as {
+			response: string;
+			inputTokens?: number;
+		};
+		expect(firstTextRow.inputTokens).toBeUndefined();
+		expect(JSON.parse(firstTextRow.response)).toEqual([{ type: 'text', text: 'First.' }]);
+		// Codex emits CUMULATIVE session usage; the cost rows store per-turn DELTAS.
 		// Feeding cumulative {50,20} then {80,30} → deltas {50,20} and {30,10}.
-		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
-			1,
-			expect.objectContaining({ callNumber: 1, inputTokens: 50, outputTokens: 20 }),
-		);
+		// Row 2 = turn-1 cost row; row 4 = turn-2 cost row.
 		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
 			2,
-			expect.objectContaining({ callNumber: 2, inputTokens: 30, outputTokens: 10 }),
+			expect.objectContaining({ callNumber: 2, inputTokens: 50, outputTokens: 20 }),
+		);
+		expect(mockStoreLlmCall).toHaveBeenNthCalledWith(
+			4,
+			expect.objectContaining({ callNumber: 4, inputTokens: 30, outputTokens: 10 }),
 		);
 	});
 
@@ -1088,7 +1098,7 @@ describe('CodexEngine', () => {
 		);
 	});
 
-	it('stores a compact turn-scoped payload with text summary and tool names', async () => {
+	it('streams per-item rows (text + tool with input) and a compact turn cost row', async () => {
 		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
 			const outputPath = args[args.indexOf('-o') + 1];
 			return createMockChild({
@@ -1115,18 +1125,59 @@ describe('CodexEngine', () => {
 		const input = makeInput({ repoDir: workspaceDir, runId: 'run-payload-shape' });
 		await engine.execute(input);
 
-		expect(mockStoreLlmCall).toHaveBeenCalledTimes(1);
-		const [{ response }] = mockStoreLlmCall.mock.calls[0] as [{ response: string }][];
-		const payload = JSON.parse(response) as Record<string, unknown>;
-		// Payload must be a compact object, NOT a raw JSONL line dump
-		expect(payload).toMatchObject({
-			turn: 1,
-			tools: ['bash'],
-			usage: { inputTokens: 30, outputTokens: 10 },
+		// 1 text row + 1 tool row + 1 turn.completed cost row.
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(3);
+		const calls = mockStoreLlmCall.mock.calls as Array<
+			[{ response: string; inputTokens?: number }]
+		>;
+		// Row 1: the agent message as a content-block array (renders via the shared parser).
+		expect(JSON.parse(calls[0][0].response)).toEqual([
+			{ type: 'text', text: 'I will run a command.' },
+		]);
+		// Row 2: the tool call keeps its full input, normalized to the Claude tool vocab.
+		expect(JSON.parse(calls[1][0].response)).toEqual([
+			{ type: 'tool_use', name: 'Bash', input: { command: 'ls' } },
+		]);
+		expect(calls[1][0].inputTokens).toBeUndefined();
+		// Row 3: the compact turn cost row — carries usage/delta, no tool-name dump.
+		const costPayload = JSON.parse(calls[2][0].response) as Record<string, unknown>;
+		expect(costPayload).toMatchObject({ turn: 3, usage: { inputTokens: 30, outputTokens: 10 } });
+		expect(costPayload.tools).toBeUndefined();
+		expect(calls[2][0].response.length).toBeLessThan(2000);
+	});
+
+	it('normalizes function_call names and persists only on item.completed (not deltas)', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: [
+					JSON.stringify({ type: 'turn.started' }),
+					// A streaming text delta must NOT persist a row (only completed items do).
+					JSON.stringify({ type: 'item.delta', delta: { type: 'text_delta', text: 'thinking…' } }),
+					// A completed function_call read_file → normalized to Read, input preserved.
+					JSON.stringify({
+						type: 'item.completed',
+						item: {
+							type: 'function_call',
+							name: 'read_file',
+							arguments: '{"file_path":"src/a.ts"}',
+						},
+					}),
+					JSON.stringify({ type: 'turn.completed', usage: { input_tokens: 5, output_tokens: 2 } }),
+				],
+				onBeforeClose: () => writeFileSync(outputPath, 'done', 'utf-8'),
+			});
 		});
-		expect(typeof payload.text).toBe('string');
-		// Payload must be reasonably sized (< 2 KB) — not a multi-KB raw event dump
-		expect(response.length).toBeLessThan(2000);
+
+		const engine = new CodexEngine();
+		await engine.execute(makeInput({ repoDir: workspaceDir, runId: 'run-normalize' }));
+
+		// The delta did not persist; one tool row + one cost row = 2.
+		expect(mockStoreLlmCall).toHaveBeenCalledTimes(2);
+		const toolResponse = (mockStoreLlmCall.mock.calls[0][0] as { response: string }).response;
+		expect(JSON.parse(toolResponse)).toEqual([
+			{ type: 'tool_use', name: 'Read', input: { file_path: 'src/a.ts' } },
+		]);
 	});
 
 	it('does not call storeLlmCall when no turn.completed event fires (no response events only)', async () => {

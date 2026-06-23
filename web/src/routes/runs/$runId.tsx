@@ -19,7 +19,11 @@ function RunDetailPage() {
 	const { runId } = runDetailRoute.useParams();
 	const [activeTab, setActiveTab] = useState<Tab>('overview');
 
-	const runQuery = useQuery(trpc.runs.getById.queryOptions({ id: runId }));
+	const runQuery = useQuery({
+		...trpc.runs.getById.queryOptions({ id: runId }),
+		// Poll while the run is active so status + the live-updating tabs refresh.
+		refetchInterval: (query) => (query.state.data?.status === 'running' ? 5000 : false),
+	});
 
 	if (runQuery.isLoading) {
 		return <div className="py-8 text-center text-muted-foreground">Loading run...</div>;
@@ -96,7 +100,9 @@ function RunDetailPage() {
 
 			{activeTab === 'overview' && <RunSummaryCard run={run} />}
 			{activeTab === 'logs' && <LogViewer runId={runId} />}
-			{activeTab === 'llm-calls' && <LlmCallList runId={runId} />}
+			{activeTab === 'llm-calls' && (
+				<LlmCallList runId={runId} isRunning={run.status === 'running'} />
+			)}
 			{activeTab === 'debug' && <DebugAnalysis runId={runId} />}
 		</div>
 	);

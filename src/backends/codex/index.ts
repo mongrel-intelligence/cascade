@@ -50,7 +50,6 @@ type JsonRecord = Record<string, unknown>;
  */
 type CodexTurnAccumulator = {
 	textSummary: string[];
-	toolNames: string[];
 	usage: UsageSummary | null;
 };
 
@@ -213,10 +212,11 @@ function persistTurnLlmCall(context: CodexLineContext): void {
 		}
 	}
 
+	// Tools/text detail now stream as their own per-item rows (persistItemRow);
+	// the turn.completed row carries the turn's cost/usage + a short text summary.
 	const turnPayload = JSON.stringify({
 		turn: context.llmCallCount,
 		text: acc.textSummary.join(' ').slice(0, 500) || undefined,
-		tools: acc.toolNames.length > 0 ? acc.toolNames : undefined,
 		usage: usage ?? undefined,
 		delta: delta ?? undefined,
 		// Reasoning breakdown preserved for observability; it is already counted
@@ -237,7 +237,53 @@ function persistTurnLlmCall(context: CodexLineContext): void {
 	});
 
 	// Reset the accumulator for the next turn
-	context.currentTurn = { textSummary: [], toolNames: [], usage: null };
+	context.currentTurn = { textSummary: [], usage: null };
+}
+
+/**
+ * Map a Codex tool name/input onto the Claude-Code tool vocabulary so the shared
+ * `summarizeInput` / `getToolStyle` render the argument and colour. Codex's
+ * command_execution surfaces as lowercase `bash`; function_call names vary.
+ */
+function normalizeCodexTool(
+	name: string,
+	input?: Record<string, unknown>,
+): { name: string; input?: Record<string, unknown> } {
+	switch (name.toLowerCase()) {
+		case 'bash':
+		case 'shell':
+			return { name: 'Bash', input };
+		case 'read_file':
+		case 'read':
+			return { name: 'Read', input };
+		case 'write_file':
+		case 'write':
+			return { name: 'Write', input };
+		case 'apply_patch':
+		case 'edit_file':
+		case 'edit':
+			return { name: 'Edit', input };
+		default:
+			return { name, input };
+	}
+}
+
+/**
+ * Persist one realtime detail row for a completed Codex item (a text message or a
+ * tool call), stored as a Claude-Code-style content-block array so the shared
+ * response parser renders it identically (tool command/args shown). These rows
+ * carry NO tokens — Codex reports usage only once (cumulative) on turn.completed,
+ * which persistTurnLlmCall records as the single cost-bearing row.
+ */
+function persistItemRow(context: CodexLineContext, block: Record<string, unknown>): void {
+	context.llmCallCount += 1;
+	logLlmCall({
+		runId: context.input.runId,
+		callNumber: context.llmCallCount,
+		model: context.model,
+		response: JSON.stringify([block]),
+		engineLabel: 'Codex',
+	});
 }
 
 /**
@@ -263,7 +309,7 @@ async function handleStructuralEvent(
 	}
 	if (eventType === 'turn.started' || eventType === 'thread.started') {
 		// Reset turn accumulator at the start of each new turn
-		context.currentTurn = { textSummary: [], toolNames: [], usage: null };
+		context.currentTurn = { textSummary: [], usage: null };
 		return true;
 	}
 	if (eventType === 'item.started') {
@@ -275,32 +321,58 @@ async function handleStructuralEvent(
 	return false;
 }
 
+/**
+ * Log + accumulate text, persisting a realtime text row only when a model ITEM
+ * completes (not for streaming deltas) as a content-block array.
+ */
+function handleCodexText(
+	context: CodexLineContext,
+	textParts: string[],
+	isItemCompleted: boolean,
+): void {
+	for (const text of textParts) {
+		logText(context, text);
+		context.currentTurn.textSummary.push(text.slice(0, 200));
+	}
+	if (isItemCompleted && textParts.length > 0) {
+		persistItemRow(context, { type: 'text', text: textParts.join('') });
+	}
+}
+
+/**
+ * Report a tool call to progress, persisting a realtime tool row (with full
+ * input, normalized to the Claude-Code vocab) only when the item completes.
+ */
+function handleCodexToolCall(
+	context: CodexLineContext,
+	toolCall: { name: string; input?: Record<string, unknown> },
+	isItemCompleted: boolean,
+): void {
+	context.input.logWriter('DEBUG', 'Codex tool call', {
+		name: toolCall.name,
+		input: toolCall.input,
+	});
+	context.input.progressReporter.onToolCall(toolCall.name, toolCall.input);
+	if (isItemCompleted) {
+		const normalized = normalizeCodexTool(toolCall.name, toolCall.input);
+		persistItemRow(context, { type: 'tool_use', name: normalized.name, input: normalized.input });
+	}
+}
+
 async function handleParsedLine(context: CodexLineContext, parsed: JsonRecord): Promise<void> {
 	const eventType = typeof parsed.type === 'string' ? parsed.type : '';
 
 	if (await handleStructuralEvent(context, parsed, eventType)) return;
 
 	const { textParts, toolCall, usage, error } = parseCodexEvent(parsed);
+	const isItemCompleted = eventType === 'item.completed';
 
 	if (textParts.length > 0 || toolCall) {
 		await trackIteration(context);
 	}
 
-	for (const text of textParts) {
-		logText(context, text);
-		// Accumulate text into the turn buffer for compact per-call payload
-		context.currentTurn.textSummary.push(text.slice(0, 200));
-	}
-
-	if (toolCall) {
-		context.input.logWriter('DEBUG', 'Codex tool call', {
-			name: toolCall.name,
-			input: toolCall.input,
-		});
-		context.input.progressReporter.onToolCall(toolCall.name, toolCall.input);
-		// Track tool name in turn buffer for the compact payload
-		context.currentTurn.toolNames.push(toolCall.name);
-	}
+	handleCodexText(context, textParts, isItemCompleted);
+	if (toolCall) handleCodexToolCall(context, toolCall, isItemCompleted);
 
 	if (usage) {
 		context.input.logWriter('DEBUG', 'Codex usage', { usage });
@@ -719,7 +791,7 @@ export class CodexEngine extends NativeToolEngine {
 					llmCallCount,
 					cost,
 					finalError,
-					currentTurn: { textSummary: [], toolNames: [], usage: null },
+					currentTurn: { textSummary: [], usage: null },
 					cumulativeUsage: {
 						inputTokens: 0,
 						outputTokens: 0,

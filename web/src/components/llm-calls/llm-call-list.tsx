@@ -8,6 +8,8 @@ import { LlmCallDetail } from './llm-call-detail.js';
 
 interface LlmCallListProps {
 	runId: string;
+	/** When the run is still active, poll so newly-persisted calls stream in live. */
+	isRunning?: boolean;
 }
 
 type ToolCall = { name: string; inputSummary: string };
@@ -133,10 +135,14 @@ function CallRow({ runId, call, delta, isExpanded, onToggle }: CallRowProps) {
 	);
 }
 
-export function LlmCallList({ runId }: LlmCallListProps) {
+export function LlmCallList({ runId, isRunning }: LlmCallListProps) {
 	const [expandedCall, setExpandedCall] = useState<number | null>(null);
 
-	const callsQuery = useQuery(trpc.runs.listLlmCalls.queryOptions({ runId }));
+	const callsQuery = useQuery({
+		...trpc.runs.listLlmCalls.queryOptions({ runId }),
+		// While the run is active, poll so per-item rows appear in realtime.
+		refetchInterval: isRunning ? 3000 : false,
+	});
 
 	if (callsQuery.isLoading) {
 		return <div className="py-8 text-center text-muted-foreground">Loading LLM calls...</div>;

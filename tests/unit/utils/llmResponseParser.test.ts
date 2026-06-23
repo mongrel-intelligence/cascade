@@ -152,6 +152,29 @@ describe.concurrent('parseLlmResponse', () => {
 		});
 	});
 
+	describe('Codex realtime per-item rows (content-block array)', () => {
+		// Codex now streams one content-block-array row per item.completed, so its
+		// tool calls carry full input and render via the shared Claude-Code path —
+		// no more empty-badge inputSummary.
+		it('renders a codex tool row with the command (normalized to Bash)', () => {
+			const response = JSON.stringify([
+				{ type: 'tool_use', name: 'Bash', input: { command: 'git status' } },
+			]);
+			const result = parseLlmResponse(response);
+			expect(result.blocks).toEqual([
+				{ kind: 'tool_use', name: 'Bash', inputSummary: 'git status' },
+			]);
+			expect(result.toolNames).toEqual(['Bash']);
+		});
+
+		it('renders a codex text row', () => {
+			const response = JSON.stringify([{ type: 'text', text: 'Reviewing the PR.' }]);
+			const result = parseLlmResponse(response);
+			expect(result.blocks).toEqual([{ kind: 'text', text: 'Reviewing the PR.' }]);
+			expect(result.textPreview).toBe('Reviewing the PR.');
+		});
+	});
+
 	describe('LLMist format (gadget markup)', () => {
 		const gadget = (name: string, args: Record<string, string>) => {
 			const argLines = Object.entries(args)
