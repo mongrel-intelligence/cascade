@@ -21,6 +21,7 @@ const PROTECTED_ENV_KEYS = new Set([
 	'JOB_ID',
 	'JOB_TYPE',
 	'JOB_DATA',
+	'JOB_DATA_REDIS_KEY',
 ]);
 
 export interface EnvSnapshot {

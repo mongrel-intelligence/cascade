@@ -48,6 +48,10 @@ vi.mock('../../src/router/pm-ack-dispatch.js', () => ({
 	dispatchPMAck: vi.fn(),
 }));
 
+vi.mock('../../src/router/job-data-offload.js', () => ({
+	readOffloadedJobData: vi.fn(),
+}));
+
 vi.mock('../../src/router/ackMessageGenerator.js', () => ({
 	extractTrelloContext: vi.fn().mockReturnValue(''),
 	extractJiraContext: vi.fn().mockReturnValue(''),
@@ -105,6 +109,7 @@ import {
 	extractTrelloContext,
 	generateAckMessage,
 } from '../../src/router/ackMessageGenerator.js';
+import { readOffloadedJobData } from '../../src/router/job-data-offload.js';
 import { dispatchPMAck } from '../../src/router/pm-ack-dispatch.js';
 import { captureException, flush } from '../../src/sentry.js';
 import { processGitHubWebhook, processJiraWebhook } from '../../src/triggers/index.js';
@@ -887,6 +892,8 @@ describe('main() - environment variable validation', () => {
 		delete process.env.JOB_ID;
 		delete process.env.JOB_TYPE;
 		delete process.env.JOB_DATA;
+		delete process.env.JOB_DATA_REDIS_KEY;
+		vi.mocked(readOffloadedJobData).mockReset();
 		exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?) => {
 			throw new Error(`process.exit(${code ?? 0})`);
 		});
@@ -897,6 +904,7 @@ describe('main() - environment variable validation', () => {
 		delete process.env.JOB_ID;
 		delete process.env.JOB_TYPE;
 		delete process.env.JOB_DATA;
+		delete process.env.JOB_DATA_REDIS_KEY;
 	});
 
 	it('calls captureException with worker_env tag and exits 1 when all env vars are absent', async () => {
@@ -904,7 +912,8 @@ describe('main() - environment variable validation', () => {
 
 		expect(captureException).toHaveBeenCalledWith(
 			expect.objectContaining({
-				message: 'Missing required environment variables: JOB_ID, JOB_TYPE, JOB_DATA',
+				message:
+					'Missing required environment variables: JOB_ID, JOB_TYPE, JOB_DATA (or JOB_DATA_REDIS_KEY)',
 			}),
 			expect.objectContaining({ tags: { source: 'worker_env' } }),
 		);
@@ -1009,5 +1018,60 @@ describe('main() - environment variable validation', () => {
 
 		await expect(main()).rejects.toThrow('process.exit(2)');
 		expect(flush).toHaveBeenCalled();
+	});
+
+	it('reads the offloaded payload from Redis when JOB_DATA_REDIS_KEY is set, then dispatches', async () => {
+		process.env.JOB_ID = 'job-offload-1';
+		process.env.JOB_TYPE = 'linear';
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:job-offload-1';
+		// JOB_DATA intentionally absent — payload lives in Redis.
+		vi.mocked(readOffloadedJobData).mockResolvedValueOnce(
+			JSON.stringify({
+				type: 'linear',
+				source: 'linear',
+				payload: { type: 'Issue', data: { id: 'lin-1' } },
+				projectId: 'proj-1',
+				workItemId: 'lin-1',
+				eventType: 'update/Issue',
+				receivedAt: '2024-01-01T00:00:00Z',
+			}),
+		);
+
+		await expect(main()).rejects.toThrow('process.exit(');
+
+		expect(readOffloadedJobData).toHaveBeenCalledWith('cascade:jobdata:job-offload-1');
+		expect(processLinearWebhook).toHaveBeenCalled();
+		expect(flush).toHaveBeenCalled();
+	});
+
+	it('exits 1 with worker_job_data_redis_read tag when the offloaded key is missing/expired', async () => {
+		process.env.JOB_ID = 'job-offload-missing';
+		process.env.JOB_TYPE = 'linear';
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:gone';
+		vi.mocked(readOffloadedJobData).mockRejectedValueOnce(
+			new Error('Offloaded JOB_DATA key cascade:jobdata:gone not found in Redis'),
+		);
+
+		await expect(main()).rejects.toThrow('process.exit(1)');
+
+		expect(captureException).toHaveBeenCalledWith(
+			expect.objectContaining({ message: expect.stringContaining('not found in Redis') }),
+			expect.objectContaining({ tags: { source: 'worker_job_data_redis_read' } }),
+		);
+		expect(flush).toHaveBeenCalled();
+	});
+
+	it('exits 1 with worker_job_data_redis_read tag when Redis read throws', async () => {
+		process.env.JOB_ID = 'job-offload-down';
+		process.env.JOB_TYPE = 'linear';
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:job-offload-down';
+		vi.mocked(readOffloadedJobData).mockRejectedValueOnce(new Error('ECONNREFUSED'));
+
+		await expect(main()).rejects.toThrow('process.exit(1)');
+
+		expect(captureException).toHaveBeenCalledWith(
+			expect.anything(),
+			expect.objectContaining({ tags: { source: 'worker_job_data_redis_read' } }),
+		);
 	});
 });

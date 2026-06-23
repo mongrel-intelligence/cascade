@@ -11,6 +11,11 @@ import { extractProjectIdFromJobViaRegistry } from '../integrations/pm/_shared/p
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import { routerConfig } from './config.js';
+import {
+	buildJobDataRedisKey,
+	JOB_DATA_INLINE_MAX_BYTES,
+	offloadJobData,
+} from './job-data-offload.js';
 import type { CascadeJob } from './queue.js';
 
 /**
@@ -107,7 +112,6 @@ export async function buildWorkerEnvWithProjectId(
 	const env: string[] = [
 		`JOB_ID=${job.id}`,
 		`JOB_TYPE=${job.data.type}`,
-		`JOB_DATA=${JSON.stringify(job.data)}`,
 		// Redis for job completion reporting
 		`REDIS_URL=${routerConfig.redisUrl}`,
 		// Database connection
@@ -118,6 +122,24 @@ export async function buildWorkerEnvWithProjectId(
 		// Logging
 		`LOG_LEVEL=${process.env.LOG_LEVEL || 'info'}`,
 	];
+
+	// Pass the job payload inline when it fits under the OS arg-size limit; an
+	// env/argv string over MAX_ARG_STRLEN (128 KiB) makes the kernel reject the
+	// container entrypoint exec with "argument list too long" before any JS runs
+	// (prod incident ucho/MNG-1660). Oversized payloads are offloaded to Redis
+	// and the worker reads them back via JOB_DATA_REDIS_KEY (see worker-entry.ts).
+	const serialized = JSON.stringify(job.data);
+	const jobDataBytes = Buffer.byteLength(serialized, 'utf8');
+	if (jobDataBytes <= JOB_DATA_INLINE_MAX_BYTES) {
+		env.push(`JOB_DATA=${serialized}`);
+	} else {
+		await offloadJobData(String(job.id), serialized);
+		env.push(`JOB_DATA_REDIS_KEY=${buildJobDataRedisKey(String(job.id))}`);
+		logger.info('[WorkerManager] Offloaded large JOB_DATA to Redis', {
+			jobId: job.id,
+			bytes: jobDataBytes,
+		});
+	}
 
 	// Signal snapshot reuse so the worker skips redundant setup (clone, install).
 	if (snapshotReuse) {

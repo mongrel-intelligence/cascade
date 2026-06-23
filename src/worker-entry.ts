@@ -29,6 +29,7 @@ import {
 	extractTrelloContext,
 	generateAckMessage,
 } from './router/ackMessageGenerator.js';
+import { readOffloadedJobData } from './router/job-data-offload.js';
 import { dispatchPMAck } from './router/pm-ack-dispatch.js';
 import { captureException, flush, setTag } from './sentry.js';
 import {
@@ -432,26 +433,64 @@ export async function dispatchJob(
 	}
 }
 
-export async function main(): Promise<void> {
-	const jobId = process.env.JOB_ID;
-	const jobType = process.env.JOB_TYPE;
-	const jobDataRaw = process.env.JOB_DATA;
+/**
+ * Resolve the raw JOB_DATA JSON string from either the inline env var or the
+ * Redis offload key (prod incident ucho/MNG-1660). Large payloads are stored in
+ * Redis by the router instead of inline, because an env string over the OS
+ * MAX_ARG_STRLEN (128 KiB) makes the kernel reject the container entrypoint exec
+ * with "argument list too long". Must run before scrubSensitiveEnv() strips
+ * REDIS_URL. Exits the process with a clear, grep-able reason on any failure —
+ * never the cryptic exec crash, never a payload-less worker.
+ */
+async function resolveRawJobData(): Promise<string> {
+	const inline = process.env.JOB_DATA;
+	if (inline) return inline;
 
-	setTag('role', 'worker');
-	if (jobId) setTag('jobId', jobId);
-	if (jobType) setTag('jobType', jobType);
-
-	if (!jobId || !jobType || !jobDataRaw) {
-		const err = new Error('Missing required environment variables: JOB_ID, JOB_TYPE, JOB_DATA');
+	const key = process.env.JOB_DATA_REDIS_KEY;
+	if (!key) {
+		// Defensive: main() validates that JOB_DATA or JOB_DATA_REDIS_KEY is present.
+		const err = new Error('JOB_DATA could not be resolved from env or Redis');
 		console.error(`[Worker] ${err.message}`);
 		captureException(err, { tags: { source: 'worker_env' } });
 		await flush();
 		process.exit(1);
 	}
 
+	try {
+		return await readOffloadedJobData(key);
+	} catch (err) {
+		console.error('[Worker] Failed to read offloaded JOB_DATA from Redis:', err);
+		captureException(err, { tags: { source: 'worker_job_data_redis_read' } });
+		await flush();
+		process.exit(1);
+	}
+}
+
+export async function main(): Promise<void> {
+	const jobId = process.env.JOB_ID;
+	const jobType = process.env.JOB_TYPE;
+	const jobDataRaw = process.env.JOB_DATA;
+	const jobDataRedisKey = process.env.JOB_DATA_REDIS_KEY;
+
+	setTag('role', 'worker');
+	if (jobId) setTag('jobId', jobId);
+	if (jobType) setTag('jobType', jobType);
+
+	if (!jobId || !jobType || (!jobDataRaw && !jobDataRedisKey)) {
+		const err = new Error(
+			'Missing required environment variables: JOB_ID, JOB_TYPE, JOB_DATA (or JOB_DATA_REDIS_KEY)',
+		);
+		console.error(`[Worker] ${err.message}`);
+		captureException(err, { tags: { source: 'worker_env' } });
+		await flush();
+		process.exit(1);
+	}
+
+	const resolvedJobData = await resolveRawJobData();
+
 	let jobData: JobData;
 	try {
-		jobData = JSON.parse(jobDataRaw);
+		jobData = JSON.parse(resolvedJobData);
 	} catch (err) {
 		console.error('[Worker] Failed to parse JOB_DATA:', err);
 		captureException(err, { tags: { source: 'worker_job_parse' } });

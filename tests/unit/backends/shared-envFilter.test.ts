@@ -262,4 +262,9 @@ describe('SHARED_BLOCKED_ENV_EXACT', () => {
 		expect(SHARED_BLOCKED_ENV_EXACT.has('CREDENTIAL_MASTER_KEY')).toBe(true);
 		expect(SHARED_BLOCKED_ENV_EXACT.has('NODE_OPTIONS')).toBe(true);
 	});
+
+	it('blocks the worker job-payload channels (JOB_DATA and its Redis-offload key)', () => {
+		expect(SHARED_BLOCKED_ENV_EXACT.has('JOB_DATA')).toBe(true);
+		expect(SHARED_BLOCKED_ENV_EXACT.has('JOB_DATA_REDIS_KEY')).toBe(true);
+	});
 });

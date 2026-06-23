@@ -36,11 +36,18 @@ vi.mock('../../../src/router/config.js', () => ({
 	},
 }));
 
+vi.mock('../../../src/router/job-data-offload.js', () => ({
+	JOB_DATA_INLINE_MAX_BYTES: 96 * 1024,
+	offloadJobData: vi.fn().mockResolvedValue(undefined),
+	buildJobDataRedisKey: (jobId: string) => `cascade:jobdata:${jobId}`,
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
 import { findProjectByRepo, getAllProjectCredentials } from '../../../src/config/provider.js';
+import { offloadJobData } from '../../../src/router/job-data-offload.js';
 // All PM providers (Trello 006/2, JIRA 006/3, Linear 006/4) resolve through
 // the PM provider manifest registry. Side-effect imports register them.
 import '../../../src/integrations/pm/trello/index.js';
@@ -365,5 +372,71 @@ describe('buildWorkerEnvWithProjectId — snapshotEnabled flag', () => {
 		const env = await buildWorkerEnvWithProjectId(makeJob() as never, 'proj-1', true, false);
 		expect(env).toContain('CASCADE_SNAPSHOT_REUSE=true');
 		expect(env.some((e) => e.startsWith('CASCADE_SNAPSHOT_ENABLED='))).toBe(false);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// buildWorkerEnvWithProjectId — large JOB_DATA offload (MNG-1660)
+// ---------------------------------------------------------------------------
+
+describe('buildWorkerEnvWithProjectId — JOB_DATA offload', () => {
+	const mockOffload = vi.mocked(offloadJobData);
+
+	beforeEach(() => {
+		mockGetAllProjectCredentials.mockResolvedValue({});
+		mockOffload.mockReset().mockResolvedValue(undefined);
+	});
+
+	function jobWithPayload(payload: unknown, id = 'job-big') {
+		return { id, data: { type: 'linear', payload } as unknown as CascadeJob };
+	}
+
+	it('passes JOB_DATA inline and does NOT offload for a small payload', async () => {
+		const env = await buildWorkerEnvWithProjectId(jobWithPayload({ small: 'x' }) as never, 'p');
+		expect(env.some((e) => e.startsWith('JOB_DATA='))).toBe(true);
+		expect(env.some((e) => e.startsWith('JOB_DATA_REDIS_KEY='))).toBe(false);
+		expect(mockOffload).not.toHaveBeenCalled();
+	});
+
+	it('keeps a payload just under the threshold inline', async () => {
+		// Build a payload whose JSON serialization is a few KB under 96 KiB.
+		const description = 'a'.repeat(96 * 1024 - 2048);
+		const env = await buildWorkerEnvWithProjectId(jobWithPayload({ description }) as never, 'p');
+		expect(env.some((e) => e.startsWith('JOB_DATA='))).toBe(true);
+		expect(mockOffload).not.toHaveBeenCalled();
+	});
+
+	it('offloads to Redis and emits JOB_DATA_REDIS_KEY (not JOB_DATA) for an oversized payload', async () => {
+		const description = 'a'.repeat(200 * 1024); // ~200 KB → well over 96 KiB
+		const env = await buildWorkerEnvWithProjectId(
+			jobWithPayload({ description }, 'job-huge') as never,
+			'p',
+		);
+		expect(mockOffload).toHaveBeenCalledTimes(1);
+		expect(mockOffload).toHaveBeenCalledWith('job-huge', expect.any(String));
+		expect(env).toContain('JOB_DATA_REDIS_KEY=cascade:jobdata:job-huge');
+		expect(env.some((e) => e.startsWith('JOB_DATA='))).toBe(false);
+	});
+
+	it('measures the threshold in BYTES, not characters (multibyte payload)', async () => {
+		// Each 😀 is 2 UTF-16 code units but 4 UTF-8 bytes. 30720 of them →
+		// length 61440 (< 96 KiB) but byteLength 122880 (> 96 KiB) — proves
+		// byteLength, not String.length, drives the decision.
+		const description = '😀'.repeat(30 * 1024);
+		expect(description.length).toBeLessThan(96 * 1024); // char count is under
+		const env = await buildWorkerEnvWithProjectId(
+			jobWithPayload({ description }, 'job-emoji') as never,
+			'p',
+		);
+		expect(mockOffload).toHaveBeenCalledTimes(1);
+		expect(env).toContain('JOB_DATA_REDIS_KEY=cascade:jobdata:job-emoji');
+	});
+
+	it('propagates a fail-loud error when the offload write rejects', async () => {
+		mockOffload.mockRejectedValueOnce(new Error('Redis down'));
+		const description = 'a'.repeat(200 * 1024);
+		await expect(
+			buildWorkerEnvWithProjectId(jobWithPayload({ description }) as never, 'p'),
+		).rejects.toThrow('Redis down');
 	});
 });
