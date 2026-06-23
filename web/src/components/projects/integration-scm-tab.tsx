@@ -102,6 +102,11 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 function GitHubWebhookSection({ projectId }: { projectId: string }) {
 	const queryClient = useQueryClient();
 
+	const credentialsQuery = useQuery(trpc.projects.credentials.list.queryOptions({ projectId }));
+	const webhookSecretCred = (credentialsQuery.data ?? []).find(
+		(c) => c.envVarKey === 'GITHUB_WEBHOOK_SECRET',
+	);
+
 	const callbackBaseUrl =
 		API_URL ||
 		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
@@ -168,6 +173,16 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 					Manage GitHub webhooks for receiving push events, PR updates, and CI status notifications.
 				</p>
 			</div>
+
+			{/* Webhook signing secret (optional HMAC verification) */}
+			<ProjectSecretField
+				projectId={projectId}
+				envVarKey="GITHUB_WEBHOOK_SECRET"
+				label="Webhook Signing Secret (optional)"
+				description="CASCADE verifies HMAC-SHA256 on every incoming GitHub webhook when this is set; verification is skipped if left blank. Set the same value as the secret in your GitHub webhook configuration."
+				placeholder="Your webhook signing secret"
+				credential={webhookSecretCred}
+			/>
 
 			{/* GitHub-specific error */}
 			{webhooksQuery.data?.errors?.github && (
