@@ -117,7 +117,22 @@ Cascade uses two separate GitHub accounts to prevent feedback loops:
 - **Implementer** — writes code, creates PRs
 - **Reviewer** — reviews PRs, approves or requests changes
 
-Create [personal access tokens](https://github.com/settings/tokens) (or fine-grained tokens) for each bot account with `repo` scope.
+Create a [personal access token](https://github.com/settings/tokens) for each bot account.
+
+**Classic tokens:** the `repo` scope is sufficient. To create webhooks via the API (see step 9), also add `admin:repo_hook`.
+
+**Fine-grained tokens:** the `repo` scope does not exist — you must grant per-permission access, and the repository's admin role is *ignored*. Grant the following **repository permissions** (scoped to the target repo) or webhook delivery and agent actions will fail with `403 Resource not accessible by personal access token`:
+
+| Repository permission | Implementer | Reviewer | Used for |
+|---|---|---|---|
+| **Metadata** | Read | Read | Mandatory — auto-selected with any other permission |
+| **Contents** | Read and write | Read | Clone, fetch `refs/pull/N/head`; implementer also pushes branches |
+| **Pull requests** | Read and write | Read and write | Create/update/merge PRs **and** submit reviews + reply to review comments (reviews live under this permission, not a separate one) |
+| **Issues** | Read and write | Read and write | PR comments go through the issues API (`issues.createComment`/`updateComment`/`deleteComment`) |
+| **Actions** | Read | Read | Read CI workflow runs + job status/logs (Cascade uses the Actions API, not the Checks API) |
+| **Webhooks** | Read and write | — | One-time webhook creation (step 9). Only the token used to register the hook needs this; it can be revoked afterward. |
+
+Permissions Cascade never uses (leave unset): Commit statuses, Checks, Deployments, Collaborators, Branch protection, Releases, Workflows.
 
 ```bash
 node bin/cascade.js projects credentials-set my-project \
@@ -330,6 +345,22 @@ This creates webhooks on GitHub, Trello, and Jira when those integrations are co
 | Jira | Programmatic create/list/delete plus label ensure | `https://your-router-host/jira/webhook` |
 | Linear | Manual setup with optional `LINEAR_WEBHOOK_SECRET` | `https://your-router-host/linear/webhook` |
 | Sentry | Manual setup with optional Sentry webhook secret; paired with configured `organizationSlug`/`projectSlug` and filtered by payload project matching `projectSlug` | `https://your-router-host/sentry/webhook/my-project` |
+
+> **Creating the GitHub webhook manually (API).** If the programmatic create doesn't fit your setup, register it directly. The callback URL must point at the **router** (port 3000) — which is what your tunnel forwards to — *not* the dashboard (3001):
+>
+> ```bash
+> curl -X POST "https://api.github.com/repos/<OWNER>/<REPO>/hooks" \
+>   -H "Authorization: Bearer <TOKEN_WITH_WEBHOOKS_WRITE>" \
+>   -H "Content-Type: application/json" \
+>   -d '{
+>     "name": "web",
+>     "active": true,
+>     "events": ["pull_request", "pull_request_review", "pull_request_review_comment", "check_suite", "issue_comment"],
+>     "config": { "url": "https://your-tunnel.ngrok-free.dev/github/webhook", "content_type": "json" }
+>   }'
+> ```
+>
+> The token needs `admin:repo_hook` (classic) or **Webhooks: Read and write** (fine-grained) — see step 6. A `403 Resource not accessible by personal access token` means that permission is missing; the repository admin role does not substitute for it on fine-grained tokens.
 
 ---
 
