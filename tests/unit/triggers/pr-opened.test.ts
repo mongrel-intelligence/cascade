@@ -10,10 +10,16 @@ vi.mock('../../../src/triggers/shared/trigger-check.js', () => mockTriggerCheckM
 
 import { PROpenedTrigger } from '../../../src/triggers/github/pr-opened.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createMockJiraProject, createMockProject } from '../../helpers/factories.js';
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
+}));
+
+const mockGetPMProviderOrNull = vi.fn();
+vi.mock('../../../src/pm/context.js', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../../src/pm/context.js')>()),
+	getPMProviderOrNull: () => mockGetPMProviderOrNull(),
 }));
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
@@ -27,6 +33,7 @@ describe('PROpenedTrigger', () => {
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
 		vi.mocked(checkTriggerEnabledWithParams).mockResolvedValue({ enabled: true, parameters: {} });
+		mockGetPMProviderOrNull.mockReset();
 	});
 
 	describe('matches', () => {
@@ -133,6 +140,45 @@ describe('PROpenedTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('derives the JIRA key from the PR body (last non-empty line) when no DB link exists', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: true,
+				parameters: { authorMode: 'all' },
+			});
+			mockGetPMProviderOrNull.mockReturnValue({
+				getWorkItem: vi.fn().mockResolvedValue({ id: 'PROJ-2068' }),
+			});
+
+			const ctx: TriggerContext = {
+				project: createMockJiraProject({ repo: 'owner/repo' }),
+				source: 'github',
+				personaIdentities: { implementer: 'cascade-impl', reviewer: 'cascade-review' },
+				payload: {
+					action: 'opened',
+					number: 42,
+					pull_request: {
+						number: 42,
+						title: 'Test PR',
+						body: 'From the user perspective:\r\n- dropping iOS 15\r\n\r\nPROJ-2068',
+						html_url: 'https://github.com/owner/repo/pull/42',
+						state: 'open',
+						draft: false,
+						head: { ref: 'feature/test', sha: 'abc' },
+						base: { ref: 'main' },
+						user: { login: 'author' },
+					},
+					repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
+					sender: { login: 'author' },
+				},
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.workItemId).toBe('PROJ-2068');
+			expect(result?.agentInput).toMatchObject({ workItemId: 'PROJ-2068' });
+		});
+
 		it('returns result when DB has Trello card linked', async () => {
 			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
 				enabled: true,

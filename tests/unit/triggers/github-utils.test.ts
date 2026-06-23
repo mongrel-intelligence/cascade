@@ -4,15 +4,22 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
 }));
 
+const mockGetPMProviderOrNull = vi.fn();
+vi.mock('../../../src/pm/context.js', () => ({
+	getPMProviderOrNull: () => mockGetPMProviderOrNull(),
+}));
+
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import type { PersonaIdentities } from '../../../src/github/personas.js';
 import {
 	evaluateAuthorMode,
 	extractJiraIssueKey,
+	extractJiraKeyFromPR,
 	extractTrelloCardId,
 	extractWorkItemId,
 	parsePrNumberFromRef,
 	resolveWorkItemId,
+	resolveWorkItemIdWithFallback,
 } from '../../../src/triggers/github/utils.js';
 import type { ProjectConfig } from '../../../src/types/index.js';
 
@@ -162,6 +169,103 @@ describe('resolveWorkItemId', () => {
 		const result = await resolveWorkItemId('proj', 42);
 
 		expect(result).toBeUndefined();
+	});
+});
+
+describe('extractJiraKeyFromPR', () => {
+	it('returns null for a non-JIRA project', () => {
+		expect(extractJiraKeyFromPR(mockTrelloProject, { branch: 'TEST-1' })).toBeNull();
+	});
+
+	it('extracts a project-scoped key from the branch (case-insensitive, upper-normalized)', () => {
+		expect(extractJiraKeyFromPR(mockJiraProject, { branch: 'feature/test-123-fix' })).toBe(
+			'TEST-123',
+		);
+	});
+
+	it('falls back to the title when the branch has no key', () => {
+		expect(
+			extractJiraKeyFromPR(mockJiraProject, { branch: 'fix/thing', title: 'TEST-77: do it' }),
+		).toBe('TEST-77');
+	});
+
+	it('uses only the last non-empty line of the body', () => {
+		const body =
+			'From the user perspective:\r\n- dropping support for iOS 15 which is ancient anyway\r\n\r\nTEST-2068';
+		expect(extractJiraKeyFromPR(mockJiraProject, { body })).toBe('TEST-2068');
+	});
+
+	it('ignores a key that is not on the last non-empty line of the body', () => {
+		const body = 'TEST-999 mentioned mid-prose\r\nlast line has no key';
+		expect(extractJiraKeyFromPR(mockJiraProject, { body })).toBeNull();
+	});
+
+	it('rejects non-project tokens (UTF-8 / another project key)', () => {
+		expect(extractJiraKeyFromPR(mockJiraProject, { title: 'fix UTF-8 and OTHER-5' })).toBeNull();
+	});
+
+	it('prefers branch over title over body', () => {
+		expect(
+			extractJiraKeyFromPR(mockJiraProject, { branch: 'TEST-1', title: 'TEST-2', body: 'TEST-3' }),
+		).toBe('TEST-1');
+	});
+
+	it('returns null when no source carries a key', () => {
+		expect(
+			extractJiraKeyFromPR(mockJiraProject, { branch: 'fix/x', title: 'no key', body: 'nothing' }),
+		).toBeNull();
+	});
+});
+
+describe('resolveWorkItemIdWithFallback', () => {
+	beforeEach(() => {
+		vi.mocked(lookupWorkItemForPR).mockReset();
+		mockGetPMProviderOrNull.mockReset();
+	});
+
+	it('returns the DB link when present, without extracting', async () => {
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue('TEST-500');
+		const got = await resolveWorkItemIdWithFallback(mockJiraProject, 42, { branch: 'TEST-1' });
+		expect(got).toBe('TEST-500');
+		expect(mockGetPMProviderOrNull).not.toHaveBeenCalled();
+	});
+
+	it('derives and verifies the key on a DB miss', async () => {
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		const getWorkItem = vi.fn().mockResolvedValue({ id: 'TEST-123' });
+		mockGetPMProviderOrNull.mockReturnValue({ getWorkItem });
+		const got = await resolveWorkItemIdWithFallback(mockJiraProject, 42, {
+			branch: 'feature/TEST-123-fix',
+		});
+		expect(got).toBe('TEST-123');
+		expect(getWorkItem).toHaveBeenCalledWith('TEST-123');
+	});
+
+	it('does not link when the derived key does not resolve (getWorkItem throws)', async () => {
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		const getWorkItem = vi.fn().mockRejectedValue(new Error('404'));
+		mockGetPMProviderOrNull.mockReturnValue({ getWorkItem });
+		const got = await resolveWorkItemIdWithFallback(mockJiraProject, 42, {
+			body: 'x\r\nTEST-9999',
+		});
+		expect(got).toBeUndefined();
+	});
+
+	it('returns undefined (and skips the provider) when no key is found', async () => {
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		const got = await resolveWorkItemIdWithFallback(mockJiraProject, 42, {
+			branch: 'fix/x',
+			title: 'no key',
+		});
+		expect(got).toBeUndefined();
+		expect(mockGetPMProviderOrNull).not.toHaveBeenCalled();
+	});
+
+	it('returns undefined when no PM provider is in scope', async () => {
+		vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+		mockGetPMProviderOrNull.mockReturnValue(null);
+		const got = await resolveWorkItemIdWithFallback(mockJiraProject, 42, { branch: 'TEST-7' });
+		expect(got).toBeUndefined();
 	});
 });
 

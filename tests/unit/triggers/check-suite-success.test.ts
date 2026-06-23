@@ -42,11 +42,21 @@ import { resetFixAttempts } from '../../../src/triggers/github/check-suite-failu
 import { CheckSuiteSuccessTrigger } from '../../../src/triggers/github/check-suite-success.js';
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createCheckSuitePayload, createMockProject } from '../../helpers/factories.js';
+import {
+	createCheckSuitePayload,
+	createMockJiraProject,
+	createMockProject,
+} from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 	lookupWorkItemForPR: vi.fn(),
+}));
+
+const mockGetPMProviderOrNull = vi.fn();
+vi.mock('../../../src/pm/context.js', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../../src/pm/context.js')>()),
+	getPMProviderOrNull: () => mockGetPMProviderOrNull(),
 }));
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
@@ -63,6 +73,7 @@ describe('CheckSuiteSuccessTrigger', () => {
 
 	beforeEach(() => {
 		vi.mocked(lookupWorkItemForPR).mockResolvedValue('abc123');
+		mockGetPMProviderOrNull.mockReset();
 		mockClaimReviewDispatch.mockReset().mockResolvedValue(true);
 		mockReleaseReviewDispatch.mockReset().mockResolvedValue(undefined);
 		mockClaimRespondToCiDispatch.mockReset().mockResolvedValue(true);
@@ -198,6 +209,39 @@ describe('CheckSuiteSuccessTrigger', () => {
 	});
 
 	describe('handle', () => {
+		it('derives the JIRA key from the PR body (last non-empty line) when no DB link exists', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			mockGetPMProviderOrNull.mockReturnValue({
+				getWorkItem: vi.fn().mockResolvedValue({ id: 'PROJ-2068' }),
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'From the user perspective:\r\n- dropping iOS 15\r\n\r\nPROJ-2068',
+				state: 'closed',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([]);
+
+			const ctx: TriggerContext = {
+				project: createMockJiraProject({ repo: 'owner/repo' }),
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('review');
+			expect(result?.workItemId).toBe('PROJ-2068');
+			expect(result?.agentInput).toMatchObject({ workItemId: 'PROJ-2068' });
+		});
+
 		it('returns review result without waitForChecks flag when PR matches and aggregate is all-passing', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,

@@ -15,7 +15,11 @@ import {
 	releaseReviewDispatch,
 } from './review-dispatch-dedup.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
-import { parsePrNumberFromRef, resolveWorkItemDisplayData, resolveWorkItemId } from './utils.js';
+import {
+	parsePrNumberFromRef,
+	resolveWorkItemDisplayData,
+	resolveWorkItemIdWithFallback,
+} from './utils.js';
 
 /**
  * Dispatches an outcome agent when a check_suite completes with success
@@ -130,8 +134,12 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 			return skip(this.name, gateDecision.message);
 		}
 
-		// Resolve work item from DB
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		// Resolve work item: DB link, else derive the JIRA key from the PR itself.
+		const workItemId = await resolveWorkItemIdWithFallback(ctx.project, prNumber, {
+			branch: prDetails.headRef,
+			title: prDetails.title,
+			body: prDetails.body,
+		});
 		const { workItemUrl, workItemTitle } = await resolveWorkItemDisplayData(workItemId);
 
 		// Aggregate-state fork. GitHub fires check_suite.completed once per

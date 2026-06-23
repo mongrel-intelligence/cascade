@@ -17,9 +17,15 @@ vi.mock('../../../src/triggers/github/review-dispatch-dedup.js', () => ({
 	releaseReviewDispatch: (...args: unknown[]) => mockReleaseReviewDispatch(...args),
 }));
 
+const mockGetPMProviderOrNull = vi.fn();
+vi.mock('../../../src/pm/context.js', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../../src/pm/context.js')>()),
+	getPMProviderOrNull: () => mockGetPMProviderOrNull(),
+}));
+
 import { ReviewRequestedTrigger } from '../../../src/triggers/github/review-requested.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
-import { createMockProject } from '../../helpers/factories.js';
+import { createMockJiraProject, createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
 
 vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
@@ -39,6 +45,7 @@ describe('ReviewRequestedTrigger', () => {
 		vi.mocked(checkTriggerEnabled).mockResolvedValue(true);
 		mockClaimReviewDispatch.mockReset().mockResolvedValue(true);
 		mockReleaseReviewDispatch.mockReset().mockResolvedValue(undefined);
+		mockGetPMProviderOrNull.mockReset();
 	});
 
 	const makeReviewRequestedPayload = (reviewerLogin = 'cascade-reviewer') => ({
@@ -201,6 +208,29 @@ describe('ReviewRequestedTrigger', () => {
 			const result = await trigger.handle(ctx);
 			expect(result).not.toBeNull();
 			expect(result?.workItemId).toBeUndefined();
+		});
+
+		it('derives the JIRA key from the PR body (last non-empty line) when no DB link exists', async () => {
+			vi.mocked(lookupWorkItemForPR).mockResolvedValue(null);
+			mockGetPMProviderOrNull.mockReturnValue({
+				getWorkItem: vi.fn().mockResolvedValue({ id: 'PROJ-2068' }),
+			});
+			const base = makeReviewRequestedPayload();
+			const ctx: TriggerContext = {
+				project: createMockJiraProject(),
+				source: 'github',
+				payload: {
+					...base,
+					pull_request: {
+						...base.pull_request,
+						body: 'From the user perspective:\r\n- dropping iOS 15\r\n\r\nPROJ-2068',
+					},
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expect(result?.workItemId).toBe('PROJ-2068');
+			expect(result?.agentInput).toMatchObject({ workItemId: 'PROJ-2068' });
 		});
 
 		it('triggers review agent when reviewer persona is requested', async () => {

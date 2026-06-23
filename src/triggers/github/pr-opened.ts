@@ -3,7 +3,7 @@ import { logger } from '../../utils/logging.js';
 import { skip } from '../shared/skip.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { isGitHubPullRequestPayload } from './types.js';
-import { evaluateAuthorMode, resolveWorkItemId } from './utils.js';
+import { evaluateAuthorMode, resolveWorkItemIdWithFallback } from './utils.js';
 
 /**
  * Trigger that fires the review agent when a new PR is opened.
@@ -85,8 +85,12 @@ export class PROpenedTrigger implements TriggerHandler {
 			);
 		}
 
-		// Resolve work item from DB
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		// Resolve work item: DB link, else derive the JIRA key from the PR itself.
+		const workItemId = await resolveWorkItemIdWithFallback(ctx.project, prNumber, {
+			branch: payload.pull_request.head.ref,
+			title: payload.pull_request.title,
+			body: payload.pull_request.body,
+		});
 
 		logger.info('New PR opened, triggering review agent', {
 			prNumber,

@@ -160,3 +160,86 @@ export async function resolveWorkItemDisplayData(
 		return {};
 	}
 }
+
+/** Escape a string for safe use as a literal inside a RegExp. */
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Return the last non-empty (trimmed) line of a block of text, or null.
+ * PR descriptions conventionally carry the work-item key on a trailing line, so
+ * restricting body parsing to that line keeps prose that mentions other tokens
+ * from producing false matches.
+ */
+function lastNonEmptyLine(text: string | null | undefined): string | null {
+	if (!text) return null;
+	const lines = text.split(/\r\n|\r|\n/);
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (lines[i].trim() !== '') return lines[i];
+	}
+	return null;
+}
+
+/**
+ * Extract a JIRA issue key for THIS project from a PR's branch, title, or the
+ * last non-empty line of its body. The regex is scoped to the project's
+ * `projectKey` (case-insensitive), so generic tokens like `UTF-8` / `SHA-256`,
+ * or another project's keys, never match. Returns the upper-cased key or null.
+ * JIRA only — Trello/Linear are out of scope for this fallback.
+ */
+export function extractJiraKeyFromPR(
+	project: ProjectConfig,
+	prText: { branch?: string | null; title?: string | null; body?: string | null },
+): string | null {
+	if (project.pm?.type !== 'jira') return null;
+	const projectKey = project.jira?.projectKey;
+	if (!projectKey) return null;
+
+	const keyRegex = new RegExp(`\\b(${escapeRegExp(projectKey)}-\\d+)\\b`, 'i');
+	// Priority: branch, then title, then the body's last non-empty line.
+	const sources = [prText.branch, prText.title, lastNonEmptyLine(prText.body)];
+	for (const source of sources) {
+		const match = source?.match(keyRegex);
+		if (match) return match[1].toUpperCase();
+	}
+	return null;
+}
+
+/**
+ * Resolve the work item for a PR, falling back to deriving the JIRA key from the
+ * PR itself when no `pr_work_items` link exists yet. This lets a review-only
+ * project (with no implementation agent to write the link) read the linked JIRA
+ * issue for a human-created PR that references its key.
+ *
+ * The derived key is verified against the PM provider before it is returned, so
+ * a typo'd / non-existent key is not linked (a later DB hit would otherwise
+ * short-circuit this fallback and make the bad key stick). Requires a PM
+ * provider in scope (set up by the dispatch path's `withPMProvider`).
+ */
+export async function resolveWorkItemIdWithFallback(
+	project: ProjectConfig,
+	prNumber: number,
+	prText: { branch?: string | null; title?: string | null; body?: string | null },
+): Promise<string | undefined> {
+	const linked = await resolveWorkItemId(project.id, prNumber);
+	if (linked) return linked;
+
+	const candidate = extractJiraKeyFromPR(project, prText);
+	if (!candidate) return undefined;
+
+	const provider = getPMProviderOrNull();
+	if (!provider) return undefined;
+	try {
+		await provider.getWorkItem(candidate);
+		return candidate;
+	} catch (err) {
+		logger.debug('Derived work item key did not resolve — not linking', {
+			projectId: project.id,
+			prNumber,
+			candidate,
+			error: String(err),
+		});
+		return undefined;
+	}
+}

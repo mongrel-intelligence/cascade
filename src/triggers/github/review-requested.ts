@@ -10,7 +10,7 @@ import {
 	releaseReviewDispatch,
 } from './review-dispatch-dedup.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
-import { resolveWorkItemId } from './utils.js';
+import { resolveWorkItemIdWithFallback } from './utils.js';
 
 /**
  * Trigger that fires the review agent when review is requested from a CASCADE persona account.
@@ -94,8 +94,13 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 			);
 		}
 
-		// Resolve work item from DB
-		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
+		// Resolve work item: DB link, else derive the JIRA key from the PR itself
+		// (branch / title / last body line) so review-only projects link human PRs.
+		const workItemId = await resolveWorkItemIdWithFallback(ctx.project, prNumber, {
+			branch: payload.pull_request.head.ref,
+			title: payload.pull_request.title,
+			body: payload.pull_request.body,
+		});
 		const reviewDispatchKey = buildReviewDispatchKey(owner, repo, prNumber, headSha);
 		// Human-initiated review requests override any prior automated dispatch claim.
 		await releaseReviewDispatch(reviewDispatchKey);
