@@ -22,9 +22,11 @@ vi.mock('chalk', () => ({
 	},
 }));
 
+import UsersAddToOrg from '../../../../../src/cli/dashboard/users/add-to-org.js';
 import UsersCreate from '../../../../../src/cli/dashboard/users/create.js';
 import UsersDelete from '../../../../../src/cli/dashboard/users/delete.js';
 import UsersList from '../../../../../src/cli/dashboard/users/list.js';
+import UsersRemoveFromOrg from '../../../../../src/cli/dashboard/users/remove-from-org.js';
 import UsersUpdate from '../../../../../src/cli/dashboard/users/update.js';
 
 // oclif's Command.parse() calls this.config.runHook internally
@@ -47,6 +49,22 @@ function makeClient(overrides: Record<string, unknown> = {}) {
 			create: { mutate: vi.fn().mockResolvedValue(sampleUser) },
 			update: { mutate: vi.fn().mockResolvedValue(undefined) },
 			delete: { mutate: vi.fn().mockResolvedValue(undefined) },
+			addExistingUserToOrg: {
+				mutate: vi.fn().mockResolvedValue({
+					userId: 'user-uuid-123',
+					email: 'alice@example.com',
+					orgId: 'org-1',
+					role: 'member',
+					alreadyMember: false,
+				}),
+			},
+			removeFromOrg: {
+				mutate: vi.fn().mockResolvedValue({
+					userId: 'user-uuid-123',
+					orgId: 'org-1',
+					removed: true,
+				}),
+			},
 		},
 		...overrides,
 	};
@@ -89,6 +107,35 @@ describe('UsersList (list)', () => {
 
 		const cmd = new UsersList([], oclifConfig as never);
 		await expect(cmd.run()).resolves.toBeUndefined();
+	});
+
+	it('renders the GLOBAL role, not the per-org membership role (PR #1441 review)', async () => {
+		// `listOrgMembers` returns a per-org `role` (only ever member|admin)
+		// alongside the global `globalRole`. A superadmin must still show as
+		// 'superadmin' in the CLI table — printing the per-org `role` would
+		// mislabel them as 'admin'.
+		const client = makeClient();
+		(client.users.list.query as ReturnType<typeof vi.fn>).mockResolvedValue([
+			{
+				id: 'super-1',
+				email: 'super@example.com',
+				name: 'Super Admin',
+				role: 'admin',
+				globalRole: 'superadmin',
+				createdAt: '2024-01-01T00:00:00.000Z',
+			},
+		]);
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+		try {
+			const cmd = new UsersList([], oclifConfig as never);
+			await cmd.run();
+			const output = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
+			expect(output).toContain('superadmin');
+		} finally {
+			logSpy.mockRestore();
+		}
 	});
 });
 
@@ -317,6 +364,104 @@ describe('UsersDelete (delete)', () => {
 		mockCreateDashboardClient.mockReturnValue(makeClient());
 
 		const cmd = new UsersDelete(['--yes'], oclifConfig as never);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// users add-to-org (spec 021 plan 3)
+// ---------------------------------------------------------------------------
+describe('UsersAddToOrg (add-to-org)', () => {
+	beforeEach(() => {
+		mockLoadConfig.mockReturnValue(baseConfig);
+	});
+
+	it('passes --email and default member role to addExistingUserToOrg.mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new UsersAddToOrg(['--email', 'alice@example.com'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.users.addExistingUserToOrg.mutate).toHaveBeenCalledWith({
+			email: 'alice@example.com',
+			role: 'member',
+		});
+	});
+
+	it('passes the --role flag through to the mutation', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new UsersAddToOrg(
+			['--email', 'alice@example.com', '--role', 'admin'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.users.addExistingUserToOrg.mutate).toHaveBeenCalledWith({
+			email: 'alice@example.com',
+			role: 'admin',
+		});
+	});
+
+	it('outputs json when --json flag is set', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new UsersAddToOrg(['--email', 'alice@example.com', '--json'], oclifConfig as never);
+		await expect(cmd.run()).resolves.toBeUndefined();
+		expect(client.users.addExistingUserToOrg.mutate).toHaveBeenCalled();
+	});
+
+	it('requires the --email flag', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new UsersAddToOrg([], oclifConfig as never);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// users remove-from-org (spec 021 plan 3 — "remove from this org")
+// ---------------------------------------------------------------------------
+describe('UsersRemoveFromOrg (remove-from-org)', () => {
+	beforeEach(() => {
+		mockLoadConfig.mockReturnValue(baseConfig);
+	});
+
+	it('passes the user ID with --yes to removeFromOrg.mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new UsersRemoveFromOrg(['user-uuid-123', '--yes'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.users.removeFromOrg.mutate).toHaveBeenCalledWith({ userId: 'user-uuid-123' });
+	});
+
+	it('auto-accepts without --yes in non-TTY environments', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new UsersRemoveFromOrg(['user-uuid-123'], oclifConfig as never);
+		await expect(cmd.run()).resolves.toBeUndefined();
+		expect(client.users.removeFromOrg.mutate).toHaveBeenCalledWith({ userId: 'user-uuid-123' });
+	});
+
+	it('outputs json when --json flag is set', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new UsersRemoveFromOrg(['user-uuid-123', '--json'], oclifConfig as never);
+		await expect(cmd.run()).resolves.toBeUndefined();
+		expect(client.users.removeFromOrg.mutate).toHaveBeenCalled();
+	});
+
+	it('requires the user ID argument', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new UsersRemoveFromOrg(['--yes'], oclifConfig as never);
 		await expect(cmd.run()).rejects.toThrow();
 	});
 });

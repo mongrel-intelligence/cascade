@@ -49,11 +49,42 @@ interface ProjectConfig {
   agentEngine?: { default: string; overrides: Record<string, string> };
   engineSettings?: EngineSettings;
   agentEngineSettings?: Record<string, EngineSettings>;
+  agentUpdateChannels?: Record<string, 'none' | 'scm-only' | 'pm-only' | 'both'>;  // per-agent posting gate; default 'both'
   runLinksEnabled: boolean;
   maxInFlightItems?: number;        // hard cap on TODO+IN_PROGRESS+IN_REVIEW; default 1
   // ... PM config (trello/jira/linear), agent models, snapshot settings
 }
 ```
+
+### Agent update channel
+
+`src/config/updateChannel.ts`
+
+Each agent type has an optional **`updateChannel`** that gates *where* the agent
+posts **communication-only** status updates — independently for the **PM**
+(work-item comments) and **SCM** (PR comments / reviews) surfaces. It is a
+per-agent override stored in the `agent_configs.update_channel` column (one row
+per `(projectId, agentType)`), surfaced on `ProjectConfig.agentUpdateChannels`
+by the config mapper (`buildAgentMaps`) and read at runtime via
+`resolveUpdateChannel(project, agentType)`.
+
+| `updateChannel` | PM posting | SCM posting |
+|---|:---:|:---:|
+| `none` | ❌ | ❌ |
+| `pm-only` | ✅ | ❌ |
+| `scm-only` | ❌ | ✅ |
+| `both` (default) | ✅ | ✅ |
+
+A `NULL` / absent column — or any value the config mapper does not recognize —
+inherits the default **`both`** (post everywhere, the historical behavior). The
+mapper validates the stored string against the channel catalog
+(`UPDATE_CHANNELS`) so a stale or invalid value never breaks config loading. The
+channel is **communication-only**: it suppresses acks, progress updates,
+lifecycle status comments, agent summaries, and the agent's own comment/review
+tools, but never PR creation, status moves, label writes, checklist sync, PR
+linking, friction reports, or the "eyes" reaction. See
+[`04-agent-system.md`](./04-agent-system.md#update-channel-posting-surfaces) for
+the full gated-vs-not-gated surface map.
 
 ### PM workflow slots
 

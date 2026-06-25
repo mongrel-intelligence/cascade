@@ -123,6 +123,7 @@ export async function truncateAll() {
 			agent_definitions,
 			workflow_status_definitions,
 			prompt_partials,
+			org_memberships,
 			sessions,
 			users,
 			projects,

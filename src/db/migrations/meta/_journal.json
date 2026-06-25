@@ -372,6 +372,27 @@
 			"when": 1787000000000,
 			"tag": "0052_workflow_status_definitions",
 			"breakpoints": false
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1788000000000,
+			"tag": "0053_org_memberships",
+			"breakpoints": false
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1789000000000,
+			"tag": "0054_org_memberships_backfill",
+			"breakpoints": false
+		},
+		{
+			"idx": 55,
+			"version": "7",
+			"when": 1790000000000,
+			"tag": "0055_agent_config_update_channel",
+			"breakpoints": false
 		}
 	]
 }

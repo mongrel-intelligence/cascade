@@ -74,6 +74,7 @@ import {
 	injectRunLinkSecrets,
 } from '../../../src/backends/secretOrchestrator.js';
 import type { AgentEngine } from '../../../src/backends/types.js';
+import type { UpdateChannel } from '../../../src/config/updateChannel.js';
 import { getSentryIntegrationConfig } from '../../../src/sentry/integration.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { getDashboardUrl } from '../../../src/utils/runLink.js';
@@ -298,6 +299,123 @@ describe('buildExecutionPlan', () => {
 		);
 
 		expect(withoutFriction.systemPrompt).not.toContain('Friction Reporting');
+	});
+
+	// MNG-1685: the native-tool engine family (claude-code/codex/opencode) renders
+	// plan.availableTools into the system-prompt tool list, so dropping the disabled
+	// posting tool manifests here is the authoritative gate for that family.
+	describe('update channel posting-tool gating', () => {
+		const PM_POSTING = ['PostComment'];
+		const SCM_POSTING = [
+			'PostPRComment',
+			'UpdatePRComment',
+			'CreatePRReview',
+			'ReplyToReviewComment',
+		];
+		// Action / read tools that must NEVER be dropped by channel gating.
+		const NON_POSTING = ['ReadWorkItem', 'UpdateWorkItem', 'MoveWorkItem', 'CreatePR', 'ReadFile'];
+		const ALL_TOOLS = [...NON_POSTING, ...PM_POSTING, ...SCM_POSTING].map((name) => ({ name }));
+
+		function mockProfileWithTools(tools: Array<{ name: string }>) {
+			mockGetAgentProfile.mockReturnValueOnce({
+				fetchContext: vi.fn().mockResolvedValue([]),
+				finishHooks: {},
+				lifecycleHooks: {},
+				filterTools: vi.fn().mockReturnValue(tools),
+				allCapabilities: ['fs:read'],
+				needsGitHubToken: false,
+				buildTaskPrompt: () => 'task',
+				capabilities: { required: ['fs:read'], optional: [] },
+				getLlmistGadgets: vi.fn(),
+			});
+		}
+
+		async function availableToolNamesFor(
+			channel: UpdateChannel | undefined,
+			tools: Array<{ name: string }> = ALL_TOOLS,
+		): Promise<string[]> {
+			mockProfileWithTools(tools);
+			const project = makeProject(
+				channel ? { agentUpdateChannels: { review: channel } } : undefined,
+			);
+			const plan = await buildExecutionPlan(
+				'review',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+			return (plan.availableTools as Array<{ name: string }>).map((tool) => tool.name);
+		}
+
+		it("'both' retains every posting tool plus action tools", async () => {
+			expect(await availableToolNamesFor('both')).toEqual([
+				...NON_POSTING,
+				...PM_POSTING,
+				...SCM_POSTING,
+			]);
+		});
+
+		it("'none' drops all PM and SCM posting tools, retaining everything else", async () => {
+			const names = await availableToolNamesFor('none');
+			expect(names).toEqual(NON_POSTING);
+			for (const dropped of [...PM_POSTING, ...SCM_POSTING]) {
+				expect(names).not.toContain(dropped);
+			}
+		});
+
+		it("'pm-only' retains PM posting and drops SCM posting", async () => {
+			expect(await availableToolNamesFor('pm-only')).toEqual([...NON_POSTING, ...PM_POSTING]);
+		});
+
+		it("'scm-only' retains SCM posting and drops PM posting", async () => {
+			expect(await availableToolNamesFor('scm-only')).toEqual([...NON_POSTING, ...SCM_POSTING]);
+		});
+
+		it("defaults to 'both' (retains all posting tools) when no channel is configured", async () => {
+			expect(await availableToolNamesFor(undefined)).toEqual([
+				...NON_POSTING,
+				...PM_POSTING,
+				...SCM_POSTING,
+			]);
+		});
+
+		it('no-ops gracefully when a disabled posting tool is already absent (layers on integration filtering)', async () => {
+			// Integration-availability filtering already removed PostComment + SCM
+			// posting (PM/SCM integration not configured). A channel that disables them
+			// has nothing to drop and must neither error nor resurrect them.
+			const names = await availableToolNamesFor('none', [
+				{ name: 'ReadFile' },
+				{ name: 'CreatePR' },
+			]);
+			expect(names).toEqual(['ReadFile', 'CreatePR']);
+		});
+
+		it('resolves the channel for the agent type being built', async () => {
+			// review is disabled but implementation is 'both' — building 'implementation'
+			// must read the implementation entry, not review's.
+			mockProfileWithTools(ALL_TOOLS);
+			const project = makeProject({
+				agentUpdateChannels: { review: 'none', implementation: 'both' },
+			});
+			const plan = await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+			const names = (plan.availableTools as Array<{ name: string }>).map((tool) => tool.name);
+			expect(names).toEqual([...NON_POSTING, ...PM_POSTING, ...SCM_POSTING]);
+		});
 	});
 });
 

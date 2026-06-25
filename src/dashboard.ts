@@ -78,8 +78,13 @@ app.use(
 		router: appRouter,
 		createContext: async (_opts, c) => {
 			const token = getCookie(c, SESSION_COOKIE_NAME) || null;
-			const user = token ? await resolveUserFromSession(token) : null;
-			const effectiveOrgId = await computeEffectiveOrgId(user, c.req.header('x-org-context'));
+			const resolved = token ? await resolveUserFromSession(token) : null;
+			const user = resolved?.user ?? null;
+			const effectiveOrgId = await computeEffectiveOrgId(
+				user,
+				c.req.header('x-org-context'),
+				resolved?.activeOrgId ?? null,
+			);
 			return { user, effectiveOrgId, token };
 		},
 	}),

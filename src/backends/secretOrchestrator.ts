@@ -12,6 +12,7 @@ import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { buildPromptContext } from '../agents/shared/promptContext.js';
 import type { createAgentLogger } from '../agents/utils/logging.js';
 import { mergeEngineSettings } from '../config/engineSettings.js';
+import { filterPostingGadgetNames, resolveUpdateChannel } from '../config/updateChannel.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
 import { getSentryIntegrationConfig } from '../sentry/integration.js';
@@ -186,6 +187,23 @@ export async function buildExecutionPlan(
 		agentLevelEngineSettings,
 	);
 
+	// Resolve the per-agent update channel and drop the communication-only PM/SCM
+	// posting tool manifests it disables, so an agent literally cannot call a
+	// disabled-channel comment/review tool. This is the authoritative gate for the
+	// native-tool engine family (claude-code/codex/opencode), which renders
+	// availableTools into the system-prompt tool list. It layers on top of the
+	// integration-availability filtering already done by profile.filterTools():
+	// an enabled channel against an absent tool simply has nothing to drop.
+	const availableTools = profile.filterTools(getToolManifests(), integrationChecker);
+	const updateChannel = resolveUpdateChannel(project, agentType);
+	const allowedToolNames = new Set(
+		filterPostingGadgetNames(
+			availableTools.map((tool) => tool.name),
+			updateChannel,
+		),
+	);
+	const channelFilteredTools = availableTools.filter((tool) => allowedToolNames.has(tool.name));
+
 	return {
 		agentType,
 		project,
@@ -195,7 +213,7 @@ export async function buildExecutionPlan(
 		taskPrompt: taskPromptOverride ?? profile.buildTaskPrompt(input),
 		cliToolsDir,
 		nativeToolShimDir: nativeToolRuntime?.shimDir,
-		availableTools: profile.filterTools(getToolManifests(), integrationChecker),
+		availableTools: channelFilteredTools,
 		contextInjections,
 		maxIterations,
 		budgetUsd: input.remainingBudgetUsd as number | undefined,

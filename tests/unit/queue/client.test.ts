@@ -8,10 +8,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ── Mocks (must be set up before dynamic import) ──────────────────────────────
 
 const mockQueueAdd = vi.fn();
+const mockQueueGetJob = vi.fn();
+const mockQueueRemove = vi.fn();
 
 vi.mock('bullmq', () => ({
 	Queue: vi.fn().mockImplementation(() => ({
 		add: mockQueueAdd,
+		getJob: mockQueueGetJob,
+		remove: mockQueueRemove,
 	})),
 }));
 
@@ -35,6 +39,8 @@ async function freshImport() {
 	vi.mock('bullmq', () => ({
 		Queue: vi.fn().mockImplementation(() => ({
 			add: mockQueueAdd,
+			getJob: mockQueueGetJob,
+			remove: mockQueueRemove,
 		})),
 	}));
 	vi.mock('../../../src/utils/redis.js', () => ({
@@ -184,5 +190,86 @@ describe('getQueue error handling', () => {
 				process.env.REDIS_URL = saved;
 			}
 		}
+	});
+});
+
+describe('debugAnalysisJobId', () => {
+	afterEach(() => {
+		vi.resetModules();
+	});
+
+	it('returns the deterministic id prefixed with debug-analysis- for a runId', async () => {
+		const { debugAnalysisJobId } = await freshImport();
+
+		expect(debugAnalysisJobId('run-123')).toBe('debug-analysis-run-123');
+	});
+
+	it('produces the same id for the same run (one job per analyzed run)', async () => {
+		const { debugAnalysisJobId } = await freshImport();
+
+		expect(debugAnalysisJobId('abc')).toBe('debug-analysis-abc');
+		expect(debugAnalysisJobId('abc')).toBe(debugAnalysisJobId('abc'));
+	});
+});
+
+describe('getDashboardJobState', () => {
+	beforeEach(() => {
+		vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.resetModules();
+	});
+
+	it('resolves the job by id and returns its BullMQ state', async () => {
+		const getState = vi.fn().mockResolvedValue('active');
+		mockQueueGetJob.mockResolvedValue({ getState });
+		const { getDashboardJobState } = await freshImport();
+
+		const state = await getDashboardJobState('debug-analysis-run-1');
+
+		expect(mockQueueGetJob).toHaveBeenCalledWith('debug-analysis-run-1');
+		expect(getState).toHaveBeenCalledTimes(1);
+		expect(state).toBe('active');
+	});
+
+	it('returns null when the job is absent', async () => {
+		mockQueueGetJob.mockResolvedValue(undefined);
+		const { getDashboardJobState } = await freshImport();
+
+		const state = await getDashboardJobState('debug-analysis-missing');
+
+		expect(mockQueueGetJob).toHaveBeenCalledWith('debug-analysis-missing');
+		expect(state).toBeNull();
+	});
+});
+
+describe('removeDashboardJob', () => {
+	beforeEach(() => {
+		vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
+	});
+
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.resetModules();
+	});
+
+	it('removes the job by id', async () => {
+		mockQueueRemove.mockResolvedValue(1);
+		const { removeDashboardJob } = await freshImport();
+
+		await removeDashboardJob('debug-analysis-run-1');
+
+		expect(mockQueueRemove).toHaveBeenCalledWith('debug-analysis-run-1');
+	});
+
+	it('swallows errors when the job is absent or locked', async () => {
+		mockQueueRemove.mockRejectedValue(new Error('job is locked'));
+		const { removeDashboardJob } = await freshImport();
+
+		// Must resolve (no throw) even though the underlying remove rejected.
+		await expect(removeDashboardJob('locked-job')).resolves.toBeUndefined();
+		expect(mockQueueRemove).toHaveBeenCalledWith('locked-job');
 	});
 });

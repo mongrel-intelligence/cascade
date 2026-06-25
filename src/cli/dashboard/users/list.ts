@@ -18,7 +18,13 @@ export default class UsersList extends DashboardCommand {
 				{ key: 'id', header: 'ID' },
 				{ key: 'email', header: 'Email' },
 				{ key: 'name', header: 'Name' },
-				{ key: 'role', header: 'Role' },
+				// Render the GLOBAL account role (`users.role`), not the per-org
+				// membership `role` returned alongside it. The list is now
+				// membership-based (`listOrgMembers`), whose per-org `role` can only
+				// ever be 'member' | 'admin' — so printing it would mislabel
+				// superadmins as 'admin'. `globalRole` restores correct superadmin
+				// visibility and matches the web UI's interim choice (PR #1441 review).
+				{ key: 'globalRole', header: 'Role' },
 				{ key: 'createdAt', header: 'Created', format: formatDate },
 			];
 

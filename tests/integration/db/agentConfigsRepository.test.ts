@@ -286,6 +286,84 @@ describe('agentConfigsRepository (integration)', () => {
 	});
 
 	// =========================================================================
+	// updateChannel round-trip
+	// =========================================================================
+
+	describe('updateChannel persistence', () => {
+		it('persists updateChannel via createAgentConfig and round-trips', async () => {
+			await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				updateChannel: 'pm-only',
+			});
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs).toHaveLength(1);
+			expect(configs[0].updateChannel).toBe('pm-only');
+		});
+
+		it('defaults updateChannel to NULL when not provided', async () => {
+			await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'review',
+			});
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].updateChannel).toBeNull();
+		});
+
+		it('persists an explicit null updateChannel as NULL', async () => {
+			await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'splitting',
+				updateChannel: null,
+			});
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].updateChannel).toBeNull();
+		});
+
+		it('updates updateChannel via updateAgentConfig and round-trips', async () => {
+			const { id } = await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'implementation',
+			});
+
+			await updateAgentConfig(id, { updateChannel: 'scm-only' });
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].updateChannel).toBe('scm-only');
+		});
+
+		it('can reset updateChannel back to null (NULL preserved)', async () => {
+			const { id } = await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				updateChannel: 'both',
+			});
+
+			await updateAgentConfig(id, { updateChannel: null });
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].updateChannel).toBeNull();
+		});
+
+		it('leaves updateChannel unchanged on a partial update that omits it', async () => {
+			const { id } = await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				updateChannel: 'pm-only',
+			});
+
+			await updateAgentConfig(id, { model: 'claude-opus-4-5' });
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].updateChannel).toBe('pm-only');
+			expect(configs[0].model).toBe('claude-opus-4-5');
+		});
+	});
+
+	// =========================================================================
 	// getAgentConfigPrompts
 	// =========================================================================
 

@@ -14,6 +14,7 @@ import {
 	Zap,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { OrgNameBanner, OrgSwitcher } from '@/components/layout/org-switcher.js';
 import { ProjectFormDialog } from '@/components/projects/project-form-dialog.js';
 import {
 	Select,
@@ -145,30 +146,34 @@ function OrgBranding({ user }: { user: SidebarProps['user'] }) {
 	const { effectiveOrgId, availableOrgs, orgName, switchOrg } = useOrgContext();
 	const isSuperadmin = user?.role === 'superadmin';
 
-	if (isSuperadmin && availableOrgs && availableOrgs.length > 1 && effectiveOrgId) {
-		return (
-			<Select value={effectiveOrgId} onValueChange={switchOrg}>
-				<SelectTrigger className="h-14 w-full rounded-none border-0 border-b border-sidebar-border px-4 text-sm font-semibold focus:ring-0 gap-2">
-					<Building2 className="h-4 w-4 shrink-0" />
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					{availableOrgs.map((org) => (
-						<SelectItem key={org.id} value={org.id} className="text-xs">
-							{org.name ?? org.id}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-		);
+	// Superadmin: client-side cross-org switcher via the `x-org-context` header
+	// (spec AC #7). Unchanged — superadmins discover every org, not just their
+	// memberships.
+	if (isSuperadmin) {
+		if (availableOrgs && availableOrgs.length > 1 && effectiveOrgId) {
+			return (
+				<Select value={effectiveOrgId} onValueChange={switchOrg}>
+					<SelectTrigger className="h-14 w-full rounded-none border-0 border-b border-sidebar-border px-4 text-sm font-semibold focus:ring-0 gap-2">
+						<Building2 className="h-4 w-4 shrink-0" />
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{availableOrgs.map((org) => (
+							<SelectItem key={org.id} value={org.id} className="text-xs">
+								{org.name ?? org.id}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			);
+		}
+		return <OrgNameBanner name={orgName} />;
 	}
 
-	return (
-		<div className="flex h-14 items-center border-b border-sidebar-border px-4">
-			<Building2 className="mr-2 h-5 w-5 shrink-0" />
-			<span className="font-semibold truncate">{orgName ?? 'Loading...'}</span>
-		</div>
-	);
+	// Everyone else: membership-based active-org switcher (spec 021 plan 4). The
+	// switcher renders only for multi-org members; single-org users get the inert
+	// banner (spec AC #9). It manages its own list/active-org/switch wiring.
+	return <OrgSwitcher fallbackName={orgName} />;
 }
 
 export function Sidebar({ user }: SidebarProps) {

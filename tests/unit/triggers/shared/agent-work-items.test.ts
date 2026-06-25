@@ -7,6 +7,8 @@ const {
 	mockUpdateRunPRNumber,
 	mockGithubClient,
 	mockParseRepoFullName,
+	mockResolveWorkItemIdWithFallback,
+	mockResolveWorkItemDisplayData,
 	mockLogger,
 } = vi.hoisted(() => ({
 	mockCreateWorkItem: vi.fn().mockResolvedValue(undefined),
@@ -17,6 +19,8 @@ const {
 		getPR: vi.fn().mockResolvedValue({ title: 'feat: linked PR' }),
 	},
 	mockParseRepoFullName: vi.fn().mockReturnValue({ owner: 'acme', repo: 'myapp' }),
+	mockResolveWorkItemIdWithFallback: vi.fn().mockResolvedValue(undefined),
+	mockResolveWorkItemDisplayData: vi.fn().mockResolvedValue({}),
 	mockLogger: {
 		warn: vi.fn(),
 		info: vi.fn(),
@@ -43,6 +47,11 @@ vi.mock('../../../../src/utils/repo.js', () => ({
 	parseRepoFullName: mockParseRepoFullName,
 }));
 
+vi.mock('../../../../src/triggers/github/utils.js', () => ({
+	resolveWorkItemIdWithFallback: mockResolveWorkItemIdWithFallback,
+	resolveWorkItemDisplayData: mockResolveWorkItemDisplayData,
+}));
+
 vi.mock('../../../../src/utils/logging.js', () => ({
 	logger: mockLogger,
 }));
@@ -51,6 +60,7 @@ import {
 	linkPRPostExecution,
 	persistPreRunWorkItems,
 	prepareAgentWorkItem,
+	reresolveReviewWorkItemFromFreshPR,
 	resolveWorkItemId,
 } from '../../../../src/triggers/shared/agent-work-items.js';
 import type { TriggerResult } from '../../../../src/triggers/types.js';
@@ -334,6 +344,134 @@ describe('agent-work-items', () => {
 			expect(mockLogger.warn).toHaveBeenCalledWith(
 				'Failed to backfill prNumber on run',
 				expect.objectContaining({ runId: 'run-1', prNumber: 42 }),
+			);
+		});
+	});
+
+	describe('reresolveReviewWorkItemFromFreshPR', () => {
+		const JIRA_PROJECT = {
+			id: 'project-1',
+			repo: 'acme/myapp',
+			pm: { type: 'jira' },
+			jira: { projectKey: 'PROJ' },
+		} as unknown as ProjectConfig;
+
+		beforeEach(() => {
+			mockResolveWorkItemIdWithFallback.mockReset().mockResolvedValue(undefined);
+			mockResolveWorkItemDisplayData.mockReset().mockResolvedValue({});
+			mockGithubClient.getPR.mockResolvedValue({
+				headRef: 'chore/setup',
+				title: 'chore: setup',
+				body: 'Some description.\n\nPROJ-7',
+			});
+			mockParseRepoFullName.mockReturnValue({ owner: 'acme', repo: 'myapp' });
+		});
+
+		it('re-resolves from the live PR when dispatch left workItemId empty', async () => {
+			mockResolveWorkItemIdWithFallback.mockResolvedValueOnce('PROJ-7');
+			mockResolveWorkItemDisplayData.mockResolvedValueOnce({
+				workItemUrl: 'https://jira/PROJ-7',
+				workItemTitle: 'Do the thing',
+			});
+
+			const out = await reresolveReviewWorkItemFromFreshPR(
+				{ agentType: 'review', agentInput: {}, prNumber: 42 },
+				JIRA_PROJECT,
+				undefined,
+			);
+
+			expect(mockGithubClient.getPR).toHaveBeenCalledWith('acme', 'myapp', 42);
+			expect(mockResolveWorkItemIdWithFallback).toHaveBeenCalledWith(JIRA_PROJECT, 42, {
+				branch: 'chore/setup',
+				title: 'chore: setup',
+				body: 'Some description.\n\nPROJ-7',
+			});
+			expect(out).toEqual({
+				workItemId: 'PROJ-7',
+				workItemUrl: 'https://jira/PROJ-7',
+				workItemTitle: 'Do the thing',
+			});
+		});
+
+		it('no-ops (no PR fetch) when a workItemId was already resolved at dispatch', async () => {
+			const out = await reresolveReviewWorkItemFromFreshPR(
+				{ agentType: 'review', agentInput: {}, prNumber: 42 },
+				JIRA_PROJECT,
+				'PROJ-1',
+			);
+
+			expect(out).toBeNull();
+			expect(mockGithubClient.getPR).not.toHaveBeenCalled();
+		});
+
+		it('no-ops for non-review agent types', async () => {
+			const out = await reresolveReviewWorkItemFromFreshPR(
+				{ agentType: 'implementation', agentInput: {}, prNumber: 42 },
+				JIRA_PROJECT,
+				undefined,
+			);
+
+			expect(out).toBeNull();
+			expect(mockGithubClient.getPR).not.toHaveBeenCalled();
+		});
+
+		it('no-ops for non-JIRA PM providers', async () => {
+			const out = await reresolveReviewWorkItemFromFreshPR(
+				{ agentType: 'review', agentInput: {}, prNumber: 42 },
+				PROJECT, // trello fixture
+				undefined,
+			);
+
+			expect(out).toBeNull();
+			expect(mockGithubClient.getPR).not.toHaveBeenCalled();
+		});
+
+		it('no-ops when prNumber or repo is missing', async () => {
+			const noRepo = { id: 'project-1', pm: { type: 'jira' } } as unknown as ProjectConfig;
+
+			expect(
+				await reresolveReviewWorkItemFromFreshPR(
+					{ agentType: 'review', agentInput: {}, prNumber: 42 },
+					noRepo,
+					undefined,
+				),
+			).toBeNull();
+			expect(
+				await reresolveReviewWorkItemFromFreshPR(
+					{ agentType: 'review', agentInput: {} },
+					JIRA_PROJECT,
+					undefined,
+				),
+			).toBeNull();
+			expect(mockGithubClient.getPR).not.toHaveBeenCalled();
+		});
+
+		it('returns null (no display lookup) when the live PR yields no key', async () => {
+			mockResolveWorkItemIdWithFallback.mockResolvedValueOnce(undefined);
+
+			const out = await reresolveReviewWorkItemFromFreshPR(
+				{ agentType: 'review', agentInput: {}, prNumber: 42 },
+				JIRA_PROJECT,
+				undefined,
+			);
+
+			expect(out).toBeNull();
+			expect(mockResolveWorkItemDisplayData).not.toHaveBeenCalled();
+		});
+
+		it('returns null and warns when the PR fetch throws (best-effort)', async () => {
+			mockGithubClient.getPR.mockRejectedValueOnce(new Error('github down'));
+
+			const out = await reresolveReviewWorkItemFromFreshPR(
+				{ agentType: 'review', agentInput: {}, prNumber: 42 },
+				JIRA_PROJECT,
+				undefined,
+			);
+
+			expect(out).toBeNull();
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'Fresh-PR review work-item re-resolution failed (best-effort)',
+				expect.objectContaining({ projectId: 'project-1', prNumber: 42 }),
 			);
 		});
 	});

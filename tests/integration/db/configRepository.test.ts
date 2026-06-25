@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { CascadeConfigSchema, validateConfig } from '../../../src/config/schema.js';
+import { resolveUpdateChannel } from '../../../src/config/updateChannel.js';
 import {
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
@@ -60,6 +61,68 @@ describe('configRepository (integration)', () => {
 			const config = await loadConfigFromDb();
 			const project = config.projects[0];
 			expect(project.agentModels?.implementation).toBe('project-impl-model');
+		});
+
+		// =====================================================================
+		// agentUpdateChannels round-trip (MNG-1682)
+		// =====================================================================
+
+		it('round-trips every update_channel value into project.agentUpdateChannels', async () => {
+			await seedAgentConfig({ agentType: 'none-agent', updateChannel: 'none' });
+			await seedAgentConfig({ agentType: 'scm-agent', updateChannel: 'scm-only' });
+			await seedAgentConfig({ agentType: 'pm-agent', updateChannel: 'pm-only' });
+			await seedAgentConfig({ agentType: 'both-agent', updateChannel: 'both' });
+
+			const config = await loadConfigFromDb();
+			const project = config.projects[0];
+
+			expect(project.agentUpdateChannels).toEqual({
+				'none-agent': 'none',
+				'scm-agent': 'scm-only',
+				'pm-agent': 'pm-only',
+				'both-agent': 'both',
+			});
+		});
+
+		it('resolves a NULL update_channel to the default (both)', async () => {
+			// Seeded without an explicit channel → NULL column → inherit the default.
+			await seedAgentConfig({ agentType: 'implementation', updateChannel: null });
+
+			const config = await loadConfigFromDb();
+			const project = config.projects[0];
+
+			// NULL is never materialized into the map ...
+			expect(project.agentUpdateChannels?.implementation).toBeUndefined();
+			// ... and the runtime resolver falls back to `both`.
+			expect(resolveUpdateChannel(project, 'implementation')).toBe('both');
+		});
+
+		it('omits agentUpdateChannels entirely when no agent sets a channel', async () => {
+			// A row with other overrides but a NULL channel must not create the map.
+			await seedAgentConfig({
+				agentType: 'implementation',
+				model: 'some-model',
+				updateChannel: null,
+			});
+
+			const config = await loadConfigFromDb();
+			const project = config.projects[0];
+
+			expect(project.agentUpdateChannels).toBeUndefined();
+			expect(resolveUpdateChannel(project, 'implementation')).toBe('both');
+		});
+
+		it('ignores an unknown persisted update_channel value and still validates', async () => {
+			// TEXT column accepts arbitrary strings; the mapper drops unknowns so a
+			// stale value never trips UpdateChannelSchema during validateConfig().
+			await seedAgentConfig({ agentType: 'implementation', updateChannel: 'all' });
+			await seedAgentConfig({ agentType: 'review', updateChannel: 'pm-only' });
+
+			const config = await loadConfigFromDb();
+			const project = config.projects[0];
+
+			expect(project.agentUpdateChannels).toEqual({ review: 'pm-only' });
+			expect(resolveUpdateChannel(project, 'implementation')).toBe('both');
 		});
 
 		it('handles multiple projects', async () => {

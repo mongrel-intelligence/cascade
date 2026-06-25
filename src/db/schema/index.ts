@@ -3,6 +3,7 @@ export { agentDefinitions } from './agentDefinitions.js';
 export { agentTriggerConfigs } from './agentTriggerConfigs.js';
 export { projectIntegrations } from './integrations.js';
 export { organizations } from './organizations.js';
+export { orgMemberships } from './orgMemberships.js';
 export { projectCredentials } from './projectCredentials.js';
 export { projects } from './projects.js';
 export { promptPartials } from './promptPartials.js';

@@ -282,3 +282,95 @@ describe('buildProgressMonitorConfig', () => {
 		expect(config.repoDir).toBeUndefined();
 	});
 });
+
+describe('buildProgressMonitorConfig update-channel gating', () => {
+	// PM progress posting (config.trello) and SCM progress posting (config.github)
+	// are gated on the agent's resolved update channel. ProgressMonitor no-ops
+	// each poster when its config block is absent, so gating = omitting the block.
+	function makeGatedInput(channel: string) {
+		return makeInput({
+			workItemId: 'card-abc',
+			prNumber: 42,
+			repoFullName: 'acme/widgets',
+			project: makeProject({
+				agentUpdateChannels: { implementation: channel as never },
+			}),
+		});
+	}
+
+	it('omits trello (PM) but keeps github (SCM) when channel is scm-only', () => {
+		const config = buildProgressMonitorConfig(
+			makeGatedInput('scm-only'),
+			'implementation',
+			mockLogWriter,
+			'/repo',
+			false,
+			'test-engine',
+			'model-x',
+		);
+		expect(config.trello).toBeUndefined();
+		expect(config.github).toEqual({ owner: 'acme', repo: 'widgets' });
+	});
+
+	it('omits github (SCM) but keeps trello (PM) when channel is pm-only', () => {
+		const config = buildProgressMonitorConfig(
+			makeGatedInput('pm-only'),
+			'implementation',
+			mockLogWriter,
+			'/repo',
+			false,
+			'test-engine',
+			'model-x',
+		);
+		expect(config.trello).toEqual({ workItemId: 'card-abc' });
+		expect(config.github).toBeUndefined();
+	});
+
+	it('omits both trello and github when channel is none', () => {
+		const config = buildProgressMonitorConfig(
+			makeGatedInput('none'),
+			'implementation',
+			mockLogWriter,
+			'/repo',
+			false,
+			'test-engine',
+			'model-x',
+		);
+		expect(config.trello).toBeUndefined();
+		expect(config.github).toBeUndefined();
+	});
+
+	it('keeps both trello and github when channel is both', () => {
+		const config = buildProgressMonitorConfig(
+			makeGatedInput('both'),
+			'implementation',
+			mockLogWriter,
+			'/repo',
+			false,
+			'test-engine',
+			'model-x',
+		);
+		expect(config.trello).toEqual({ workItemId: 'card-abc' });
+		expect(config.github).toEqual({ owner: 'acme', repo: 'widgets' });
+	});
+
+	it('defaults to both surfaces when the project has no channel override for the agent', () => {
+		const input = makeInput({
+			workItemId: 'card-abc',
+			prNumber: 42,
+			repoFullName: 'acme/widgets',
+			project: makeProject({ agentUpdateChannels: { review: 'none' as never } }),
+		});
+		const config = buildProgressMonitorConfig(
+			input,
+			'implementation',
+			mockLogWriter,
+			'/repo',
+			false,
+			'test-engine',
+			'model-x',
+		);
+		expect(config.trello).toEqual({ workItemId: 'card-abc' });
+		expect(config.github).toEqual({ owner: 'acme', repo: 'widgets' });
+	});
+});

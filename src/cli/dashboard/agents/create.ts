@@ -1,4 +1,5 @@
 import { Flags } from '@oclif/core';
+import type { UpdateChannel } from '../../../config/updateChannel.js';
 import { DashboardCommand } from '../_shared/base.js';
 
 export default class AgentsCreate extends DashboardCommand {
@@ -18,6 +19,10 @@ export default class AgentsCreate extends DashboardCommand {
 		'max-iterations': Flags.integer({ description: 'Max iterations override' }),
 		engine: Flags.string({ description: 'Agent engine override' }),
 		'max-concurrency': Flags.integer({ description: 'Max concurrent runs per project' }),
+		'update-channel': Flags.string({
+			description: 'Where this agent posts status updates',
+			options: ['none', 'scm-only', 'pm-only', 'both'],
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -32,6 +37,7 @@ export default class AgentsCreate extends DashboardCommand {
 					maxIterations: flags['max-iterations'],
 					agentEngine: flags.engine,
 					maxConcurrency: flags['max-concurrency'],
+					updateChannel: flags['update-channel'] as UpdateChannel | undefined,
 				}),
 			);
 

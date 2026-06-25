@@ -660,6 +660,108 @@ describe('pm/lifecycle', () => {
 				);
 			});
 		});
+
+		// =====================================================================
+		// pmPostingEnabled gating (MNG-1684)
+		//
+		// When constructed with pmPostingEnabled=false, the manager suppresses
+		// every communication-only comment post (success fallback, failure,
+		// budget exceeded/warning, error) while leaving status moves, label
+		// add/remove, and linkPR untouched.
+		// =====================================================================
+		describe('pmPostingEnabled=false suppresses comments but not moves/labels/linkPR', () => {
+			let mutedManager: PMLifecycleManager;
+
+			beforeEach(() => {
+				mutedManager = new PMLifecycleManager(mockProvider, pmConfig, false);
+			});
+
+			it('handleFailure adds the error label but posts no comment', async () => {
+				await mutedManager.handleFailure('work-item-1', 'Something went wrong');
+
+				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-error');
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('handleBudgetExceeded still toggles labels but posts no comment', async () => {
+				await mutedManager.handleBudgetExceeded('work-item-1', 5.5, 5.0);
+
+				expect(mockProvider.removeLabel).toHaveBeenCalledWith('work-item-1', 'label-proc');
+				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-error');
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('handleBudgetWarning still adds the error label but posts no comment', async () => {
+				await mutedManager.handleBudgetWarning('work-item-1', 4.95, 5.0);
+
+				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-error');
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('handleError adds the error label but posts no comment', async () => {
+				await mutedManager.handleError('work-item-1', 'Database connection failed');
+
+				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-error');
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('prepareForAgent still adds/removes labels and moves the work item', async () => {
+				await mutedManager.prepareForAgent('work-item-1', { moveOnPrepare: 'inProgress' });
+
+				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-proc');
+				expect(mockProvider.removeLabel).toHaveBeenCalledWith('work-item-1', 'label-ready');
+				expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('work-item-1', 'list-progress');
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('handleSuccess still adds the processed label, moves, and calls linkPR', async () => {
+				await mutedManager.handleSuccess(
+					'work-item-1',
+					{ moveOnSuccess: 'inReview', linkPR: true },
+					'https://github.com/owner/repo/pull/123',
+				);
+
+				expect(mockProvider.addLabel).toHaveBeenCalledWith('work-item-1', 'label-done');
+				expect(mockProvider.moveWorkItem).toHaveBeenCalledWith('work-item-1', 'list-review');
+				expect(mockProvider.linkPR).toHaveBeenCalledWith(
+					'work-item-1',
+					'https://github.com/owner/repo/pull/123',
+					'Pull Request #123',
+				);
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+
+			it('handleSuccess suppresses the PR-created comment fallback when linkPR fails', async () => {
+				vi.mocked(mockProvider.linkPR).mockRejectedValue(new Error('Permission denied'));
+
+				await mutedManager.handleSuccess(
+					'work-item-1',
+					{ linkPR: true },
+					'https://github.com/owner/repo/pull/123',
+				);
+
+				// linkPR is attempted (not gated) ...
+				expect(mockProvider.linkPR).toHaveBeenCalled();
+				// ... but the communication-only fallback comment is suppressed.
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+				expect(mockProvider.updateComment).not.toHaveBeenCalled();
+			});
+
+			it('handleSuccess suppresses the progress-comment update fallback when linkPR fails', async () => {
+				vi.mocked(mockProvider.linkPR).mockRejectedValue(new Error('Permission denied'));
+
+				await mutedManager.handleSuccess(
+					'work-item-1',
+					{ linkPR: true },
+					'https://github.com/owner/repo/pull/123',
+					'progress-comment-id',
+				);
+
+				expect(mockProvider.linkPR).toHaveBeenCalled();
+				expect(mockProvider.updateComment).not.toHaveBeenCalled();
+				expect(mockProvider.addComment).not.toHaveBeenCalled();
+			});
+		});
 	});
 
 	// =========================================================================

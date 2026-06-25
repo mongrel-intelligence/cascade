@@ -14,7 +14,7 @@
 
 import bcrypt from 'bcrypt';
 import { closeDb, getDb } from '../src/db/client.js';
-import { users } from '../src/db/schema/index.js';
+import { orgMemberships, users } from '../src/db/schema/index.js';
 
 function parseArgs(argv: string[]): { email: string; password: string; name: string } {
 	let email = '';
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
 	const db = getDb();
 	const passwordHash = await bcrypt.hash(password, 10);
 
-	await db
+	const [user] = await db
 		.insert(users)
 		.values({
 			orgId: 'default',
@@ -62,6 +62,20 @@ async function main(): Promise<void> {
 		.onConflictDoUpdate({
 			target: users.email,
 			set: { passwordHash, name, role: 'superadmin' },
+		})
+		.returning({ id: users.id });
+
+	// Mirror a home-org membership so the bootstrap superadmin appears in its own
+	// org's membership-based listing (spec 021 plan 3 — `users.list` inner-joins
+	// org_memberships). 'superadmin' is a GLOBAL role; membership roles are
+	// per-org, so it maps to an 'admin' membership (mirroring migration 0053).
+	// Idempotent: re-running keeps a single membership row per (user, org).
+	await db
+		.insert(orgMemberships)
+		.values({ userId: user.id, orgId: 'default', role: 'admin' })
+		.onConflictDoUpdate({
+			target: [orgMemberships.userId, orgMemberships.orgId],
+			set: { role: 'admin', updatedAt: new Date() },
 		});
 
 	const port = process.env.DASHBOARD_PORT || process.env.PORT || '3001';

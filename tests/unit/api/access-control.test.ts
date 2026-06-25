@@ -53,6 +53,14 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	deleteProjectCredential: vi.fn(),
 }));
 
+// Multi-org membership (spec 021 plan 2): membership-aware effective-org
+// resolution + per-org actor-role helper read through this repository.
+const mockGetOrgMembership = vi.fn();
+
+vi.mock('../../../src/db/repositories/orgMembershipsRepository.js', () => ({
+	getOrgMembership: (...args: unknown[]) => mockGetOrgMembership(...args),
+}));
+
 const mockDbSelect = vi.fn();
 const mockDbFrom = vi.fn();
 const mockDbWhere = vi.fn();
@@ -92,7 +100,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 // Imports (after mocks)
 // ==========================================================================
 
-import { computeEffectiveOrgId } from '../../../src/api/context.js';
+import { computeEffectiveOrgId, resolveActorRoleInOrg } from '../../../src/api/context.js';
 import { authRouter } from '../../../src/api/routers/auth.js';
 import { organizationRouter } from '../../../src/api/routers/organization.js';
 import { projectsRouter } from '../../../src/api/routers/projects.js';
@@ -180,6 +188,126 @@ describe('computeEffectiveOrgId', () => {
 	it('returns user.orgId when member sends header matching own org', async () => {
 		const result = await computeEffectiveOrgId(memberUser, 'org-1');
 		expect(result).toBe('org-1');
+	});
+});
+
+// ==========================================================================
+// Section 1b: computeEffectiveOrgId — membership-aware active-org resolution
+// (spec 021 plan 2)
+// ==========================================================================
+
+describe('computeEffectiveOrgId — active org + membership', () => {
+	it('returns the active org when the member has a membership there', async () => {
+		mockGetOrgMembership.mockResolvedValue({ orgId: 'org-2', role: 'member' });
+		const result = await computeEffectiveOrgId(memberUser, undefined, 'org-2');
+		expect(result).toBe('org-2');
+		expect(mockGetOrgMembership).toHaveBeenCalledWith('user-2', 'org-2');
+	});
+
+	it('falls back to the home org when the active-org membership is gone (no-logout)', async () => {
+		mockGetOrgMembership.mockResolvedValue(null);
+		const result = await computeEffectiveOrgId(memberUser, undefined, 'org-2');
+		expect(result).toBe('org-1');
+		expect(mockGetOrgMembership).toHaveBeenCalledWith('user-2', 'org-2');
+	});
+
+	it('falls back to the home org when there is no active org (no-logout default)', async () => {
+		const result = await computeEffectiveOrgId(memberUser, undefined, null);
+		expect(result).toBe('org-1');
+		expect(mockGetOrgMembership).not.toHaveBeenCalled();
+	});
+
+	it('skips the membership lookup when the active org equals the home org', async () => {
+		const result = await computeEffectiveOrgId(memberUser, undefined, 'org-1');
+		expect(result).toBe('org-1');
+		expect(mockGetOrgMembership).not.toHaveBeenCalled();
+	});
+
+	it('admin honours their active org when a membership exists there', async () => {
+		mockGetOrgMembership.mockResolvedValue({ orgId: 'org-2', role: 'admin' });
+		const result = await computeEffectiveOrgId(adminUser, undefined, 'org-2');
+		expect(result).toBe('org-2');
+	});
+
+	it('superadmin ignores active org and stays on the header path (unchanged)', async () => {
+		const superAdmin = createMockUser({ role: 'superadmin' });
+		// No header, but an active org is set — superadmin resolution must not
+		// consult membership or active_org_id; it returns the home org.
+		const result = await computeEffectiveOrgId(superAdmin, undefined, 'org-2');
+		expect(result).toBe('org-1');
+		expect(mockGetOrgMembership).not.toHaveBeenCalled();
+	});
+});
+
+// ==========================================================================
+// Section 1c: resolveActorRoleInOrg — per-org role evaluation (spec 021 plan 2)
+// ==========================================================================
+
+describe('resolveActorRoleInOrg', () => {
+	it('returns superadmin without a membership lookup (global role)', async () => {
+		const role = await resolveActorRoleInOrg({
+			userId: 'user-1',
+			globalRole: 'superadmin',
+			homeOrgId: 'org-1',
+			orgId: 'org-2',
+		});
+		expect(role).toBe('superadmin');
+		expect(mockGetOrgMembership).not.toHaveBeenCalled();
+	});
+
+	it('returns the per-org membership role (admin) for the active org', async () => {
+		mockGetOrgMembership.mockResolvedValue({ orgId: 'org-2', role: 'admin' });
+		const role = await resolveActorRoleInOrg({
+			userId: 'user-2',
+			globalRole: 'member',
+			homeOrgId: 'org-1',
+			orgId: 'org-2',
+		});
+		expect(role).toBe('admin');
+	});
+
+	it('downgrades an org admin to member in an org where they are only a member (AC #8)', async () => {
+		mockGetOrgMembership.mockResolvedValue({ orgId: 'org-2', role: 'member' });
+		const role = await resolveActorRoleInOrg({
+			userId: 'user-1',
+			globalRole: 'admin',
+			homeOrgId: 'org-1',
+			orgId: 'org-2',
+		});
+		expect(role).toBe('member');
+	});
+
+	it('falls back to the global role in the home org when no membership row exists', async () => {
+		mockGetOrgMembership.mockResolvedValue(null);
+		const role = await resolveActorRoleInOrg({
+			userId: 'user-1',
+			globalRole: 'admin',
+			homeOrgId: 'org-1',
+			orgId: 'org-1',
+		});
+		expect(role).toBe('admin');
+	});
+
+	it('grants least privilege in a non-home org with no membership row', async () => {
+		mockGetOrgMembership.mockResolvedValue(null);
+		const role = await resolveActorRoleInOrg({
+			userId: 'user-1',
+			globalRole: 'admin',
+			homeOrgId: 'org-1',
+			orgId: 'org-2',
+		});
+		expect(role).toBe('member');
+	});
+
+	it('normalizes an unexpected membership role to least privilege', async () => {
+		mockGetOrgMembership.mockResolvedValue({ orgId: 'org-2', role: 'weird' });
+		const role = await resolveActorRoleInOrg({
+			userId: 'user-2',
+			globalRole: 'admin',
+			homeOrgId: 'org-1',
+			orgId: 'org-2',
+		});
+		expect(role).toBe('member');
 	});
 });
 

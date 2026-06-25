@@ -102,6 +102,72 @@ export async function persistPreRunWorkItems(
 	}
 }
 
+/**
+ * Re-derive a review's work item from LIVE PR state when dispatch-time resolution
+ * came up empty.
+ *
+ * The router (and the GitHub worker's re-dispatch) resolve the work item from the
+ * webhook payload's PR snapshot, captured at `review_requested` time. If a human
+ * requests review and THEN edits the PR description to add the JIRA key — a natural
+ * workflow — that snapshot misses it, so the issue never gets the progress comment
+ * or image pre-fetch even though the agent later reads the diff. This re-resolves
+ * against the live PR just before the work-item-dependent setup runs.
+ *
+ * Scoped tightly: review agent only, JIRA only, only when nothing was resolved and
+ * the PR/repo are known. Best-effort — any failure (missing GitHub/PM scope,
+ * GitHub error) returns `null` and the run proceeds exactly as before. Mirrors
+ * `linkPRPostExecution`'s dynamic `githubClient` import so this code path stays out
+ * of the module graph for callers that never hit it.
+ *
+ * Must run inside `withGitHubToken` + `withPMProvider` scope (the execution
+ * pipeline's contract — see `runAgentExecutionPipeline`).
+ */
+export async function reresolveReviewWorkItemFromFreshPR(
+	result: TriggerResult,
+	project: ProjectConfig,
+	currentWorkItemId: string | undefined,
+): Promise<{ workItemId: string; workItemUrl?: string; workItemTitle?: string } | null> {
+	if (currentWorkItemId) return null;
+	if (result.agentType !== 'review') return null;
+	if (project.pm?.type !== 'jira') return null;
+	if (!result.prNumber || !project.repo) return null;
+
+	try {
+		const { githubClient } = await import('../../github/client.js');
+		const { resolveWorkItemIdWithFallback, resolveWorkItemDisplayData } = await import(
+			'../github/utils.js'
+		);
+		const { owner, repo } = parseRepoFullName(project.repo);
+		const pr = await githubClient.getPR(owner, repo, result.prNumber);
+
+		const workItemId = await resolveWorkItemIdWithFallback(project, result.prNumber, {
+			branch: pr.headRef,
+			title: pr.title,
+			body: pr.body,
+		});
+		if (!workItemId) return null;
+
+		const display = await resolveWorkItemDisplayData(workItemId);
+		logger.info('Re-resolved review work item from fresh PR state', {
+			projectId: project.id,
+			prNumber: result.prNumber,
+			workItemId,
+		});
+		return {
+			workItemId,
+			workItemUrl: display.workItemUrl,
+			workItemTitle: display.workItemTitle,
+		};
+	} catch (err) {
+		logger.warn('Fresh-PR review work-item re-resolution failed (best-effort)', {
+			projectId: project.id,
+			prNumber: result.prNumber,
+			error: String(err),
+		});
+		return null;
+	}
+}
+
 export async function linkPRPostExecution(
 	agentResult: AgentResult & { prUrl: string },
 	project: ProjectConfig & { repo: string },

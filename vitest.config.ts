@@ -13,6 +13,12 @@ const resolve = {
 		},
 		{ find: /^@\/lib\/(.*)/, replacement: path.resolve(__dirname, './web/src/lib/$1') },
 		{ find: /^@\/hooks\/(.*)/, replacement: path.resolve(__dirname, './web/src/hooks/$1') },
+		// Dedupe @trpc/client to a single copy. The web workspace has its own
+		// node_modules/@trpc/client, so without this a web/src file and a test
+		// file resolve different TRPCClientError classes and `instanceof` (used
+		// by isTRPCClientError) fails across copies. Mirrors the react/react-dom
+		// dedupe below. Must precede the catch-all `@` alias.
+		{ find: /^@trpc\/client$/, replacement: path.resolve(__dirname, 'node_modules/@trpc/client') },
 		{ find: '@', replacement: path.resolve(__dirname, './src') },
 		{ find: 'react', replacement: path.resolve(__dirname, 'node_modules/react') },
 		{ find: 'react-dom', replacement: path.resolve(__dirname, 'node_modules/react-dom') },

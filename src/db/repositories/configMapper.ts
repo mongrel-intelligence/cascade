@@ -1,4 +1,5 @@
 import type { EngineSettings } from '../../config/engineSettings.js';
+import { UPDATE_CHANNELS, type UpdateChannel } from '../../config/updateChannel.js';
 
 /**
  * Config mapper — pure transformation functions for converting DB rows into
@@ -56,6 +57,8 @@ export interface AgentConfigRow {
 	maxIterations: number | null;
 	agentEngine: string | null;
 	agentEngineSettings?: EngineSettings | null;
+	/** Per-agent update-channel override. NULL/absent → inherit the default (`both`). */
+	updateChannel?: string | null;
 }
 
 export interface IntegrationRow {
@@ -100,6 +103,8 @@ export interface ProjectConfigRaw {
 	engineSettings?: EngineSettings;
 	/** Per-agent engine settings overrides keyed by agent type. */
 	agentEngineSettings?: Record<string, EngineSettings>;
+	/** Per-agent update-channel overrides keyed by agent type. */
+	agentUpdateChannels?: Record<string, UpdateChannel>;
 	runLinksEnabled?: boolean;
 	maxInFlightItems?: number;
 	snapshotEnabled?: boolean;
@@ -167,18 +172,30 @@ export function buildAgentMaps(configs: AgentConfigRow[]): {
 	iterations: Record<string, number>;
 	engines: Record<string, string>;
 	engineSettings: Record<string, EngineSettings>;
+	updateChannels: Record<string, UpdateChannel>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
 	const engines: Record<string, string> = {};
 	const engineSettings: Record<string, EngineSettings> = {};
+	const updateChannels: Record<string, UpdateChannel> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
 		if (ac.agentEngine) engines[ac.agentType] = ac.agentEngine;
 		if (ac.agentEngineSettings != null) engineSettings[ac.agentType] = ac.agentEngineSettings;
+		// Validate the persisted value against the channel catalog; ignore unknown
+		// values (and NULL) so a stale/invalid column never breaks config loading.
+		if (ac.updateChannel != null && isUpdateChannel(ac.updateChannel)) {
+			updateChannels[ac.agentType] = ac.updateChannel;
+		}
 	}
-	return { models, iterations, engines, engineSettings };
+	return { models, iterations, engines, engineSettings, updateChannels };
+}
+
+/** Type guard narrowing a persisted string to a known {@link UpdateChannel}. */
+function isUpdateChannel(value: string): value is UpdateChannel {
+	return (UPDATE_CHANNELS as readonly string[]).includes(value);
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
@@ -290,6 +307,7 @@ export function mapProjectRow({
 		models,
 		engines,
 		engineSettings: agentEngineSettingsMap,
+		updateChannels,
 	} = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config. No PM integration → `undefined`
@@ -309,6 +327,7 @@ export function mapProjectRow({
 		agentEngineSettings: orUndefined(agentEngineSettingsMap) as
 			| Record<string, EngineSettings>
 			| undefined,
+		agentUpdateChannels: orUndefined(updateChannels),
 	};
 
 	if (trelloConfig) {

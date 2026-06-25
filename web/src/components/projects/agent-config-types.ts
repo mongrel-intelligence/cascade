@@ -7,6 +7,7 @@
 
 import type { ResolvedTrigger } from '@/components/shared/definition-trigger-toggles.js';
 import type { TriggerParameterValue } from '@/lib/trigger-agent-mapping.js';
+import type { UpdateChannel } from '../../../../src/config/updateChannel.js';
 
 export interface AgentConfig {
 	id: number;
@@ -18,6 +19,7 @@ export interface AgentConfig {
 	maxConcurrency: number | null;
 	systemPrompt: string | null;
 	taskPrompt: string | null;
+	updateChannel: UpdateChannel | null;
 }
 
 interface EngineSettingFieldOption {
@@ -59,6 +61,7 @@ export interface SaveConfigValues {
 	maxIterations: string;
 	agentEngine: string;
 	maxConcurrency: string;
+	updateChannel: string;
 	engineSettings: Record<string, Record<string, unknown>> | undefined;
 	systemPrompt: string;
 	taskPrompt: string;

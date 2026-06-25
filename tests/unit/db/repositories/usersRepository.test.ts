@@ -20,12 +20,19 @@ vi.mock('../../../../src/db/schema/index.js', () => ({
 		userId: 'user_id',
 		token: 'token',
 		expiresAt: 'expires_at',
+		activeOrgId: 'active_org_id',
+	},
+	orgMemberships: {
+		id: 'id',
+		userId: 'user_id',
+		orgId: 'org_id',
+		role: 'role',
 	},
 }));
 
 import {
 	createSession,
-	createUser,
+	createUserWithMembership,
 	deleteExpiredSessions,
 	deleteSession,
 	deleteUser,
@@ -33,7 +40,7 @@ import {
 	getSessionByToken,
 	getUserByEmail,
 	getUserById,
-	listOrgUsers,
+	setSessionActiveOrg,
 	updateUser,
 } from '../../../../src/db/repositories/usersRepository.js';
 
@@ -128,6 +135,25 @@ describe('usersRepository', () => {
 		});
 	});
 
+	describe('setSessionActiveOrg', () => {
+		it('updates the active org on the session by token', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await setSessionActiveOrg('session-token', 'org-2');
+
+			expect(mockDb.db.update).toHaveBeenCalled();
+			expect(mockDb.chain.set).toHaveBeenCalledWith({ activeOrgId: 'org-2' });
+		});
+
+		it('clears the active org when passed null', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await setSessionActiveOrg('session-token', null);
+
+			expect(mockDb.chain.set).toHaveBeenCalledWith({ activeOrgId: null });
+		});
+	});
+
 	describe('deleteSession', () => {
 		it('deletes session by token', async () => {
 			mockDb.chain.where.mockResolvedValueOnce(undefined);
@@ -146,90 +172,71 @@ describe('usersRepository', () => {
 		});
 	});
 
-	describe('listOrgUsers', () => {
-		it('returns all users for org without passwordHash', async () => {
-			const mockUsers = [
-				{
-					id: 'u1',
-					orgId: 'org-1',
-					email: 'alice@example.com',
-					name: 'Alice',
-					role: 'admin',
-					createdAt: new Date('2024-01-01'),
-					updatedAt: new Date('2024-01-01'),
-				},
-				{
-					id: 'u2',
-					orgId: 'org-1',
-					email: 'bob@example.com',
-					name: 'Bob',
-					role: 'member',
-					createdAt: new Date('2024-02-01'),
-					updatedAt: new Date('2024-02-01'),
-				},
-			];
-			mockDb.chain.where.mockResolvedValueOnce(mockUsers);
+	describe('createUserWithMembership', () => {
+		/**
+		 * createUserWithMembership runs both inserts inside db.transaction(). Mock
+		 * the transaction to invoke its callback with a tx whose insert chain we
+		 * can assert on (mirrors the agentTriggerConfigs transaction test pattern).
+		 */
+		function mockTransaction() {
+			const txChain: Record<string, ReturnType<typeof vi.fn>> = {};
+			txChain.returning = vi.fn().mockResolvedValue([{ id: 'new-user-uuid' }]);
+			txChain.values = vi.fn().mockReturnValue({ returning: txChain.returning });
+			const txInsert = vi.fn().mockReturnValue({ values: txChain.values });
+			const tx = { insert: txInsert };
+			(mockDb.db as unknown as Record<string, unknown>).transaction = vi
+				.fn()
+				.mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(tx));
+			return { txChain, txInsert };
+		}
 
-			const result = await listOrgUsers('org-1');
+		it('inserts the user and the membership and returns the new id', async () => {
+			const { txChain, txInsert } = mockTransaction();
 
-			expect(result).toHaveLength(2);
-			expect(result[0]).toEqual(mockUsers[0]);
-			expect(result[1]).toEqual(mockUsers[1]);
-			// Verify passwordHash is not in the result
-			for (const user of result) {
-				expect(user).not.toHaveProperty('passwordHash');
-			}
-		});
+			const result = await createUserWithMembership({
+				orgId: 'org-1',
+				email: 'newuser@example.com',
+				passwordHash: '$2b$10$hashed',
+				name: 'New User',
+				role: 'member',
+				membershipRole: 'member',
+			});
 
-		it('returns empty array when no users in org', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			const result = await listOrgUsers('empty-org');
-			expect(result).toEqual([]);
-		});
-
-		it('queries by orgId', async () => {
-			mockDb.chain.where.mockResolvedValueOnce([]);
-
-			await listOrgUsers('org-123');
-
-			expect(mockDb.db.select).toHaveBeenCalledTimes(1);
-		});
-	});
-
-	describe('createUser', () => {
-		it('inserts user and returns id', async () => {
-			mockDb.chain.returning.mockResolvedValueOnce([{ id: 'new-user-uuid' }]);
-
-			const result = await createUser({
+			expect(result).toEqual({ id: 'new-user-uuid' });
+			// One insert for users, one for org_memberships — same transaction.
+			expect(txInsert).toHaveBeenCalledTimes(2);
+			expect(txChain.values).toHaveBeenCalledWith({
 				orgId: 'org-1',
 				email: 'newuser@example.com',
 				passwordHash: '$2b$10$hashed',
 				name: 'New User',
 				role: 'member',
 			});
-
-			expect(result).toEqual({ id: 'new-user-uuid' });
-			expect(mockDb.db.insert).toHaveBeenCalledTimes(1);
+			expect(txChain.values).toHaveBeenCalledWith({
+				userId: 'new-user-uuid',
+				orgId: 'org-1',
+				role: 'member',
+			});
 		});
 
-		it('stores pre-hashed password without modification', async () => {
-			mockDb.chain.returning.mockResolvedValueOnce([{ id: 'u1' }]);
-			const hashedPassword = '$2b$10$somehash';
+		it('grants the membership with the mapped per-org role (superadmin → admin)', async () => {
+			const { txChain } = mockTransaction();
 
-			await createUser({
+			await createUserWithMembership({
 				orgId: 'org-1',
-				email: 'test@example.com',
-				passwordHash: hashedPassword,
-				name: 'Test User',
-				role: 'admin',
+				email: 'super@example.com',
+				passwordHash: '$2b$10$somehash',
+				name: 'Super User',
+				role: 'superadmin',
+				membershipRole: 'admin',
 			});
 
-			expect(mockDb.chain.values).toHaveBeenCalledWith({
+			// users insert keeps the global role…
+			expect(txChain.values).toHaveBeenCalledWith(expect.objectContaining({ role: 'superadmin' }));
+			// …while the membership gets the per-org role.
+			expect(txChain.values).toHaveBeenCalledWith({
+				userId: 'new-user-uuid',
 				orgId: 'org-1',
-				email: 'test@example.com',
-				passwordHash: hashedPassword,
-				name: 'Test User',
 				role: 'admin',
 			});
 		});

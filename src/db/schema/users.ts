@@ -30,6 +30,15 @@ export const sessions = pgTable(
 		token: text('token').notNull().unique(),
 		expiresAt: timestamp('expires_at').notNull(),
 		createdAt: timestamp('created_at').defaultNow(),
+		/**
+		 * Multi-org membership (spec 021): the org this session is currently
+		 * acting in. Nullable; `ON DELETE SET NULL` so deleting an org never logs
+		 * a user out. Ships dormant in plan 1 — plan 2's resolver falls back to
+		 * the user's home org (`users.org_id`) when this is NULL.
+		 */
+		activeOrgId: text('active_org_id').references(() => organizations.id, {
+			onDelete: 'set null',
+		}),
 	},
 	(table) => [
 		index('idx_sessions_token').on(table.token),

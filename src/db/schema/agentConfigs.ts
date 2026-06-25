@@ -18,6 +18,9 @@ export const agentConfigs = pgTable(
 		maxConcurrency: integer('max_concurrency'),
 		systemPrompt: text('system_prompt'),
 		taskPrompt: text('task_prompt'),
+		// Per-agent update-channel override. NULL → inherit the default (`both`).
+		// Validated against UPDATE_CHANNELS in the config mapper. See src/config/updateChannel.ts.
+		updateChannel: text('update_channel'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

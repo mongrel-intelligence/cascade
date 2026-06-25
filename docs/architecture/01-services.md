@@ -172,7 +172,8 @@ Module-load phase (runs at import time, before `startDashboard()`):
 ### tRPC context
 
 Every tRPC request builds a context containing:
-- `user` — resolved from session cookie via `resolveUserFromSession()`
-- `effectiveOrgId` — computed from user's org membership or `x-org-context` header
+- `user` — resolved from session cookie via `resolveUserFromSession()` (also returns the session's `active_org_id`)
+- `effectiveOrgId` — computed by `computeEffectiveOrgId()`. For a **superadmin** the `x-org-context` header selects any org (unchanged). For everyone else the session's `active_org_id` governs, validated against `org_memberships`, and falls back to the user's home org (`users.org_id`) when there is no active org or the membership is gone — so deleting an org / losing a membership never logs a user out (spec 021 plan 2).
+- `token` — the session token, used by `auth.setActiveOrg` to switch the session's active org
 
-Procedure types enforce auth levels: `publicProcedure`, `protectedProcedure`, `adminProcedure`, `superAdminProcedure`.
+Procedure types enforce auth levels: `publicProcedure`, `protectedProcedure`, `adminProcedure`, `superAdminProcedure`. User-management permission checks additionally consume `resolveActorRoleInOrg()` so the caller's **per-org** membership role — not the global `users.role` — governs (an org admin who switches into an org where they are only a member cannot act as an admin there).

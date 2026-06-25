@@ -1,6 +1,6 @@
 import { and, eq, gt, lt, ne } from 'drizzle-orm';
 import { getDb } from '../client.js';
-import { sessions, users } from '../schema/index.js';
+import { orgMemberships, sessions, users } from '../schema/index.js';
 
 export interface DashboardUser {
 	id: string;
@@ -8,16 +8,6 @@ export interface DashboardUser {
 	email: string;
 	name: string;
 	role: 'member' | 'admin' | 'superadmin';
-}
-
-export interface OrgUser {
-	id: string;
-	orgId: string;
-	email: string;
-	name: string;
-	role: string;
-	createdAt: Date | null;
-	updatedAt: Date | null;
 }
 
 export async function getUserByEmail(email: string) {
@@ -68,10 +58,29 @@ export async function getSessionByToken(token: string) {
 			sessionId: sessions.id,
 			userId: sessions.userId,
 			expiresAt: sessions.expiresAt,
+			// Multi-org membership (spec 021 plan 2): the org this session is
+			// currently acting in. NULL falls back to the user's home org so an
+			// existing session is never logged out.
+			activeOrgId: sessions.activeOrgId,
 		})
 		.from(sessions)
 		.where(and(eq(sessions.token, token), gt(sessions.expiresAt, now)));
 	return row ?? null;
+}
+
+/**
+ * Set (or clear) the active org on a session, identified by its token.
+ * Pass `null` to fall back to the user's home org on the next request.
+ *
+ * Callers must validate the target org against the user's membership before
+ * calling this (spec 021 plan 2 — `auth.setActiveOrg`).
+ */
+export async function setSessionActiveOrg(
+	token: string,
+	activeOrgId: string | null,
+): Promise<void> {
+	const db = getDb();
+	await db.update(sessions).set({ activeOrgId }).where(eq(sessions.token, token));
 }
 
 export async function deleteSession(token: string): Promise<void> {
@@ -104,59 +113,58 @@ export async function deleteUserSessions(userId: string, excludeToken?: string):
 // ============================================================================
 
 /**
- * List all users in an org. Never returns passwordHash.
- * Pass `opts.excludeRole` to filter out users with that role (e.g. 'superadmin').
+ * Create a new user AND their membership in the same org, atomically
+ * (spec 021 plan 3). The new account's home org is `orgId`; the membership
+ * mirrors it so the account immediately appears in the org's membership-based
+ * listing. The passwordHash must be pre-hashed by the caller.
+ *
+ * `membershipRole` is the PER-ORG role ('member' | 'admin'); callers map a
+ * global 'superadmin' to an 'admin' membership (membership roles are per-org).
+ *
+ * Both inserts run in one transaction, so a duplicate-email unique violation
+ * (`23505`) on the `users` insert rolls back without leaving an orphan
+ * membership. Returns the new user's id.
  */
-export async function listOrgUsers(
-	orgId: string,
-	opts?: { excludeRole?: string },
-): Promise<OrgUser[]> {
-	const db = getDb();
-	const conditions = [eq(users.orgId, orgId)];
-	if (opts?.excludeRole !== undefined) {
-		conditions.push(ne(users.role, opts.excludeRole));
-	}
-	return db
-		.select({
-			id: users.id,
-			orgId: users.orgId,
-			email: users.email,
-			name: users.name,
-			role: users.role,
-			createdAt: users.createdAt,
-			updatedAt: users.updatedAt,
-		})
-		.from(users)
-		.where(and(...conditions));
-}
-
-/**
- * Create a new user. The passwordHash must be pre-hashed by the caller.
- * Returns the new user's id.
- */
-export async function createUser(params: {
+export async function createUserWithMembership(params: {
 	orgId: string;
 	email: string;
 	passwordHash: string;
 	name: string;
 	role: string;
+	membershipRole: string;
 }): Promise<{ id: string }> {
 	const db = getDb();
-	const [row] = await db
-		.insert(users)
-		.values({
+	return db.transaction(async (tx) => {
+		const [row] = await tx
+			.insert(users)
+			.values({
+				orgId: params.orgId,
+				email: params.email,
+				passwordHash: params.passwordHash,
+				name: params.name,
+				role: params.role,
+			})
+			.returning({ id: users.id });
+		await tx.insert(orgMemberships).values({
+			userId: row.id,
 			orgId: params.orgId,
-			email: params.email,
-			passwordHash: params.passwordHash,
-			name: params.name,
-			role: params.role,
-		})
-		.returning({ id: users.id });
-	return row;
+			role: params.membershipRole,
+		});
+		return row;
+	});
 }
 
 /**
  * Sparse update for name, email, role, passwordHash. Sets updatedAt on every update.
+ *
+ * `opts.syncHomeOrgMembership` keeps the user's home-org membership role in lock
+ * step with a global-role change. Home-org permissions are read from
+ * `org_memberships.role` (`resolveActorRoleInOrg`), not `users.role`, so without
+ * this a member↔admin edit via Settings/CLI is a silent no-op for actual
+ * permissions (PR #1441 review). Only applied when `updates.role` is present;
+ * membership roles are per-org ('member' | 'admin'), so a global 'superadmin'
+ * maps to an 'admin' membership (mirrors `createUserWithMembership`). The user
+ * row and the membership upsert run in one transaction so they cannot drift.
  */
 export async function updateUser(
 	id: string,
@@ -166,6 +174,7 @@ export async function updateUser(
 		role?: string;
 		passwordHash?: string;
 	},
+	opts?: { syncHomeOrgMembership?: { orgId: string } },
 ): Promise<void> {
 	const db = getDb();
 	const setClause: Record<string, unknown> = { updatedAt: new Date() };
@@ -173,6 +182,22 @@ export async function updateUser(
 	if (updates.email !== undefined) setClause.email = updates.email;
 	if (updates.role !== undefined) setClause.role = updates.role;
 	if (updates.passwordHash !== undefined) setClause.passwordHash = updates.passwordHash;
+
+	const homeOrgId = opts?.syncHomeOrgMembership?.orgId;
+	if (homeOrgId !== undefined && updates.role !== undefined) {
+		const membershipRole = updates.role === 'superadmin' ? 'admin' : updates.role;
+		await db.transaction(async (tx) => {
+			await tx.update(users).set(setClause).where(eq(users.id, id));
+			await tx
+				.insert(orgMemberships)
+				.values({ userId: id, orgId: homeOrgId, role: membershipRole })
+				.onConflictDoUpdate({
+					target: [orgMemberships.userId, orgMemberships.orgId],
+					set: { role: membershipRole, updatedAt: new Date() },
+				});
+		});
+		return;
+	}
 
 	await db.update(users).set(setClause).where(eq(users.id, id));
 }

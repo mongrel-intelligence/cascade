@@ -546,6 +546,102 @@ describe('GitHubRouterAdapter', () => {
 			expect(postGitHubAck).not.toHaveBeenCalled();
 			expect(ackResult).toBeUndefined();
 		});
+
+		// MNG-1684: system-driven acks are gated on the agent's resolved update
+		// channel. The PR ack is an SCM-surface post; the PM-focused ack is a
+		// PM-surface post — each is gated by its own posting flag.
+		it('skips the GitHub PR ack when the update channel disables SCM posting', async () => {
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(false);
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [
+					{ id: 'p1', repo: 'owner/repo', agentUpdateChannels: { review: 'pm-only' } } as never,
+				],
+			});
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					workItemId: '42',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'review',
+			);
+
+			expect(ackResult).toBeUndefined();
+			expect(resolveGitHubTokenForAckByAgent).not.toHaveBeenCalled();
+			expect(postGitHubAck).not.toHaveBeenCalled();
+		});
+
+		it('skips the PM-focused agent ack when the update channel disables PM posting', async () => {
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(true);
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [
+					{
+						id: 'p1',
+						repo: 'owner/repo',
+						agentUpdateChannels: { 'backlog-manager': 'scm-only' },
+					} as never,
+				],
+			});
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					workItemId: 'card-123',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'backlog-manager',
+				{ agentType: 'backlog-manager', agentInput: {}, workItemId: 'card-123' },
+			);
+
+			expect(ackResult).toBeUndefined();
+			expect(dispatchPMAck).not.toHaveBeenCalled();
+		});
+
+		it('still posts the GitHub PR ack when SCM posting stays enabled (both)', async () => {
+			vi.mocked(isPMFocusedAgent).mockResolvedValue(false);
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [
+					{ id: 'p1', repo: 'owner/repo', agentUpdateChannels: { review: 'both' } } as never,
+				],
+			});
+			vi.mocked(resolveGitHubTokenForAckByAgent).mockResolvedValue({
+				token: 'ghp_test',
+				project: { id: 'p1' },
+			} as never);
+			vi.mocked(extractPRNumber).mockReturnValue(42);
+			vi.mocked(postGitHubAck).mockResolvedValue(999);
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'owner/repo',
+					eventType: 'pull_request',
+					workItemId: '42',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					repoFullName: 'owner/repo',
+				},
+				{},
+				mockProject,
+				'review',
+			);
+
+			expect(postGitHubAck).toHaveBeenCalled();
+			expect(ackResult?.commentId).toBe(999);
+		});
 	});
 
 	describe('buildJob', () => {

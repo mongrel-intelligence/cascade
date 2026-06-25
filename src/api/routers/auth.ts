@@ -1,7 +1,16 @@
+import { TRPCError } from '@trpc/server';
 import bcrypt from 'bcrypt';
 import { z } from 'zod';
+import {
+	getOrgMembership,
+	listOrgMembershipsForUser,
+} from '../../db/repositories/orgMembershipsRepository.js';
 import { getOrganization, listAllOrganizations } from '../../db/repositories/settingsRepository.js';
-import { deleteUserSessions, updateUser } from '../../db/repositories/usersRepository.js';
+import {
+	deleteUserSessions,
+	setSessionActiveOrg,
+	updateUser,
+} from '../../db/repositories/usersRepository.js';
 import { protectedProcedure, router } from '../trpc.js';
 
 export const authRouter = router({
@@ -33,5 +42,37 @@ export const authRouter = router({
 			const passwordHash = await bcrypt.hash(input.password, 10);
 			await updateUser(ctx.user.id, { passwordHash });
 			await deleteUserSessions(ctx.user.id, ctx.token || undefined);
+		}),
+
+	/**
+	 * List the orgs the current user belongs to (spec 021 plan 2), with the
+	 * user's per-org role. Drives the active-org switcher (UI lands in plan 4).
+	 * Superadmins still discover all orgs via `me.availableOrgs`.
+	 */
+	listMyOrgs: protectedProcedure.query(async ({ ctx }) => {
+		return listOrgMembershipsForUser(ctx.user.id);
+	}),
+
+	/**
+	 * Switch the current session's active org (spec 021 plan 2). Validated
+	 * against membership (spec AC #8 — a user can only act in orgs they belong
+	 * to); superadmin cross-org access continues via the `x-org-context` header
+	 * (spec AC #7) and is unaffected by this column.
+	 */
+	setActiveOrg: protectedProcedure
+		.input(z.object({ orgId: z.string().min(1) }))
+		.mutation(async ({ ctx, input }) => {
+			const membership = await getOrgMembership(ctx.user.id, input.orgId);
+			if (!membership) {
+				throw new TRPCError({
+					code: 'FORBIDDEN',
+					message: 'You are not a member of this organization',
+				});
+			}
+			if (!ctx.token) {
+				throw new TRPCError({ code: 'UNAUTHORIZED' });
+			}
+			await setSessionActiveOrg(ctx.token, input.orgId);
+			return { activeOrgId: input.orgId, role: membership.role };
 		}),
 });

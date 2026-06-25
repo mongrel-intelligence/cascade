@@ -9,7 +9,14 @@ interface User {
 	id: string;
 	name: string;
 	email: string;
+	/** Per-org membership role (spec 021 plan 3). */
 	role: string;
+	/**
+	 * Global account role (`users.role`). The editor pre-fills + writes this
+	 * column because `users.update` targets the global role; pre-filling the
+	 * per-org `role` instead would silently revert it on save (PR #1441 review).
+	 */
+	globalRole?: string;
 }
 
 interface UserFormDialogProps {
@@ -26,7 +33,7 @@ export function UserFormDialog({ open, onOpenChange, user }: UserFormDialogProps
 	const [email, setEmail] = useState(user?.email ?? '');
 	const [password, setPassword] = useState('');
 	const [role, setRole] = useState<'member' | 'admin'>(
-		(user?.role as 'member' | 'admin') ?? 'member',
+		(user?.globalRole as 'member' | 'admin') ?? 'member',
 	);
 
 	const invalidate = () => {

@@ -952,6 +952,32 @@ describe('LinearRouterAdapter', () => {
 			);
 			expect(ackResult).toBeUndefined();
 		});
+
+		// MNG-1684: the PM ack is communication-only and is gated on the agent's
+		// resolved update channel.
+		it('skips the PM ack when the update channel disables PM posting', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', agentUpdateChannels: { implementation: 'scm-only' } } as never],
+			});
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'team-abc-123',
+					eventType: 'create/Issue',
+					workItemId: 'issue-abc',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					projectId: 'p1',
+				},
+				baseLinearPayload,
+				mockProject,
+				'implementation',
+			);
+
+			expect(ackResult).toBeUndefined();
+			expect(postLinearAck).not.toHaveBeenCalled();
+		});
 	});
 
 	describe('buildJob', () => {
