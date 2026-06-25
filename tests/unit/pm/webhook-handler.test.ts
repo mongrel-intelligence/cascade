@@ -56,6 +56,7 @@ vi.mock('../../../src/config/provider.js', () => ({
 }));
 
 import { loadProjectConfigById } from '../../../src/config/provider.js';
+import { PMLifecycleManager } from '../../../src/pm/lifecycle.js';
 import { processPMWebhook } from '../../../src/pm/webhook-handler.js';
 import { checkAgentTypeConcurrency } from '../../../src/router/agent-type-lock.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
@@ -63,6 +64,7 @@ import { startWatchdog } from '../../../src/utils/index.js';
 
 const mockStartWatchdog = vi.mocked(startWatchdog);
 const mockRunAgentExecutionPipeline = vi.mocked(runAgentExecutionPipeline);
+const mockPMLifecycleManager = vi.mocked(PMLifecycleManager);
 
 // ============================================================================
 // PMIntegration factory
@@ -240,6 +242,49 @@ describe('processPMWebhook', () => {
 		await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
 
 		expect(integration.withCredentials).toHaveBeenCalled();
+	});
+
+	// MNG-1684 review follow-up: the last-resort `handleError` lifecycle on the
+	// operational-fault catch path must respect the agent's resolved update
+	// channel, mirroring the gated inner lifecycle in createAgentExecutionContext.
+	describe('error-path lifecycle PM posting gate', () => {
+		it('constructs the error lifecycle with pmPostingEnabled=true by default (channel: both)', async () => {
+			const integration = createMockIntegration();
+			const registry = createMockRegistry();
+
+			await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
+
+			expect(mockPMLifecycleManager).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.anything(),
+				true,
+			);
+		});
+
+		it('constructs the error lifecycle with pmPostingEnabled=false when the agent channel disables PM posting', async () => {
+			const integration = createMockIntegration({
+				lookupProject: vi.fn().mockResolvedValue({
+					project: {
+						id: 'project-1',
+						name: 'Test Project',
+						repo: 'owner/repo',
+						baseBranch: 'main',
+						watchdogTimeoutMs: 120000,
+						agentUpdateChannels: { implementation: 'scm-only' },
+					},
+					config: { projects: [] },
+				}),
+			});
+			const registry = createMockRegistry();
+
+			await processPMWebhook(integration as never, { type: 'card_moved' }, registry as never);
+
+			expect(mockPMLifecycleManager).toHaveBeenCalledWith(
+				expect.anything(),
+				expect.anything(),
+				false,
+			);
+		});
 	});
 
 	// 2026-05-11: preferredProjectId path. Closes the third bug in the

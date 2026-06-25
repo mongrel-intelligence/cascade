@@ -8,6 +8,7 @@
  */
 
 import { loadProjectConfigById } from '../config/provider.js';
+import { isPmPostingEnabled, resolveUpdateChannel } from '../config/updateChannel.js';
 import type { TriggerRegistry } from '../triggers/registry.js';
 import { withAgentTypeConcurrency } from '../triggers/shared/concurrency.js';
 import { resolveTriggerResult } from '../triggers/shared/trigger-resolution.js';
@@ -109,7 +110,17 @@ async function handleMatchedTrigger(
 		startWatchdog(project.watchdogTimeoutMs);
 
 		const pmConfig = resolveProjectPMConfig(project);
-		const lifecycle = new PMLifecycleManager(getPMProvider(), pmConfig);
+		// Gate the last-resort error comment on the agent's resolved update
+		// channel, mirroring the gated inner lifecycle built in
+		// `createAgentExecutionContext`. This is the only lifecycle constructed on
+		// the operational-fault catch path (an unhandled exception escaping
+		// `executeAgent`); without this flag a `none` / `scm-only` agent would
+		// still post a `❌ Error:` comment to the PM card, the one place the
+		// "disabled PM channel simply no-ops" invariant otherwise wouldn't hold.
+		const pmPostingEnabled = result.agentType
+			? isPmPostingEnabled(resolveUpdateChannel(project, result.agentType))
+			: true;
+		const lifecycle = new PMLifecycleManager(getPMProvider(), pmConfig, pmPostingEnabled);
 
 		try {
 			await executeAgent(integration, result, project, config);
