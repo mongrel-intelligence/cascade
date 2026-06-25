@@ -290,8 +290,9 @@ export const runsRouter = router({
 				});
 			}
 
-			// Delete the prior analysis (and any leftover terminal status row) before
-			// re-running.
+			// Delete the prior analysis content row before re-running. Any leftover
+			// terminal status row (e.g. `failed`) is not removed here — it is
+			// overwritten by the `markDebugAnalysisRunning` upsert below.
 			await deleteDebugAnalysisByRunId(input.runId);
 
 			if (isQueueMode()) {

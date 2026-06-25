@@ -502,6 +502,22 @@ describe('RunsDebug trigger with wait (runs debug --analyze --wait)', () => {
 		);
 	});
 
+	it('stops polling when status is failed', async () => {
+		const client = makeClient();
+		const statusQuery = client.runs.getDebugAnalysisStatus.query as ReturnType<typeof vi.fn>;
+		statusQuery.mockResolvedValue({ status: 'failed' });
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new RunsDebug(['run-uuid-dbg', '--analyze', '--wait'], oclifConfig as never);
+		const logSpy = vi.spyOn(cmd as unknown as { log: (s: string) => void }, 'log');
+
+		const runPromise = cmd.run();
+		await vi.advanceTimersByTimeAsync(5000);
+		await runPromise;
+
+		expect(logSpy).toHaveBeenCalledWith('Debug analysis failed.');
+	});
+
 	it('logs timeout message after 5-minute deadline', async () => {
 		const client = makeClient();
 		const statusQuery = client.runs.getDebugAnalysisStatus.query as ReturnType<typeof vi.fn>;
