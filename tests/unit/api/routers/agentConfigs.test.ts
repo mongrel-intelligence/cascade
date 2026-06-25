@@ -393,6 +393,122 @@ describe('agentConfigsRouter', () => {
 		});
 	});
 
+	describe('create with updateChannel', () => {
+		it('passes updateChannel to repository when creating project-scoped config', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 40 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				updateChannel: 'pm-only',
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ updateChannel: 'pm-only' }),
+			);
+		});
+
+		it('passes null updateChannel to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 41 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				updateChannel: null,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ updateChannel: null }),
+			);
+		});
+
+		it('omits updateChannel from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 42 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+			});
+
+			const callArg = mockCreateAgentConfig.mock.calls[0][0];
+			expect(Object.hasOwn(callArg, 'updateChannel')).toBe(false);
+		});
+
+		it('rejects an invalid updateChannel value', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({
+					projectId: 'proj-1',
+					agentType: 'review',
+					// @ts-expect-error: testing invalid enum value
+					updateChannel: 'invalid-channel',
+				}),
+			).rejects.toThrow();
+
+			expect(mockCreateAgentConfig).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('update with updateChannel', () => {
+		it('passes updateChannel to repository when updating project-scoped config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, updateChannel: 'scm-only' });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({ updateChannel: 'scm-only' }),
+			);
+		});
+
+		it('passes null updateChannel to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, updateChannel: null });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({ updateChannel: null }),
+			);
+		});
+
+		it('omits updateChannel from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 11, model: 'new-model' });
+
+			const callArg = mockUpdateAgentConfig.mock.calls[0][1];
+			expect(Object.hasOwn(callArg, 'updateChannel')).toBe(false);
+		});
+
+		it('rejects an invalid updateChannel value', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				// @ts-expect-error: testing invalid enum value
+				caller.update({ id: 11, updateChannel: 'not-a-channel' }),
+			).rejects.toThrow();
+
+			expect(mockUpdateAgentConfig).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('create with prompts', () => {
 		it('passes systemPrompt and taskPrompt to repository when provided', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);

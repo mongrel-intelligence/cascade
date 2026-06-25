@@ -210,6 +210,35 @@ describe('AgentsCreate (create)', () => {
 		);
 	});
 
+	it('passes optional --update-channel flag to mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new AgentsCreate(
+			['--agent-type', 'review', '--project-id', 'my-project', '--update-channel', 'pm-only'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.agentConfigs.create.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'review',
+				projectId: 'my-project',
+				updateChannel: 'pm-only',
+			}),
+		);
+	});
+
+	it('rejects an invalid --update-channel value', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new AgentsCreate(
+			['--agent-type', 'review', '--project-id', 'my-project', '--update-channel', 'bogus'],
+			oclifConfig as never,
+		);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+
 	it('outputs json when --json flag is set', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
@@ -311,6 +340,21 @@ describe('AgentsUpdate (update)', () => {
 				model: 'claude-sonnet-4-5-20250929',
 				maxIterations: 40,
 				agentEngine: 'llmist',
+			}),
+		);
+	});
+
+	it('passes ID with --update-channel flag to mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new AgentsUpdate(['1', '--update-channel', 'scm-only'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.agentConfigs.update.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 1,
+				updateChannel: 'scm-only',
 			}),
 		);
 	});

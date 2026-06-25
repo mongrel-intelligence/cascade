@@ -9,6 +9,7 @@ import {
 } from '../../agents/prompts/index.js';
 import { getEngineCatalog, registerBuiltInEngines } from '../../backends/index.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
+import { UpdateChannelSchema } from '../../config/updateChannel.js';
 import { getDb } from '../../db/client.js';
 import { loadPartials } from '../../db/repositories/partialsRepository.js';
 import {
@@ -78,6 +79,7 @@ export const agentConfigsRouter = router({
 				maxConcurrency: z.number().int().positive().nullish(),
 				systemPrompt: z.string().nullish(),
 				taskPrompt: z.string().nullish(),
+				updateChannel: UpdateChannelSchema.nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -98,6 +100,7 @@ export const agentConfigsRouter = router({
 				...(input.maxConcurrency !== undefined ? { maxConcurrency: input.maxConcurrency } : {}),
 				...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
 				...(input.taskPrompt !== undefined ? { taskPrompt: input.taskPrompt } : {}),
+				...(input.updateChannel !== undefined ? { updateChannel: input.updateChannel } : {}),
 			});
 		}),
 
@@ -113,6 +116,7 @@ export const agentConfigsRouter = router({
 				maxConcurrency: z.number().int().positive().nullish(),
 				systemPrompt: z.string().nullish(),
 				taskPrompt: z.string().nullish(),
+				updateChannel: UpdateChannelSchema.nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

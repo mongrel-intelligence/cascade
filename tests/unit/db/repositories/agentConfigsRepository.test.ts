@@ -89,6 +89,23 @@ describe('agentConfigsRepository', () => {
 				}),
 			);
 		});
+
+		it('persists updateChannel when provided', async () => {
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 45 }]);
+
+			const result = await createAgentConfig({
+				projectId: 'proj-1',
+				agentType: 'implementation',
+				updateChannel: 'pm-only',
+			});
+
+			expect(result).toEqual({ id: 45 });
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					updateChannel: 'pm-only',
+				}),
+			);
+		});
 	});
 
 	describe('updateAgentConfig', () => {
@@ -136,6 +153,26 @@ describe('agentConfigsRepository', () => {
 			const setArg = mockDb.chain.set.mock.calls[0][0];
 			expect(setArg.systemPrompt).toBe('Updated system prompt.');
 			expect(setArg.taskPrompt).toBe('Updated task prompt.');
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('persists updateChannel when provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateAgentConfig(42, { updateChannel: 'scm-only' });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.updateChannel).toBe('scm-only');
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('can set updateChannel to null', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateAgentConfig(42, { updateChannel: null });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.updateChannel).toBeNull();
 			expect(setArg.updatedAt).toBeInstanceOf(Date);
 		});
 	});

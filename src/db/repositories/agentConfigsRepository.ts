@@ -22,6 +22,7 @@ export async function createAgentConfig(data: {
 	maxConcurrency?: number | null;
 	systemPrompt?: string | null;
 	taskPrompt?: string | null;
+	updateChannel?: string | null;
 }) {
 	const db = getDb();
 	const [row] = await db
@@ -36,6 +37,7 @@ export async function createAgentConfig(data: {
 			maxConcurrency: data.maxConcurrency,
 			systemPrompt: data.systemPrompt,
 			taskPrompt: data.taskPrompt,
+			updateChannel: data.updateChannel,
 		})
 		.returning({ id: agentConfigs.id });
 	return row;
@@ -52,6 +54,7 @@ export async function updateAgentConfig(
 		maxConcurrency?: number | null;
 		systemPrompt?: string | null;
 		taskPrompt?: string | null;
+		updateChannel?: string | null;
 	},
 ) {
 	const db = getDb();
