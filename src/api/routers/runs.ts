@@ -272,7 +272,8 @@ export const runsRouter = router({
 				});
 			}
 
-			// Already-running guard (durable in queue mode, in-memory in local dev).
+			// Already-running guard — reads the durable `debug_analysis_status` row
+			// uniformly in queue mode and local dev (see assertDebugAnalysisNotInFlight).
 			await assertDebugAnalysisNotInFlight(input.runId);
 
 			if (!run.projectId) {
