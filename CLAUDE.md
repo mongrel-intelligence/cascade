@@ -104,6 +104,21 @@ cascade projects credentials-set <id> --key GITHUB_TOKEN_REVIEWER --value ghp_..
 - `check-suite-success` checks reviews from the **reviewer** persona specifically.
 - All trigger handlers use `isCascadeBot(login)` to filter self-events.
 
+## Agent update channel
+
+Each agent type has an optional **`updateChannel`** that gates *where* it posts **communication-only** status updates back to humans. Two independent posting surfaces exist: **PM** (work-item comments on the Trello card / JIRA issue / Linear issue) and **SCM** (comments and reviews on the GitHub PR). The channel catalog, resolver, and posting-matrix helpers are the single source of truth in `src/config/updateChannel.ts`.
+
+| `updateChannel` | PM posting | SCM posting |
+|---|:---:|:---:|
+| `none` | ❌ | ❌ |
+| `pm-only` | ✅ | ❌ |
+| `scm-only` | ❌ | ✅ |
+| `both` (default) | ✅ | ✅ |
+
+**Resolution.** The per-agent override is stored in the `agent_configs.update_channel` column (one row per `(projectId, agentType)`). A `NULL`, absent, or unrecognized value inherits the default **`both`** — the historical "post everywhere" behavior. The config mapper validates the stored string against the channel catalog (`UPDATE_CHANNELS`) and surfaces the per-agent map as `ProjectConfig.agentUpdateChannels`; runtime code reads it via `resolveUpdateChannel(project, agentType)` and branches on `isPmPostingEnabled(channel)` / `isScmPostingEnabled(channel)`.
+
+**Communication-only, not workflow.** The channel only silences human-facing status chatter; it never blocks an agent from doing real work. **Gated** surfaces: system-driven **acks** (router PR / PM-focused-agent ack comments), **progress** updates (the progress monitor's PM/SCM posters), **lifecycle comments** (the `PR created` fallback plus failure / budget-exceeded / budget-warning / error comments in `PMLifecycleManager`), agent **summaries / reviews** posted back to the work item, and the agent's own **posting tools** — `filterPostingGadgetNames` drops the disabled surface's communication-only gadgets (PM: `PostComment`; SCM: `PostPRComment`, `UpdatePRComment`, `CreatePRReview`, `ReplyToReviewComment`) in **both** the native-tool (`buildExecutionPlan`) and LLMist engine paths, so a `none` / `pm-only` / `scm-only` agent literally cannot call a disabled-surface comment/review tool. **Not gated** (workflow actions always run): PR creation (`CreatePR`), status moves (`MoveWorkItem` and lifecycle `moveOnPrepare` / `moveOnSuccess`), label add/remove, checklist sync (`syncChecklist`), PR linking (`linkPR`), friction reporting (`ReportFriction`), and the "eyes" acknowledgment reaction.
+
 ## Agent triggers
 
 Trigger format is category-prefixed: `{category}:{event}`

@@ -312,6 +312,45 @@ PM card management during agent execution:
 | `linkPR` | Link the created PR to the work item |
 | `syncChecklist` | Sync todo list back to PM card checklists |
 
+## Update Channel (posting surfaces)
+
+Each agent type carries an optional **`updateChannel`** (`none` / `scm-only` / `pm-only` / `both`, default `both`) that gates *where* the agent posts **communication-only** status updates. It distinguishes two posting surfaces — **PM** (work-item comments) and **SCM** (PR comments and reviews) — without ever touching the agent's real work. The catalog, resolver, and posting-matrix helpers live in `src/config/updateChannel.ts`; per-agent values are configured in the `agent_configs.update_channel` column and surfaced on `ProjectConfig.agentUpdateChannels` (see [`08-config-credentials.md`](./08-config-credentials.md#agent-update-channel)).
+
+| `updateChannel` | PM posting | SCM posting |
+|---|:---:|:---:|
+| `none` | ❌ | ❌ |
+| `pm-only` | ✅ | ❌ |
+| `scm-only` | ❌ | ✅ |
+| `both` (default) | ✅ | ✅ |
+
+Runtime code resolves the channel with `resolveUpdateChannel(project, agentType)` and branches on `isPmPostingEnabled()` / `isScmPostingEnabled()`. A `NULL` / absent / unrecognized value inherits the default `both`.
+
+### Gated posting surfaces (communication-only)
+
+These exist purely to post human-facing status updates, so suppressing them never stops the agent from reading code, opening PRs, or moving cards:
+
+| Surface | Where | Gating |
+|---|---|---|
+| Router ack comments | `src/router/adapters/{github,trello,jira,linear}.ts` | PM-focused-agent ack needs PM posting; regular PR ack needs SCM posting |
+| Progress updates | `buildProgressMonitorConfig` (`src/backends/progressLifecycle.ts`) | Omits the PM (`trello`) / SCM (`github`) progress poster the channel disables |
+| Lifecycle comments | `PMLifecycleManager` (`src/pm/lifecycle.ts`) | `pmPostingEnabled` suppresses the `PR created` fallback, failure, budget-exceeded/warning, and error comments — labels / moves / `linkPR` still run |
+| Agent summary / review | `postAgentSummaryToPM` (`src/triggers/shared/agent-pm-summary.ts`) | Early-returns when PM posting is disabled |
+| Agent posting tools | `buildExecutionPlan` (`src/backends/secretOrchestrator.ts`) + LLMist (`src/backends/llmist/index.ts`) | `filterPostingGadgetNames` removes disabled-surface gadgets — PM: `PostComment`; SCM: `PostPRComment`, `UpdatePRComment`, `CreatePRReview`, `ReplyToReviewComment` |
+
+The tool-level gate runs in **both** engine families (native-tool and LLMist), so a disabled channel means the agent's tool list never includes the silenced surface's comment/review gadget — it cannot post even if instructed.
+
+### Not gated (workflow actions)
+
+The channel is communication-only; these always run regardless of channel:
+
+- **PR creation** (`CreatePR`)
+- **Status moves** (`MoveWorkItem`, plus lifecycle `moveOnPrepare` / `moveOnSuccess`)
+- **Label** add/remove (processing / processed / error)
+- **Checklist sync** (`syncChecklist`)
+- **PR linking** (`linkPR`)
+- **Friction reporting** (`ReportFriction`)
+- The **"eyes"** acknowledgment reaction on PRs
+
 ## Agent Profiles
 
 `src/agents/definitions/profiles.ts`
