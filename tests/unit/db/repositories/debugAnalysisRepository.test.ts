@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createMockDbWithGetDb } from '../../../helpers/mockDb.js';
 import { mockDbClientModule } from '../../../helpers/sharedMocks.js';
 
@@ -262,6 +262,33 @@ describe('debugAnalysisRepository', () => {
 		it('returns false for a stale running status (crashed worker)', () => {
 			const stale = new Date(Date.now() - DEBUG_ANALYSIS_RUNNING_STALE_MS - 1_000);
 			expect(isDebugAnalysisRunActive({ status: 'running', updatedAt: stale })).toBe(false);
+		});
+	});
+
+	// The staleness check uses a strict `<` against DEBUG_ANALYSIS_RUNNING_STALE_MS,
+	// so a `running` row aged *exactly* at the threshold is already treated as stale.
+	// That boundary is what guarantees a crashed/OOM-killed worker never wedges the
+	// run as permanently `running`. Freeze the clock so the off-by-one is asserted
+	// deterministically, then restore real timers — this file runs under unit-core
+	// with `isolate: false`, where a leaked fake timer would bleed into sibling files.
+	describe('isDebugAnalysisRunActive — exact staleness boundary', () => {
+		beforeEach(() => {
+			vi.useFakeTimers();
+			vi.setSystemTime(new Date('2026-06-25T12:00:00Z'));
+		});
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it('treats a running row aged exactly at the threshold as stale (strict <)', () => {
+			const updatedAt = new Date(Date.now() - DEBUG_ANALYSIS_RUNNING_STALE_MS);
+			expect(isDebugAnalysisRunActive({ status: 'running', updatedAt })).toBe(false);
+		});
+
+		it('treats a running row aged one ms under the threshold as active', () => {
+			const updatedAt = new Date(Date.now() - DEBUG_ANALYSIS_RUNNING_STALE_MS + 1);
+			expect(isDebugAnalysisRunActive({ status: 'running', updatedAt })).toBe(true);
 		});
 	});
 });
