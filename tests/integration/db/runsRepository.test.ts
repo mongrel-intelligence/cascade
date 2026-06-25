@@ -483,9 +483,18 @@ describe('runsRepository (integration)', () => {
 				engine: 'claude-code',
 			});
 			await markDebugAnalysisRunning(runId);
+			expect(await getDebugAnalysisRunState(runId)).not.toBeNull();
 
-			// Deleting the project cascades to runs, which cascades to the status row.
-			await truncateAll();
+			// Delete the parent agent_runs row directly so this genuinely exercises
+			// the FK's ON DELETE CASCADE. truncateAll() issues `TRUNCATE ... CASCADE`,
+			// which clears every referencing table regardless of the FK action — it
+			// would pass even if the constraint were NO ACTION/RESTRICT. A targeted
+			// DELETE only succeeds (and removes the status row) because the FK
+			// cascades; a non-cascading FK would raise a foreign-key violation here.
+			const { getDb } = await import('../../../src/db/client.js');
+			const { agentRuns } = await import('../../../src/db/schema/index.js');
+			const { eq } = await import('drizzle-orm');
+			await getDb().delete(agentRuns).where(eq(agentRuns.id, runId));
 
 			expect(await getDebugAnalysisRunState(runId)).toBeNull();
 		});
