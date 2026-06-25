@@ -3,6 +3,7 @@ import { jiraConfigSchema } from '../integrations/pm/jira/config-schema.js';
 import { linearConfigSchema } from '../integrations/pm/linear/config-schema.js';
 import { trelloConfigSchema } from '../integrations/pm/trello/config-schema.js';
 import { EngineSettingsSchema } from './engineSettings.js';
+import { UpdateChannelSchema } from './updateChannel.js';
 
 export const PROJECT_DEFAULTS = {
 	model: 'openrouter:google/gemini-3-flash-preview',
@@ -67,6 +68,13 @@ export const ProjectConfigSchema = z.object({
 	 * Used by buildExecutionPlan() to merge into the execution plan's engineSettings.
 	 */
 	agentEngineSettings: z.record(z.string(), EngineSettingsSchema).optional(),
+	/**
+	 * Per-agent update-channel overrides keyed by agent type.
+	 * Populated from agent_configs.update_channel rows at config load time.
+	 * Absent / NULL means the agent inherits the default channel (`both`).
+	 * Read at runtime via resolveUpdateChannel() in src/config/updateChannel.ts.
+	 */
+	agentUpdateChannels: z.record(z.string(), UpdateChannelSchema).optional(),
 	runLinksEnabled: z.boolean().default(false),
 	maxInFlightItems: z.number().int().positive().optional(),
 	snapshotEnabled: z.boolean().optional(),

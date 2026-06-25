@@ -197,6 +197,122 @@ describe('buildAgentMaps', () => {
 		const result = buildAgentMaps(configs);
 		expect(Object.keys(result.engineSettings)).toHaveLength(0);
 	});
+
+	it('returns empty updateChannels map for empty input', () => {
+		const result = buildAgentMaps([]);
+		expect(result.updateChannels).toEqual({});
+	});
+
+	it('maps a valid updateChannel per agent type', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'pm-only',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'none',
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.updateChannels).toEqual({ implementation: 'pm-only', review: 'none' });
+	});
+
+	it('accepts every known update channel value', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'none-agent',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'none',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'scm-agent',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'scm-only',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'pm-agent',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'pm-only',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'both-agent',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'both',
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.updateChannels).toEqual({
+			'none-agent': 'none',
+			'scm-agent': 'scm-only',
+			'pm-agent': 'pm-only',
+			'both-agent': 'both',
+		});
+	});
+
+	it('ignores null updateChannel values', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: null,
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(Object.keys(result.updateChannels)).toHaveLength(0);
+	});
+
+	it('ignores unknown updateChannel values (validated against UPDATE_CHANNELS)', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				// not in UPDATE_CHANNELS — must be ignored, not cast through
+				updateChannel: 'all',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'both',
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.updateChannels).toEqual({ review: 'both' });
+		expect(result.updateChannels.implementation).toBeUndefined();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -430,5 +546,43 @@ describe('mapProjectRow', () => {
 	it('maps snapshotTtlMs when set on project row', () => {
 		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, snapshotTtlMs: 3600000 } }));
 		expect(result.snapshotTtlMs).toBe(3600000);
+	});
+
+	it('builds agentUpdateChannels from project agent configs', () => {
+		const agentConfigs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'pm-only',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: 'none',
+			},
+		];
+		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
+		expect(result.agentUpdateChannels).toEqual({ implementation: 'pm-only', review: 'none' });
+	});
+
+	it('leaves agentUpdateChannels undefined when no channels are configured (orUndefined)', () => {
+		const agentConfigs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'implementation',
+				model: 'some-model',
+				maxIterations: null,
+				agentEngine: null,
+				updateChannel: null,
+			},
+		];
+		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
+		expect(result.agentUpdateChannels).toBeUndefined();
 	});
 });

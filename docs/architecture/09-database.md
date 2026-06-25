@@ -82,6 +82,7 @@ erDiagram
         integer max_concurrency
         text system_prompt
         text task_prompt
+        text update_channel
     }
 
     agent_trigger_configs {

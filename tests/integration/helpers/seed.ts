@@ -131,6 +131,7 @@ export async function seedAgentConfig(
 		model?: string | null;
 		maxIterations?: number | null;
 		agentEngine?: string | null;
+		updateChannel?: string | null;
 	} = {},
 ) {
 	const db = getDb();
@@ -142,6 +143,7 @@ export async function seedAgentConfig(
 			model: overrides.model ?? null,
 			maxIterations: overrides.maxIterations ?? null,
 			agentEngine: overrides.agentEngine ?? null,
+			updateChannel: overrides.updateChannel ?? null,
 		})
 		.returning();
 	return row;
