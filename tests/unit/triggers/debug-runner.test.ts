@@ -44,6 +44,7 @@ import {
 import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockPMProvider = { addComment: vi.fn() };
 
@@ -196,6 +197,33 @@ describe('triggerDebugAnalysis', () => {
 		// Failure persists `failed` and must NOT clear the status (status should
 		// read `failed`, not `idle`).
 		expect(markDebugAnalysisFailed).toHaveBeenCalledWith('run-1');
+		expect(clearDebugAnalysisStatus).not.toHaveBeenCalled();
+	});
+
+	it('logs a warning but still throws the original error when the durable failed-write itself fails', async () => {
+		vi.mocked(getRunById).mockResolvedValue({
+			id: 'run-1',
+			agentType: 'implementation',
+			status: 'failed',
+		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
+
+		vi.mocked(getRunLogs).mockResolvedValue(null);
+		vi.mocked(getLlmCallsByRunId).mockResolvedValue([]);
+
+		vi.mocked(runAgent).mockRejectedValue(new Error('Agent crashed'));
+		// The durable `failed` write itself errors (e.g. DB unavailable); it must
+		// not mask or replace the original agent failure.
+		vi.mocked(markDebugAnalysisFailed).mockRejectedValueOnce(new Error('DB unavailable'));
+
+		await expect(triggerDebugAnalysis('run-1', mockProject, mockConfig)).rejects.toThrow(
+			'Agent crashed',
+		);
+
+		expect(markDebugAnalysisFailed).toHaveBeenCalledWith('run-1');
+		expect(logger.warn).toHaveBeenCalledWith(
+			'Failed to mark debug analysis failed',
+			expect.objectContaining({ analyzedRunId: 'run-1' }),
+		);
 		expect(clearDebugAnalysisStatus).not.toHaveBeenCalled();
 	});
 
