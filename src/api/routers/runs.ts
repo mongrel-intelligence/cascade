@@ -21,7 +21,63 @@ import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
 import { verifyProjectOrgAccess } from './_shared/projectAccess.js';
 
-const useQueue = !!process.env.REDIS_URL;
+/**
+ * Whether dashboard jobs run through the durable BullMQ queue (production) or
+ * are fired in-process (local dev without REDIS_URL).
+ *
+ * Read at call time — not memoised at module load — so the REDIS_URL gate
+ * reflects the live environment and is observable in unit tests.
+ */
+function isQueueMode(): boolean {
+	return !!process.env.REDIS_URL;
+}
+
+/**
+ * BullMQ job states that mean a debug-analysis job is still queued or executing.
+ *
+ * A job in any of these states resolves debug-analysis status to `running`
+ * (short-circuiting the DB lookup) and blocks a re-trigger with CONFLICT. The
+ * terminal states (`completed`, `failed`) are deliberately excluded so a prior
+ * run never masks a fresh DB record or a real failure.
+ */
+const IN_FLIGHT_DEBUG_JOB_STATES: ReadonlySet<string> = new Set([
+	'active',
+	'waiting',
+	'delayed',
+	'prioritized',
+	'waiting-children',
+]);
+
+function isInFlightDebugJobState(state: string | null): boolean {
+	return state !== null && IN_FLIGHT_DEBUG_JOB_STATES.has(state);
+}
+
+/**
+ * Throw CONFLICT when a debug analysis is already in progress for `runId`.
+ *
+ * Queue mode (production) consults the durable BullMQ job by its deterministic
+ * id — the analysis runs in a separate worker process, so the in-memory Set in
+ * this dashboard process is never authoritative. Non-queue mode (local dev)
+ * runs the analysis in-process and uses the in-memory Set.
+ */
+async function assertDebugAnalysisNotInFlight(runId: string): Promise<void> {
+	const alreadyRunning = await isDebugAnalysisInFlight(runId);
+	if (alreadyRunning) {
+		throw new TRPCError({
+			code: 'CONFLICT',
+			message: 'Debug analysis is already running for this run',
+		});
+	}
+}
+
+async function isDebugAnalysisInFlight(runId: string): Promise<boolean> {
+	if (isQueueMode()) {
+		const { debugAnalysisJobId, getDashboardJobState } = await import('../../queue/client.js');
+		const jobState = await getDashboardJobState(debugAnalysisJobId(runId));
+		return isInFlightDebugJobState(jobState);
+	}
+	return isAnalysisRunning(runId);
+}
 
 export const runsRouter = router({
 	list: protectedProcedure
@@ -193,6 +249,32 @@ export const runsRouter = router({
 				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
+			// Queue mode (production): the debug-analysis job runs in a separate
+			// worker process, so the in-memory `isAnalysisRunning()` Set in this
+			// dashboard process never reports `running`. Derive status from the
+			// durable BullMQ job keyed by the deterministic id instead.
+			if (isQueueMode()) {
+				const { debugAnalysisJobId, getDashboardJobState } = await import('../../queue/client.js');
+				const jobState = await getDashboardJobState(debugAnalysisJobId(input.runId));
+				// Precedence: an in-flight job wins and short-circuits the DB lookup.
+				if (isInFlightDebugJobState(jobState)) {
+					return { status: 'running' as const };
+				}
+				// A persisted analysis means a prior run completed — DB wins over a
+				// stale completed/failed job still parked in the queue.
+				const analysis = await getDebugAnalysisByRunId(input.runId);
+				if (analysis) {
+					return { status: 'completed' as const };
+				}
+				// No analysis row + a failed job means the last attempt errored out.
+				if (jobState === 'failed') {
+					return { status: 'failed' as const };
+				}
+				return { status: 'idle' as const };
+			}
+
+			// Non-queue mode (local dev): the worker runs in-process, so the
+			// in-memory Set is authoritative for `running`.
 			if (isAnalysisRunning(input.runId)) {
 				return { status: 'running' as const };
 			}
@@ -222,12 +304,8 @@ export const runsRouter = router({
 				});
 			}
 
-			if (isAnalysisRunning(input.runId)) {
-				throw new TRPCError({
-					code: 'CONFLICT',
-					message: 'Debug analysis is already running for this run',
-				});
-			}
+			// Already-running guard (durable in queue mode, in-memory in local dev).
+			await assertDebugAnalysisNotInFlight(input.runId);
 
 			if (!run.projectId) {
 				throw new TRPCError({
@@ -247,14 +325,24 @@ export const runsRouter = router({
 			// Delete existing analysis before re-running
 			await deleteDebugAnalysisByRunId(input.runId);
 
-			if (useQueue) {
-				const { submitDashboardJob } = await import('../../queue/client.js');
-				await submitDashboardJob({
-					type: 'debug-analysis',
-					runId: input.runId,
-					projectId: run.projectId,
-					workItemId: run.workItemId ?? undefined,
-				});
+			if (isQueueMode()) {
+				const { debugAnalysisJobId, removeDashboardJob, submitDashboardJob } = await import(
+					'../../queue/client.js'
+				);
+				// Reuse the deterministic id so other processes can resolve this
+				// run's job state. Clear any prior terminal (completed/failed) job
+				// first so the re-enqueue isn't rejected for a duplicate id.
+				const jobId = debugAnalysisJobId(input.runId);
+				await removeDashboardJob(jobId);
+				await submitDashboardJob(
+					{
+						type: 'debug-analysis',
+						runId: input.runId,
+						projectId: run.projectId,
+						workItemId: run.workItemId ?? undefined,
+					},
+					jobId,
+				);
 			} else {
 				const { triggerDebugAnalysis } = await import('../../triggers/shared/debug-runner.js');
 				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.workItemId ?? undefined).catch(
@@ -329,7 +417,7 @@ export const runsRouter = router({
 				});
 			}
 
-			if (useQueue) {
+			if (isQueueMode()) {
 				const { submitDashboardJob } = await import('../../queue/client.js');
 				await submitDashboardJob({
 					type: 'manual-run',
@@ -430,7 +518,7 @@ export const runsRouter = router({
 				});
 			}
 
-			if (useQueue) {
+			if (isQueueMode()) {
 				const { submitDashboardJob } = await import('../../queue/client.js');
 				await submitDashboardJob({
 					type: 'retry-run',

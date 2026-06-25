@@ -7,7 +7,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Set REDIS_URL before any imports to enable queue path
+// Enable the queue path. The router reads REDIS_URL at call time, so the
+// load-bearing stub is the per-test one in beforeEach (vitest's unstubEnvs:true
+// clears env stubs before each test); this top-level stub keeps import-time
+// intent clear.
 vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
 
 // Mock the queue client to capture job submissions
@@ -88,6 +91,10 @@ const RUN_UUID = 'aaaaaaaa-1111-2222-3333-444444444444';
 
 describe('retry-run job submission with projectId', () => {
 	beforeEach(() => {
+		// Queue mode is gated on REDIS_URL, read at call time by the router.
+		// Re-stub each test because vitest's unstubEnvs:true clears env stubs
+		// before every test.
+		vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
 		mockSubmitDashboardJob.mockClear();
 		mockGetRunById.mockReset();
 		mockLoadProjectConfigById.mockReset();

@@ -24,6 +24,10 @@ const {
 	mockLoadProjectConfigById,
 	mockPublishCancelCommand,
 	mockIsAgentEnabledForProject,
+	mockDebugAnalysisJobId,
+	mockGetDashboardJobState,
+	mockRemoveDashboardJob,
+	mockSubmitDashboardJob,
 } = vi.hoisted(() => ({
 	mockListRuns: vi.fn(),
 	mockGetRunById: vi.fn(),
@@ -41,6 +45,10 @@ const {
 	mockLoadProjectConfigById: vi.fn(),
 	mockPublishCancelCommand: vi.fn().mockResolvedValue(undefined),
 	mockIsAgentEnabledForProject: vi.fn().mockResolvedValue(true),
+	mockDebugAnalysisJobId: vi.fn((runId: string) => `debug-analysis-${runId}`),
+	mockGetDashboardJobState: vi.fn(),
+	mockRemoveDashboardJob: vi.fn().mockResolvedValue(undefined),
+	mockSubmitDashboardJob: vi.fn().mockResolvedValue('debug-analysis-job-id'),
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
@@ -103,6 +111,14 @@ vi.mock('../../../../src/queue/cancel.js', () => ({
 // Mock isAgentEnabledForProject — default: agent is enabled
 vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
 	isAgentEnabledForProject: mockIsAgentEnabledForProject,
+}));
+
+// Mock the durable dashboard-jobs queue client (queue-mode debug-analysis path)
+vi.mock('../../../../src/queue/client.js', () => ({
+	debugAnalysisJobId: mockDebugAnalysisJobId,
+	getDashboardJobState: mockGetDashboardJobState,
+	removeDashboardJob: mockRemoveDashboardJob,
+	submitDashboardJob: mockSubmitDashboardJob,
 }));
 
 import { runsRouter } from '../../../../src/api/routers/runs.js';
@@ -675,6 +691,84 @@ describe('runsRouter', () => {
 		});
 	});
 
+	describe('getDebugAnalysisStatus (queue mode)', () => {
+		beforeEach(() => {
+			// Queue mode is gated on REDIS_URL; stubEnv is auto-cleared by
+			// vitest's unstubEnvs:true after each test.
+			vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
+			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+		});
+
+		it('returns running when the BullMQ job is in-flight, short-circuiting the DB', async () => {
+			mockGetDashboardJobState.mockResolvedValue('active');
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'running' });
+			expect(mockGetDashboardJobState).toHaveBeenCalledWith(`debug-analysis-${RUN_UUID}`);
+			// In-flight short-circuits the DB lookup
+			expect(mockGetDebugAnalysisByRunId).not.toHaveBeenCalled();
+			// Queue mode must not consult the worker-local in-memory Set
+			expect(mockIsAnalysisRunning).not.toHaveBeenCalled();
+		});
+
+		it('treats a waiting job as running', async () => {
+			mockGetDashboardJobState.mockResolvedValue('waiting');
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'running' });
+			expect(mockGetDebugAnalysisByRunId).not.toHaveBeenCalled();
+		});
+
+		it('returns completed when a DB record exists even if the job is failed (DB wins)', async () => {
+			mockGetDashboardJobState.mockResolvedValue('failed');
+			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'completed' });
+		});
+
+		it('returns failed when the job failed and no DB record exists', async () => {
+			mockGetDashboardJobState.mockResolvedValue('failed');
+			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'failed' });
+		});
+
+		it('returns idle when there is no job and no DB record', async () => {
+			mockGetDashboardJobState.mockResolvedValue(null);
+			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'idle' });
+			// Queue mode must not consult the worker-local in-memory Set
+			expect(mockIsAnalysisRunning).not.toHaveBeenCalled();
+		});
+
+		it('returns idle when a terminal completed job has no DB record', async () => {
+			// A completed job state that left no analysis row is not a failure —
+			// precedence falls through to idle.
+			mockGetDashboardJobState.mockResolvedValue('completed');
+			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'idle' });
+		});
+	});
+
 	describe('triggerDebugAnalysis', () => {
 		it('triggers analysis for a valid run', async () => {
 			mockGetRunById.mockResolvedValue({
@@ -817,6 +911,110 @@ describe('runsRouter', () => {
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+	});
+
+	describe('triggerDebugAnalysis (queue mode)', () => {
+		beforeEach(() => {
+			vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+				workItemId: 'card-1',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+			mockDeleteDebugAnalysisByRunId.mockResolvedValue(undefined);
+			mockRemoveDashboardJob.mockResolvedValue(undefined);
+			mockSubmitDashboardJob.mockResolvedValue('debug-analysis-job-id');
+		});
+
+		it('throws CONFLICT when a BullMQ job is already active', async () => {
+			mockGetDashboardJobState.mockResolvedValue('active');
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'CONFLICT',
+			});
+			expect(mockGetDashboardJobState).toHaveBeenCalledWith(`debug-analysis-${RUN_UUID}`);
+			// Must not enqueue when a job is already in-flight
+			expect(mockRemoveDashboardJob).not.toHaveBeenCalled();
+			expect(mockSubmitDashboardJob).not.toHaveBeenCalled();
+			// In-memory Set is irrelevant in queue mode
+			expect(mockIsAnalysisRunning).not.toHaveBeenCalled();
+		});
+
+		it('throws CONFLICT when a BullMQ job is waiting', async () => {
+			mockGetDashboardJobState.mockResolvedValue('waiting');
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'CONFLICT',
+			});
+			expect(mockSubmitDashboardJob).not.toHaveBeenCalled();
+		});
+
+		it('re-enqueues with the deterministic id, clearing any prior terminal job first', async () => {
+			// No in-flight job (a prior attempt failed/completed)
+			mockGetDashboardJobState.mockResolvedValue('failed');
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(result).toEqual({ triggered: true });
+			const jobId = `debug-analysis-${RUN_UUID}`;
+			expect(mockDeleteDebugAnalysisByRunId).toHaveBeenCalledWith(RUN_UUID);
+			expect(mockRemoveDashboardJob).toHaveBeenCalledWith(jobId);
+			expect(mockSubmitDashboardJob).toHaveBeenCalledWith(
+				{
+					type: 'debug-analysis',
+					runId: RUN_UUID,
+					projectId: 'p1',
+					workItemId: 'card-1',
+				},
+				jobId,
+			);
+			// Non-queue fire-and-forget branch must not run in queue mode
+			expect(mockTriggerDebugAnalysis).not.toHaveBeenCalled();
+		});
+
+		it('removes the stale job before submitting the new one', async () => {
+			mockGetDashboardJobState.mockResolvedValue(null);
+			const callOrder: string[] = [];
+			mockRemoveDashboardJob.mockImplementation(async () => {
+				callOrder.push('remove');
+			});
+			mockSubmitDashboardJob.mockImplementation(async () => {
+				callOrder.push('submit');
+				return 'debug-analysis-job-id';
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(callOrder).toEqual(['remove', 'submit']);
+		});
+
+		it('passes undefined workItemId when the run has no card', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+				workItemId: null,
+			});
+			mockGetDashboardJobState.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(mockSubmitDashboardJob).toHaveBeenCalledWith(
+				expect.objectContaining({ workItemId: undefined }),
+				`debug-analysis-${RUN_UUID}`,
+			);
 		});
 	});
 
