@@ -204,6 +204,15 @@ export async function triggerDebugAnalysis(
 		// Failure: persist `failed` so status reflects the failed analysis (not
 		// `idle`) and surfaces the re-run affordance. Don't let a status-write
 		// error mask the original failure.
+		//
+		// Coverage caveat: this path only fires for catchable in-process errors. A
+		// hard kill (watchdog timeout / OOM) or a throw *before* this runner is
+		// reached (e.g. `processDashboardJob` failing to load the project config
+		// after the dashboard already marked running) skips it; the lingering
+		// `running` row then self-stales to `idle` after
+		// `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather than surfacing `failed`.
+		// Surfacing `failed` on hard kill (e.g. router-side reconciliation on
+		// non-zero container exit) is a deliberate follow-up.
 		await markDebugAnalysisFailed(analyzedRunId).catch((statusErr) => {
 			logger.warn('Failed to mark debug analysis failed', {
 				analyzedRunId,
