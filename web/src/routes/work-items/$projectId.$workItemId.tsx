@@ -1,20 +1,31 @@
 import { useQuery } from '@tanstack/react-query';
 import { createRoute } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
+import { useRef } from 'react';
 import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
 import { WorkItemDurationChart } from '@/components/runs/work-item-duration-chart.js';
 import { WorkItemRunsTable } from '@/components/runs/work-item-runs-table.js';
+import { resolveWorkItemRunsView, workItemRunsRefetchInterval } from '@/lib/run-pending.js';
 import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
 function WorkItemRunsPage() {
 	const { projectId, workItemId } = workItemRunsRoute.useParams();
 
+	// A work-item runs link is posted at ack time — before the worker commits the
+	// run row — so the first fetches can return an empty list. Track when the page
+	// mounted so we can keep polling through (and show a "starting" state during)
+	// the bounded grace window instead of flashing a terminal "No runs found".
+	const mountedAt = useRef(Date.now());
+
 	const runsQuery = useQuery({
 		...trpc.workItems.runs.queryOptions({ projectId, workItemId }),
 		refetchInterval: (query) => {
-			const hasRunning = query.state.data?.some((r) => r.status === 'running');
-			return hasRunning ? 5000 : false;
+			const data = query.state.data;
+			const hasRunning = data?.some((r) => r.status === 'running') ?? false;
+			const isEmpty = (data?.length ?? 0) === 0;
+			const elapsedMs = Date.now() - mountedAt.current;
+			return workItemRunsRefetchInterval({ hasRunning, isEmpty, elapsedMs });
 		},
 	});
 
@@ -22,6 +33,16 @@ function WorkItemRunsPage() {
 	const firstRun = runs?.[0];
 	const workItemTitle = firstRun?.workItemTitle ?? workItemId;
 	const workItemUrl = firstRun?.workItemUrl;
+
+	// Within the grace window an empty list means "the worker is still starting",
+	// not "no runs" — render the shared pending placeholder in that case.
+	const isPending =
+		resolveWorkItemRunsView({
+			isLoading: runsQuery.isLoading,
+			isError: runsQuery.isError,
+			isEmpty: (runs?.length ?? 0) === 0,
+			elapsedMs: Date.now() - mountedAt.current,
+		}) === 'pending';
 
 	return (
 		<div className="space-y-6">
@@ -57,6 +78,7 @@ function WorkItemRunsPage() {
 				isLoading={runsQuery.isLoading}
 				isError={runsQuery.isError}
 				error={runsQuery.error}
+				isPending={isPending}
 			/>
 		</div>
 	);
