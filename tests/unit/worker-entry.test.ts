@@ -84,6 +84,7 @@ vi.mock('../../src/triggers/shared/debug-runner.js', () => ({
 
 vi.mock('../../src/db/repositories/runsRepository.js', () => ({
 	getRunById: vi.fn(),
+	markDebugAnalysisFailed: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../src/db/seeds/seedAgentDefinitions.js', () => ({
@@ -102,7 +103,7 @@ vi.mock('../../src/agents/prompts/index.js', () => ({
 
 import { BootFailureError } from '../../src/agents/shared/bootFailureError.js';
 import { loadProjectConfigById } from '../../src/config/provider.js';
-import { getRunById } from '../../src/db/repositories/runsRepository.js';
+import { getRunById, markDebugAnalysisFailed } from '../../src/db/repositories/runsRepository.js';
 import {
 	extractJiraContext,
 	extractLinearContext,
@@ -865,7 +866,7 @@ describe('processDashboardJob - debug-analysis', () => {
 		);
 	});
 
-	it('throws when project not found for debug-analysis', async () => {
+	it('marks the run failed and throws when project not found for debug-analysis', async () => {
 		vi.mocked(loadProjectConfigById).mockResolvedValue(undefined);
 
 		const jobData: DebugAnalysisJobData = {
@@ -877,6 +878,30 @@ describe('processDashboardJob - debug-analysis', () => {
 		await expect(processDashboardJob('job-debug-noproj', jobData)).rejects.toThrow(
 			'Project not found: bad-proj',
 		);
+
+		// The dashboard already marked this run `running` at trigger time, and this
+		// throw happens before triggerDebugAnalysis (whose catch would flip it to
+		// `failed`) is reached. The worker surfaces the failure here so status reads
+		// `failed` instead of leaving a `running` row to self-stale to `idle`.
+		expect(markDebugAnalysisFailed).toHaveBeenCalledWith('run-xyz');
+	});
+
+	it('still throws the original project-not-found error when the failed-write fails (best-effort)', async () => {
+		vi.mocked(loadProjectConfigById).mockResolvedValue(undefined);
+		// The durable `failed` write itself errors (e.g. DB unavailable); it must
+		// not mask or replace the original project-not-found failure.
+		vi.mocked(markDebugAnalysisFailed).mockRejectedValueOnce(new Error('DB unavailable'));
+
+		const jobData: DebugAnalysisJobData = {
+			type: 'debug-analysis',
+			runId: 'run-xyz',
+			projectId: 'bad-proj',
+		};
+
+		await expect(processDashboardJob('job-debug-noproj', jobData)).rejects.toThrow(
+			'Project not found: bad-proj',
+		);
+		expect(markDebugAnalysisFailed).toHaveBeenCalledWith('run-xyz');
 	});
 });
 

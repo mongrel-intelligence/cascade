@@ -109,11 +109,12 @@ export const debugAnalyses = pgTable(
  * (older than `DEBUG_ANALYSIS_RUNNING_STALE_MS` → read as `idle`; see
  * `isDebugAnalysisRunActive` in `debugAnalysisRepository`).
  *
- * Coverage caveat: `failed` is written only for catchable in-process errors (the
- * debug-runner's `catch`). A hard kill (watchdog timeout / OOM) — or a throw
- * before the runner is reached — leaves the `running` row to self-stale to
- * `idle` rather than surfacing `failed`; router-side reconciliation on non-zero
- * container exit is a deliberate follow-up.
+ * Coverage caveat: `failed` is written for catchable in-process errors — the
+ * debug-runner's `catch` plus the worker's pre-runner project-config-load failure
+ * in `processDashboardJob`. A hard kill (watchdog timeout / OOM) still leaves the
+ * `running` row to self-stale to `idle` rather than surfacing `failed`;
+ * router-side reconciliation on non-zero container exit is a deliberate
+ * follow-up.
  */
 export const debugAnalysisStatus = pgTable('debug_analysis_status', {
 	analyzedRunId: uuid('analyzed_run_id')

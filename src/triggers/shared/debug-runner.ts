@@ -212,13 +212,14 @@ export async function triggerDebugAnalysis(
 		// error mask the original failure.
 		//
 		// Coverage caveat: this path only fires for catchable in-process errors. A
-		// hard kill (watchdog timeout / OOM), a throw *before* this runner is
-		// reached (e.g. `processDashboardJob` failing to load the project config
-		// after the dashboard already marked running), or this runner's own early
-		// `getRunById`-null return above all skip it; the lingering `running` row
-		// then self-stales to `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather
-		// than surfacing `failed`. Surfacing `failed` on hard kill (e.g. router-side
-		// reconciliation on non-zero container exit) is a deliberate follow-up.
+		// hard kill (watchdog timeout / OOM), or this runner's own early
+		// `getRunById`-null return above, skip it; the lingering `running` row then
+		// self-stales to `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather than
+		// surfacing `failed`. (A worker-side throw *before* this runner is reached —
+		// e.g. `processDashboardJob` failing to load the project config after the
+		// dashboard already marked running — now marks `failed` at that site.)
+		// Surfacing `failed` on hard kill (e.g. router-side reconciliation on
+		// non-zero container exit) is a deliberate follow-up.
 		await markDebugAnalysisFailed(analyzedRunId).catch((statusErr) => {
 			logger.warn('Failed to mark debug analysis failed', {
 				analyzedRunId,
