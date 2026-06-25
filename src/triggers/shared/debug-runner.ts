@@ -3,16 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgent } from '../../agents/registry.js';
 import {
+	clearDebugAnalysisStatus,
 	getLlmCallsByRunId,
 	getRunById,
 	getRunLogs,
+	markDebugAnalysisFailed,
+	markDebugAnalysisRunning,
 	storeDebugAnalysis,
 } from '../../db/repositories/runsRepository.js';
 import { getPMProvider } from '../../pm/index.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
-import { markAnalysisComplete, markAnalysisRunning } from './debug-status.js';
 
 /**
  * Extract logs from the database and write them to a temp directory
@@ -152,7 +154,11 @@ export async function triggerDebugAnalysis(
 		workItemId,
 	});
 
-	markAnalysisRunning(analyzedRunId);
+	// Durable, cross-process `running` marker. The analysis runs in this worker
+	// container while the dashboard API (a separate process) polls status, so an
+	// in-memory flag is never visible to it. Idempotent: the dashboard may have
+	// already marked running at trigger time.
+	await markDebugAnalysisRunning(analyzedRunId);
 	let logDir: string | undefined;
 	try {
 		logDir = await extractLogsToTempDir(analyzedRunId);
@@ -185,13 +191,27 @@ export async function triggerDebugAnalysis(
 			await postDebugComment(workItemId, analyzedRunId, parsed);
 		}
 
+		// Success: clear the lifecycle marker. The persisted debug_analyses row is
+		// now the `completed` signal.
+		await clearDebugAnalysisStatus(analyzedRunId);
+
 		logger.info('Debug analysis completed', {
 			analyzedRunId,
 			debugRunId: agentResult.runId,
 			success: agentResult.success,
 		});
+	} catch (err) {
+		// Failure: persist `failed` so status reflects the failed analysis (not
+		// `idle`) and surfaces the re-run affordance. Don't let a status-write
+		// error mask the original failure.
+		await markDebugAnalysisFailed(analyzedRunId).catch((statusErr) => {
+			logger.warn('Failed to mark debug analysis failed', {
+				analyzedRunId,
+				error: String(statusErr),
+			});
+		});
+		throw err;
 	} finally {
-		markAnalysisComplete(analyzedRunId);
 		if (logDir) {
 			try {
 				cleanupTempDir(logDir);

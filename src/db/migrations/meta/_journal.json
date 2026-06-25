@@ -393,6 +393,13 @@
 			"when": 1790000000000,
 			"tag": "0055_agent_config_update_channel",
 			"breakpoints": false
+		},
+		{
+			"idx": 56,
+			"version": "7",
+			"when": 1791000000000,
+			"tag": "0056_debug_analysis_status",
+			"breakpoints": false
 		}
 	]
 }

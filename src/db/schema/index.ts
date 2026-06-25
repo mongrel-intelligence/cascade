@@ -8,7 +8,13 @@ export { projectCredentials } from './projectCredentials.js';
 export { projects } from './projects.js';
 export { promptPartials } from './promptPartials.js';
 export { prWorkItems } from './prWorkItems.js';
-export { agentRunLlmCalls, agentRunLogs, agentRuns, debugAnalyses } from './runs.js';
+export {
+	agentRunLlmCalls,
+	agentRunLogs,
+	agentRuns,
+	debugAnalyses,
+	debugAnalysisStatus,
+} from './runs.js';
 export { sessions, users } from './users.js';
 export { webhookLogs } from './webhookLogs.js';
 export { workflowStatusDefinitions } from './workflowStatusDefinitions.js';

@@ -4,10 +4,12 @@ import {
 	linkPRToWorkItem,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import {
+	clearDebugAnalysisStatus,
 	completeRun,
 	createRun,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByRunId,
+	getDebugAnalysisRunState,
 	getLlmCallByNumber,
 	getLlmCallsByRunId,
 	getRunById,
@@ -16,9 +18,12 @@ import {
 	getRunsByWorkItem,
 	getRunsByWorkItemId,
 	getRunsForPR,
+	isDebugAnalysisRunActive,
 	listLlmCallsMeta,
 	listProjectsForOrg,
 	listRuns,
+	markDebugAnalysisFailed,
+	markDebugAnalysisRunning,
 	storeDebugAnalysis,
 	storeLlmCall,
 	storeLlmCallsBulk,
@@ -426,6 +431,63 @@ describe('runsRepository (integration)', () => {
 
 			const analysis = await getDebugAnalysisByRunId(runId);
 			expect(analysis).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// Debug Analysis lifecycle status (durable, cross-process)
+	// =========================================================================
+
+	describe('debug analysis status lifecycle', () => {
+		it('marks running, reads an active state, then clears on success', async () => {
+			const runId = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			// No row → not active.
+			expect(await getDebugAnalysisRunState(runId)).toBeNull();
+
+			await markDebugAnalysisRunning(runId);
+			const running = await getDebugAnalysisRunState(runId);
+			expect(running?.status).toBe('running');
+			expect(isDebugAnalysisRunActive(running)).toBe(true);
+
+			// Success clears the lifecycle row.
+			await clearDebugAnalysisStatus(runId);
+			expect(await getDebugAnalysisRunState(runId)).toBeNull();
+		});
+
+		it('upserts the same analyzed run (one row per run) and records failure', async () => {
+			const runId = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			await markDebugAnalysisRunning(runId);
+			// Idempotent upsert keyed by analyzed run — a second mark must not create
+			// a duplicate row (PK on analyzed_run_id).
+			await markDebugAnalysisFailed(runId);
+
+			const state = await getDebugAnalysisRunState(runId);
+			expect(state?.status).toBe('failed');
+			expect(isDebugAnalysisRunActive(state)).toBe(false);
+		});
+
+		it('is removed when the analyzed run is deleted (ON DELETE CASCADE)', async () => {
+			const runId = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			await markDebugAnalysisRunning(runId);
+
+			// Deleting the project cascades to runs, which cascades to the status row.
+			await truncateAll();
+
+			expect(await getDebugAnalysisRunState(runId)).toBeNull();
 		});
 	});
 

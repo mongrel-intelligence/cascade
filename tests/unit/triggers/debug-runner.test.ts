@@ -10,6 +10,9 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getRunLogs: vi.fn(),
 	getLlmCallsByRunId: vi.fn(),
 	storeDebugAnalysis: vi.fn(),
+	markDebugAnalysisRunning: vi.fn().mockResolvedValue(undefined),
+	markDebugAnalysisFailed: vi.fn().mockResolvedValue(undefined),
+	clearDebugAnalysisStatus: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../../src/pm/index.js', () => ({
@@ -28,25 +31,19 @@ vi.mock('../../../src/utils/repo.js', () => ({
 	cleanupTempDir: vi.fn(),
 }));
 
-vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
-	markAnalysisRunning: vi.fn(),
-	markAnalysisComplete: vi.fn(),
-}));
-
 import { runAgent } from '../../../src/agents/registry.js';
 import {
+	clearDebugAnalysisStatus,
 	getLlmCallsByRunId,
 	getRunById,
 	getRunLogs,
+	markDebugAnalysisFailed,
+	markDebugAnalysisRunning,
 	storeDebugAnalysis,
 } from '../../../src/db/repositories/runsRepository.js';
 import type { PMProvider } from '../../../src/pm/index.js';
 import { getPMProvider } from '../../../src/pm/index.js';
 import { triggerDebugAnalysis } from '../../../src/triggers/shared/debug-runner.js';
-import {
-	markAnalysisComplete,
-	markAnalysisRunning,
-} from '../../../src/triggers/shared/debug-status.js';
 
 const mockPMProvider = { addComment: vi.fn() };
 
@@ -152,7 +149,7 @@ describe('triggerDebugAnalysis', () => {
 		);
 	});
 
-	it('calls markAnalysisRunning at start and markAnalysisComplete on success', async () => {
+	it('marks the analysis running at start and clears the status on success', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-1',
 			agentType: 'implementation',
@@ -172,11 +169,14 @@ describe('triggerDebugAnalysis', () => {
 
 		await triggerDebugAnalysis('run-1', mockProject, mockConfig);
 
-		expect(markAnalysisRunning).toHaveBeenCalledWith('run-1');
-		expect(markAnalysisComplete).toHaveBeenCalledWith('run-1');
+		expect(markDebugAnalysisRunning).toHaveBeenCalledWith('run-1');
+		// Success clears the durable status row; the persisted analysis is then
+		// the `completed` signal.
+		expect(clearDebugAnalysisStatus).toHaveBeenCalledWith('run-1');
+		expect(markDebugAnalysisFailed).not.toHaveBeenCalled();
 	});
 
-	it('calls markAnalysisComplete even when agent throws', async () => {
+	it('marks the analysis failed (durably) when the agent throws', async () => {
 		vi.mocked(getRunById).mockResolvedValue({
 			id: 'run-1',
 			agentType: 'implementation',
@@ -192,8 +192,11 @@ describe('triggerDebugAnalysis', () => {
 			'Agent crashed',
 		);
 
-		expect(markAnalysisRunning).toHaveBeenCalledWith('run-1');
-		expect(markAnalysisComplete).toHaveBeenCalledWith('run-1');
+		expect(markDebugAnalysisRunning).toHaveBeenCalledWith('run-1');
+		// Failure persists `failed` and must NOT clear the status (status should
+		// read `failed`, not `idle`).
+		expect(markDebugAnalysisFailed).toHaveBeenCalledWith('run-1');
+		expect(clearDebugAnalysisStatus).not.toHaveBeenCalled();
 	});
 
 	it('sets severity to manual for completed runs', async () => {

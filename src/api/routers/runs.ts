@@ -7,15 +7,17 @@ import {
 	DEFAULT_STALE_RUN_THRESHOLD_MS,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByRunId,
+	getDebugAnalysisRunState,
 	getLlmCallByNumber,
 	getRunById,
 	getRunLogs,
 	hasActiveRunForWorkItem,
+	isDebugAnalysisRunActive,
 	listLlmCallsMeta,
 	listRuns,
+	markDebugAnalysisRunning,
 } from '../../db/repositories/runsRepository.js';
 import { publishCancelCommand } from '../../queue/cancel.js';
-import { isAnalysisRunning } from '../../triggers/shared/debug-status.js';
 import { parseLlmResponse } from '../../utils/llmResponseParser.js';
 import { logger } from '../../utils/logging.js';
 import { protectedProcedure, router, superAdminProcedure } from '../trpc.js';
@@ -33,50 +35,24 @@ function isQueueMode(): boolean {
 }
 
 /**
- * BullMQ job states that mean a debug-analysis job is still queued or executing.
- *
- * A job in any of these states resolves debug-analysis status to `running`
- * (short-circuiting the DB lookup) and blocks a re-trigger with CONFLICT. The
- * terminal states (`completed`, `failed`) are deliberately excluded so a prior
- * run never masks a fresh DB record or a real failure.
- */
-const IN_FLIGHT_DEBUG_JOB_STATES: ReadonlySet<string> = new Set([
-	'active',
-	'waiting',
-	'delayed',
-	'prioritized',
-	'waiting-children',
-]);
-
-function isInFlightDebugJobState(state: string | null): boolean {
-	return state !== null && IN_FLIGHT_DEBUG_JOB_STATES.has(state);
-}
-
-/**
  * Throw CONFLICT when a debug analysis is already in progress for `runId`.
  *
- * Queue mode (production) consults the durable BullMQ job by its deterministic
- * id — the analysis runs in a separate worker process, so the in-memory Set in
- * this dashboard process is never authoritative. Non-queue mode (local dev)
- * runs the analysis in-process and uses the in-memory Set.
+ * Reads the durable `debug_analysis_status` row (the worker-owned, cross-process
+ * signal of the *analysis* lifecycle). This is authoritative in both queue mode
+ * (analysis runs in a separate worker container) and local dev (in-process): the
+ * dashboard BullMQ job reaches `completed` at container *spawn*, not at analysis
+ * completion, so the queue cannot be used to detect a still-running analysis. A
+ * stale `running` row (crashed worker) is ignored, so a crash never wedges the
+ * re-trigger permanently.
  */
 async function assertDebugAnalysisNotInFlight(runId: string): Promise<void> {
-	const alreadyRunning = await isDebugAnalysisInFlight(runId);
-	if (alreadyRunning) {
+	const state = await getDebugAnalysisRunState(runId);
+	if (isDebugAnalysisRunActive(state)) {
 		throw new TRPCError({
 			code: 'CONFLICT',
 			message: 'Debug analysis is already running for this run',
 		});
 	}
-}
-
-async function isDebugAnalysisInFlight(runId: string): Promise<boolean> {
-	if (isQueueMode()) {
-		const { debugAnalysisJobId, getDashboardJobState } = await import('../../queue/client.js');
-		const jobState = await getDashboardJobState(debugAnalysisJobId(runId));
-		return isInFlightDebugJobState(jobState);
-	}
-	return isAnalysisRunning(runId);
 }
 
 export const runsRouter = router({
@@ -249,38 +225,30 @@ export const runsRouter = router({
 				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
 				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
 			}
-			// Queue mode (production): the debug-analysis job runs in a separate
-			// worker process, so the in-memory `isAnalysisRunning()` Set in this
-			// dashboard process never reports `running`. Derive status from the
-			// durable BullMQ job keyed by the deterministic id instead.
-			if (isQueueMode()) {
-				const { debugAnalysisJobId, getDashboardJobState } = await import('../../queue/client.js');
-				const jobState = await getDashboardJobState(debugAnalysisJobId(input.runId));
-				// Precedence: an in-flight job wins and short-circuits the DB lookup.
-				if (isInFlightDebugJobState(jobState)) {
-					return { status: 'running' as const };
-				}
-				// A persisted analysis means a prior run completed — DB wins over a
-				// stale completed/failed job still parked in the queue.
-				const analysis = await getDebugAnalysisByRunId(input.runId);
-				if (analysis) {
-					return { status: 'completed' as const };
-				}
-				// No analysis row + a failed job means the last attempt errored out.
-				if (jobState === 'failed') {
-					return { status: 'failed' as const };
-				}
-				return { status: 'idle' as const };
-			}
-
-			// Non-queue mode (local dev): the worker runs in-process, so the
-			// in-memory Set is authoritative for `running`.
-			if (isAnalysisRunning(input.runId)) {
+			// Status is derived from the durable `debug_analysis_status` row (the
+			// worker-owned, cross-process signal of the *analysis* lifecycle) plus
+			// the persisted `debug_analyses` content row. This is identical in queue
+			// mode (analysis runs in a separate worker container) and local dev
+			// (in-process): the dashboard BullMQ job reaches `completed` at container
+			// *spawn*, not at analysis completion, so it cannot represent a
+			// still-running analysis.
+			//
+			// Precedence:
+			//   1. An active `running` row wins and short-circuits the content lookup.
+			//   2. else a persisted analysis means a prior run completed.
+			//   3. else a `failed` status row means the last attempt errored out.
+			//   4. else idle. (A stale `running` row — crashed worker — falls through
+			//      here so a crash never wedges the run as permanently `running`.)
+			const state = await getDebugAnalysisRunState(input.runId);
+			if (isDebugAnalysisRunActive(state)) {
 				return { status: 'running' as const };
 			}
 			const analysis = await getDebugAnalysisByRunId(input.runId);
 			if (analysis) {
 				return { status: 'completed' as const };
+			}
+			if (state?.status === 'failed') {
+				return { status: 'failed' as const };
 			}
 			return { status: 'idle' as const };
 		}),
@@ -322,16 +290,18 @@ export const runsRouter = router({
 				});
 			}
 
-			// Delete existing analysis before re-running
+			// Delete the prior analysis (and any leftover terminal status row) before
+			// re-running.
 			await deleteDebugAnalysisByRunId(input.runId);
 
 			if (isQueueMode()) {
 				const { debugAnalysisJobId, removeDashboardJob, submitDashboardJob } = await import(
 					'../../queue/client.js'
 				);
-				// Reuse the deterministic id so other processes can resolve this
-				// run's job state. Clear any prior terminal (completed/failed) job
-				// first so the re-enqueue isn't rejected for a duplicate id.
+				// Reuse the deterministic id so a re-run replaces (rather than races)
+				// any prior job, and so a near-simultaneous second trigger that slips
+				// past the guard cannot spawn a duplicate container. Clear any prior
+				// terminal job first so the re-enqueue isn't rejected for a duplicate id.
 				const jobId = debugAnalysisJobId(input.runId);
 				await removeDashboardJob(jobId);
 				await submitDashboardJob(
@@ -343,7 +313,16 @@ export const runsRouter = router({
 					},
 					jobId,
 				);
+				// Mark running only after the job is durably enqueued: a failed enqueue
+				// then leaves no `running` row to block (and self-stale) a retry. The
+				// worker re-marks running (idempotent) when it starts the analysis;
+				// this write covers the enqueue→container-spawn window so status reads
+				// `running` immediately and a second trigger gets CONFLICT.
+				await markDebugAnalysisRunning(input.runId);
 			} else {
+				// Local dev: mark running before firing so the guard is effective, then
+				// run in-process (the runner re-marks running and clears/fails at end).
+				await markDebugAnalysisRunning(input.runId);
 				const { triggerDebugAnalysis } = await import('../../triggers/shared/debug-runner.js');
 				triggerDebugAnalysis(input.runId, pc.project, pc.config, run.workItemId ?? undefined).catch(
 					(err) => {

@@ -60,11 +60,6 @@ vi.mock('../../../src/db/repositories/agentConfigsRepository.js', () => ({
 	isAgentEnabledForProject: (...args: unknown[]) => mockIsAgentEnabledForProject(...args),
 }));
 
-// Mock debug-status
-vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
-	isAnalysisRunning: vi.fn().mockReturnValue(false),
-}));
-
 // Mock logger
 vi.mock('../../../src/utils/logging.js', () => ({
 	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },

@@ -320,11 +320,17 @@ export async function cancelRunById(runId: string, reason: string): Promise<bool
 // Re-exports from domain-focused repositories (for backward compatibility)
 // ============================================================================
 
-export type { CreateDebugAnalysisInput } from './debugAnalysisRepository.js';
+export type { CreateDebugAnalysisInput, DebugAnalysisRunState } from './debugAnalysisRepository.js';
 export {
+	clearDebugAnalysisStatus,
+	DEBUG_ANALYSIS_RUNNING_STALE_MS,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByDebugRunId,
 	getDebugAnalysisByRunId,
+	getDebugAnalysisRunState,
+	isDebugAnalysisRunActive,
+	markDebugAnalysisFailed,
+	markDebugAnalysisRunning,
 	storeDebugAnalysis,
 } from './debugAnalysisRepository.js';
 export type { LlmCallRecord } from './llmCallsRepository.js';
