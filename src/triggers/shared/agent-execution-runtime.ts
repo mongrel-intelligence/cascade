@@ -1,6 +1,7 @@
 import { getAgentProfile } from '../../agents/definitions/profiles.js';
 import type { LifecycleHooks } from '../../agents/definitions/schema.js';
 import { runAgent } from '../../agents/registry.js';
+import { isPmPostingEnabled, resolveUpdateChannel } from '../../config/updateChannel.js';
 import { createPMProvider, PMLifecycleManager, resolveProjectPMConfig } from '../../pm/index.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -39,7 +40,12 @@ export async function createAgentExecutionContext(
 
 	const pmProvider = createPMProvider(project);
 	const pmConfig = resolveProjectPMConfig(project);
-	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig);
+	// Gate system-driven PM comment posting on the agent's resolved update
+	// channel. Status moves, label writes, and linkPR remain unaffected — only
+	// the lifecycle's communication comments are suppressed when PM posting is
+	// disabled.
+	const pmPostingEnabled = isPmPostingEnabled(resolveUpdateChannel(project, result.agentType));
+	const lifecycle = new PMLifecycleManager(pmProvider, pmConfig, pmPostingEnabled);
 	const lifecycleHooks = await loadLifecycleHooks(result.agentType);
 	let { workItemId, agentInput } = await prepareAgentWorkItem(result, project.id);
 
@@ -112,7 +118,7 @@ export async function runPostAgentSideEffects(
 		context.agentType,
 		agentResult,
 		context.workItemId,
-		context.project.id,
+		context.project,
 		context.result.prNumber,
 	);
 }

@@ -383,5 +383,31 @@ describe('JiraRouterAdapter', () => {
 			);
 			expect(ackResult).toBeUndefined();
 		});
+
+		// MNG-1684: the PM ack is communication-only and is gated on the agent's
+		// resolved update channel.
+		it('skips the PM ack when the update channel disables PM posting', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', agentUpdateChannels: { implementation: 'scm-only' } } as never],
+			});
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'PROJ',
+					eventType: 'jira:issue_updated',
+					workItemId: 'PROJ-1',
+					isCommentEvent: false,
+					// @ts-expect-error extended field
+					issueKey: 'PROJ-1',
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+
+			expect(ackResult).toBeUndefined();
+			expect(postJiraAck).not.toHaveBeenCalled();
+		});
 	});
 });

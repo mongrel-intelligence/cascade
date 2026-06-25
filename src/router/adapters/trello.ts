@@ -7,6 +7,7 @@
  * `processRouterWebhook()` function.
  */
 
+import { isPmPostingEnabled, resolveUpdateChannel } from '../../config/updateChannel.js';
 import { withTrelloCredentials } from '../../trello/client.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
@@ -140,12 +141,25 @@ export class TrelloRouterAdapter implements RouterPlatformAdapter {
 	): Promise<AckResult | undefined> {
 		if (!event.workItemId) return undefined;
 		try {
+			const config = await loadProjectConfig();
+			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+
+			// Skip the PM ack when the agent's update channel disables PM posting.
+			// The ack comment is communication-only; status moves / labels are
+			// unaffected. Absent full project ⇒ default channel (post everywhere).
+			if (fullProject && !isPmPostingEnabled(resolveUpdateChannel(fullProject, agentType))) {
+				logger.info('Trello ack skipped: PM posting disabled for update channel', {
+					projectId: project.id,
+					agentType,
+					workItemId: event.workItemId,
+				});
+				return undefined;
+			}
+
 			const context = extractTrelloContext(payload);
 			let message = await generateAckMessage(agentType, context, project.id);
 
 			// Append run link footer when enabled for this project
-			const config = await loadProjectConfig();
-			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
 			if (fullProject?.runLinksEnabled && event.workItemId) {
 				const dashboardUrl = getDashboardUrl();
 				if (dashboardUrl) {

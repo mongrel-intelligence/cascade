@@ -1,5 +1,6 @@
+import { isPmPostingEnabled, resolveUpdateChannel } from '../../config/updateChannel.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
-import type { AgentResult } from '../../types/index.js';
+import type { AgentResult, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import {
 	isOutputBasedAgent,
@@ -16,15 +17,29 @@ import { resolveWorkItemId } from './agent-work-items.js';
  * Handles two cases:
  * - review agent: structured session state (reviewBody/reviewEvent/reviewUrl)
  * - output-based agents: AgentResult.output with per-agent-type formatting
+ *
+ * The summary/review comment is communication-only, so it is gated on the
+ * agent's resolved update channel: when PM posting is disabled the function
+ * early-returns without posting (workflow actions are gated elsewhere).
  */
 export async function postAgentSummaryToPM(
 	agentType: string,
 	agentResult: AgentResult,
 	workItemId: string | undefined,
-	projectId: string,
+	project: ProjectConfig,
 	prNumber: number | undefined,
 ): Promise<void> {
 	if (!agentResult.success || !PM_SUMMARY_AGENT_TYPES.has(agentType)) return;
+
+	if (!isPmPostingEnabled(resolveUpdateChannel(project, agentType))) {
+		logger.info('Agent PM summary skipped: PM posting disabled for update channel', {
+			agentType,
+			projectId: project.id,
+		});
+		return;
+	}
+
+	const projectId = project.id;
 
 	if (isOutputBasedAgent(agentType)) {
 		const resolvedWorkItemId = await resolveWorkItemId(workItemId, projectId, prNumber);

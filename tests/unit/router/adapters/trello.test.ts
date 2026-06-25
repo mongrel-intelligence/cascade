@@ -361,6 +361,53 @@ describe('TrelloRouterAdapter', () => {
 			);
 			expect(ackResult).toBeUndefined();
 		});
+
+		// MNG-1684: the PM ack is communication-only and is gated on the agent's
+		// resolved update channel.
+		it('skips the PM ack when the update channel disables PM posting', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', agentUpdateChannels: { implementation: 'scm-only' } } as never],
+			});
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'board1',
+					eventType: 'commentCard',
+					workItemId: 'card1',
+					isCommentEvent: true,
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+
+			expect(ackResult).toBeUndefined();
+			expect(postTrelloAck).not.toHaveBeenCalled();
+		});
+
+		it('still posts the PM ack when the channel keeps PM posting enabled (pm-only)', async () => {
+			vi.mocked(loadProjectConfig).mockResolvedValue({
+				projects: [mockProject],
+				fullProjects: [{ id: 'p1', agentUpdateChannels: { implementation: 'pm-only' } } as never],
+			});
+			vi.mocked(postTrelloAck).mockResolvedValue('comment-123');
+
+			const ackResult = await adapter.postAck(
+				{
+					projectIdentifier: 'board1',
+					eventType: 'commentCard',
+					workItemId: 'card1',
+					isCommentEvent: true,
+				},
+				{},
+				mockProject,
+				'implementation',
+			);
+
+			expect(postTrelloAck).toHaveBeenCalled();
+			expect(ackResult?.commentId).toBe('comment-123');
+		});
 	});
 
 	describe('sendReaction - additional paths', () => {

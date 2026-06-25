@@ -7,6 +7,7 @@
  * processRouterWebhook() function.
  */
 
+import { isPmPostingEnabled, resolveUpdateChannel } from '../../config/updateChannel.js';
 import { linearClient, withLinearCredentials } from '../../linear/client.js';
 import type { LinearWebhookPayload } from '../../linear/types.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
@@ -287,12 +288,25 @@ export class LinearRouterAdapter implements RouterPlatformAdapter {
 		if (!issueId) return undefined;
 
 		try {
+			const config = await loadProjectConfig();
+			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
+
+			// Skip the PM ack when the agent's update channel disables PM posting.
+			// The ack comment is communication-only; status moves / labels are
+			// unaffected. Absent full project ⇒ default channel (post everywhere).
+			if (fullProject && !isPmPostingEnabled(resolveUpdateChannel(fullProject, agentType))) {
+				logger.info('LinearRouterAdapter: ack skipped, PM posting disabled for update channel', {
+					projectId: project.id,
+					agentType,
+					issueId,
+				});
+				return undefined;
+			}
+
 			const context = extractLinearContext(payload);
 			let message = await generateAckMessage(agentType, context, project.id);
 
 			// Append run link footer when enabled for this project
-			const config = await loadProjectConfig();
-			const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
 			if (fullProject?.runLinksEnabled && event.workItemId) {
 				const dashboardUrl = getDashboardUrl();
 				if (dashboardUrl) {

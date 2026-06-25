@@ -664,9 +664,57 @@ describe('agent PM summary facade delegation', () => {
 			'respond-to-review',
 			agentResult,
 			'card-3',
-			'project-1',
+			PROJECT,
 			42,
 		);
+	});
+});
+
+// ---------------------------------------------------------------------------
+// PMLifecycleManager update-channel gating (MNG-1684, via runAgentExecutionPipeline)
+//
+// createAgentExecutionContext resolves the agent's update channel and passes
+// the PM-posting flag into the PMLifecycleManager constructor (3rd arg).
+// ---------------------------------------------------------------------------
+
+describe('PMLifecycleManager pmPostingEnabled flag (via runAgentExecutionPipeline)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
+	});
+
+	it('constructs PMLifecycleManager with pmPostingEnabled=true by default (channel both)', async () => {
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(MockPMLifecycleManager).toHaveBeenCalledWith({}, PM_CONFIG, true);
+	});
+
+	it('constructs PMLifecycleManager with pmPostingEnabled=false when the channel disables PM posting', async () => {
+		const scmOnlyProject = {
+			id: 'project-1',
+			repo: 'acme/myapp',
+			pm: { type: 'trello' },
+			trello: { lists: { backlog: 'backlog-list-id' } },
+			agentUpdateChannels: { review: 'scm-only' },
+		} as unknown as Parameters<typeof runAgentExecutionPipeline>[0]['project'];
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
+			scmOnlyProject,
+			CONFIG,
+		);
+
+		expect(MockPMLifecycleManager).toHaveBeenCalledWith({}, PM_CONFIG, false);
 	});
 });
 

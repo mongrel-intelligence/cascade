@@ -67,9 +67,18 @@ export function resolveProjectPMConfig(project: ProjectConfig): ProjectPMConfig 
 }
 
 export class PMLifecycleManager {
+	/**
+	 * @param pmPostingEnabled When `false`, the manager suppresses every
+	 *   communication-only comment post (success-fallback "PR created", failure,
+	 *   budget exceeded/warning, error) while leaving status moves, label
+	 *   add/remove, and `linkPR` untouched. Resolved from the agent's update
+	 *   channel by `createAgentExecutionContext`. Defaults to `true` so existing
+	 *   call sites (and tests) keep posting everywhere.
+	 */
 	constructor(
 		private provider: PMProvider,
 		private pmConfig: ProjectPMConfig,
+		private pmPostingEnabled = true,
 	) {}
 
 	async prepareForAgent(workItemId: string, hooks: LifecycleHooks): Promise<void> {
@@ -182,6 +191,9 @@ export class PMLifecycleManager {
 	}
 
 	private async safeAddComment(workItemId: string, text: string): Promise<void> {
+		// Communication-only post — suppressed when the agent's update channel
+		// disables PM posting. Labels / moves / linkPR do not pass through here.
+		if (!this.pmPostingEnabled) return;
 		await safeOperation(() => this.provider.addComment(workItemId, text), {
 			action: 'add comment',
 		});
@@ -197,6 +209,9 @@ export class PMLifecycleManager {
 		commentId: string,
 		text: string,
 	): Promise<void> {
+		// Communication-only post — suppressed when the agent's update channel
+		// disables PM posting (mirrors safeAddComment).
+		if (!this.pmPostingEnabled) return;
 		try {
 			await this.provider.updateComment(workItemId, commentId, text);
 		} catch {

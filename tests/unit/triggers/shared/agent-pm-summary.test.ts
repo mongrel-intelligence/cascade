@@ -59,6 +59,16 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 import { postAgentSummaryToPM } from '../../../../src/triggers/shared/agent-pm-summary.js';
+import type { ProjectConfig } from '../../../../src/types/index.js';
+
+// Minimal project whose update channel resolves to the default (`both`) for
+// every agent type, so PM posting stays enabled exactly like the pre-MNG-1684
+// behavior. Channel-gating tests below supply explicit agentUpdateChannels.
+const PROJECT = { id: 'project-1' } as ProjectConfig;
+
+function projectWithChannel(agentType: string, channel: string): ProjectConfig {
+	return { id: 'project-1', agentUpdateChannels: { [agentType]: channel } } as ProjectConfig;
+}
 
 describe('postAgentSummaryToPM', () => {
 	beforeEach(() => {
@@ -78,7 +88,7 @@ describe('postAgentSummaryToPM', () => {
 			'review',
 			{ success: true, output: '', runId: 'run-rev', progressCommentId: 'pm-comment-1' },
 			'card-1',
-			'project-1',
+			PROJECT,
 			42,
 		);
 
@@ -96,7 +106,7 @@ describe('postAgentSummaryToPM', () => {
 			'implementation',
 			{ success: true, output: '', runId: 'run-impl' },
 			'card-1',
-			'project-1',
+			PROJECT,
 			undefined,
 		);
 
@@ -112,7 +122,7 @@ describe('postAgentSummaryToPM', () => {
 			'review',
 			{ success: false, output: '', error: 'review error' },
 			'card-1',
-			'project-1',
+			PROJECT,
 			undefined,
 		);
 
@@ -127,7 +137,7 @@ describe('postAgentSummaryToPM', () => {
 			'review',
 			{ success: true, output: '', runId: 'run-rev' },
 			'card-1',
-			'project-1',
+			PROJECT,
 			undefined,
 		);
 
@@ -149,7 +159,7 @@ describe('postAgentSummaryToPM', () => {
 			'review',
 			{ success: true, output: '', runId: 'run-rev' },
 			undefined,
-			'project-1',
+			PROJECT,
 			99,
 		);
 
@@ -173,7 +183,7 @@ describe('postAgentSummaryToPM', () => {
 			'review',
 			{ success: true, output: '', runId: 'run-rev' },
 			undefined,
-			'project-1',
+			PROJECT,
 			55,
 		);
 
@@ -194,7 +204,7 @@ describe('postAgentSummaryToPM', () => {
 			agentType,
 			{ success: true, output, runId: 'run-output', progressCommentId: 'pm-prog' },
 			'card-2',
-			'project-1',
+			PROJECT,
 			10,
 		);
 
@@ -207,7 +217,7 @@ describe('postAgentSummaryToPM', () => {
 			'respond-to-ci',
 			{ success: true, output: '', runId: 'run-ci-empty' },
 			'card-5',
-			'project-1',
+			PROJECT,
 			undefined,
 		);
 
@@ -219,11 +229,69 @@ describe('postAgentSummaryToPM', () => {
 			'respond-to-ci',
 			{ success: false, output: 'Some output before failure.', error: 'CI fix failed' },
 			'card-6',
-			'project-1',
+			PROJECT,
 			undefined,
 		);
 
 		expect(mockPostAgentOutputToPM).not.toHaveBeenCalled();
 		expect(mockPostReviewToPM).not.toHaveBeenCalled();
+	});
+
+	// MNG-1684: the summary/review comment is communication-only, so it is gated
+	// on the agent's resolved update channel.
+	describe('update-channel gating', () => {
+		it('early-returns without posting the review summary when PM posting is disabled', async () => {
+			mockGetSessionState.mockReturnValue({
+				reviewBody: 'Looks good',
+				reviewEvent: 'APPROVE',
+				reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+			});
+
+			await postAgentSummaryToPM(
+				'review',
+				{ success: true, output: '', runId: 'run-rev', progressCommentId: 'pm-comment-1' },
+				'card-1',
+				projectWithChannel('review', 'scm-only'),
+				42,
+			);
+
+			expect(mockPostReviewToPM).not.toHaveBeenCalled();
+			// Gate fires before reading session state / resolving the work item.
+			expect(mockGetSessionState).not.toHaveBeenCalled();
+			expect(mockLookupWorkItemForPR).not.toHaveBeenCalled();
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				'Agent PM summary skipped: PM posting disabled for update channel',
+				expect.objectContaining({ agentType: 'review', projectId: 'project-1' }),
+			);
+		});
+
+		it('early-returns without posting output-based summaries when PM posting is disabled', async () => {
+			await postAgentSummaryToPM(
+				'respond-to-ci',
+				{ success: true, output: 'Fixed CI.', runId: 'run-ci', progressCommentId: 'pm-prog' },
+				'card-2',
+				projectWithChannel('respond-to-ci', 'none'),
+				10,
+			);
+
+			expect(mockPostAgentOutputToPM).not.toHaveBeenCalled();
+		});
+
+		it('still posts when the channel keeps PM posting enabled (pm-only)', async () => {
+			await postAgentSummaryToPM(
+				'respond-to-ci',
+				{ success: true, output: 'Fixed CI.', runId: 'run-ci', progressCommentId: 'pm-prog' },
+				'card-2',
+				projectWithChannel('respond-to-ci', 'pm-only'),
+				10,
+			);
+
+			expect(mockPostAgentOutputToPM).toHaveBeenCalledWith(
+				'card-2',
+				'respond-to-ci',
+				'Fixed CI.',
+				'pm-prog',
+			);
+		});
 	});
 });

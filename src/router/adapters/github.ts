@@ -10,6 +10,11 @@
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { getProjectGitHubToken } from '../../config/projects.js';
 import { findProjectByRepo } from '../../config/provider.js';
+import {
+	isPmPostingEnabled,
+	isScmPostingEnabled,
+	resolveUpdateChannel,
+} from '../../config/updateChannel.js';
 import { withGitHubToken } from '../../github/client.js';
 import {
 	isCascadeBot,
@@ -84,6 +89,24 @@ async function postGitHubPRAck(
 	const commentId = await postGitHubAck(repoFullName, prNumber, message, resolved.token);
 	if (commentId != null) return { commentId, message };
 	return undefined;
+}
+
+/**
+ * Append the work-item run-link footer to a message when run links are enabled
+ * for the project and a dashboard URL is configured. Returns the message
+ * unchanged otherwise.
+ */
+function appendRunLink(
+	message: string,
+	fullProject: ProjectConfig | undefined,
+	projectId: string,
+	workItemId: string,
+): string {
+	if (!fullProject?.runLinksEnabled) return message;
+	const dashboardUrl = getDashboardUrl();
+	if (!dashboardUrl) return message;
+	const link = buildWorkItemRunsLink({ dashboardUrl, projectId, workItemId });
+	return link ? message + link : message;
 }
 
 export const PROCESSABLE_EVENTS = [
@@ -307,63 +330,122 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 				const config = await loadProjectConfig();
 				fullProject = config.fullProjects.find((fp) => fp.id === project.id);
 			}
-			const runLinksEnabled = fullProject?.runLinksEnabled ?? false;
 
-			// Helper to append run link footer to a message when enabled
-			const withRunLink = (message: string, workItemId?: string): string => {
-				if (!runLinksEnabled || !workItemId) return message;
-				const dashboardUrl = getDashboardUrl();
-				if (!dashboardUrl) return message;
-				const link = buildWorkItemRunsLink({ dashboardUrl, projectId: project.id, workItemId });
-				return link ? message + link : message;
-			};
+			// Gate system-driven ack posting on the agent's resolved update
+			// channel. PM-focused acks land on the PM card (PM surface); regular
+			// acks land on the PR (SCM surface). Absent full project ⇒ default
+			// channel (post everywhere). Workflow actions are gated elsewhere.
+			const updateChannel = resolveUpdateChannel(fullProject ?? {}, agentType);
 
 			// PM-focused agents (e.g. backlog-manager) should have ack posted to the PM tool
 			// (Trello/JIRA card), not to the already-merged GitHub PR.
 			if (await isPMFocusedAgent(agentType)) {
-				const workItemId = triggerResult?.workItemId ?? event.workItemId;
-				if (!workItemId) {
-					logger.warn('PM-focused agent has no workItemId for ack, skipping PM ack', { agentType });
-					return undefined;
-				}
-				const context = extractGitHubContext(payload, event.eventType);
-				const baseMessage = await generateAckMessage(agentType, context, project.id);
-				const message = withRunLink(baseMessage, workItemId);
-				return postPMAck(project.id, workItemId, project.pmType, agentType, message);
+				return await this.postPMFocusedAgentAck(
+					event,
+					payload,
+					project,
+					agentType,
+					triggerResult,
+					fullProject,
+					isPmPostingEnabled(updateChannel),
+				);
 			}
 
-			// Build the GitHub PR ack message with run link included before posting,
-			// so the actual comment on the PR contains the footer (not just internal metadata).
-			let githubAckMessage: string | undefined;
-			const workItemIdForLink = triggerResult?.workItemId ?? event.workItemId;
-			if (runLinksEnabled && workItemIdForLink) {
-				const dashboardUrl = getDashboardUrl();
-				if (dashboardUrl) {
-					const context = extractGitHubContext(payload, event.eventType);
-					const baseMessage = await generateAckMessage(agentType, context, project.id);
-					const link = buildWorkItemRunsLink({
-						dashboardUrl,
-						projectId: project.id,
-						workItemId: workItemIdForLink,
-					});
-					githubAckMessage = link ? baseMessage + link : baseMessage;
-				}
-			}
-
-			// Pass cached project to avoid a redundant findProjectByRepo() in the token resolver
-			return postGitHubPRAck(
-				(event as GitHubParsedEvent).repoFullName,
-				event.eventType,
+			return await this.postRegularPRAck(
+				event,
 				payload,
+				project,
 				agentType,
-				project.id,
-				githubAckMessage,
+				triggerResult,
 				fullProject,
+				isScmPostingEnabled(updateChannel),
 			);
 		} catch (err) {
 			logger.warn('GitHub ack comment failed (non-fatal)', { error: String(err) });
 		}
 		return undefined;
+	}
+
+	/**
+	 * Post the PM-tool ack for a PM-focused agent (e.g. backlog-manager).
+	 * Communication-only — skipped when the update channel disables PM posting.
+	 */
+	private async postPMFocusedAgentAck(
+		event: ParsedWebhookEvent,
+		payload: unknown,
+		project: RouterProjectConfig,
+		agentType: string,
+		triggerResult: TriggerResult | undefined,
+		fullProject: ProjectConfig | undefined,
+		pmPostingEnabled: boolean,
+	): Promise<AckResult | undefined> {
+		if (!pmPostingEnabled) {
+			logger.info('GitHub PM-focused ack skipped: PM posting disabled for update channel', {
+				projectId: project.id,
+				agentType,
+			});
+			return undefined;
+		}
+		const workItemId = triggerResult?.workItemId ?? event.workItemId;
+		if (!workItemId) {
+			logger.warn('PM-focused agent has no workItemId for ack, skipping PM ack', { agentType });
+			return undefined;
+		}
+		const context = extractGitHubContext(payload, event.eventType);
+		const baseMessage = await generateAckMessage(agentType, context, project.id);
+		const message = appendRunLink(baseMessage, fullProject, project.id, workItemId);
+		return postPMAck(project.id, workItemId, project.pmType, agentType, message);
+	}
+
+	/**
+	 * Post the GitHub PR ack for a regular (non-PM-focused) agent.
+	 * Communication-only — skipped when the update channel disables SCM posting.
+	 */
+	private async postRegularPRAck(
+		event: ParsedWebhookEvent,
+		payload: unknown,
+		project: RouterProjectConfig,
+		agentType: string,
+		triggerResult: TriggerResult | undefined,
+		fullProject: ProjectConfig | undefined,
+		scmPostingEnabled: boolean,
+	): Promise<AckResult | undefined> {
+		if (!scmPostingEnabled) {
+			logger.info('GitHub PR ack skipped: SCM posting disabled for update channel', {
+				projectId: project.id,
+				agentType,
+			});
+			return undefined;
+		}
+
+		// Build the GitHub PR ack message with run link included before posting,
+		// so the actual comment on the PR contains the footer (not just internal metadata).
+		let githubAckMessage: string | undefined;
+		const workItemIdForLink = triggerResult?.workItemId ?? event.workItemId;
+		if (fullProject?.runLinksEnabled && workItemIdForLink) {
+			const dashboardUrl = getDashboardUrl();
+			if (dashboardUrl) {
+				const context = extractGitHubContext(payload, event.eventType);
+				const baseMessage = await generateAckMessage(agentType, context, project.id);
+				const link = buildWorkItemRunsLink({
+					dashboardUrl,
+					projectId: project.id,
+					workItemId: workItemIdForLink,
+				});
+				githubAckMessage = link ? baseMessage + link : baseMessage;
+			}
+		}
+
+		// Pass cached project to avoid a redundant findProjectByRepo() in the token resolver
+		return postGitHubPRAck(
+			(event as GitHubParsedEvent).repoFullName,
+			event.eventType,
+			payload,
+			agentType,
+			project.id,
+			githubAckMessage,
+			fullProject,
+		);
 	}
 
 	buildJob(
