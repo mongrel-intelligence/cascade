@@ -518,6 +518,55 @@ describe('RunsDebug trigger with wait (runs debug --analyze --wait)', () => {
 		expect(logSpy).toHaveBeenCalledWith('Debug analysis failed.');
 	});
 
+	it('returns on the first failed poll without waiting for the timeout', async () => {
+		const client = makeClient();
+		const statusQuery = client.runs.getDebugAnalysisStatus.query as ReturnType<typeof vi.fn>;
+		statusQuery.mockResolvedValue({ status: 'failed' });
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new RunsDebug(['run-uuid-dbg', '--analyze', '--wait'], oclifConfig as never);
+		const logSpy = vi.spyOn(cmd as unknown as { log: (s: string) => void }, 'log');
+
+		const runPromise = cmd.run();
+		// A single poll cycle is enough — the failed branch must return on the first poll.
+		await vi.advanceTimersByTimeAsync(5000);
+		await runPromise;
+
+		// Polled exactly once, then returned — it did NOT keep polling toward the
+		// 5-minute deadline (the regression this branch guards against).
+		expect(statusQuery).toHaveBeenCalledTimes(1);
+		expect(logSpy).toHaveBeenCalledWith('Debug analysis failed.');
+		expect(logSpy).not.toHaveBeenCalledWith('Timed out waiting for debug analysis to complete.');
+	});
+
+	it('failed --json output is consistent with the other no-result terminal branches', async () => {
+		const client = makeClient();
+		const statusQuery = client.runs.getDebugAnalysisStatus.query as ReturnType<typeof vi.fn>;
+		statusQuery.mockResolvedValue({ status: 'failed' });
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new RunsDebug(
+			['run-uuid-dbg', '--analyze', '--wait', '--json'],
+			oclifConfig as never,
+		);
+		const logSpy = vi.spyOn(cmd as unknown as { log: (s: string) => void }, 'log');
+		const outputJsonSpy = vi.spyOn(
+			cmd as unknown as { outputJson: (d: unknown) => void },
+			'outputJson',
+		);
+
+		const runPromise = cmd.run();
+		await vi.advanceTimersByTimeAsync(5000);
+		await runPromise;
+
+		// Like the idle and timeout branches, the failed branch surfaces a plain
+		// status message and — even under --json — does NOT emit a JSON object or
+		// fetch analysis content (there is no result to serialize).
+		expect(logSpy).toHaveBeenCalledWith('Debug analysis failed.');
+		expect(outputJsonSpy).not.toHaveBeenCalled();
+		expect(client.runs.getDebugAnalysis.query).not.toHaveBeenCalled();
+	});
+
 	it('logs timeout message after 5-minute deadline', async () => {
 		const client = makeClient();
 		const statusQuery = client.runs.getDebugAnalysisStatus.query as ReturnType<typeof vi.fn>;
