@@ -94,9 +94,12 @@ vi.mock('../../../src/gadgets/sessionState.js', async (importOriginal) => {
 	};
 });
 
+import { getAgentProfile } from '../../../src/agents/definitions/profiles.js';
+import { createConfiguredBuilder } from '../../../src/agents/shared/builderFactory.js';
 import { runAgentLoop } from '../../../src/agents/utils/agentLoop.js';
 import { LlmistEngine } from '../../../src/backends/llmist/index.js';
 import type { AgentExecutionPlan } from '../../../src/backends/types.js';
+import type { UpdateChannel } from '../../../src/config/updateChannel.js';
 import { getSessionState } from '../../../src/gadgets/sessionState.js';
 
 const mockRunAgentLoop = vi.mocked(runAgentLoop);
@@ -427,5 +430,131 @@ describe('LlmistEngine.execute', () => {
 				progressMonitor: mockProgressReporter,
 			}),
 		);
+	});
+});
+
+// MNG-1685: the llmist engine family gates posting at the gadget-instance level —
+// the gadgets passed to createConfiguredBuilder are the only tools the agent can
+// call, so dropping the disabled posting gadgets here is the authoritative gate.
+describe('LlmistEngine.execute — update channel posting-gadget gating', () => {
+	const PM_POSTING = ['PostComment'];
+	const SCM_POSTING = [
+		'PostPRComment',
+		'UpdatePRComment',
+		'CreatePRReview',
+		'ReplyToReviewComment',
+	];
+	// Action / read gadgets (incl. SCM read GetPRComments) that must NEVER be dropped.
+	const NON_POSTING = ['ReadFile', 'MoveWorkItem', 'CreatePR', 'GetPRComments'];
+	const ALL_GADGETS = [...NON_POSTING, ...PM_POSTING, ...SCM_POSTING].map((name) => ({ name }));
+
+	const mockGetAgentProfile = vi.mocked(getAgentProfile);
+	const mockCreateConfiguredBuilder = vi.mocked(createConfiguredBuilder);
+
+	beforeEach(() => {
+		mockGetSessionState.mockReturnValue({ prUrl: null } as ReturnType<typeof getSessionState>);
+		mockRunAgentLoop.mockResolvedValue({
+			output: 'Done',
+			iterations: 1,
+			gadgetCalls: 0,
+			cost: 0.01,
+			loopTerminated: false,
+		});
+	});
+
+	async function gadgetNamesPassedToBuilder(
+		agentType: string,
+		channel: UpdateChannel | undefined,
+		gadgets: Array<{ name: string }> = ALL_GADGETS,
+	): Promise<string[]> {
+		mockGetAgentProfile.mockReturnValue({
+			getLlmistGadgets: vi.fn(() => gadgets),
+			finishHooks: {},
+		} as unknown as ReturnType<typeof getAgentProfile>);
+
+		const input = makeInput(agentType);
+		if (channel) {
+			input.project = {
+				...input.project,
+				agentUpdateChannels: { [agentType]: channel },
+			} as AgentExecutionPlan['project'];
+		}
+
+		await new LlmistEngine().execute(input);
+
+		const lastCall = mockCreateConfiguredBuilder.mock.calls.at(-1);
+		const passed = (lastCall?.[0].gadgets ?? []) as Array<{ name: string }>;
+		return passed.map((gadget) => gadget.name);
+	}
+
+	it("'both' retains every posting gadget plus action gadgets", async () => {
+		expect(await gadgetNamesPassedToBuilder('implementation', 'both')).toEqual([
+			...NON_POSTING,
+			...PM_POSTING,
+			...SCM_POSTING,
+		]);
+	});
+
+	it("'none' drops all PM and SCM posting gadgets, retaining everything else", async () => {
+		const names = await gadgetNamesPassedToBuilder('implementation', 'none');
+		expect(names).toEqual(NON_POSTING);
+		for (const dropped of [...PM_POSTING, ...SCM_POSTING]) {
+			expect(names).not.toContain(dropped);
+		}
+	});
+
+	it("'pm-only' retains PM posting and drops SCM posting", async () => {
+		expect(await gadgetNamesPassedToBuilder('implementation', 'pm-only')).toEqual([
+			...NON_POSTING,
+			...PM_POSTING,
+		]);
+	});
+
+	it("'scm-only' retains SCM posting and drops PM posting", async () => {
+		expect(await gadgetNamesPassedToBuilder('implementation', 'scm-only')).toEqual([
+			...NON_POSTING,
+			...SCM_POSTING,
+		]);
+	});
+
+	it("defaults to 'both' (retains all posting gadgets) when no channel is configured", async () => {
+		expect(await gadgetNamesPassedToBuilder('implementation', undefined)).toEqual([
+			...NON_POSTING,
+			...PM_POSTING,
+			...SCM_POSTING,
+		]);
+	});
+
+	it('no-ops gracefully when a disabled posting gadget is already absent (layers on integration filtering)', async () => {
+		// getLlmistGadgets already omitted PostComment + SCM posting (integration not
+		// configured). A channel that disables them has nothing to drop.
+		const names = await gadgetNamesPassedToBuilder('implementation', 'none', [
+			{ name: 'ReadFile' },
+			{ name: 'CreatePR' },
+		]);
+		expect(names).toEqual(['ReadFile', 'CreatePR']);
+	});
+
+	it('resolves the channel for the agent type being executed', async () => {
+		// review is disabled but implementation is 'both' — executing 'implementation'
+		// must read the implementation entry, not review's.
+		mockGetAgentProfile.mockReturnValue({
+			getLlmistGadgets: vi.fn(() => ALL_GADGETS),
+			finishHooks: {},
+		} as unknown as ReturnType<typeof getAgentProfile>);
+
+		const input = makeInput('implementation');
+		input.project = {
+			...input.project,
+			agentUpdateChannels: { review: 'none', implementation: 'both' },
+		} as AgentExecutionPlan['project'];
+
+		await new LlmistEngine().execute(input);
+
+		const lastCall = mockCreateConfiguredBuilder.mock.calls.at(-1);
+		const names = ((lastCall?.[0].gadgets ?? []) as Array<{ name: string }>).map(
+			(gadget) => gadget.name,
+		);
+		expect(names).toEqual([...NON_POSTING, ...PM_POSTING, ...SCM_POSTING]);
 	});
 });

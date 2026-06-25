@@ -12,6 +12,7 @@ import { getLogLevel } from '../../agents/utils/index.js';
 import { createAgentLogger } from '../../agents/utils/logging.js';
 import { createTrackingContext } from '../../agents/utils/tracking.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
+import { filterPostingGadgetNames, resolveUpdateChannel } from '../../config/updateChannel.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
 import { createLLMCallLogger } from '../../utils/llmLogging.js';
 import { LLMIST_ENGINE_DEFINITION } from '../catalog.js';
@@ -87,7 +88,21 @@ export class LlmistEngine implements AgentEngine {
 		// Get gadget instances from the agent profile, filtered by integration availability.
 		// This ensures optional capabilities only provide gadgets if the integration is configured.
 		const integrationChecker = await createIntegrationChecker(input.project.id);
-		const gadgets = profile.getLlmistGadgets(integrationChecker);
+		const allGadgets = profile.getLlmistGadgets(integrationChecker) as Array<{ name: string }>;
+
+		// Drop the communication-only PM/SCM posting gadgets the resolved update
+		// channel disables, mirroring the native-tool path in buildExecutionPlan() so
+		// an agent cannot post on a disabled channel via either engine family. Layers
+		// on top of getLlmistGadgets' integration-availability filtering: an enabled
+		// channel against an absent gadget simply has nothing to drop.
+		const updateChannel = resolveUpdateChannel(input.project, agentType);
+		const allowedGadgetNames = new Set(
+			filterPostingGadgetNames(
+				allGadgets.map((gadget) => gadget.name),
+				updateChannel,
+			),
+		);
+		const gadgets = allGadgets.filter((gadget) => allowedGadgetNames.has(gadget.name));
 
 		// Build the configured agent builder with all llmist-specific features:
 		// rate limiting, retry, compaction, iteration hints, observer hooks
