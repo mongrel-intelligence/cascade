@@ -13,9 +13,16 @@ import { createAgentLogger } from '../../agents/utils/logging.js';
 import { createTrackingContext } from '../../agents/utils/tracking.js';
 import { CUSTOM_MODELS } from '../../config/customModels.js';
 import { getSessionState } from '../../gadgets/sessionState.js';
+import { captureException } from '../../sentry.js';
 import { createLLMCallLogger } from '../../utils/llmLogging.js';
 import { LLMIST_ENGINE_DEFINITION } from '../catalog.js';
 import type { AgentEngine, AgentEngineResult, AgentExecutionPlan } from '../types.js';
+import {
+	classifyOpenRouterError,
+	formatOpenRouterErrorMessage,
+	OPENROUTER_ERROR_SENTRY_TAG,
+	openRouterErrorSentryTagValue,
+} from './openrouterErrors.js';
 
 /**
  * LLMist engine adapter — executes agents using the llmist SDK.
@@ -164,15 +171,61 @@ export class LlmistEngine implements AgentEngine {
 			runId,
 		});
 
-		// Run the agent event loop (includes loop detection, session notices, etc.)
+		// Run the agent event loop (includes loop detection, session notices, etc.).
+		// Provider-side configuration errors (OpenRouter credit exhaustion, auth
+		// failures, model-unavailable, rate limits) surface as plain `Error`
+		// instances from the llmist SDK. We classify them here so they:
+		//   1. don't bubble up as `agent_execution` Sentry crashes (which would
+		//      pollute the on-call dashboard with billing/config issues), and
+		//   2. produce an actionable PM-card message instead of a stack-trace.
+		// Any other failure is re-thrown so the shared execution pipeline at
+		// `src/agents/shared/executionPipeline.ts` records it as a generic
+		// agent_execution failure with full stack capture (unchanged behavior).
 		const agent = builder.ask(taskPrompt);
-		const result = await runAgentLoop(
-			agent,
-			log,
-			trackingContext,
-			agentInput.interactive === true,
-			agentInput.autoAccept === true,
-		);
+		let result: Awaited<ReturnType<typeof runAgentLoop>>;
+		try {
+			result = await runAgentLoop(
+				agent,
+				log,
+				trackingContext,
+				agentInput.interactive === true,
+				agentInput.autoAccept === true,
+			);
+		} catch (err) {
+			const kind = classifyOpenRouterError(err);
+			if (!kind) throw err;
+
+			const rawMessage = err instanceof Error ? err.message : String(err);
+			const friendly = formatOpenRouterErrorMessage(kind, rawMessage);
+			log.error('OpenRouter provider error', {
+				kind,
+				rawMessage,
+				model,
+				runId,
+			});
+			captureException(err, {
+				tags: {
+					[OPENROUTER_ERROR_SENTRY_TAG]: openRouterErrorSentryTagValue(kind),
+					engine: this.definition.id,
+					agent: agentType,
+				},
+				extra: { model, runId },
+				level: 'warning',
+			});
+			const cost = (() => {
+				try {
+					return agent.getTree?.()?.getTotalCost() ?? 0;
+				} catch {
+					return 0;
+				}
+			})();
+			return {
+				success: false,
+				output: '',
+				error: friendly,
+				cost,
+			};
+		}
 
 		log.info('Agent completed', {
 			iterations: result.iterations,
