@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { ResolvedTrigger } from '@/components/shared/definition-trigger-toggles.js';
 import type { TriggerParameterValue } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
+import type { UpdateChannel } from '../../../../src/config/updateChannel.js';
 import { AgentDetailView } from './agent-config-detail.js';
 import { AgentListView } from './agent-config-list.js';
 import type {
@@ -58,6 +59,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: string | null;
 			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
+			updateChannel: UpdateChannel | null;
 			systemPrompt: string | null;
 			taskPrompt: string | null;
 		}) =>
@@ -69,6 +71,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: input.agentEngine,
 				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
+				updateChannel: input.updateChannel,
 				systemPrompt: input.systemPrompt,
 				taskPrompt: input.taskPrompt,
 			}),
@@ -95,6 +98,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: string | null;
 			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
+			updateChannel: UpdateChannel | null;
 			systemPrompt: string | null;
 			taskPrompt: string | null;
 		}) =>
@@ -106,6 +110,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: input.agentEngine,
 				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
+				updateChannel: input.updateChannel,
 				systemPrompt: input.systemPrompt,
 				taskPrompt: input.taskPrompt,
 			}),
@@ -145,6 +150,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				agentEngine: null,
 				engineSettings: null,
 				maxConcurrency: null,
+				updateChannel: null,
 				systemPrompt: null,
 				taskPrompt: null,
 			}),
@@ -247,6 +253,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			agentEngine: activeEngine,
 			engineSettings: activeEngineSettings,
 			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
+			updateChannel: values.updateChannel ? (values.updateChannel as UpdateChannel) : null,
 			// When the user explicitly cleared an override, send null to remove it server-side.
 			// Otherwise fall back to empty-string → null conversion for unpopulated fields.
 			systemPrompt: values.systemPromptCleared ? null : values.systemPrompt || null,

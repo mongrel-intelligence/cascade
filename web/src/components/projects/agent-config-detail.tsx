@@ -53,6 +53,7 @@ function DefinitionAgentSection({
 	const [maxIterations, setMaxIterations] = useState(config?.maxIterations?.toString() ?? '');
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
+	const [updateChannel, setUpdateChannel] = useState<string>(config?.updateChannel ?? 'both');
 	const [engineSettings, setEngineSettings] = useState<
 		Record<string, Record<string, unknown>> | undefined
 	>(config?.agentEngineSettings ?? undefined);
@@ -87,6 +88,7 @@ function DefinitionAgentSection({
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		setUpdateChannel(config?.updateChannel ?? 'both');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
 		setSystemPrompt(config?.systemPrompt ?? '');
 		setTaskPrompt(config?.taskPrompt ?? '');
@@ -156,6 +158,7 @@ function DefinitionAgentSection({
 			maxIterations,
 			agentEngine,
 			maxConcurrency,
+			updateChannel,
 			engineSettings,
 			systemPrompt,
 			taskPrompt,
@@ -169,6 +172,7 @@ function DefinitionAgentSection({
 		setMaxIterations(config?.maxIterations?.toString() ?? '');
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
+		setUpdateChannel(config?.updateChannel ?? 'both');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
 		setSystemPrompt(config?.systemPrompt ?? '');
 		setTaskPrompt(config?.taskPrompt ?? '');
@@ -258,6 +262,24 @@ function DefinitionAgentSection({
 								placeholder="Optional"
 							/>
 						</div>
+					</div>
+					<div className="space-y-2">
+						<Label htmlFor={`${agentType}-update-channel`}>Update channel</Label>
+						<Select value={updateChannel} onValueChange={setUpdateChannel}>
+							<SelectTrigger id={`${agentType}-update-channel`} className="w-full">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="both">Both</SelectItem>
+								<SelectItem value="scm-only">SCM only</SelectItem>
+								<SelectItem value="pm-only">PM only</SelectItem>
+								<SelectItem value="none">None</SelectItem>
+							</SelectContent>
+						</Select>
+						<p className="text-xs text-muted-foreground">
+							Where this agent posts communication-only status updates. Workflow actions (PRs,
+							status moves) always run.
+						</p>
 					</div>
 				</TabsContent>
 
