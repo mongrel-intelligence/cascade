@@ -105,7 +105,15 @@ export const debugAnalyses = pgTable(
  * the dashboard at trigger time) writes `running` while the debug agent is
  * executing and `failed` if it errors; the row is deleted on success, after
  * which a present `debug_analyses` row is the `completed` signal. `updated_at`
- * lets readers treat a `running` row left behind by a crashed worker as stale.
+ * lets readers treat a `running` row left behind by a crashed worker as stale
+ * (older than `DEBUG_ANALYSIS_RUNNING_STALE_MS` → read as `idle`; see
+ * `isDebugAnalysisRunActive` in `debugAnalysisRepository`).
+ *
+ * Coverage caveat: `failed` is written only for catchable in-process errors (the
+ * debug-runner's `catch`). A hard kill (watchdog timeout / OOM) — or a throw
+ * before the runner is reached — leaves the `running` row to self-stale to
+ * `idle` rather than surfacing `failed`; router-side reconciliation on non-zero
+ * container exit is a deliberate follow-up.
  */
 export const debugAnalysisStatus = pgTable('debug_analysis_status', {
 	analyzedRunId: uuid('analyzed_run_id')
