@@ -144,6 +144,12 @@ export async function triggerDebugAnalysis(
 ): Promise<void> {
 	const run = await getRunById(analyzedRunId);
 	if (!run) {
+		// `failed`-coverage gap (same class as the catch block below): the dashboard
+		// already wrote a `running` marker at trigger time, and this bare `return`
+		// neither clears it nor marks `failed`, so the row lingers and self-stales to
+		// `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather than surfacing
+		// `failed`. A missing run is a non-retryable terminal condition (the analyzed
+		// run was deleted), so the bounded re-trigger CONFLICT window is acceptable.
 		logger.warn('Run not found for debug analysis', { analyzedRunId });
 		return;
 	}
@@ -206,13 +212,13 @@ export async function triggerDebugAnalysis(
 		// error mask the original failure.
 		//
 		// Coverage caveat: this path only fires for catchable in-process errors. A
-		// hard kill (watchdog timeout / OOM) or a throw *before* this runner is
+		// hard kill (watchdog timeout / OOM), a throw *before* this runner is
 		// reached (e.g. `processDashboardJob` failing to load the project config
-		// after the dashboard already marked running) skips it; the lingering
-		// `running` row then self-stales to `idle` after
-		// `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather than surfacing `failed`.
-		// Surfacing `failed` on hard kill (e.g. router-side reconciliation on
-		// non-zero container exit) is a deliberate follow-up.
+		// after the dashboard already marked running), or this runner's own early
+		// `getRunById`-null return above all skip it; the lingering `running` row
+		// then self-stales to `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather
+		// than surfacing `failed`. Surfacing `failed` on hard kill (e.g. router-side
+		// reconciliation on non-zero container exit) is a deliberate follow-up.
 		await markDebugAnalysisFailed(analyzedRunId).catch((statusErr) => {
 			logger.warn('Failed to mark debug analysis failed', {
 				analyzedRunId,
