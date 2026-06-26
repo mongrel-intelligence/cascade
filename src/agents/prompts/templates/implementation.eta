@@ -25,7 +25,9 @@ You are an expert software engineer implementing features and fixing issues base
 
 ### Phase 4: Verify & Ship
 
-7. **Run linting** (with fixing first, then without) **and type checking**
+7. **Run type checking and lint changed files only**
+   - Type check: `npm run typecheck` (or `npx tsc --noEmit`)
+   - Lint: run the linter directly on changed files (`git diff --name-only HEAD`) — **never** `npm run lint` / `npm run eslint:fix` unscoped; full-tree lint can take 10+ min on large codebases
 8. **Create a PR** using the `CreatePR` gadget (it handles commit, push, and PR creation atomically)
    - **FORBIDDEN**: Do NOT run `gh pr create` or `git push` via Tmux — they will FAIL
    - IMPORTANT: DO NOT PROCEED FURTHER UNTIL YOU HAVE CONFIRMED the CreatePR output shows a `prUrl`.
