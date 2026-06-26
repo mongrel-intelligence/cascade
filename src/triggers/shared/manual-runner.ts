@@ -1,6 +1,6 @@
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
-import { getRunById } from '../../db/repositories/runsRepository.js';
+import { failQueuedOrRunningRun, getRunById } from '../../db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig, TriggerResult } from '../../types/index.js';
@@ -191,6 +191,26 @@ export async function triggerManualRun(
 			agentType: input.agentType,
 			error: String(err),
 		});
+		// MNG-1695: an error thrown before the worker activated the pre-created
+		// `queued` row (PM-provider/credential setup, or any pre-activation
+		// pipeline step) would otherwise leave the row stuck `queued` — this catch
+		// swallows the error so the container still exits 0, and neither the
+		// non-zero-exit `failOrphanedRun` nor the periodic orphan sweep resolves it.
+		// Resolve it here. `failQueuedOrRunningRun` no-ops on a row already finalized
+		// by the `executeAgentPipeline` path (post-activation success/failure keeps
+		// its own terminal status + error), so this only rescues a never-activated row.
+		if (input.preCreatedRunId) {
+			await failQueuedOrRunningRun(
+				input.preCreatedRunId,
+				`Manual run failed before completion: ${String(err)}`,
+			).catch((failErr) => {
+				logger.warn('[MNG-1695] could not resolve pre-created queued run after manual run error', {
+					projectId: input.projectId,
+					runId: input.preCreatedRunId,
+					error: String(failErr),
+				});
+			});
+		}
 	} finally {
 		markTriggerComplete(triggerKey);
 	}

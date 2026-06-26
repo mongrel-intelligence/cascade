@@ -28,6 +28,7 @@ const {
 	mockBuildReviewDispatchKey,
 	mockResolveWorkItemIdWithFallback,
 	mockResolveWorkItemDisplayData,
+	mockFailQueuedOrRunningRun,
 } = vi.hoisted(() => ({
 	mockRunAgent: vi.fn(),
 	mockGetPMProvider: vi.fn(),
@@ -67,6 +68,7 @@ const {
 	mockBuildReviewDispatchKey: vi.fn().mockReturnValue('acme/myapp:42:abc123'),
 	mockResolveWorkItemIdWithFallback: vi.fn().mockResolvedValue(undefined),
 	mockResolveWorkItemDisplayData: vi.fn().mockResolvedValue({}),
+	mockFailQueuedOrRunningRun: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock('../../../../src/agents/registry.js', () => ({
@@ -126,6 +128,7 @@ vi.mock('../../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	updateRunPRNumber: vi.fn().mockResolvedValue(undefined),
+	failQueuedOrRunningRun: mockFailQueuedOrRunningRun,
 }));
 
 vi.mock('../../../../src/triggers/shared/agent-pm-summary.js', () => ({
@@ -398,6 +401,136 @@ describe('runAgentExecutionPipeline facade characterization', () => {
 		expect(lifecycle.cleanupProcessing).not.toHaveBeenCalled();
 		expect(lifecycle.handleSuccess).not.toHaveBeenCalled();
 		expect(lifecycle.handleFailure).not.toHaveBeenCalled();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Pre-created queued run resolution on skip/abort (MNG-1695)
+//
+// A manual run pre-creates a `status='queued'` run row at tRPC trigger time
+// (threaded as agentInput.preCreatedRunId) and the worker flips it to `running`
+// deep inside runAgentForContext. Every pre-activation early return here returns
+// cleanly (exit 0), so without explicit resolution the queued row would leak
+// forever and lock out later triggers/retries via the CONFLICT guard for ~2h.
+// ---------------------------------------------------------------------------
+
+describe('pre-created queued run resolution on skip (MNG-1695)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockCreatePMProvider.mockReturnValue({});
+		mockResolveProjectPMConfig.mockReturnValue(PM_CONFIG);
+		mockValidateIntegrations.mockResolvedValue({ valid: true, errors: [] });
+		mockCheckBudgetExceeded.mockResolvedValue(null);
+		mockHandleAgentResultArtifacts.mockResolvedValue(undefined);
+		mockShouldTriggerDebug.mockResolvedValue(null);
+		mockRunAgent.mockResolvedValue({ success: true, output: '', runId: 'run-1' });
+		mockFailQueuedOrRunningRun.mockResolvedValue(true);
+	});
+
+	it('fails the pre-created queued row when integration validation blocks before activation', async () => {
+		mockValidateIntegrations.mockResolvedValueOnce({
+			valid: false,
+			errors: [{ category: 'scm', message: 'GitHub token missing' }],
+		});
+
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'implementation',
+				agentInput: { preCreatedRunId: 'queued-validation' },
+				workItemId: 'card-1',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockRunAgent).not.toHaveBeenCalled();
+		expect(mockFailQueuedOrRunningRun).toHaveBeenCalledWith(
+			'queued-validation',
+			expect.stringContaining('validation'),
+		);
+	});
+
+	it('fails the pre-created queued row when the budget aborts before activation', async () => {
+		mockCheckBudgetExceeded.mockResolvedValueOnce({
+			exceeded: true,
+			currentCost: 100,
+			budget: 50,
+		});
+
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: { preCreatedRunId: 'queued-budget' },
+				workItemId: 'card-1',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockRunAgent).not.toHaveBeenCalled();
+		expect(mockFailQueuedOrRunningRun).toHaveBeenCalledWith(
+			'queued-budget',
+			expect.stringContaining('budget'),
+		);
+	});
+
+	it('does not touch a pre-created row that is absent (non-manual source skipping)', async () => {
+		mockCheckBudgetExceeded.mockResolvedValueOnce({
+			exceeded: true,
+			currentCost: 100,
+			budget: 50,
+		});
+
+		await runAgentExecutionPipeline(
+			{ agentType: 'review', agentInput: {}, workItemId: 'card-1' },
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockFailQueuedOrRunningRun).not.toHaveBeenCalled();
+	});
+
+	it('does not fail the pre-created row on a successful (non-skipped) pipeline', async () => {
+		await runAgentExecutionPipeline(
+			{
+				agentType: 'review',
+				agentInput: { preCreatedRunId: 'queued-success' },
+				workItemId: 'card-1',
+			},
+			PROJECT,
+			CONFIG,
+		);
+
+		expect(mockRunAgent).toHaveBeenCalled();
+		expect(mockFailQueuedOrRunningRun).not.toHaveBeenCalled();
+	});
+
+	it('swallows a DB error while resolving the pre-created row on skip', async () => {
+		mockCheckBudgetExceeded.mockResolvedValueOnce({
+			exceeded: true,
+			currentCost: 100,
+			budget: 50,
+		});
+		mockFailQueuedOrRunningRun.mockRejectedValueOnce(new Error('db down'));
+
+		// The skip path must not throw even when the terminal-state write fails.
+		await expect(
+			runAgentExecutionPipeline(
+				{
+					agentType: 'review',
+					agentInput: { preCreatedRunId: 'queued-db-error' },
+					workItemId: 'card-1',
+				},
+				PROJECT,
+				CONFIG,
+			),
+		).resolves.toBeUndefined();
+
+		expect(mockFailQueuedOrRunningRun).toHaveBeenCalledWith('queued-db-error', expect.any(String));
+		expect(mockLogger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('could not resolve pre-created queued run'),
+			expect.objectContaining({ runId: 'queued-db-error' }),
+		);
 	});
 });
 

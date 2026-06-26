@@ -6,6 +6,7 @@ vi.mock('../../../src/agents/definitions/loader.js', () => ({
 
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getRunById: vi.fn(),
+	failQueuedOrRunningRun: vi.fn().mockResolvedValue(true),
 }));
 
 // Default: agent is enabled (has a config row)
@@ -54,7 +55,7 @@ vi.mock('../../../src/triggers/shared/agent-execution.js', () => ({
 
 import { isPMFocusedAgent } from '../../../src/agents/definitions/loader.js';
 import { isAgentEnabledForProject } from '../../../src/db/repositories/agentConfigsRepository.js';
-import { getRunById } from '../../../src/db/repositories/runsRepository.js';
+import { failQueuedOrRunningRun, getRunById } from '../../../src/db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../../src/pm/context.js';
 import { createPMProvider, withPMProvider } from '../../../src/pm/index.js';
 import { runAgentExecutionPipeline } from '../../../src/triggers/shared/agent-execution.js';
@@ -279,6 +280,56 @@ describe('triggerManualRun', () => {
 		// After awaiting triggerManualRun (error caught internally), trigger should be complete
 		const key = `${projectId}:${agentType}:${workItemId}:no-pr`;
 		expect(isTriggerRunning(key)).toBe(false);
+	});
+
+	// MNG-1695: an error thrown before the worker activated the pre-created
+	// `queued` row is swallowed by the catch (container exits 0), so the row must
+	// be resolved here or it leaks and locks out later triggers/retries.
+	it('resolves the pre-created queued run when the pipeline throws before activation', async () => {
+		vi.mocked(runAgentExecutionPipeline).mockRejectedValueOnce(new Error('PM provider boom'));
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				workItemId: 'card-err',
+				preCreatedRunId: 'queued-run-err',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		expect(vi.mocked(failQueuedOrRunningRun)).toHaveBeenCalledWith(
+			'queued-run-err',
+			expect.stringContaining('PM provider boom'),
+		);
+	});
+
+	it('does not resolve a pre-created run on error when no preCreatedRunId was threaded', async () => {
+		vi.mocked(runAgentExecutionPipeline).mockRejectedValueOnce(new Error('boom'));
+
+		await triggerManualRun(
+			{ projectId: 'test-project', agentType: 'implementation', workItemId: 'card-no-id' },
+			mockProject,
+			mockConfig,
+		);
+
+		expect(vi.mocked(failQueuedOrRunningRun)).not.toHaveBeenCalled();
+	});
+
+	it('does not resolve the pre-created run on a successful pipeline', async () => {
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				workItemId: 'card-ok',
+				preCreatedRunId: 'queued-run-ok',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		expect(vi.mocked(failQueuedOrRunningRun)).not.toHaveBeenCalled();
 	});
 });
 
