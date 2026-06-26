@@ -460,6 +460,135 @@ describe('spawnWorker', () => {
 		).rejects.toBe(transientPullErr);
 	});
 
+	// --- spec 022 / plan 2: per-project worker image spawn resolution ---
+
+	it('spawns a verified custom-image project from its pinned digest, not the global default', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'proj-custom',
+					workerImage: 'ghcr.io/acme/worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: 'sha256:abc',
+				},
+			],
+		});
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-custom',
+				data: { type: 'trello', projectId: 'proj-custom' } as CascadeJob,
+			}) as never,
+		);
+
+		expect(mockDockerCreateContainer).toHaveBeenCalledWith(
+			expect.objectContaining({ Image: 'sha256:abc' }),
+		);
+		expect(mockDockerCreateContainer).not.toHaveBeenCalledWith(
+			expect.objectContaining({ Image: 'test-worker:latest' }),
+		);
+
+		resolveWait();
+	});
+
+	it('pulls and retries a missing-but-pullable custom digest (effectiveBaseImage classification)', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'proj-custom',
+					workerImage: 'ghcr.io/acme/worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: 'sha256:abc',
+				},
+			],
+		});
+		const notFound = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: sha256:abc'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValueOnce(notFound);
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(
+			makeJob({
+				id: 'job-custom-pull',
+				data: { type: 'trello', projectId: 'proj-custom' } as CascadeJob,
+			}) as never,
+		);
+
+		// The custom digest — not just the global default — is pulled-on-missing.
+		expect(mockDockerPull).toHaveBeenCalledTimes(1);
+		expect(mockDockerPull).toHaveBeenCalledWith('sha256:abc');
+		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
+
+		resolveWait();
+	});
+
+	it('fails the job with a grep-stable terminal error when a custom digest is unpullable (no global fallback)', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'proj-custom',
+					workerImage: 'ghcr.io/acme/worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: 'sha256:abc',
+				},
+			],
+		});
+		const notFound = Object.assign(
+			new Error('(HTTP code 404) no such container - No such image: sha256:abc'),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValue(notFound);
+		const pullErr = Object.assign(new Error('manifest unknown'), { statusCode: 404 });
+		mockFollowProgress.mockImplementation(((_s: unknown, cb: (e: Error | null) => void) =>
+			cb(pullErr)) as never);
+
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-custom-unpull',
+					data: { type: 'trello', projectId: 'proj-custom' } as CascadeJob,
+				}) as never,
+			),
+		).rejects.toThrow(/sha256:abc/);
+
+		// Never silently relaunches on the global default image.
+		expect(mockDockerCreateContainer).not.toHaveBeenCalledWith(
+			expect.objectContaining({ Image: 'test-worker:latest' }),
+		);
+	});
+
+	it('fails the job and never launches when a configured project image is unverified (pending)', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'proj-pending',
+					workerImage: 'ghcr.io/acme/worker:v3',
+					workerImageStatus: 'pending',
+				},
+			],
+		});
+		setupMockContainer();
+
+		await expect(
+			spawnWorker(
+				makeJob({
+					id: 'job-pending',
+					data: { type: 'trello', projectId: 'proj-pending' } as CascadeJob,
+				}) as never,
+			),
+		).rejects.toThrow(/not verified/);
+
+		// Fail-closed: a configured-but-unverified image must never launch anything.
+		expect(mockDockerCreateContainer).not.toHaveBeenCalled();
+	});
+
 	it('uses project watchdogTimeoutMs + 2min buffer when available', async () => {
 		mockLoadProjectConfig.mockResolvedValue({
 			projects: [],

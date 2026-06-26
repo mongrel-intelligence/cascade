@@ -631,6 +631,100 @@ describe('spawnWorker — stale snapshot (image not found fallback)', () => {
 	});
 });
 
+describe('spawnWorker — per-project custom image + snapshots (spec 022)', () => {
+	const verifiedProject = {
+		id: 'proj-snap',
+		snapshotEnabled: true,
+		workerImage: 'ghcr.io/acme/worker:v3',
+		workerImageStatus: 'verified',
+		workerImageDigest: 'sha256:abc',
+	};
+
+	beforeEach(() => {
+		vi.spyOn(console, 'log').mockImplementation(() => {});
+		vi.spyOn(console, 'warn').mockImplementation(() => {});
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		vi.spyOn(console, 'info').mockImplementation(() => {});
+		mockGetAllProjectCredentials.mockResolvedValue({});
+		detachAll();
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+		detachAll();
+	});
+
+	it('launches a custom-image snapshot-miss run from the effective base and commits FROM it', async () => {
+		mockGetSnapshot.mockReturnValue(undefined); // snapshot miss
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [verifiedProject] });
+		const { container, resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		// Launched FROM the verified digest, never the global default.
+		expect(mockDockerCreateContainer).toHaveBeenCalledWith(
+			expect.objectContaining({ Image: 'sha256:abc' }),
+		);
+		expect(mockDockerCreateContainer).not.toHaveBeenCalledWith(
+			expect.objectContaining({ Image: 'base-worker:latest' }),
+		);
+
+		resolveWait(0);
+		await new Promise((r) => setTimeout(r, 20));
+
+		// Snapshot is committed from the container that ran on the effective base.
+		expect(container.commit).toHaveBeenCalled();
+	});
+
+	it('does NOT misclassify a custom-image run without a snapshot as a reuse', async () => {
+		mockGetSnapshot.mockReturnValue(undefined); // snapshot miss → NOT a reuse
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [verifiedProject] });
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		const createCall = mockDockerCreateContainer.mock.calls[0]?.[0] as { Env: string[] };
+		// snapshotReuse=false → the worker is NOT told to skip clone/install.
+		expect(createCall.Env).not.toContain('CASCADE_SNAPSHOT_REUSE=true');
+		// ...but it IS a snapshot-enabled run (workspace preserved for commit).
+		expect(createCall.Env).toContain('CASCADE_SNAPSHOT_ENABLED=true');
+
+		resolveWait();
+	});
+
+	it('falls back to the effective base (not the global) when a stale snapshot 404s', async () => {
+		mockGetSnapshot.mockReturnValue({
+			imageName: 'cascade-snapshot-proj-snap-card-snap:latest',
+			projectId: 'proj-snap',
+			workItemId: 'card-snap',
+			createdAt: new Date(),
+		});
+		mockLoadProjectConfig.mockResolvedValue({ projects: [], fullProjects: [verifiedProject] });
+		const staleImageError = Object.assign(
+			new Error(
+				'(HTTP code 404) no such container - No such image: cascade-snapshot-proj-snap-card-snap:latest',
+			),
+			{ statusCode: 404 },
+		);
+		mockDockerCreateContainer.mockRejectedValueOnce(staleImageError);
+		const { resolveWait } = setupMockContainer();
+
+		await spawnWorker(makeJob() as never);
+
+		expect(mockInvalidateSnapshot).toHaveBeenCalledWith('proj-snap', 'card-snap');
+		// Fallback launches the verified digest, NOT the global default.
+		expect(mockDockerCreateContainer).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ Image: 'sha256:abc' }),
+		);
+		expect(mockDockerCreateContainer).not.toHaveBeenCalledWith(
+			expect.objectContaining({ Image: 'base-worker:latest' }),
+		);
+
+		resolveWait();
+	});
+});
+
 describe('spawnWorker — snapshot label on disabled project', () => {
 	beforeEach(() => {
 		vi.spyOn(console, 'log').mockImplementation(() => {});
