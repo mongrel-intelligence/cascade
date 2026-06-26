@@ -46,6 +46,10 @@ export async function createProject(
 		maxInFlightItems?: number | null;
 		snapshotEnabled?: boolean | null;
 		snapshotTtlMs?: number | null;
+		workerImage?: string | null;
+		workerImageDigest?: string | null;
+		workerImageStatus?: string | null;
+		workerImageError?: string | null;
 	},
 ) {
 	const db = getDb();
@@ -70,6 +74,10 @@ export async function createProject(
 			maxInFlightItems: rest.maxInFlightItems,
 			snapshotEnabled: rest.snapshotEnabled,
 			snapshotTtlMs: rest.snapshotTtlMs,
+			workerImage: rest.workerImage,
+			workerImageDigest: rest.workerImageDigest,
+			workerImageStatus: rest.workerImageStatus,
+			workerImageError: rest.workerImageError,
 			...(engineSettings !== undefined
 				? { agentEngineSettings: normalizeEngineSettings(engineSettings) }
 				: {}),
@@ -98,6 +106,10 @@ export async function updateProject(
 		maxInFlightItems?: number | null;
 		snapshotEnabled?: boolean | null;
 		snapshotTtlMs?: number | null;
+		workerImage?: string | null;
+		workerImageDigest?: string | null;
+		workerImageStatus?: string | null;
+		workerImageError?: string | null;
 	},
 ) {
 	const db = getDb();

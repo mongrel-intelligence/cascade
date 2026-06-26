@@ -400,6 +400,13 @@
 			"when": 1791000000000,
 			"tag": "0056_debug_analysis_status",
 			"breakpoints": false
+		},
+		{
+			"idx": 57,
+			"version": "7",
+			"when": 1792000000000,
+			"tag": "0057_project_worker_image",
+			"breakpoints": false
 		}
 	]
 }
