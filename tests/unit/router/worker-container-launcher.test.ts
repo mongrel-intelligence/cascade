@@ -174,6 +174,49 @@ describe('worker-container-launcher', () => {
 		);
 	});
 
+	it('keeps the base launch posture for a custom-image digest: only resource/network limits + Labels, no mounts/privileged (spec 022 AC #9)', async () => {
+		const container = makeContainer();
+		const dependencies = makeDependencies({
+			createContainer: vi.fn().mockResolvedValue(container),
+		});
+
+		await launchWorkerContainer(
+			{
+				job: makeJob() as never,
+				jobId: 'job-custom-img',
+				containerName: 'cascade-worker-job-custom-img',
+				projectId: 'proj-1',
+				workItemId: 'card-1',
+				agentType: 'implementation',
+			},
+			{
+				// A per-project verified digest launches through the identical path.
+				workerImage: 'sha256:abc',
+				snapshotEnabled: false,
+				containerTimeoutMs: 5000,
+				workerEnv: [],
+			},
+			dependencies,
+		);
+
+		const createArg = vi.mocked(dependencies.createContainer).mock.calls[0]?.[0] as {
+			Image: string;
+			HostConfig: Record<string, unknown>;
+		};
+		expect(createArg.Image).toBe('sha256:abc');
+		// Launch posture is byte-for-byte the base-image shape — only resource +
+		// network limits + AutoRemove. A future mount/privileged regression fails here.
+		expect(createArg.HostConfig).toEqual({
+			Memory: 768 * 1024 * 1024,
+			MemorySwap: 768 * 1024 * 1024,
+			NetworkMode: 'cascade-test-network',
+			AutoRemove: true,
+		});
+		expect(createArg.HostConfig).not.toHaveProperty('Binds');
+		expect(createArg.HostConfig).not.toHaveProperty('Mounts');
+		expect(createArg.HostConfig).not.toHaveProperty('Privileged');
+	});
+
 	it('uses AutoRemove=true and blank optional labels when snapshots and metadata are absent', async () => {
 		const container = makeContainer();
 		const dependencies = makeDependencies({

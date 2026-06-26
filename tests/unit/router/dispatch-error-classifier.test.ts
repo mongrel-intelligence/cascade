@@ -44,6 +44,15 @@ describe('classifyDispatchError', () => {
 		expect(classifyDispatchError(new TypeError("Cannot read 'foo' of undefined"))).toBe('terminal');
 	});
 
+	it("worker-image resolution error (name='WorkerImageResolutionError') → 'terminal'", () => {
+		// An unverified/unobtainable per-project worker image (spec 022) can never
+		// resolve on retry — BullMQ must skip the retry budget.
+		const err = Object.assign(new Error('Project worker image not verified: p1 status=pending'), {
+			name: 'WorkerImageResolutionError',
+		});
+		expect(classifyDispatchError(err)).toBe('terminal');
+	});
+
 	it("slot-wait timeout (code: 'SLOT_WAIT_TIMEOUT') → 'transient'", () => {
 		const err = Object.assign(new Error('Slot wait timed out'), { code: 'SLOT_WAIT_TIMEOUT' });
 		expect(classifyDispatchError(err)).toBe('transient');

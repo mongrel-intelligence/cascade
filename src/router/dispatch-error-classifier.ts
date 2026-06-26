@@ -12,6 +12,8 @@
  *
  * Recognized terminal classes:
  *  - validation errors (TypeError, ZodError)
+ *  - worker-image resolution errors (WorkerImageResolutionError) — an unverified
+ *    or unobtainable per-project worker image can never resolve on retry (spec 022)
  *  - image-not-found AFTER the fallback retry has already exhausted
  *
  * Recognized transient classes:
@@ -44,6 +46,12 @@ export function classifyDispatchError(err: unknown): DispatchErrorKind {
 	// Terminal: validation
 	if (e.name === 'ZodError') return 'terminal';
 	if (err instanceof TypeError) return 'terminal';
+
+	// Terminal: per-project worker image is unverified or unobtainable (spec 022).
+	// Matched by name (not instanceof) to avoid importing the router config graph
+	// into the classifier. A misconfigured/missing image never resolves on retry,
+	// and the spawn path must NEVER silently fall back to the global image.
+	if (e.name === 'WorkerImageResolutionError') return 'terminal';
 
 	// Terminal: image-not-found AFTER fallback (the spawnWorker path's last
 	// resort already retried with the base image; if we still got here, the

@@ -610,4 +610,82 @@ describe('projectsRepository (integration)', () => {
 			expect(fromOrg2?.name).toBe('Org 2 Proj');
 		});
 	});
+
+	// =========================================================================
+	// Per-project worker image (spec 022 plan 1/4) — dormant columns
+	// =========================================================================
+
+	describe('worker-image columns', () => {
+		it('accepts NULL worker-image columns, reads back null/undefined', async () => {
+			const project = await createProject('test-org', {
+				id: 'no-worker-image',
+				name: 'No Worker Image',
+			});
+
+			expect(project.workerImage).toBeNull();
+			expect(project.workerImageDigest).toBeNull();
+			expect(project.workerImageStatus).toBeNull();
+			expect(project.workerImageError).toBeNull();
+
+			const retrieved = await getProjectFull('no-worker-image', 'test-org');
+			expect(retrieved?.workerImage).toBeNull();
+			expect(retrieved?.workerImageDigest).toBeNull();
+			expect(retrieved?.workerImageStatus).toBeNull();
+			expect(retrieved?.workerImageError).toBeNull();
+		});
+
+		it('round-trips all four worker-image fields', async () => {
+			await createProject('test-org', {
+				id: 'worker-image-project',
+				name: 'Worker Image Project',
+				workerImage: 'ghcr.io/acme/cascade-worker:latest',
+				workerImageDigest: 'ghcr.io/acme/cascade-worker@sha256:abcdef',
+				workerImageStatus: 'verified',
+				workerImageError: null,
+			});
+
+			const retrieved = await getProjectFull('worker-image-project', 'test-org');
+			expect(retrieved?.workerImage).toBe('ghcr.io/acme/cascade-worker:latest');
+			expect(retrieved?.workerImageDigest).toBe('ghcr.io/acme/cascade-worker@sha256:abcdef');
+			expect(retrieved?.workerImageStatus).toBe('verified');
+			expect(retrieved?.workerImageError).toBeNull();
+		});
+
+		it('updateProject persists + returns the fields', async () => {
+			await updateProject('test-project', 'test-org', {
+				workerImage: 'ghcr.io/acme/cascade-worker:v2',
+				workerImageDigest: 'ghcr.io/acme/cascade-worker@sha256:deadbeef',
+				workerImageStatus: 'pending',
+				workerImageError: 'validation in progress',
+			});
+
+			const updated = await getProjectFull('test-project', 'test-org');
+			expect(updated?.workerImage).toBe('ghcr.io/acme/cascade-worker:v2');
+			expect(updated?.workerImageDigest).toBe('ghcr.io/acme/cascade-worker@sha256:deadbeef');
+			expect(updated?.workerImageStatus).toBe('pending');
+			expect(updated?.workerImageError).toBe('validation in progress');
+		});
+
+		it('updateProject can clear the fields back to null', async () => {
+			await updateProject('test-project', 'test-org', {
+				workerImage: 'ghcr.io/acme/cascade-worker:v2',
+				workerImageDigest: 'ghcr.io/acme/cascade-worker@sha256:deadbeef',
+				workerImageStatus: 'verified',
+				workerImageError: null,
+			});
+
+			await updateProject('test-project', 'test-org', {
+				workerImage: null,
+				workerImageDigest: null,
+				workerImageStatus: null,
+				workerImageError: null,
+			});
+
+			const cleared = await getProjectFull('test-project', 'test-org');
+			expect(cleared?.workerImage).toBeNull();
+			expect(cleared?.workerImageDigest).toBeNull();
+			expect(cleared?.workerImageStatus).toBeNull();
+			expect(cleared?.workerImageError).toBeNull();
+		});
+	});
 });

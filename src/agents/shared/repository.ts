@@ -243,10 +243,11 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 			[setupScriptPath],
 			repoDir,
 			{ AGENT_PROFILE_NAME: agentType },
-			// Disable idle timeout: setup.sh may compile language runtimes (e.g. Ruby via
-			// asdf/ruby-build) whose make output is suppressed, causing false idle-timeout
-			// kills. The wall timeout (10 min) remains the safety net for truly hung setups.
-			{ idleTimeoutMs: 0 },
+			// Disable both idle and wall timeouts: setup.sh may compile language runtimes
+			// (e.g. Ruby via asdf/ruby-build) whose make output is suppressed, and may run
+			// large npm ci installs that take 10-15+ min. The global worker container timeout
+			// (WORKER_TIMEOUT_MS) is the safety net for truly hung setups.
+			{ idleTimeoutMs: 0, wallTimeoutMs: 0 },
 		);
 		log.info('Setup script completed', {
 			exitCode: setupResult.exitCode,

@@ -20,6 +20,14 @@ const AgentEngineConfigSchema = z.object({
 	overrides: z.record(z.string()).default({}),
 });
 
+/**
+ * Per-project worker-image validation lifecycle (spec 022).
+ * `pending` — set but not yet validated; `verified` — validated, digest pinned;
+ * `failed` — validation rejected the reference (see `workerImageError`).
+ */
+export const WorkerImageStatusSchema = z.enum(['pending', 'verified', 'failed']);
+export type WorkerImageStatus = z.infer<typeof WorkerImageStatusSchema>;
+
 // Plan 009/5 removed the inline Trello / JIRA / Linear config schemas.
 // Each provider's manifest now owns its schema (see
 // `src/integrations/pm/<provider>/config-schema.ts`). The project config
@@ -79,6 +87,16 @@ export const ProjectConfigSchema = z.object({
 	maxInFlightItems: z.number().int().positive().optional(),
 	snapshotEnabled: z.boolean().optional(),
 	snapshotTtlMs: z.number().int().positive().optional(),
+
+	/**
+	 * Per-project worker image (spec 022). All optional with NO `.default()` —
+	 * absent means fall back to the global router-level default image.
+	 * Dormant until plans 2-4 wire spawn resolution, validation, and UI.
+	 */
+	workerImage: z.string().optional(),
+	workerImageDigest: z.string().optional(),
+	workerImageStatus: WorkerImageStatusSchema.optional(),
+	workerImageError: z.string().optional(),
 });
 
 export const CascadeConfigSchema = z.object({

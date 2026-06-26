@@ -34,6 +34,7 @@ import {
 	buildWorkerContainerName,
 	ROUTER_KILL_BUFFER_MS,
 	resolveSpawnSettings,
+	WorkerImageResolutionError,
 } from '../../../src/router/worker-spawn-settings.js';
 
 describe('worker-spawn-settings', () => {
@@ -56,10 +57,175 @@ describe('worker-spawn-settings', () => {
 		expect(settings).toEqual({
 			snapshotEnabled: false,
 			workerImage: 'base-worker:latest',
+			effectiveBaseImage: 'base-worker:latest',
 			containerTimeoutMs: 30 * 60 * 1000,
 			snapshotTtlMs: 24 * 60 * 60 * 1000,
 		});
 		expect(mockLoadProjectConfig).not.toHaveBeenCalled();
+	});
+
+	// --- spec 022 / plan 2: effectiveBaseImage refactor (AC #1) ---
+
+	it('effectiveBaseImage === routerConfig.workerImage when the project has no per-project image', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'plain-project', snapshotEnabled: false }],
+		});
+
+		const settings = await resolveSpawnSettings('plain-project', 'MNG-1', 'job-plain');
+
+		// Pure no-op refactor: with no per-project image, both the launch image and
+		// the effective base equal the global default.
+		expect(settings.effectiveBaseImage).toBe('base-worker:latest');
+		expect(settings.workerImage).toBe('base-worker:latest');
+	});
+
+	// --- spec 022 / plan 2: verified-digest resolution (AC #5) ---
+
+	it('resolves workerImage + effectiveBaseImage to the digest for a verified project image', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'custom-img',
+					snapshotEnabled: false,
+					workerImage: 'ghcr.io/acme/custom-worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: 'sha256:abc',
+				},
+			],
+		});
+
+		const settings = await resolveSpawnSettings('custom-img', 'MNG-2', 'job-custom');
+
+		expect(settings.workerImage).toBe('sha256:abc');
+		expect(settings.effectiveBaseImage).toBe('sha256:abc');
+	});
+
+	it('layers a snapshot image on top of effectiveBaseImage for a verified project image', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'custom-img',
+					snapshotEnabled: true,
+					workerImage: 'ghcr.io/acme/custom-worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: 'sha256:abc',
+				},
+			],
+		});
+		mockGetSnapshot.mockReturnValue({
+			imageName: 'cascade-snapshot-custom-img-mng-3:latest',
+		});
+
+		const settings = await resolveSpawnSettings('custom-img', 'MNG-3', 'job-custom-snap');
+
+		// Snapshot substitution replaces the LAUNCH image but the effective base
+		// stays pinned to the verified digest.
+		expect(settings.workerImage).toBe('cascade-snapshot-custom-img-mng-3:latest');
+		expect(settings.effectiveBaseImage).toBe('sha256:abc');
+	});
+
+	// --- spec 022 / plan 2: fail-closed on unverified (AC #4 partial) ---
+
+	it('throws a terminal WorkerImageResolutionError for a pending project image (no global fallback)', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'pending-img',
+					snapshotEnabled: false,
+					workerImage: 'ghcr.io/acme/custom-worker:v3',
+					workerImageStatus: 'pending',
+					// no digest yet
+				},
+			],
+		});
+
+		await expect(resolveSpawnSettings('pending-img', 'MNG-4', 'job-pending')).rejects.toThrow(
+			WorkerImageResolutionError,
+		);
+		await expect(resolveSpawnSettings('pending-img', 'MNG-4', 'job-pending')).rejects.toThrow(
+			/not verified: pending-img status=pending/,
+		);
+	});
+
+	it('throws for a failed project image and for a verified image missing its digest', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'failed-img',
+					workerImage: 'ghcr.io/acme/custom-worker:v3',
+					workerImageStatus: 'failed',
+				},
+			],
+		});
+		await expect(resolveSpawnSettings('failed-img', 'MNG-5', 'job-failed')).rejects.toThrow(
+			WorkerImageResolutionError,
+		);
+
+		// Defensive: 'verified' status but no digest must also fail closed.
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'verified-no-digest',
+					workerImage: 'ghcr.io/acme/custom-worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: '',
+				},
+			],
+		});
+		await expect(
+			resolveSpawnSettings('verified-no-digest', 'MNG-6', 'job-no-digest'),
+		).rejects.toThrow(WorkerImageResolutionError);
+	});
+
+	it('records projectWorkerImage, globalWorkerImage, and effectiveBaseImage in the resolved-settings log', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [
+				{
+					id: 'custom-img',
+					snapshotEnabled: false,
+					workerImage: 'ghcr.io/acme/custom-worker:v3',
+					workerImageStatus: 'verified',
+					workerImageDigest: 'sha256:abc',
+				},
+			],
+		});
+
+		await resolveSpawnSettings('custom-img', 'MNG-7', 'job-log');
+
+		expect(mockLoggerInfo).toHaveBeenCalledWith(
+			'[WorkerManager] Resolved spawn settings:',
+			expect.objectContaining({
+				projectWorkerImage: 'ghcr.io/acme/custom-worker:v3',
+				globalWorkerImage: 'base-worker:latest',
+				effectiveBaseImage: 'sha256:abc',
+				workerImage: 'sha256:abc',
+			}),
+		);
+	});
+
+	it('logs projectWorkerImage=null when the project has no per-project image', async () => {
+		mockLoadProjectConfig.mockResolvedValue({
+			projects: [],
+			fullProjects: [{ id: 'plain-project', snapshotEnabled: false }],
+		});
+
+		await resolveSpawnSettings('plain-project', 'MNG-8', 'job-plain-log');
+
+		expect(mockLoggerInfo).toHaveBeenCalledWith(
+			'[WorkerManager] Resolved spawn settings:',
+			expect.objectContaining({
+				projectWorkerImage: null,
+				globalWorkerImage: 'base-worker:latest',
+				effectiveBaseImage: 'base-worker:latest',
+			}),
+		);
 	});
 
 	it('adds the router kill buffer to a per-project watchdog timeout', async () => {

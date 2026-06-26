@@ -29,6 +29,14 @@ export const projects = pgTable(
 		snapshotEnabled: boolean('snapshot_enabled'),
 		snapshotTtlMs: integer('snapshot_ttl_ms'),
 
+		// Per-project worker image (spec 022). All nullable; NULL = use the
+		// global router-level default image. Dormant until plans 2-4 wire
+		// spawn resolution, validation, CLI/API, and UI.
+		workerImage: text('worker_image'),
+		workerImageDigest: text('worker_image_digest'),
+		workerImageStatus: text('worker_image_status'),
+		workerImageError: text('worker_image_error'),
+
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

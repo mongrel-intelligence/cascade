@@ -109,6 +109,11 @@ export interface ProjectConfigRaw {
 	maxInFlightItems?: number;
 	snapshotEnabled?: boolean;
 	snapshotTtlMs?: number;
+	/** Per-project worker image (spec 022). Raw strings; validated by ProjectConfigSchema. */
+	workerImage?: string;
+	workerImageDigest?: string;
+	workerImageStatus?: string;
+	workerImageError?: string;
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -165,6 +170,10 @@ type ProjectRow = {
 	maxInFlightItems: number | null;
 	snapshotEnabled: boolean | null;
 	snapshotTtlMs: number | null;
+	workerImage: string | null;
+	workerImageDigest: string | null;
+	workerImageStatus: string | null;
+	workerImageError: string | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
@@ -204,6 +213,11 @@ export function orUndefined<T extends Record<string, unknown>>(obj: T): T | unde
 
 function numericOrUndefined(value: string | null): number | undefined {
 	return value != null ? Number(value) : undefined;
+}
+
+/** Normalizes a nullable DB column to `undefined` for the raw config object. */
+function nullToUndefined<T>(value: T | null): T | undefined {
+	return value ?? undefined;
 }
 
 function buildTrelloConfig(config: TrelloIntegrationConfig): ProjectConfigRaw['trello'] {
@@ -270,6 +284,10 @@ function buildBaseProjectFields(
 		maxInFlightItems: row.maxInFlightItems ?? undefined,
 		snapshotEnabled: row.snapshotEnabled ?? undefined,
 		snapshotTtlMs: row.snapshotTtlMs ?? undefined,
+		workerImage: nullToUndefined(row.workerImage),
+		workerImageDigest: nullToUndefined(row.workerImageDigest),
+		workerImageStatus: nullToUndefined(row.workerImageStatus),
+		workerImageError: nullToUndefined(row.workerImageError),
 	};
 }
 
