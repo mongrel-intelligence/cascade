@@ -216,6 +216,33 @@ describe('projectsRouter — worker image (spec 022)', () => {
 				to: null,
 			});
 		});
+
+		it('still audits a persisted change when the validation enqueue throws (Redis down)', async () => {
+			// The column write is already committed by updateProject before the
+			// enqueue runs; the audit line must be emitted regardless of whether the
+			// enqueue then fails, otherwise a persisted set/clear goes unaudited.
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1', workerImage: 'prev:tag' }]);
+			mockEnqueue.mockRejectedValueOnce(new Error('Redis unavailable'));
+
+			// The enqueue failure still propagates so the operator knows validation
+			// was not scheduled — but the persisted change is audited first.
+			await expect(superAdminCaller().update({ id: 'p1', workerImage: VALID_REF })).rejects.toThrow(
+				'Redis unavailable',
+			);
+
+			expect(mockUpdateProject).toHaveBeenCalledWith(
+				'p1',
+				'org-1',
+				expect.objectContaining({ workerImage: VALID_REF }),
+			);
+			expect(mockLoggerInfo).toHaveBeenCalledWith('[audit] project worker image changed', {
+				event: 'project_worker_image_changed',
+				actorId: superAdmin.id,
+				projectId: 'p1',
+				from: 'prev:tag',
+				to: VALID_REF,
+			});
+		});
 	});
 
 	describe('create', () => {

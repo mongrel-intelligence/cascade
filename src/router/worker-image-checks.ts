@@ -68,11 +68,31 @@ export const WORKER_IMAGE_VALIDATION_CHECKS: readonly WorkerImageCheck[] = [
 ];
 
 /**
+ * POSIX single-quote escape: wrap `value` in single quotes and replace every
+ * embedded single quote with `'\''` (close-quote, escaped-quote, reopen-quote).
+ * Inside single quotes the shell treats every other character literally, so the
+ * result is immune to `$`, backticks, double quotes, and parentheses — exactly
+ * the metacharacters that broke the previous double-quoted `echo` (MNG-1698
+ * review: a check label/command embedded raw into `echo "..."` could close the
+ * string and leave `(` unquoted, aborting the whole script at parse time).
+ */
+function shellSingleQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/**
  * Build a single bash script that runs every supplied check in order, failing
- * fast with a grep-stable `FAIL: <label> ...` line on stderr so the validator can
- * surface a precise reason. The script is passed verbatim as one argv element to
- * `bash -lc` (via dockerode), so it is NOT re-parsed by an outer shell — single
- * quotes inside double quotes are safe here.
+ * fast with a grep-stable `FAIL: <label> check failed` line on stderr so the
+ * validator can surface a precise reason. The script is passed verbatim as one
+ * argv element to `bash -lc` (via dockerode), so it is NOT re-parsed by an outer
+ * shell.
+ *
+ * The failing label is emitted via `printf '...%s...' <single-quoted label>`
+ * rather than interpolated into a double-quoted `echo`. The check *command* is
+ * deliberately NOT echoed: a command like the Playwright check
+ * (`node -e "require('@playwright/test/package.json')"`) contains literal double
+ * quotes that would close an `echo "..."` string and abort parsing. The label
+ * alone is enough for the validator's `FAIL:` grep.
  */
 export function buildWorkerImageCheckScript(
 	checks: readonly WorkerImageCheck[] = WORKER_IMAGE_VALIDATION_CHECKS,
@@ -80,7 +100,7 @@ export function buildWorkerImageCheckScript(
 	const lines = ['set -u'];
 	for (const check of checks) {
 		lines.push(
-			`if ! { ${check.command} ; } >/dev/null 2>&1 ; then echo "FAIL: ${check.label} check failed (${check.command})" >&2 ; exit 1 ; fi`,
+			`if ! { ${check.command} ; } >/dev/null 2>&1 ; then printf 'FAIL: %s check failed\\n' ${shellSingleQuote(check.label)} >&2 ; exit 1 ; fi`,
 		);
 	}
 	lines.push('echo "cascade-worker-image-checks OK"');

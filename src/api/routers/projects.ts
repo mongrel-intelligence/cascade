@@ -121,9 +121,14 @@ function processWorkerImageChange(opts: {
 }
 
 /**
- * Side-effects after a worker-image change is persisted: enqueue the eager
- * router-side validation job (set only) and emit a structured, grep-stable audit
- * line (AC #8). Kept separate so the create/update mutations stay readable.
+ * Side-effects after a worker-image change is persisted: emit a structured,
+ * grep-stable audit line (AC #8) and enqueue the eager router-side validation job
+ * (set only). Kept separate so the create/update mutations stay readable.
+ *
+ * The audit line is emitted BEFORE the enqueue: by the time this runs the column
+ * write is already committed, so every persisted set/clear MUST be audited even
+ * if the enqueue then throws (e.g. Redis unavailable). Auditing after the enqueue
+ * would lose the record on enqueue failure while the change stayed persisted.
  */
 async function finalizeWorkerImageChange(opts: {
 	change: { columns: WorkerImageColumns; enqueueRef: string | null };
@@ -131,12 +136,6 @@ async function finalizeWorkerImageChange(opts: {
 	projectId: string;
 	from: string | null;
 }): Promise<void> {
-	if (opts.change.enqueueRef) {
-		await enqueueWorkerImageValidationJob({
-			projectId: opts.projectId,
-			ref: opts.change.enqueueRef,
-		});
-	}
 	logger.info('[audit] project worker image changed', {
 		event: 'project_worker_image_changed',
 		actorId: opts.actorId,
@@ -144,6 +143,12 @@ async function finalizeWorkerImageChange(opts: {
 		from: opts.from,
 		to: opts.change.columns.workerImage,
 	});
+	if (opts.change.enqueueRef) {
+		await enqueueWorkerImageValidationJob({
+			projectId: opts.projectId,
+			ref: opts.change.enqueueRef,
+		});
+	}
 }
 
 function normalizeIntegrationConfig(input: {

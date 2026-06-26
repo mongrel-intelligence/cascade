@@ -6,8 +6,18 @@
  * `worker-image-validation` job. This handler runs where the router consumes the
  * dashboard-jobs queue — it has the Docker socket — and:
  *
- *   1. Pulls the operator-set reference (host-pullable / public / local in v1).
+ *   1. Pulls the operator-set reference. v1 supports any image the router host
+ *      can resolve to a registry digest: public, host-pullable private, or an
+ *      image already pulled onto the host. A purely-local, build-only image
+ *      (never pushed to any registry, so it has no `RepoDigests`) is out of
+ *      scope here — see step 2 and the Dockerfile-build follow-up plan.
  *   2. Inspects it to pin the immutable `@sha256:` digest (from `RepoDigests`).
+ *      `RepoDigests` is the *registry* digest, which is what makes the pinned
+ *      reference both immutable AND launchable from any router host. Plan 2's
+ *      spawn launches `workerImageDigest` as a pull-by-digest reference
+ *      (`repo@sha256:…`); a bare local image Id is NOT pullable by digest, so an
+ *      image with no `RepoDigests` is intentionally rejected (fail-closed)
+ *      rather than pinned to an unlaunchable value.
  *   3. Runs the cascade-compatible-worker-image runtime smoke-test inside a
  *      one-shot `docker run --rm` (the same checks the CI smoke-test asserts).
  *   4. Marks the project `verified` (digest pinned) or `failed` (precise reason).
@@ -171,7 +181,9 @@ export async function handleWorkerImageValidation(
 				deps,
 				projectId,
 				ref,
-				`Could not resolve an immutable digest for ${ref} (no RepoDigests after pull)`,
+				`Could not resolve an immutable registry digest for ${ref} (no RepoDigests after pull). ` +
+					`The image must be pushed to a registry so it can be launched by a pull-by-digest ` +
+					`reference; a purely-local, build-only image is not supported.`,
 			);
 			return;
 		}
