@@ -471,6 +471,38 @@ describe('setupRepository', () => {
 		);
 	});
 
+	it('passes project.setupTimeoutMs as the setup.sh wall timeout when set (positive)', async () => {
+		const project = makeProject({ setupTimeoutMs: 1800000 });
+		const log = makeLog();
+		mockExistsSync.mockReturnValue(true);
+
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'bash',
+			['/tmp/cascade-test-project-12345/.cascade/setup.sh'],
+			'/tmp/cascade-test-project-12345',
+			{ AGENT_PROFILE_NAME: 'coder' },
+			{ idleTimeoutMs: 0, wallTimeoutMs: 1800000 },
+		);
+	});
+
+	it('treats setupTimeoutMs: 0 as a disabled wall timeout (wallTimeoutMs: 0)', async () => {
+		const project = makeProject({ setupTimeoutMs: 0 });
+		const log = makeLog();
+		mockExistsSync.mockReturnValue(true);
+
+		await setupRepository({ project, log, agentType: 'coder' });
+
+		expect(mockRunCommand).toHaveBeenCalledWith(
+			'bash',
+			['/tmp/cascade-test-project-12345/.cascade/setup.sh'],
+			'/tmp/cascade-test-project-12345',
+			{ AGENT_PROFILE_NAME: 'coder' },
+			{ idleTimeoutMs: 0, wallTimeoutMs: 0 },
+		);
+	});
+
 	it('does not run setup.sh when it does not exist', async () => {
 		const project = makeProject();
 		const log = makeLog();

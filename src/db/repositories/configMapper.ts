@@ -109,6 +109,8 @@ export interface ProjectConfigRaw {
 	maxInFlightItems?: number;
 	snapshotEnabled?: boolean;
 	snapshotTtlMs?: number;
+	/** Per-project wall timeout (ms) for `.cascade/setup.sh`. NULL/0 → no limit. */
+	setupTimeoutMs?: number;
 	/** Per-project worker image (spec 022). Raw strings; validated by ProjectConfigSchema. */
 	workerImage?: string;
 	workerImageDigest?: string;
@@ -170,6 +172,7 @@ type ProjectRow = {
 	maxInFlightItems: number | null;
 	snapshotEnabled: boolean | null;
 	snapshotTtlMs: number | null;
+	setupTimeoutMs: number | null;
 	workerImage: string | null;
 	workerImageDigest: string | null;
 	workerImageStatus: string | null;
@@ -284,6 +287,7 @@ function buildBaseProjectFields(
 		maxInFlightItems: row.maxInFlightItems ?? undefined,
 		snapshotEnabled: row.snapshotEnabled ?? undefined,
 		snapshotTtlMs: row.snapshotTtlMs ?? undefined,
+		setupTimeoutMs: row.setupTimeoutMs ?? undefined,
 		workerImage: nullToUndefined(row.workerImage),
 		workerImageDigest: nullToUndefined(row.workerImageDigest),
 		workerImageStatus: nullToUndefined(row.workerImageStatus),

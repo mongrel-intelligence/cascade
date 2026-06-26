@@ -71,6 +71,7 @@ export default class ProjectsShow extends DashboardCommand {
 				workItemBudgetUsd: { label: 'Work Item Budget' },
 				agentEngine: { label: 'Engine' },
 				maxInFlightItems: { label: 'Max In-Flight Items' },
+				setupTimeoutMs: { label: 'Setup Timeout (ms)' },
 				enginesInUse: { label: 'Agent Engines In Use' },
 				workerImageDisplay: { label: 'Worker Image' },
 			});

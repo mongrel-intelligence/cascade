@@ -333,7 +333,7 @@ describe('ProjectsUpdate (update)', () => {
 		);
 	});
 
-	it('passes numeric flags (work-item-budget, watchdog-timeout, max-in-flight-items)', async () => {
+	it('passes numeric flags (work-item-budget, watchdog-timeout, max-in-flight-items, setup-timeout-ms)', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
 
@@ -346,6 +346,8 @@ describe('ProjectsUpdate (update)', () => {
 				'1800000',
 				'--max-in-flight-items',
 				'3',
+				'--setup-timeout-ms',
+				'1800000',
 			],
 			oclifConfig as never,
 		);
@@ -357,8 +359,38 @@ describe('ProjectsUpdate (update)', () => {
 				workItemBudgetUsd: '10',
 				watchdogTimeoutMs: 1800000,
 				maxInFlightItems: 3,
+				setupTimeoutMs: 1800000,
 			}),
 		);
+	});
+
+	it('passes --setup-timeout-ms 0 through (explicit disable, not dropped)', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsUpdate(['my-project', '--setup-timeout-ms', '0'], oclifConfig as never);
+		await cmd.run();
+
+		expect(client.projects.update.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 'my-project',
+				setupTimeoutMs: 0,
+			}),
+		);
+	});
+
+	it('does not include setupTimeoutMs when the flag is absent', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsUpdate(
+			['my-project', '--model', 'claude-sonnet-4-5-20250929'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		const callArg = (client.projects.update.mutate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(callArg).not.toHaveProperty('setupTimeoutMs');
 	});
 
 	it('passes progress-model and progress-interval flags', async () => {
@@ -535,6 +567,72 @@ describe('ProjectsCreate (create) — snapshot flags', () => {
 		const callArg = (client.projects.create.mutate as ReturnType<typeof vi.fn>).mock.calls[0][0];
 		expect(callArg).not.toHaveProperty('snapshotEnabled');
 		expect(callArg).not.toHaveProperty('snapshotTtlMs');
+	});
+
+	it('passes --setup-timeout-ms to create mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCreate(
+			[
+				'--id',
+				'setup-project',
+				'--name',
+				'Setup Project',
+				'--repo',
+				'owner/repo',
+				'--setup-timeout-ms',
+				'1800000',
+			],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.create.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				setupTimeoutMs: 1800000,
+			}),
+		);
+	});
+
+	it('passes --setup-timeout-ms 0 through on create (explicit disable, not dropped)', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCreate(
+			[
+				'--id',
+				'setup-project',
+				'--name',
+				'Setup Project',
+				'--repo',
+				'owner/repo',
+				'--setup-timeout-ms',
+				'0',
+			],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.projects.create.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				setupTimeoutMs: 0,
+			}),
+		);
+	});
+
+	it('does not include setupTimeoutMs when the flag is absent on create', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new ProjectsCreate(
+			['--id', 'new-project', '--name', 'New Project', '--repo', 'owner/repo'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		const callArg = (client.projects.create.mutate as ReturnType<typeof vi.fn>).mock.calls[0][0];
+		expect(callArg).not.toHaveProperty('setupTimeoutMs');
 	});
 });
 
