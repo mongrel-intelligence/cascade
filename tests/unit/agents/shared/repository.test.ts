@@ -467,7 +467,7 @@ describe('setupRepository', () => {
 			['/tmp/cascade-test-project-12345/.cascade/setup.sh'],
 			'/tmp/cascade-test-project-12345',
 			{ AGENT_PROFILE_NAME: 'coder' },
-			{ idleTimeoutMs: 0 },
+			{ idleTimeoutMs: 0, wallTimeoutMs: 0 },
 		);
 	});
 
