@@ -161,6 +161,17 @@ All project-level credentials (GitHub tokens, PM keys, LLM API keys) are stored 
 
 **Observable subprocesses** — `cascade-tools` streams child stdout/stderr live to the parent's stderr so LLM-driven agents can see progress as it happens, emits 30-second heartbeats during silent stretches, and enforces both idle-silence and wall-clock timeouts with SIGTERM→SIGKILL escalation across the full process tree. See [spec 013](./docs/specs/013-subprocess-output-streaming.md.done).
 
+**Per-project worker image** — Each agent job runs in an ephemeral worker container. By default every project uses the global `WORKER_IMAGE`, but a **superadmin** can pin a per-project image so projects with different toolchains get the runtime they need. The image must be a prebuilt, host-pullable reference that derives from the worker base (`FROM cascade-worker:<pinned>`) and satisfies the cascade-compatible-worker-image contract — `cascade-tools`, `node`, `git`, and an engine CLI (`claude`/`codex`/`opencode`) on `PATH`, plus the python shim and Playwright.
+
+```bash
+# Superadmin only. Records the reference as `pending` and enqueues validation.
+cascade projects update <id> --worker-image ghcr.io/acme/cascade-worker:latest
+cascade projects update <id> --clear-worker-image   # revert to the global default
+cascade projects show <id>                          # shows pending / verified → <digest> / failed: <reason>
+```
+
+Because the Docker socket is router-only, the set mutation never validates inline: it stores the reference as `pending` and enqueues an eager **router-side** validation job that pulls the image, pins its immutable `@sha256:` digest, and runs the runtime smoke-test. On success the project is marked `verified` and **the pinned digest is launched** from then on; any failure (malformed ref, unpullable image, missing tool) marks it `failed` with a precise reason and **never launches** — fail-closed, so a project can never spawn a bad image. Every set/clear is **audited** via a structured `project_worker_image_changed` log line.
+
 For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 
 ---

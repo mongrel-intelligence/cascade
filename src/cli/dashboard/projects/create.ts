@@ -28,6 +28,9 @@ export default class ProjectsCreate extends DashboardCommand {
 		'snapshot-ttl': Flags.integer({
 			description: 'Container snapshot TTL (ms)',
 		}),
+		'worker-image': Flags.string({
+			description: 'Per-project worker image reference (superadmin only; validated router-side)',
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -53,6 +56,7 @@ export default class ProjectsCreate extends DashboardCommand {
 						? { snapshotEnabled: flags['snapshot-enabled'] }
 						: {}),
 					...(flags['snapshot-ttl'] !== undefined ? { snapshotTtlMs: flags['snapshot-ttl'] } : {}),
+					...(flags['worker-image'] !== undefined ? { workerImage: flags['worker-image'] } : {}),
 				}),
 			);
 

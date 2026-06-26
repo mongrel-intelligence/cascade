@@ -22,6 +22,26 @@ echo "=== Worker Runtime Tools Smoke Test ==="
 echo "Worker image : $WORKER_IMAGE"
 echo ""
 
+# 0. Cascade-compatible-worker-image HARD contract (spec 022). These are the
+# checks the router-side per-project image validator also runs inside an
+# operator-supplied image before pinning its digest — see
+# src/router/worker-image-checks.ts (WORKER_IMAGE_HARD_CHECKS), the single source
+# of truth that this block mirrors. A worker image that fails any of these cannot
+# host a CASCADE agent run at all: the compiled CLI, the Node runtime, git, and at
+# least one engine CLI must be on PATH.
+docker run --rm "$WORKER_IMAGE" bash -lc '
+  set -e
+  echo "--- Cascade app + toolchain checks ---"
+  echo "cascade-tools: $(cascade-tools --version)"
+  echo "node:         $(node --version)"
+  echo "git:          $(git --version)"
+  if ! { command -v claude || command -v codex || command -v opencode ; } >/dev/null 2>&1 ; then
+    echo "FAIL: no engine CLI (claude/codex/opencode) found on PATH"
+    exit 1
+  fi
+  echo ""
+'
+
 # 1. Python shim — `python` and `python3` both work, and the std-lib import
 # path is healthy. Repeated friction reports (see Dockerfile.worker comment
 # for the full cluster) traced to agents calling `python -c '...'` and

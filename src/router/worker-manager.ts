@@ -25,6 +25,7 @@ import type { CascadeJob } from './queue.js';
 import { acquireSlot, clearAllWaiters } from './slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from './snapshot-cleanup.js';
 import { syncSnapshotsFromDocker } from './snapshot-startup-sync.js';
+import { handleWorkerImageValidation } from './worker-image-validation.js';
 
 // Re-export container-manager public API so existing callers are unaffected.
 export { getActiveWorkerCount, getActiveWorkers, startOrphanCleanup, stopOrphanCleanup };
@@ -68,6 +69,26 @@ async function guardedSpawn(job: Job<CascadeJob>): Promise<void> {
 	}
 }
 
+/**
+ * Dashboard-jobs processor. Most dashboard jobs (manual-run / retry-run /
+ * debug-analysis) spawn a worker container via `guardedSpawn`. The
+ * `worker-image-validation` job (spec 022) is the exception: it runs entirely
+ * router-side (pull + inspect + smoke-test) and must NOT take a worker slot or
+ * spawn a container, so it is dispatched directly to its handler. The handler is
+ * fail-closed and never throws, so BullMQ always sees the job complete.
+ */
+async function processDashboardJob(job: Job): Promise<void> {
+	const data = job.data as { type?: string; projectId?: string; ref?: string };
+	if (data?.type === 'worker-image-validation') {
+		await handleWorkerImageValidation({
+			projectId: String(data.projectId),
+			ref: String(data.ref),
+		});
+		return;
+	}
+	await guardedSpawn(job as Job<CascadeJob>);
+}
+
 export function startWorkerProcessor(): void {
 	if (bullWorker) {
 		logger.warn('[WorkerManager] Worker processor already started');
@@ -93,7 +114,7 @@ export function startWorkerProcessor(): void {
 		connection,
 		concurrency: routerConfig.maxWorkers,
 		lockDuration: BULLMQ_LOCK_DURATION_MS,
-		processFn: (job) => guardedSpawn(job as Job<CascadeJob>),
+		processFn: (job) => processDashboardJob(job),
 	});
 
 	// Start periodic orphan cleanup scan

@@ -1,6 +1,34 @@
 import { Args } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
 
+/**
+ * Render the per-project worker image and its validation lifecycle (spec 022).
+ * Unset → the global default; otherwise the operator ref plus its status
+ * (`pending` validation, `verified` with the pinned digest, or `failed` with the
+ * precise reason).
+ */
+function formatWorkerImage(project: Record<string, unknown>): string {
+	const ref = project.workerImage;
+	if (typeof ref !== 'string' || ref.length === 0) {
+		return '(global default)';
+	}
+	const status =
+		typeof project.workerImageStatus === 'string' ? project.workerImageStatus : 'pending';
+	if (status === 'verified') {
+		const digest =
+			typeof project.workerImageDigest === 'string' ? project.workerImageDigest : 'unknown digest';
+		return `${ref} (verified → ${digest})`;
+	}
+	if (status === 'failed') {
+		const reason =
+			typeof project.workerImageError === 'string' && project.workerImageError.length > 0
+				? project.workerImageError
+				: 'no reason recorded';
+		return `${ref} (failed: ${reason})`;
+	}
+	return `${ref} (pending validation)`;
+}
+
 export default class ProjectsShow extends DashboardCommand {
 	static override description = 'Show project details.';
 
@@ -26,9 +54,11 @@ export default class ProjectsShow extends DashboardCommand {
 				return;
 			}
 
+			const projectRecord = project as unknown as Record<string, unknown>;
 			const projectWithEngines = {
-				...(project as unknown as Record<string, unknown>),
+				...projectRecord,
 				enginesInUse: enginesInUse.length > 0 ? enginesInUse.join(', ') : null,
+				workerImageDisplay: formatWorkerImage(projectRecord),
 			};
 
 			this.outputDetail(projectWithEngines, {
@@ -42,6 +72,7 @@ export default class ProjectsShow extends DashboardCommand {
 				agentEngine: { label: 'Engine' },
 				maxInFlightItems: { label: 'Max In-Flight Items' },
 				enginesInUse: { label: 'Agent Engines In Use' },
+				workerImageDisplay: { label: 'Worker Image' },
 			});
 		} catch (err) {
 			this.handleError(err);

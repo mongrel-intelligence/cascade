@@ -43,7 +43,20 @@ export interface DebugAnalysisJob {
 	workItemId?: string;
 }
 
-export type DashboardJob = ManualRunJob | RetryRunJob | DebugAnalysisJob;
+/**
+ * Eager per-project worker-image validation job (spec 022). Enqueued by the
+ * superadmin set-image mutation. The router consumes it (it owns the Docker
+ * socket), pulls the ref, pins its immutable digest, runs the runtime smoke-test,
+ * and marks the project `verified` or `failed`. Carries only the projectId and
+ * the operator-set reference — the handler reads/writes everything else.
+ */
+export interface WorkerImageValidationJob {
+	type: 'worker-image-validation';
+	projectId: string;
+	ref: string;
+}
+
+export type DashboardJob = ManualRunJob | RetryRunJob | DebugAnalysisJob | WorkerImageValidationJob;
 
 // ── Queue ────────────────────────────────────────────────────────────────────
 
@@ -115,4 +128,38 @@ export async function removeDashboardJob(jobId: string): Promise<void> {
 		// Safe no-op: the job may be absent or locked (active). Removal failures
 		// must not surface to the caller — the next add will reuse the id.
 	}
+}
+
+// ── Worker-image-validation enqueue helper (spec 022) ───────────────────────────
+
+/**
+ * Deterministic BullMQ job id for a project's worker-image validation.
+ *
+ * One job per project: re-setting the image removes any stale completed/failed
+ * job for the same id before enqueueing, so a rapid set→clear→set never leaves a
+ * stale validation result racing a newer one.
+ */
+export function workerImageValidationJobId(projectId: string): string {
+	return `worker-image-validation-${projectId}`;
+}
+
+/**
+ * Enqueue an eager worker-image validation job onto the dashboard-jobs queue.
+ *
+ * Called by `projects.update` / `projects.create` after persisting the project's
+ * `workerImage` as `pending`. The router-side handler does the Docker work and
+ * flips the project to `verified`/`failed`.
+ */
+export async function enqueueWorkerImageValidationJob(payload: {
+	projectId: string;
+	ref: string;
+}): Promise<string> {
+	const jobId = workerImageValidationJobId(payload.projectId);
+	// Clear any prior (completed/failed) job for this project so a re-set always
+	// schedules a fresh validation rather than colliding with a stale job id.
+	await removeDashboardJob(jobId);
+	return submitDashboardJob(
+		{ type: 'worker-image-validation', projectId: payload.projectId, ref: payload.ref },
+		jobId,
+	);
 }

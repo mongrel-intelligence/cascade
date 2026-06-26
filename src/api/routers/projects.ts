@@ -7,6 +7,7 @@ import { OPENCODE_SETTING_DEFAULTS } from '../../backends/opencode/settings.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
 import { getOrgCredential } from '../../config/provider.js';
 import { PROJECT_DEFAULTS } from '../../config/schema.js';
+import { isValidImageReference } from '../../config/workerImageRef.js';
 import { getDb } from '../../db/client.js';
 import {
 	deleteProjectCredential,
@@ -28,18 +29,121 @@ import {
 } from '../../db/repositories/settingsRepository.js';
 import { projects } from '../../db/schema/index.js';
 import { fetchOpenRouterModels } from '../../openrouter/client.js';
+import { enqueueWorkerImageValidationJob } from '../../queue/client.js';
+import { routerConfig } from '../../router/config.js';
 import { captureException } from '../../sentry.js';
+import { logger } from '../../utils/logging.js';
 import { protectedProcedure, publicProcedure, router, superAdminProcedure } from '../trpc.js';
 
-async function verifyProjectOwnership(projectId: string, orgId: string) {
+async function verifyProjectOwnership(
+	projectId: string,
+	orgId: string,
+): Promise<{ orgId: string; workerImage: string | null }> {
 	const db = getDb();
 	const [project] = await db
-		.select({ orgId: projects.orgId })
+		.select({ orgId: projects.orgId, workerImage: projects.workerImage })
 		.from(projects)
 		.where(eq(projects.id, projectId));
 	if (!project || project.orgId !== orgId) {
 		throw new TRPCError({ code: 'NOT_FOUND' });
 	}
+	return { orgId: project.orgId, workerImage: project.workerImage ?? null };
+}
+
+/**
+ * Worker-image column writes computed from a set/clear request (spec 022). The
+ * digest is always cleared here — it is re-pinned only by the router-side
+ * validator on success. Status is `pending` on set (awaiting validation) and
+ * `null` on clear (revert to the global default).
+ */
+interface WorkerImageColumns {
+	workerImage: string | null;
+	workerImageStatus: 'pending' | null;
+	workerImageDigest: null;
+	workerImageError: null;
+}
+
+/**
+ * Validate and translate a worker-image set/clear request into DB column writes
+ * (spec 022 plan 3/4). Superadmin-gated; malformed refs are rejected
+ * synchronously so nothing is persisted. Returns `null` when the field was not
+ * touched (so existing callers are unaffected), otherwise the columns to persist
+ * plus the ref to enqueue for validation (set only).
+ *
+ *   - not touched            → `null`
+ *   - non-superadmin actor   → throws `FORBIDDEN`
+ *   - clear (`null`)         → all four columns null, no enqueue
+ *   - set (`string`)         → grammar-checked; `pending` + enqueue, or `BAD_REQUEST`
+ */
+function processWorkerImageChange(opts: {
+	touched: boolean;
+	value: string | null;
+	actorRole: 'member' | 'admin' | 'superadmin';
+}): { columns: WorkerImageColumns; enqueueRef: string | null } | null {
+	if (!opts.touched) return null;
+
+	if (opts.actorRole !== 'superadmin') {
+		throw new TRPCError({
+			code: 'FORBIDDEN',
+			message: 'Superadmin access required to change the worker image',
+		});
+	}
+
+	if (opts.value === null) {
+		return {
+			columns: {
+				workerImage: null,
+				workerImageStatus: null,
+				workerImageDigest: null,
+				workerImageError: null,
+			},
+			enqueueRef: null,
+		};
+	}
+
+	const ref = opts.value.trim();
+	if (!isValidImageReference(ref)) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: `Invalid worker image reference: ${opts.value}`,
+		});
+	}
+
+	return {
+		columns: {
+			workerImage: ref,
+			workerImageStatus: 'pending',
+			workerImageDigest: null,
+			workerImageError: null,
+		},
+		enqueueRef: ref,
+	};
+}
+
+/**
+ * Side-effects after a worker-image change is persisted: enqueue the eager
+ * router-side validation job (set only) and emit a structured, grep-stable audit
+ * line (AC #8). Kept separate so the create/update mutations stay readable.
+ */
+async function finalizeWorkerImageChange(opts: {
+	change: { columns: WorkerImageColumns; enqueueRef: string | null };
+	actorId: string;
+	projectId: string;
+	from: string | null;
+}): Promise<void> {
+	if (opts.change.enqueueRef) {
+		await enqueueWorkerImageValidationJob({
+			projectId: opts.projectId,
+			ref: opts.change.enqueueRef,
+		});
+	}
+	logger.info('[audit] project worker image changed', {
+		event: 'project_worker_image_changed',
+		actorId: opts.actorId,
+		projectId: opts.projectId,
+		from: opts.from,
+		to: opts.change.columns.workerImage,
+	});
 }
 
 function normalizeIntegrationConfig(input: {
@@ -109,6 +213,10 @@ export const projectsRouter = router({
 				codex: CODEX_SETTING_DEFAULTS,
 				opencode: OPENCODE_SETTING_DEFAULTS,
 			},
+			// Global worker image — the default a project falls back to when it has
+			// no per-project `workerImage` set (spec 022). Surfaced so the dashboard
+			// can show "unset = <this image>".
+			workerImage: routerConfig.workerImage,
 		};
 	}),
 
@@ -156,14 +264,37 @@ export const projectsRouter = router({
 				maxInFlightItems: z.number().int().positive().nullish(),
 				snapshotEnabled: z.boolean().nullish(),
 				snapshotTtlMs: z.number().int().positive().nullish(),
+				// Per-project worker image (spec 022). Superadmin-only; a malformed
+				// ref is rejected synchronously. `null` is accepted as an explicit
+				// "use the global default".
+				workerImage: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			return createProject(ctx.effectiveOrgId, {
-				...input,
+			const workerImageChange = processWorkerImageChange({
+				touched: input.workerImage !== undefined,
+				value: input.workerImage ?? null,
+				actorRole: ctx.user.role,
+			});
+			const { workerImage: _workerImage, ...rest } = input;
+
+			const created = await createProject(ctx.effectiveOrgId, {
+				...rest,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
 				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
+				...(workerImageChange ? workerImageChange.columns : {}),
 			});
+
+			if (workerImageChange) {
+				await finalizeWorkerImageChange({
+					change: workerImageChange,
+					actorId: ctx.user.id,
+					projectId: input.id,
+					from: null,
+				});
+			}
+
+			return created;
 		}),
 
 	update: protectedProcedure
@@ -186,16 +317,39 @@ export const projectsRouter = router({
 				maxInFlightItems: z.number().int().positive().nullish(),
 				snapshotEnabled: z.boolean().nullish(),
 				snapshotTtlMs: z.number().int().positive().nullish(),
+				// Per-project worker image (spec 022). Superadmin-only; a malformed
+				// ref → `BAD_REQUEST` (nothing persisted). `null` clears it back to
+				// the global default. Set → stored `pending` + validation enqueued.
+				workerImage: z.string().nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
-			await verifyProjectOwnership(input.id, ctx.effectiveOrgId);
-			const { id, ...updates } = input;
+			const owned = await verifyProjectOwnership(input.id, ctx.effectiveOrgId);
+
+			// Validate + authorize the worker-image change BEFORE persisting so a
+			// FORBIDDEN/BAD_REQUEST leaves the project untouched.
+			const workerImageChange = processWorkerImageChange({
+				touched: input.workerImage !== undefined,
+				value: input.workerImage ?? null,
+				actorRole: ctx.user.role,
+			});
+
+			const { id, workerImage: _workerImage, ...updates } = input;
 			await updateProject(id, ctx.effectiveOrgId, {
 				...updates,
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
 				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
+				...(workerImageChange ? workerImageChange.columns : {}),
 			});
+
+			if (workerImageChange) {
+				await finalizeWorkerImageChange({
+					change: workerImageChange,
+					actorId: ctx.user.id,
+					projectId: id,
+					from: owned.workerImage,
+				});
+			}
 		}),
 
 	delete: protectedProcedure

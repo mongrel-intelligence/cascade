@@ -16,6 +16,7 @@ import {
 	getProjectFull,
 	listAllProjects,
 	listProjectsFull,
+	recordWorkerImageValidationResult,
 	updateProject,
 } from '../../../src/db/repositories/projectsRepository.js';
 import { truncateAll } from '../helpers/db.js';
@@ -686,6 +687,69 @@ describe('projectsRepository (integration)', () => {
 			expect(cleared?.workerImageDigest).toBeNull();
 			expect(cleared?.workerImageStatus).toBeNull();
 			expect(cleared?.workerImageError).toBeNull();
+		});
+	});
+
+	describe('recordWorkerImageValidationResult', () => {
+		const REF = 'ghcr.io/acme/cascade-worker:latest';
+
+		beforeEach(async () => {
+			// Put the project in the post-set `pending` state the validator runs against.
+			await updateProject('test-project', 'test-org', {
+				workerImage: REF,
+				workerImageStatus: 'pending',
+				workerImageDigest: null,
+				workerImageError: null,
+			});
+		});
+
+		it('pins the digest and marks verified when the ref still matches', async () => {
+			const wrote = await recordWorkerImageValidationResult('test-project', REF, {
+				status: 'verified',
+				digest: 'ghcr.io/acme/cascade-worker@sha256:abc',
+				error: null,
+			});
+
+			expect(wrote).toBe(true);
+			const row = await getProjectFull('test-project', 'test-org');
+			expect(row?.workerImageStatus).toBe('verified');
+			expect(row?.workerImageDigest).toBe('ghcr.io/acme/cascade-worker@sha256:abc');
+			expect(row?.workerImageError).toBeNull();
+		});
+
+		it('records a precise failure reason and leaves the digest null', async () => {
+			const wrote = await recordWorkerImageValidationResult('test-project', REF, {
+				status: 'failed',
+				digest: null,
+				error: 'cascade-tools not found',
+			});
+
+			expect(wrote).toBe(true);
+			const row = await getProjectFull('test-project', 'test-org');
+			expect(row?.workerImageStatus).toBe('failed');
+			expect(row?.workerImageError).toBe('cascade-tools not found');
+			expect(row?.workerImageDigest).toBeNull();
+		});
+
+		it('drops a stale result when the ref changed since the job was enqueued', async () => {
+			// Operator re-set the image to a different ref while validation ran.
+			await updateProject('test-project', 'test-org', {
+				workerImage: 'ghcr.io/acme/cascade-worker:v2',
+				workerImageStatus: 'pending',
+			});
+
+			const wrote = await recordWorkerImageValidationResult('test-project', REF, {
+				status: 'verified',
+				digest: 'ghcr.io/acme/cascade-worker@sha256:stale',
+				error: null,
+			});
+
+			expect(wrote).toBe(false);
+			const row = await getProjectFull('test-project', 'test-org');
+			// The newer ref's pending state is untouched by the stale result.
+			expect(row?.workerImage).toBe('ghcr.io/acme/cascade-worker:v2');
+			expect(row?.workerImageStatus).toBe('pending');
+			expect(row?.workerImageDigest).toBeNull();
 		});
 	});
 });
