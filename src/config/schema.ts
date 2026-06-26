@@ -89,6 +89,15 @@ export const ProjectConfigSchema = z.object({
 	snapshotTtlMs: z.number().int().positive().optional(),
 
 	/**
+	 * Per-project wall timeout (ms) for `.cascade/setup.sh`. Optional with NO
+	 * `.default()` — absent or `0` means no per-project wall timeout (the global
+	 * worker/watchdog container timeout is the safety net); a positive value is
+	 * passed as `wallTimeoutMs` to the setup-script `runCommand` call.
+	 * `.nonnegative()` (NOT `.positive()`) so an explicit `0` ("disable") is legal.
+	 */
+	setupTimeoutMs: z.number().int().nonnegative().optional(),
+
+	/**
 	 * Per-project worker image (spec 022). All optional with NO `.default()` —
 	 * absent means fall back to the global router-level default image.
 	 * Dormant until plans 2-4 wire spawn resolution, validation, and UI.

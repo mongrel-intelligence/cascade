@@ -22,6 +22,8 @@ vi.mock('../../../src/queue/client.js', () => ({
 // Mock repository functions
 const mockGetRunById = vi.fn();
 const mockHasActiveRunForWorkItem = vi.fn().mockResolvedValue(false);
+const mockCreateQueuedRun = vi.fn().mockResolvedValue('queued-run-id');
+const mockFailQueuedOrRunningRun = vi.fn().mockResolvedValue(true);
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	DEFAULT_STALE_RUN_THRESHOLD_MS: 2 * 60 * 60 * 1000,
 	listRuns: vi.fn(),
@@ -32,6 +34,8 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	getDebugAnalysisByRunId: vi.fn(),
 	deleteDebugAnalysisByRunId: vi.fn(),
 	hasActiveRunForWorkItem: (...args: unknown[]) => mockHasActiveRunForWorkItem(...args),
+	createQueuedRun: (...args: unknown[]) => mockCreateQueuedRun(...args),
+	failQueuedOrRunningRun: (...args: unknown[]) => mockFailQueuedOrRunningRun(...args),
 }));
 
 // Mock DB for org access check
@@ -181,6 +185,8 @@ describe('retry-run job submission with projectId', () => {
 			repoFullName: 'owner/repo',
 			headSha: 'abc123',
 			modelOverride: 'claude-opus-4-5',
+			// MNG-1695: the pre-created queued run id rides the manual-run job.
+			runId: 'queued-run-id',
 		});
 	});
 });

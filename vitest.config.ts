@@ -19,6 +19,17 @@ const resolve = {
 		// by isTRPCClientError) fails across copies. Mirrors the react/react-dom
 		// dedupe below. Must precede the catch-all `@` alias.
 		{ find: /^@trpc\/client$/, replacement: path.resolve(__dirname, 'node_modules/@trpc/client') },
+		// Dedupe @tanstack/react-query to the single (web-workspace) copy. It only
+		// exists under web/node_modules, so a `vi.mock('@tanstack/react-query')`
+		// resolved from a tests/ file would otherwise miss the component's
+		// web-resolved import — the real `useQueryClient` then runs against a
+		// second React copy and throws `Cannot read properties of null (useContext)`.
+		// Pinning the specifier lets the mock apply to both. Mirrors the @trpc/client
+		// dedupe above. Must precede the catch-all `@` alias.
+		{
+			find: /^@tanstack\/react-query$/,
+			replacement: path.resolve(__dirname, 'web/node_modules/@tanstack/react-query'),
+		},
 		{ find: '@', replacement: path.resolve(__dirname, './src') },
 		{ find: 'react', replacement: path.resolve(__dirname, 'node_modules/react') },
 		{ find: 'react-dom', replacement: path.resolve(__dirname, 'node_modules/react-dom') },
@@ -147,6 +158,7 @@ export default defineConfig({
 						'tests/unit/tools/**/*.test.ts',
 						'tests/unit/openrouter/**/*.test.ts',
 						'tests/unit/sentry/**/*.test.ts',
+						'tests/unit/docker/**/*.test.ts',
 						'tests/unit/*.test.ts',
 					],
 					...sharedTest,

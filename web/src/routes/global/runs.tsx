@@ -3,6 +3,7 @@ import { createRoute, useNavigate, useSearch } from '@tanstack/react-router';
 import { z } from 'zod';
 import { RunFilters } from '@/components/runs/run-filters.js';
 import { RunsTable } from '@/components/runs/runs-table.js';
+import { isRunActive } from '@/lib/run-pending.js';
 import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
@@ -34,7 +35,7 @@ function GlobalRunsPage() {
 			offset,
 		}),
 		refetchInterval: (query) => {
-			const hasRunning = query.state.data?.data?.some((r) => r.status === 'running');
+			const hasRunning = query.state.data?.data?.some((r) => isRunActive(r.status));
 			return hasRunning ? 5000 : false;
 		},
 	});

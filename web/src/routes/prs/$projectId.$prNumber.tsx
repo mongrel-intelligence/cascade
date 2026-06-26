@@ -4,6 +4,7 @@ import { ExternalLink } from 'lucide-react';
 import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
 import { WorkItemDurationChart } from '@/components/runs/work-item-duration-chart.js';
 import { WorkItemRunsTable } from '@/components/runs/work-item-runs-table.js';
+import { isRunActive } from '@/lib/run-pending.js';
 import { trpc } from '@/lib/trpc.js';
 import { rootRoute } from '../__root.js';
 
@@ -14,7 +15,7 @@ function PRRunsPage() {
 	const runsQuery = useQuery({
 		...trpc.prs.runs.queryOptions({ projectId, prNumber }),
 		refetchInterval: (query) => {
-			const hasRunning = query.state.data?.some((r) => r.status === 'running');
+			const hasRunning = query.state.data?.some((r) => isRunActive(r.status));
 			return hasRunning ? 5000 : false;
 		},
 	});

@@ -46,6 +46,7 @@ export async function createProject(
 		maxInFlightItems?: number | null;
 		snapshotEnabled?: boolean | null;
 		snapshotTtlMs?: number | null;
+		setupTimeoutMs?: number | null;
 		workerImage?: string | null;
 		workerImageDigest?: string | null;
 		workerImageStatus?: string | null;
@@ -74,6 +75,7 @@ export async function createProject(
 			maxInFlightItems: rest.maxInFlightItems,
 			snapshotEnabled: rest.snapshotEnabled,
 			snapshotTtlMs: rest.snapshotTtlMs,
+			setupTimeoutMs: rest.setupTimeoutMs,
 			workerImage: rest.workerImage,
 			workerImageDigest: rest.workerImageDigest,
 			workerImageStatus: rest.workerImageStatus,
@@ -106,6 +108,7 @@ export async function updateProject(
 		maxInFlightItems?: number | null;
 		snapshotEnabled?: boolean | null;
 		snapshotTtlMs?: number | null;
+		setupTimeoutMs?: number | null;
 		workerImage?: string | null;
 		workerImageDigest?: string | null;
 		workerImageStatus?: string | null;
@@ -129,4 +132,41 @@ export async function updateProject(
 export async function deleteProject(projectId: string, orgId: string) {
 	const db = getDb();
 	await db.delete(projects).where(and(eq(projects.id, projectId), eq(projects.orgId, orgId)));
+}
+
+/**
+ * Record the outcome of a router-side worker-image validation (spec 022 plan 3).
+ *
+ * Updates the project's `worker_image_*` columns from the `pending` state set by
+ * the API mutation. The write is guarded by `worker_image = ref`: it only applies
+ * when the project's current operator-set reference still equals the validated
+ * `ref`. If the operator re-set or cleared the image after this job was enqueued,
+ * the guard matches zero rows and the stale result is dropped (the newer
+ * reference owns its own validation job). Returns whether a row was updated.
+ *
+ *   - `verified` → pins the immutable `digest`, clears `error`.
+ *   - `failed`   → records the precise `error`, leaves `digest` null.
+ *
+ * Org scoping is intentionally absent: the caller is the trusted router consuming
+ * a job it enqueued with an internal projectId, not a user request.
+ */
+export async function recordWorkerImageValidationResult(
+	projectId: string,
+	ref: string,
+	result:
+		| { status: 'verified'; digest: string; error: null }
+		| { status: 'failed'; digest: null; error: string },
+): Promise<boolean> {
+	const db = getDb();
+	const updated = await db
+		.update(projects)
+		.set({
+			workerImageStatus: result.status,
+			workerImageDigest: result.digest,
+			workerImageError: result.error,
+			updatedAt: new Date(),
+		})
+		.where(and(eq(projects.id, projectId), eq(projects.workerImage, ref)))
+		.returning({ id: projects.id });
+	return updated.length > 0;
 }

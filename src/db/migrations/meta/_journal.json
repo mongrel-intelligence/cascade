@@ -407,6 +407,13 @@
 			"when": 1792000000000,
 			"tag": "0057_project_worker_image",
 			"breakpoints": false
+		},
+		{
+			"idx": 58,
+			"version": "7",
+			"when": 1793000000000,
+			"tag": "0058_add_setup_timeout_ms",
+			"breakpoints": false
 		}
 	]
 }

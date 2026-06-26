@@ -222,9 +222,13 @@ export async function executeAgentPipeline(options: AgentPipelineOptions): Promi
 	});
 
 	try {
-		repoDir = await options.setupRepoDir(log);
-		const envSnapshot = loadCascadeEnv(repoDir, log);
-
+		// Improvement A (MNG-1695): create the run record BEFORE the repo clone.
+		// `tryCreateRun` has no `repoDir` dependency (it only reads
+		// `options.runTracking` + model/maxIterations), so creating it first makes
+		// the run visible in the dashboard ~10-15s sooner for ALL run types. It also
+		// means a clone/setup failure now happens *after* the row exists, so
+		// `handleAgentPipelineError` → `finalizeRun` marks a visible `failed` row
+		// instead of silently no-op'ing on an undefined runId.
 		if (options.runTracking) {
 			runId = await tryCreateRun(
 				options.runTracking,
@@ -232,6 +236,9 @@ export async function executeAgentPipeline(options: AgentPipelineOptions): Promi
 				options.runTracking.maxIterations,
 			);
 		}
+
+		repoDir = await options.setupRepoDir(log);
+		const envSnapshot = loadCascadeEnv(repoDir, log);
 
 		const originalCwd = process.cwd();
 		process.chdir(repoDir);

@@ -104,6 +104,8 @@ describe('formatStatus', () => {
 		expect(formatStatus('success')).toBe('success');
 		expect(formatStatus('failed')).toBe('failed');
 		expect(formatStatus('cancelled')).toBe('cancelled');
+		// MNG-1695: queued renders yellow (same as cancelled), label unchanged.
+		expect(formatStatus('queued')).toBe('queued');
 	});
 
 	it('returns raw string for unknown status', () => {

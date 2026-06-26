@@ -33,6 +33,7 @@ const baseProjectRow = {
 	maxInFlightItems: null,
 	snapshotEnabled: null,
 	snapshotTtlMs: null,
+	setupTimeoutMs: null,
 };
 
 const trelloConfig = {
@@ -546,6 +547,18 @@ describe('mapProjectRow', () => {
 	it('maps snapshotTtlMs when set on project row', () => {
 		const result = mapProjectRow(makeInput({ row: { ...baseProjectRow, snapshotTtlMs: 3600000 } }));
 		expect(result.snapshotTtlMs).toBe(3600000);
+	});
+
+	it('returns undefined setupTimeoutMs when the column is null', () => {
+		const result = mapProjectRow(makeInput());
+		expect(result.setupTimeoutMs).toBeUndefined();
+	});
+
+	it('maps setupTimeoutMs when set on project row', () => {
+		const result = mapProjectRow(
+			makeInput({ row: { ...baseProjectRow, setupTimeoutMs: 1800000 } }),
+		);
+		expect(result.setupTimeoutMs).toBe(1800000);
 	});
 
 	it('builds agentUpdateChannels from project agent configs', () => {

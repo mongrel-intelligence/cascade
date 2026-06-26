@@ -35,10 +35,26 @@ export default class ProjectsUpdate extends DashboardCommand {
 		'snapshot-ttl': Flags.integer({
 			description: 'Container snapshot TTL (ms)',
 		}),
+		'setup-timeout-ms': Flags.integer({
+			description:
+				'Wall timeout (ms) for .cascade/setup.sh; 0 disables (rely on global worker timeout)',
+		}),
+		'worker-image': Flags.string({
+			description: 'Per-project worker image reference (superadmin only; validated router-side)',
+			exclusive: ['clear-worker-image'],
+		}),
+		'clear-worker-image': Flags.boolean({
+			description: 'Clear the per-project worker image (revert to the global default)',
+			exclusive: ['worker-image'],
+		}),
 	};
 
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(ProjectsUpdate);
+
+		// `--worker-image <ref>` sets it; `--clear-worker-image` sends an explicit
+		// null (revert to the global default). Absent → omitted (left untouched).
+		const workerImage = flags['clear-worker-image'] ? null : flags['worker-image'];
 
 		try {
 			await this.withSpinner('Updating project...', () =>
@@ -65,6 +81,10 @@ export default class ProjectsUpdate extends DashboardCommand {
 						? { snapshotEnabled: flags['snapshot-enabled'] }
 						: {}),
 					...(flags['snapshot-ttl'] !== undefined ? { snapshotTtlMs: flags['snapshot-ttl'] } : {}),
+					...(flags['setup-timeout-ms'] !== undefined
+						? { setupTimeoutMs: flags['setup-timeout-ms'] }
+						: {}),
+					...(workerImage !== undefined ? { workerImage } : {}),
 				}),
 			);
 

@@ -41,6 +41,10 @@ vi.mock('../../../src/router/snapshot-cleanup.js', () => ({
 	stopSnapshotCleanup: vi.fn(),
 }));
 
+vi.mock('../../../src/router/worker-image-validation.js', () => ({
+	handleWorkerImageValidation: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: {
 		redisUrl: 'redis://localhost:6379',
@@ -79,6 +83,7 @@ import {
 import { classifyDispatchError } from '../../../src/router/dispatch-error-classifier.js';
 import { acquireSlot } from '../../../src/router/slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from '../../../src/router/snapshot-cleanup.js';
+import { handleWorkerImageValidation } from '../../../src/router/worker-image-validation.js';
 import {
 	startWorkerProcessor,
 	stopWorkerProcessor,
@@ -100,6 +105,7 @@ const mockStopSnapshotCleanup = vi.mocked(stopSnapshotCleanup);
 const mockLogger = vi.mocked(logger);
 const mockAcquireSlot = vi.mocked(acquireSlot);
 const mockClassifyDispatchError = vi.mocked(classifyDispatchError);
+const mockHandleWorkerImageValidation = vi.mocked(handleWorkerImageValidation);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -293,6 +299,59 @@ describe('startWorkerProcessor', () => {
 		expect(rejectionSpy).toHaveBeenCalledTimes(1);
 		const thrown = rejectionSpy.mock.calls[0][0];
 		expect((thrown as Error).name).toBe('UnrecoverableError');
+	});
+
+	// spec 022 plan 3/4 — the worker-image-validation dashboard job runs entirely
+	// router-side and must NOT take a worker slot or spawn a container.
+	it('routes a worker-image-validation dashboard job to the validator, not a container spawn', async () => {
+		startWorkerProcessor();
+
+		const dashboardCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-dashboard-jobs',
+		);
+		const processFn = dashboardCall?.[0].processFn as (j: unknown) => Promise<void>;
+
+		mockSpawnWorker.mockClear();
+		mockAcquireSlot.mockClear();
+		mockHandleWorkerImageValidation.mockClear();
+
+		const fakeJob = {
+			id: 'wiv-1',
+			data: {
+				type: 'worker-image-validation',
+				projectId: 'p1',
+				ref: 'ghcr.io/acme/cascade-worker:latest',
+			},
+		};
+		await processFn(fakeJob);
+
+		expect(mockHandleWorkerImageValidation).toHaveBeenCalledWith({
+			projectId: 'p1',
+			ref: 'ghcr.io/acme/cascade-worker:latest',
+		});
+		expect(mockSpawnWorker).not.toHaveBeenCalled();
+		expect(mockAcquireSlot).not.toHaveBeenCalled();
+	});
+
+	it('still spawns a container for non-validation dashboard jobs (manual-run)', async () => {
+		startWorkerProcessor();
+
+		const dashboardCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-dashboard-jobs',
+		);
+		const processFn = dashboardCall?.[0].processFn as (j: unknown) => Promise<void>;
+
+		mockSpawnWorker.mockClear();
+		mockHandleWorkerImageValidation.mockClear();
+
+		const fakeJob = {
+			id: 'mr-1',
+			data: { type: 'manual-run', projectId: 'p1', agentType: 'implementation' },
+		};
+		await processFn(fakeJob);
+
+		expect(mockSpawnWorker).toHaveBeenCalledWith(fakeJob);
+		expect(mockHandleWorkerImageValidation).not.toHaveBeenCalled();
 	});
 });
 

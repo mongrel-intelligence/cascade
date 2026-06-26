@@ -67,6 +67,9 @@ export async function executeWithEngine(
 			agentType,
 			engineName: engine.definition.id,
 			triggerType: input.triggerType,
+			// MNG-1695: when a manual run pre-created a `queued` row, activate it
+			// (queued → running) instead of inserting a duplicate run row.
+			preCreatedRunId: input.preCreatedRunId,
 		},
 
 		finalizeRun: (runId, fileLogger, outcome) =>

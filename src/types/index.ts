@@ -59,6 +59,15 @@ export interface AgentInput {
 	// Override the model for this agent run
 	modelOverride?: string;
 
+	/**
+	 * MNG-1695 (Improvement B): the id of a `status='queued'` agent_runs row that
+	 * was pre-created at tRPC trigger time. When set, `tryCreateRun` activates this
+	 * row (flips `queued → running`) instead of inserting a fresh one, so the
+	 * dashboard shows the run within ~1s of the manual trigger. Threaded
+	 * tRPC → BullMQ manual-run job → manual-runner → AgentInput → executeWithEngine.
+	 */
+	preCreatedRunId?: string;
+
 	// Router-posted ack comment ID — used by ProgressMonitor to update in-place
 	ackCommentId?: string | number;
 	// Router/webhook-handler-posted ack message text — reused as initial comment header

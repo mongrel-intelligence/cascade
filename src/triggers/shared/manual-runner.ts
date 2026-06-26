@@ -1,6 +1,6 @@
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
-import { getRunById } from '../../db/repositories/runsRepository.js';
+import { failQueuedOrRunningRun, getRunById } from '../../db/repositories/runsRepository.js';
 import { withPMCredentials } from '../../pm/context.js';
 import { createPMProvider, pmRegistry, withPMProvider } from '../../pm/index.js';
 import type { AgentInput, CascadeConfig, ProjectConfig, TriggerResult } from '../../types/index.js';
@@ -77,6 +77,12 @@ export interface ManualTriggerInput {
 	triggerCommentUrl?: string;
 	triggerCommentPath?: string;
 	triggerCommentAuthor?: string;
+	/**
+	 * MNG-1695: id of a pre-created `status='queued'` run row. Rides the
+	 * agentInput to `executeWithEngine` → `tryCreateRun`, which activates it
+	 * (queued → running) instead of inserting a new run row.
+	 */
+	preCreatedRunId?: string;
 }
 
 /**
@@ -146,6 +152,9 @@ export async function triggerManualRun(
 		triggerCommentUrl: input.triggerCommentUrl,
 		triggerCommentPath: input.triggerCommentPath,
 		triggerCommentAuthor: input.triggerCommentAuthor,
+		// MNG-1695: rides triggerResult.agentInput → prepareAgentWorkItem →
+		// runAgent → executeWithEngine → tryCreateRun (activates the queued row).
+		preCreatedRunId: input.preCreatedRunId,
 	};
 	const triggerResult: TriggerResult = {
 		agentType: input.agentType,
@@ -156,6 +165,7 @@ export async function triggerManualRun(
 		prNumber: input.prNumber,
 	};
 
+	let pipelineError: unknown;
 	try {
 		startWatchdog(project.watchdogTimeoutMs);
 
@@ -177,12 +187,48 @@ export async function triggerManualRun(
 			agentType: input.agentType,
 		});
 	} catch (err) {
+		pipelineError = err;
 		logger.error('Manual agent run failed', {
 			projectId: input.projectId,
 			agentType: input.agentType,
 			error: String(err),
 		});
 	} finally {
+		// MNG-1695: path-independent reconciliation of the pre-created `queued`
+		// run row. The worker activates it (queued → running) deep inside
+		// `runAgentForContext → runAgent → executeWithEngine → tryCreateRun`, but a
+		// manual run can end WITHOUT ever reaching that line and WITHOUT throwing:
+		//   - a pipeline pre-activation early return (integration validation,
+		//     freshness gate, budget abort) returns void cleanly, OR
+		//   - `runAgent`'s engine guards (`!engine` for an unknown/misconfigured
+		//     engine name, or `!supportsAgentType`) return a failed AgentResult
+		//     without throwing and without ever calling `executeWithEngine`.
+		// In every such case the container exits 0, so the non-zero-exit
+		// `failOrphanedRun` and the periodic orphan sweep never fire and the row
+		// leaks as a perpetual `queued` badge that (because `hasActiveRunForWorkItem`
+		// counts `queued`) locks out every later trigger/retry on the work item for
+		// ~2h. Resolving it here in `finally` is independent of WHICH path the
+		// pipeline took — clean return or throw — so it cannot be defeated by a
+		// future early-return we forgot to enumerate. `failQueuedOrRunningRun`
+		// no-ops at the DB level on a row already finalized by `executeAgentPipeline`
+		// (a genuinely-activated run is `completed`/`failed`/`timed_out` by now and
+		// keeps its own status + error), and no-ops entirely when no `preCreatedRunId`
+		// was threaded (every non-manual source). Its own failure must never crash an
+		// otherwise-clean worker, so DB errors are logged and swallowed.
+		if (input.preCreatedRunId) {
+			await failQueuedOrRunningRun(
+				input.preCreatedRunId,
+				pipelineError
+					? `Manual run failed before completion: ${String(pipelineError)}`
+					: 'Manual run ended before the agent started (skipped by a pre-flight gate or an unsupported/misconfigured engine)',
+			).catch((failErr) => {
+				logger.warn('[MNG-1695] could not resolve pre-created queued run after manual run', {
+					projectId: input.projectId,
+					runId: input.preCreatedRunId,
+					error: String(failErr),
+				});
+			});
+		}
 		markTriggerComplete(triggerKey);
 	}
 }

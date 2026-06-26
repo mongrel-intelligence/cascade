@@ -6,6 +6,7 @@ import { WorkItemCostChart } from '@/components/runs/work-item-cost-chart.js';
 import { WorkItemDurationChart } from '@/components/runs/work-item-duration-chart.js';
 import { WorkItemRunsTable } from '@/components/runs/work-item-runs-table.js';
 import {
+	isRunActive,
 	RUN_PENDING_GRACE_MS,
 	resolveWorkItemRunsView,
 	workItemRunsRefetchInterval,
@@ -36,7 +37,7 @@ function WorkItemRunsPage() {
 		...trpc.workItems.runs.queryOptions({ projectId, workItemId }),
 		refetchInterval: (query) => {
 			const data = query.state.data;
-			const hasRunning = data?.some((r) => r.status === 'running') ?? false;
+			const hasRunning = data?.some((r) => isRunActive(r.status)) ?? false;
 			const isEmpty = (data?.length ?? 0) === 0;
 			const elapsedMs = Date.now() - mountedAt.current;
 			return workItemRunsRefetchInterval({ hasRunning, isEmpty, elapsedMs });

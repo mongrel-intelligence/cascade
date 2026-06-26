@@ -41,6 +41,7 @@ vi.mock('../../../../src/sentry.js', () => ({
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	createRun: vi.fn(),
+	activateQueuedRun: vi.fn(),
 	completeRun: vi.fn(),
 	storeRunLogs: vi.fn(),
 	updateRunJobId: vi.fn(),
@@ -53,6 +54,7 @@ import {
 	executeAgentPipeline,
 } from '../../../../src/agents/shared/executionPipeline.js';
 import { createAgentLogger } from '../../../../src/agents/utils/logging.js';
+import { createRun } from '../../../../src/db/repositories/runsRepository.js';
 import { loadCascadeEnv, unloadCascadeEnv } from '../../../../src/utils/cascadeEnv.js';
 import {
 	cleanupLogDirectory,
@@ -63,6 +65,7 @@ import { clearWatchdogCleanup, setWatchdogCleanup } from '../../../../src/utils/
 import { logger } from '../../../../src/utils/logging.js';
 import { cleanupTempDir } from '../../../../src/utils/repo.js';
 
+const mockCreateRun = vi.mocked(createRun);
 const mockCreateFileLogger = vi.mocked(createFileLogger);
 const mockCreateAgentLogger = vi.mocked(createAgentLogger);
 const mockLoadCascadeEnv = vi.mocked(loadCascadeEnv);
@@ -532,6 +535,51 @@ describe('executeAgentPipeline', () => {
 			expect.objectContaining({
 				metadata: { llmIterations: 10, gadgetCalls: 25 },
 			}),
+		);
+	});
+
+	// MNG-1695 (Improvement A): the run record must be created BEFORE the repo
+	// clone so the run is visible ~10-15s sooner and clone failures surface as a
+	// `failed` row instead of no-op'ing on an undefined runId.
+	it('creates the run record (tryCreateRun → createRun) before setupRepoDir', async () => {
+		setupMocks();
+		mockCreateRun.mockResolvedValue('run-ordering');
+		const setupRepoDir = vi.fn().mockResolvedValue(process.cwd());
+
+		await executeAgentPipeline({
+			loggerIdentifier: 'test-run',
+			setupRepoDir,
+			runTracking: { projectId: 'p1', agentType: 'implementation', engineName: 'claude-code' },
+			finalizeRun: vi.fn(),
+			execute: async () => ({ success: true, output: 'Done' }),
+		});
+
+		expect(mockCreateRun).toHaveBeenCalledTimes(1);
+		expect(setupRepoDir).toHaveBeenCalledTimes(1);
+		const createOrder = mockCreateRun.mock.invocationCallOrder[0];
+		const setupOrder = setupRepoDir.mock.invocationCallOrder[0];
+		expect(createOrder).toBeLessThan(setupOrder);
+	});
+
+	it('marks a failed run when setupRepoDir throws after the run row exists', async () => {
+		setupMocks();
+		mockCreateRun.mockResolvedValue('run-clone-fail');
+		const mockFinalizeRun = vi.fn();
+
+		const result = await executeAgentPipeline({
+			loggerIdentifier: 'test-run',
+			setupRepoDir: vi.fn().mockRejectedValue(new Error('clone exploded')),
+			runTracking: { projectId: 'p1', agentType: 'implementation', engineName: 'claude-code' },
+			finalizeRun: mockFinalizeRun,
+			execute: async () => ({ success: true, output: 'Done' }),
+		});
+
+		expect(result.success).toBe(false);
+		// The run row already exists, so finalizeRun gets the real runId (not undefined).
+		expect(mockFinalizeRun).toHaveBeenCalledWith(
+			'run-clone-fail',
+			expect.anything(),
+			expect.objectContaining({ status: 'failed', success: false }),
 		);
 	});
 });

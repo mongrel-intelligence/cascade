@@ -12,6 +12,7 @@ import { RunStatusBadge } from '@/components/runs/run-status-badge.js';
 import { RunSummaryCard } from '@/components/runs/run-summary-card.js';
 import {
 	isNotFoundError,
+	isRunActive,
 	RUN_PENDING_MAX_RETRIES,
 	RUN_PENDING_POLL_MS,
 	type RunDetailView,
@@ -59,7 +60,8 @@ function RunDetailPage() {
 	const runQuery = useQuery({
 		...trpc.runs.getById.queryOptions({ id: runId }),
 		// Poll while the run is active so status + the live-updating tabs refresh.
-		refetchInterval: (query) => (query.state.data?.status === 'running' ? 5000 : false),
+		refetchInterval: (query) =>
+			query.state.data && isRunActive(query.state.data.status) ? 5000 : false,
 		// A freshly-shared /runs/<id> link can resolve before the worker has
 		// committed the run row. Retry NOT_FOUND within a bounded grace window so
 		// the page resolves to the real run within seconds instead of flashing

@@ -4,10 +4,15 @@ import {
 	linkPRToWorkItem,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import {
+	activateQueuedRun,
 	clearDebugAnalysisStatus,
 	completeRun,
+	countActiveRuns,
+	createQueuedRun,
 	createRun,
 	deleteDebugAnalysisByRunId,
+	failOrphanedRun,
+	failQueuedOrRunningRun,
 	getDebugAnalysisByRunId,
 	getDebugAnalysisRunState,
 	getLlmCallByNumber,
@@ -18,6 +23,7 @@ import {
 	getRunsByWorkItem,
 	getRunsByWorkItemId,
 	getRunsForPR,
+	hasActiveRunForWorkItem,
 	isDebugAnalysisRunActive,
 	listLlmCallsMeta,
 	listProjectsForOrg,
@@ -92,6 +98,146 @@ describe('runsRepository (integration)', () => {
 			run = await getRunById(id);
 			expect(run?.model).toBe('claude-sonnet-4-5');
 			expect(run?.maxIterations).toBe(35);
+		});
+	});
+
+	// =========================================================================
+	// Queued run lifecycle (MNG-1695, Improvement B)
+	// =========================================================================
+
+	describe('queued run lifecycle', () => {
+		it('runs the full createQueuedRun → activateQueuedRun → failQueuedOrRunningRun lifecycle', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				workItemId: 'card-q',
+				agentType: 'implementation',
+				engine: 'claude-code',
+				triggerType: 'manual',
+			});
+
+			let run = await getRunById(id);
+			expect(run?.status).toBe('queued');
+
+			// queued → running
+			expect(await activateQueuedRun(id)).toBe(true);
+			run = await getRunById(id);
+			expect(run?.status).toBe('running');
+
+			// running → failed
+			expect(await failQueuedOrRunningRun(id, 'spawn failed')).toBe(true);
+			run = await getRunById(id);
+			expect(run?.status).toBe('failed');
+			expect(run?.error).toBe('spawn failed');
+		});
+
+		it('activateQueuedRun is idempotent — a second call returns false', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			expect(await activateQueuedRun(id)).toBe(true);
+			// Already running → no queued row to flip.
+			expect(await activateQueuedRun(id)).toBe(false);
+		});
+
+		it('activateQueuedRun preserves the engine column', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'codex',
+			});
+
+			await activateQueuedRun(id);
+			const run = await getRunById(id);
+			expect(run?.engine).toBe('codex');
+		});
+
+		it('failQueuedOrRunningRun fails a still-queued row (worker crashed before activation)', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			expect(await failQueuedOrRunningRun(id, 'never started')).toBe(true);
+			const run = await getRunById(id);
+			expect(run?.status).toBe('failed');
+		});
+
+		// MNG-1695: the path-independent reconciliation in `triggerManualRun`'s
+		// `finally` calls `failQueuedOrRunningRun` on EVERY manual run — including
+		// successful ones that already finalized their own row. This no-op-on-terminal
+		// guarantee is the safety net that makes the unconditional call correct: a
+		// genuinely-activated, completed run must keep its own status + error.
+		it('failQueuedOrRunningRun no-ops on an already-terminal (completed) row', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			await activateQueuedRun(id);
+			await completeRun(id, {
+				status: 'completed',
+				durationMs: 1000,
+				success: true,
+				outputSummary: 'done',
+			});
+
+			// Returns false (nothing matched) and leaves the terminal row untouched.
+			expect(await failQueuedOrRunningRun(id, 'late reconciliation')).toBe(false);
+			const run = await getRunById(id);
+			expect(run?.status).toBe('completed');
+			expect(run?.error).toBeNull();
+		});
+
+		it('hasActiveRunForWorkItem counts a queued row as active', async () => {
+			await createQueuedRun({
+				projectId: 'test-project',
+				workItemId: 'card-active',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			expect(await hasActiveRunForWorkItem('test-project', 'card-active')).toBe(true);
+		});
+
+		it('countActiveRuns stays running-only by default but counts queued with includeQueued', async () => {
+			await createQueuedRun({
+				projectId: 'test-project',
+				workItemId: 'card-count',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			// Default (capacity math) — queued is NOT counted.
+			expect(await countActiveRuns({ projectId: 'test-project', workItemId: 'card-count' })).toBe(
+				0,
+			);
+			// Opt-in — queued IS counted.
+			expect(
+				await countActiveRuns({
+					projectId: 'test-project',
+					workItemId: 'card-count',
+					includeQueued: true,
+				}),
+			).toBe(1);
+		});
+
+		it('failOrphanedRun matches and fails a queued row', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				workItemId: 'card-orphan',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			const failedId = await failOrphanedRun('test-project', 'card-orphan', 'Container died');
+			expect(failedId).toBe(id);
+			const run = await getRunById(id);
+			expect(run?.status).toBe('failed');
+			expect(run?.error).toBe('Container died');
 		});
 	});
 

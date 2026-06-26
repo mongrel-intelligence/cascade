@@ -157,6 +157,8 @@ export interface ManualRunJobData {
 	triggerCommentUrl?: string;
 	triggerCommentPath?: string;
 	triggerCommentAuthor?: string;
+	/** MNG-1695: id of the pre-created `queued` run row to activate on boot. */
+	runId?: string;
 }
 
 export interface RetryRunJobData {
@@ -212,6 +214,8 @@ export async function processDashboardJob(jobId: string, jobData: DashboardJobDa
 				triggerCommentUrl: jobData.triggerCommentUrl,
 				triggerCommentPath: jobData.triggerCommentPath,
 				triggerCommentAuthor: jobData.triggerCommentAuthor,
+				// MNG-1695: activate the pre-created queued row instead of inserting a new one.
+				preCreatedRunId: jobData.runId,
 			},
 			pc.project,
 			pc.config,

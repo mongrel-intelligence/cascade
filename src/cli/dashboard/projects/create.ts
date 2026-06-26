@@ -28,6 +28,13 @@ export default class ProjectsCreate extends DashboardCommand {
 		'snapshot-ttl': Flags.integer({
 			description: 'Container snapshot TTL (ms)',
 		}),
+		'setup-timeout-ms': Flags.integer({
+			description:
+				'Wall timeout (ms) for .cascade/setup.sh; 0 disables (rely on global worker timeout)',
+		}),
+		'worker-image': Flags.string({
+			description: 'Per-project worker image reference (superadmin only; validated router-side)',
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -53,6 +60,10 @@ export default class ProjectsCreate extends DashboardCommand {
 						? { snapshotEnabled: flags['snapshot-enabled'] }
 						: {}),
 					...(flags['snapshot-ttl'] !== undefined ? { snapshotTtlMs: flags['snapshot-ttl'] } : {}),
+					...(flags['setup-timeout-ms'] !== undefined
+						? { setupTimeoutMs: flags['setup-timeout-ms'] }
+						: {}),
+					...(flags['worker-image'] !== undefined ? { workerImage: flags['worker-image'] } : {}),
 				}),
 			);
 
