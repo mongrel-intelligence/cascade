@@ -455,6 +455,63 @@ git pull
 bash setup.sh
 ```
 
+### Per-Project Worker Image (Advanced)
+
+Every agent job runs in an ephemeral **worker container**. By default that container is the global Cascade worker image (`ghcr.io/mongrel-intelligence/cascade-worker:latest` in a registry-backed deployment, or `cascade-worker:local` self-hosted). When a project needs extra toolchains in the agent's shell (a language runtime, a linter, an infra CLI, …), a **superadmin** can pin a **per-project worker image**. Leaving it unset keeps the global default — this is purely additive.
+
+> **Superadmin-only.** Setting/clearing the worker image is restricted to superadmins (the dashboard control is hidden for everyone else, and the CLI/API return `FORBIDDEN`). Every change is recorded in the audit log.
+
+#### 1. Derive an image from the Cascade worker base
+
+A project worker image is **not** a bare language image — it must be built `FROM` the Cascade worker base so it carries Cascade's full runtime. The base provides the **hard** requirements (the compiled Cascade app at `/app`, `cascade-tools`, `node`, the engine CLI, `git`, a non-root writable `$HOME`, and a writable `/workspace`) plus the **soft** baseline (`python`/shim, `jq`, `rg`, `fd`, `tmux`, `ast-grep`, Playwright Chromium). Your image just layers the project's extra tools on top — pin the base to a specific tag/digest for reproducibility, and drop back to the non-root `node` user after any `root`-only steps:
+
+```dockerfile
+# Dockerfile.my-worker
+FROM ghcr.io/mongrel-intelligence/cascade-worker:latest
+USER root
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends <your-extra-tool> \
+  && rm -rf /var/lib/apt/lists/*
+USER node
+```
+
+#### 2. Make the image available to the router
+
+The router resolves and launches the image, so it must be reachable from the **router host**. Two topologies:
+
+- **Registry-backed** — build and push to a registry the router can pull from, then reference it by its registry path:
+
+  ```bash
+  docker build -f Dockerfile.my-worker -t registry.example.com/my-cascade-worker:1 .
+  docker push registry.example.com/my-cascade-worker:1
+  ```
+
+- **Self-hosted / local** — build it on the same Docker host the router uses (derive from the local base `cascade-worker:local`); no registry needed, the router finds the local image:
+
+  ```bash
+  docker build -f Dockerfile.my-worker -t my-cascade-worker:local .
+  ```
+
+#### 3. Set it on the project and confirm `verified`
+
+In the dashboard, open **Projects → _your project_ → Settings → General** and find the **Worker Image** card. Paste the image reference (e.g. `registry.example.com/my-cascade-worker:1` or `my-cascade-worker:local`) and click **Set**. The status updates live:
+
+- **Verifying…** — the router pulled the image and is running its compatibility smoke-test. The card polls until it resolves.
+- **Verified — pinned to `sha256:…`** — the image passed; that immutable digest is what every worker for this project now launches.
+- **Validation failed: `<reason>`** — fail-closed; the reason names the missing requirement and **no job ever launches on a failed image**.
+
+Click **Clear** to revert the project to the global default.
+
+The same operations are available from the CLI (superadmin):
+
+```bash
+node bin/cascade.js projects update my-project --worker-image registry.example.com/my-cascade-worker:1
+node bin/cascade.js projects update my-project --clear-worker-image
+node bin/cascade.js projects show my-project        # shows the reference + lifecycle status
+```
+
+> **Tip:** A deliberately incompatible image (e.g. `FROM alpine`, which lacks the Cascade runtime) reaches **failed** with a reason naming the first missing requirement — a quick way to confirm the fail-closed behavior. Trigger a job after a **verified** result to see the custom toolchain available in the agent's shell.
+
 ---
 
 ## Troubleshooting

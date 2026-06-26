@@ -4,6 +4,7 @@ import { HelpCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
+import { ProjectWorkerImage } from '@/components/projects/project-worker-image.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
 import { OpenRouterModelCombobox } from '@/components/settings/openrouter-model-combobox.js';
 import {
@@ -416,6 +417,9 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 						/>
 					</CardContent>
 				</Card>
+
+				{/* Worker Image (superadmin-only; self-hides otherwise) */}
+				<ProjectWorkerImage projectId={project.id} />
 
 				{/* Danger Zone */}
 				<Card className="border-destructive/50">
