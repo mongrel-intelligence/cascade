@@ -27,6 +27,13 @@ export interface ManualRunJob {
 	triggerCommentUrl?: string;
 	triggerCommentPath?: string;
 	triggerCommentAuthor?: string;
+	/**
+	 * MNG-1695: id of the `status='queued'` run row pre-created at tRPC trigger
+	 * time. The worker activates it (queued → running) instead of inserting a new
+	 * row, and the dispatch compensator fails it (instead of inserting a stub) on
+	 * spawn failure.
+	 */
+	runId?: string;
 }
 
 export interface RetryRunJob {

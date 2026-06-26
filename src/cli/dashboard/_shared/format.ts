@@ -142,6 +142,7 @@ export function formatStatus(status: unknown): string {
 			return chalk.green(s);
 		case 'failed':
 			return chalk.red(s);
+		case 'queued':
 		case 'cancelled':
 			return chalk.yellow(s);
 		default:

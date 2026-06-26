@@ -20,6 +20,8 @@ const {
 	mockIsDebugAnalysisRunActive,
 	mockHasActiveRunForWorkItem,
 	mockCancelRunById,
+	mockCreateQueuedRun,
+	mockFailQueuedOrRunningRun,
 	mockTriggerDebugAnalysis,
 	mockTriggerManualRun,
 	mockTriggerRetryRun,
@@ -51,6 +53,8 @@ const {
 	),
 	mockHasActiveRunForWorkItem: vi.fn().mockResolvedValue(false),
 	mockCancelRunById: vi.fn().mockResolvedValue(true),
+	mockCreateQueuedRun: vi.fn().mockResolvedValue('queued-run-id'),
+	mockFailQueuedOrRunningRun: vi.fn().mockResolvedValue(true),
 	mockTriggerDebugAnalysis: vi.fn(),
 	mockTriggerManualRun: vi.fn(),
 	mockTriggerRetryRun: vi.fn(),
@@ -76,6 +80,8 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	isDebugAnalysisRunActive: mockIsDebugAnalysisRunActive,
 	hasActiveRunForWorkItem: mockHasActiveRunForWorkItem,
 	cancelRunById: mockCancelRunById,
+	createQueuedRun: mockCreateQueuedRun,
+	failQueuedOrRunningRun: mockFailQueuedOrRunningRun,
 }));
 
 // Mock getDb for the inline org-access check in getById
@@ -1170,6 +1176,85 @@ describe('runsRouter', () => {
 			});
 			expect(result).toEqual({ triggered: true });
 			expect(mockHasActiveRunForWorkItem).not.toHaveBeenCalled();
+		});
+	});
+
+	// MNG-1695 (Improvement B): in queue mode, trigger pre-creates a `queued` run
+	// row (visible in ~1s) and threads its id onto the manual-run job.
+	describe('trigger (queue mode)', () => {
+		beforeEach(() => {
+			vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+			mockHasActiveRunForWorkItem.mockResolvedValue(false);
+			mockCreateQueuedRun.mockReset().mockResolvedValue('queued-run-id');
+			mockFailQueuedOrRunningRun.mockReset().mockResolvedValue(true);
+			mockSubmitDashboardJob.mockReset().mockResolvedValue('manual-run-job-id');
+		});
+
+		it('pre-creates a queued run then enqueues the manual-run job carrying its runId', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.trigger({
+				projectId: 'p1',
+				agentType: 'implementation',
+				workItemId: 'card-1',
+			});
+
+			expect(result).toEqual({ triggered: true });
+			expect(mockCreateQueuedRun).toHaveBeenCalledWith({
+				projectId: 'p1',
+				workItemId: 'card-1',
+				prNumber: undefined,
+				agentType: 'implementation',
+				// resolveEngineName falls back to the default when the project has no override
+				engine: 'claude-code',
+				triggerType: 'manual',
+			});
+			expect(mockSubmitDashboardJob).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: 'manual-run',
+					projectId: 'p1',
+					agentType: 'implementation',
+					workItemId: 'card-1',
+					runId: 'queued-run-id',
+				}),
+			);
+			// Queue mode must not also fire the in-process path.
+			expect(mockTriggerManualRun).not.toHaveBeenCalled();
+		});
+
+		it('creates the queued row before enqueueing (createQueuedRun → submitDashboardJob)', async () => {
+			const callOrder: string[] = [];
+			mockCreateQueuedRun.mockImplementation(async () => {
+				callOrder.push('create');
+				return 'queued-run-id';
+			});
+			mockSubmitDashboardJob.mockImplementation(async () => {
+				callOrder.push('submit');
+				return 'manual-run-job-id';
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.trigger({ projectId: 'p1', agentType: 'implementation' });
+
+			expect(callOrder).toEqual(['create', 'submit']);
+		});
+
+		it('rolls back the queued row and throws INTERNAL_SERVER_ERROR when enqueue fails', async () => {
+			mockSubmitDashboardJob.mockRejectedValueOnce(new Error('redis down'));
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(
+				caller.trigger({ projectId: 'p1', agentType: 'implementation', workItemId: 'card-1' }),
+			).rejects.toMatchObject({ code: 'INTERNAL_SERVER_ERROR' });
+
+			expect(mockFailQueuedOrRunningRun).toHaveBeenCalledWith(
+				'queued-run-id',
+				expect.stringContaining('Failed to enqueue'),
+			);
 		});
 	});
 

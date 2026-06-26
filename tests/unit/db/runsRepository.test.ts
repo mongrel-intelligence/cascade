@@ -86,12 +86,16 @@ vi.mock('../../../src/db/repositories/joinHelpers.js', () => ({
 }));
 
 import {
+	ACTIVE_RUN_STATUSES,
+	activateQueuedRun,
 	cancelRunById,
 	completeRun,
 	countActiveRuns,
+	createQueuedRun,
 	createRun,
 	deleteDebugAnalysisByRunId,
 	failOrphanedRun,
+	failQueuedOrRunningRun,
 	getDebugAnalysisByDebugRunId,
 	getDebugAnalysisByRunId,
 	getLlmCallByNumber,
@@ -104,6 +108,7 @@ import {
 	getRunsByWorkItemId,
 	getRunsForPR,
 	hasActiveRunForWorkItem,
+	isActiveRunStatus,
 	listLlmCallsMeta,
 	listProjectsForOrg,
 	listRuns,
@@ -196,6 +201,108 @@ describe('runsRepository', () => {
 					prNumber: undefined,
 				}),
 			);
+		});
+	});
+
+	// MNG-1695: queued-lifecycle primitives.
+	describe('ACTIVE_RUN_STATUSES / isActiveRunStatus', () => {
+		it('treats running and queued as active', () => {
+			expect(ACTIVE_RUN_STATUSES).toEqual(['running', 'queued']);
+			expect(isActiveRunStatus('running')).toBe(true);
+			expect(isActiveRunStatus('queued')).toBe(true);
+		});
+
+		it('treats terminal statuses as inactive', () => {
+			expect(isActiveRunStatus('completed')).toBe(false);
+			expect(isActiveRunStatus('failed')).toBe(false);
+			expect(isActiveRunStatus('timed_out')).toBe(false);
+		});
+	});
+
+	describe('createQueuedRun', () => {
+		it('inserts a run with status=queued and returns the id', async () => {
+			mockReturning.mockResolvedValue([{ id: 'queued-uuid-1' }]);
+
+			const result = await createQueuedRun({
+				projectId: 'proj-1',
+				workItemId: 'card-1',
+				agentType: 'implementation',
+				engine: 'claude-code',
+				triggerType: 'manual',
+			});
+
+			expect(result).toBe('queued-uuid-1');
+			expect(mockInsert).toHaveBeenCalled();
+			expect(mockValues).toHaveBeenCalledWith(
+				expect.objectContaining({
+					projectId: 'proj-1',
+					workItemId: 'card-1',
+					agentType: 'implementation',
+					engine: 'claude-code',
+					triggerType: 'manual',
+					status: 'queued',
+				}),
+			);
+		});
+	});
+
+	describe('activateQueuedRun', () => {
+		it('returns true and sets status=running when a queued row flips', async () => {
+			mockReturning.mockResolvedValue([{ id: 'run-1' }]);
+
+			const result = await activateQueuedRun('run-1');
+			expect(result).toBe(true);
+			expect(mockUpdate).toHaveBeenCalled();
+			expect(mockSet).toHaveBeenCalledWith(
+				expect.objectContaining({ status: 'running', startedAt: expect.any(Date) }),
+			);
+		});
+
+		it('returns false when no queued row matched (already running / terminal)', async () => {
+			mockReturning.mockResolvedValue([]);
+
+			const result = await activateQueuedRun('run-1');
+			expect(result).toBe(false);
+		});
+
+		it('does not overwrite the engine column', async () => {
+			mockReturning.mockResolvedValue([{ id: 'run-1' }]);
+
+			await activateQueuedRun('run-1');
+			const setArg = mockSet.mock.calls[0]?.[0] as Record<string, unknown>;
+			expect(setArg).not.toHaveProperty('engine');
+		});
+	});
+
+	describe('failQueuedOrRunningRun', () => {
+		it('returns true and marks failed when an active row matched', async () => {
+			mockReturning.mockResolvedValue([{ id: 'run-1' }]);
+
+			const result = await failQueuedOrRunningRun('run-1', 'Worker spawn failed: boom');
+			expect(result).toBe(true);
+			expect(mockSet).toHaveBeenCalledWith(
+				expect.objectContaining({
+					status: 'failed',
+					error: 'Worker spawn failed: boom',
+					completedAt: expect.any(Date),
+				}),
+			);
+		});
+
+		it('honors an explicit timed_out status', async () => {
+			mockReturning.mockResolvedValue([{ id: 'run-1' }]);
+
+			await failQueuedOrRunningRun('run-1', 'watchdog', 'timed_out');
+			expect(mockSet).toHaveBeenCalledWith(
+				expect.objectContaining({ status: 'timed_out', error: 'watchdog' }),
+			);
+		});
+
+		it('returns false when no active row matched', async () => {
+			mockReturning.mockResolvedValue([]);
+
+			const result = await failQueuedOrRunningRun('run-1', 'reason');
+			expect(result).toBe(false);
 		});
 	});
 

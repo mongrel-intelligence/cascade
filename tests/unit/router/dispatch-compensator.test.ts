@@ -27,9 +27,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 const mockCreateRun = vi.fn().mockResolvedValue('stub-run-id');
 const mockCompleteRun = vi.fn().mockResolvedValue(undefined);
+const mockFailQueuedOrRunningRun = vi.fn().mockResolvedValue(true);
 vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	createRun: (...args: unknown[]) => mockCreateRun(...args),
 	completeRun: (...args: unknown[]) => mockCompleteRun(...args),
+	failQueuedOrRunningRun: (...args: unknown[]) => mockFailQueuedOrRunningRun(...args),
 }));
 
 const mockLoadProjectConfig = vi.fn().mockResolvedValue({ projects: [], fullProjects: [] });
@@ -174,6 +176,7 @@ describe('recordSpawnFailureStub', () => {
 		mockExtractAgentType.mockReset();
 		mockCreateRun.mockReset().mockResolvedValue('stub-run-id');
 		mockCompleteRun.mockReset().mockResolvedValue(undefined);
+		mockFailQueuedOrRunningRun.mockReset().mockResolvedValue(true);
 		mockLoadProjectConfig.mockReset().mockResolvedValue({ projects: [], fullProjects: [] });
 	});
 
@@ -276,5 +279,50 @@ describe('recordSpawnFailureStub', () => {
 			recordSpawnFailureStub({ type: 'github' }, new Error('boom')),
 		).resolves.toBeUndefined();
 		expect(mockCompleteRun).not.toHaveBeenCalled();
+	});
+
+	// MNG-1695 fast-path: a manual-run job carries the id of a pre-created `queued`
+	// run row. Fail THAT row instead of inserting a duplicate stub.
+	it('fails the pre-created queued row for a manual-run job carrying a runId (no duplicate stub)', async () => {
+		await recordSpawnFailureStub(
+			{ type: 'manual-run', runId: 'queued-run-1', projectId: 'p1', agentType: 'implementation' },
+			new Error('worker spawn boom'),
+		);
+
+		expect(mockFailQueuedOrRunningRun).toHaveBeenCalledWith(
+			'queued-run-1',
+			expect.stringContaining('worker spawn boom'),
+		);
+		// Fast-path returns early — no stub insert, no extractor calls needed.
+		expect(mockCreateRun).not.toHaveBeenCalled();
+		expect(mockCompleteRun).not.toHaveBeenCalled();
+		expect(mockExtractProjectIdFromJob).not.toHaveBeenCalled();
+	});
+
+	it('keeps the INSERT stub path for a manual-run job WITHOUT a runId', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p1');
+		mockExtractWorkItemId.mockReturnValue(undefined);
+		mockExtractAgentType.mockReturnValue('implementation');
+
+		await recordSpawnFailureStub({ type: 'manual-run', projectId: 'p1' }, new Error('boom'));
+
+		expect(mockFailQueuedOrRunningRun).not.toHaveBeenCalled();
+		expect(mockCreateRun).toHaveBeenCalledTimes(1);
+		expect(mockCompleteRun).toHaveBeenCalledTimes(1);
+	});
+
+	it('does NOT flip a retry-run job carrying a runId (references the original run)', async () => {
+		mockExtractProjectIdFromJob.mockResolvedValue('p1');
+		mockExtractWorkItemId.mockReturnValue('w1');
+		mockExtractAgentType.mockReturnValue('implementation');
+
+		await recordSpawnFailureStub(
+			{ type: 'retry-run', runId: 'original-run-id', projectId: 'p1' },
+			new Error('boom'),
+		);
+
+		expect(mockFailQueuedOrRunningRun).not.toHaveBeenCalled();
+		// Falls through to the normal stub path.
+		expect(mockCreateRun).toHaveBeenCalledTimes(1);
 	});
 });

@@ -1,11 +1,14 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
+import { resolveEngineName } from '../../backends/resolution.js';
 import { loadProjectConfigById } from '../../config/provider.js';
 import { isAgentEnabledForProject } from '../../db/repositories/agentConfigsRepository.js';
 import {
 	cancelRunById,
+	createQueuedRun,
 	DEFAULT_STALE_RUN_THRESHOLD_MS,
 	deleteDebugAnalysisByRunId,
+	failQueuedOrRunningRun,
 	getDebugAnalysisByRunId,
 	getDebugAnalysisRunState,
 	getLlmCallByNumber,
@@ -400,24 +403,52 @@ export const runsRouter = router({
 
 			if (isQueueMode()) {
 				const { submitDashboardJob } = await import('../../queue/client.js');
-				await submitDashboardJob({
-					type: 'manual-run',
+
+				// MNG-1695 (Improvement B): pre-create a `status='queued'` run row so
+				// the run appears in the dashboard within ~1s — before the worker
+				// container boots and flips it to `running` via `activateQueuedRun`.
+				// Resolve the engine with the SAME resolver `runAgent` uses
+				// (`resolveEngineName`) so the stored engine matches the activated run
+				// (`activateQueuedRun` never overwrites the `engine` column).
+				const engine = resolveEngineName(input.agentType, pc.project);
+				const runId = await createQueuedRun({
 					projectId: input.projectId,
-					agentType: input.agentType,
 					workItemId: input.workItemId,
-					workItemUrl: input.workItemUrl,
-					workItemTitle: input.workItemTitle,
 					prNumber: input.prNumber,
-					prBranch: input.prBranch,
-					repoFullName: input.repoFullName,
-					headSha: input.headSha,
-					modelOverride: input.model,
-					triggerCommentBody: input.triggerCommentBody,
-					triggerCommentId: input.triggerCommentId,
-					triggerCommentUrl: input.triggerCommentUrl,
-					triggerCommentPath: input.triggerCommentPath,
-					triggerCommentAuthor: input.triggerCommentAuthor,
+					agentType: input.agentType,
+					engine,
+					triggerType: 'manual',
 				});
+
+				try {
+					await submitDashboardJob({
+						type: 'manual-run',
+						projectId: input.projectId,
+						agentType: input.agentType,
+						workItemId: input.workItemId,
+						workItemUrl: input.workItemUrl,
+						workItemTitle: input.workItemTitle,
+						prNumber: input.prNumber,
+						prBranch: input.prBranch,
+						repoFullName: input.repoFullName,
+						headSha: input.headSha,
+						modelOverride: input.model,
+						triggerCommentBody: input.triggerCommentBody,
+						triggerCommentId: input.triggerCommentId,
+						triggerCommentUrl: input.triggerCommentUrl,
+						triggerCommentPath: input.triggerCommentPath,
+						triggerCommentAuthor: input.triggerCommentAuthor,
+						runId,
+					});
+				} catch (err) {
+					// Enqueue failed — resolve the pre-created row to `failed` so it
+					// does not leak as a stuck `queued` row with no worker behind it.
+					await failQueuedOrRunningRun(runId, 'Failed to enqueue manual run job');
+					throw new TRPCError({
+						code: 'INTERNAL_SERVER_ERROR',
+						message: `Failed to enqueue manual run job: ${String(err)}`,
+					});
+				}
 			} else {
 				const { triggerManualRun } = await import('../../triggers/shared/manual-runner.js');
 				triggerManualRun(

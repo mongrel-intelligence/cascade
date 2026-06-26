@@ -77,6 +77,12 @@ export interface ManualTriggerInput {
 	triggerCommentUrl?: string;
 	triggerCommentPath?: string;
 	triggerCommentAuthor?: string;
+	/**
+	 * MNG-1695: id of a pre-created `status='queued'` run row. Rides the
+	 * agentInput to `executeWithEngine` → `tryCreateRun`, which activates it
+	 * (queued → running) instead of inserting a new run row.
+	 */
+	preCreatedRunId?: string;
 }
 
 /**
@@ -146,6 +152,9 @@ export async function triggerManualRun(
 		triggerCommentUrl: input.triggerCommentUrl,
 		triggerCommentPath: input.triggerCommentPath,
 		triggerCommentAuthor: input.triggerCommentAuthor,
+		// MNG-1695: rides triggerResult.agentInput → prepareAgentWorkItem →
+		// runAgent → executeWithEngine → tryCreateRun (activates the queued row).
+		preCreatedRunId: input.preCreatedRunId,
 	};
 	const triggerResult: TriggerResult = {
 		agentType: input.agentType,

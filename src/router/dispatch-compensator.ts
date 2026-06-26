@@ -13,7 +13,11 @@
  */
 
 import { resolveEngineName } from '../backends/resolution.js';
-import { completeRun, createRun } from '../db/repositories/runsRepository.js';
+import {
+	completeRun,
+	createRun,
+	failQueuedOrRunningRun,
+} from '../db/repositories/runsRepository.js';
 import { captureException } from '../sentry.js';
 import type { TriggerResult } from '../types/index.js';
 import { logger } from '../utils/logging.js';
@@ -70,6 +74,17 @@ export async function releaseLocksForFailedJob(data: unknown): Promise<void> {
  */
 export async function recordSpawnFailureStub(data: unknown, err: unknown): Promise<void> {
 	try {
+		// MNG-1695 fast-path: a manual-run job carries the id of a `queued` run row
+		// pre-created at tRPC trigger time. Fail THAT row instead of inserting a
+		// duplicate stub. Scoped to `manual-run` so we never flip a `retry-run` /
+		// `debug-analysis` job's `runId` (which references the original/analyzed
+		// run) to `failed`.
+		const job = data as { type?: string; runId?: string };
+		if (job.type === 'manual-run' && job.runId) {
+			await failQueuedOrRunningRun(job.runId, `Worker spawn failed: ${String(err)}`);
+			return;
+		}
+
 		const projectId = await extractProjectIdFromJob(data as CascadeJob);
 		if (!projectId) return;
 		const agentType = extractAgentType(data as CascadeJob);

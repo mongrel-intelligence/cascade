@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, isNull, type SQL } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull, type SQL } from 'drizzle-orm';
 import { getDb } from '../client.js';
 import { agentRuns, prWorkItems } from '../schema/index.js';
 import { buildAgentRunWorkItemJoin } from './joinHelpers.js';
@@ -67,6 +67,28 @@ export const enrichedRunSelect = {
 } as const;
 
 // ============================================================================
+// Run status taxonomy (MNG-1695)
+// ============================================================================
+
+/**
+ * Non-terminal run statuses — single source of truth for "this run is still
+ * active". `queued` is a pre-dispatch status written at tRPC trigger time so a
+ * manual run appears in the dashboard within ~1s; `running` is the worker-side
+ * status written once the agent boots.
+ *
+ * Capacity math (`agent-type-lock`, `work-item-lock`,
+ * `implementation-freshness-gate`) deliberately stays `running`-only — see
+ * `countActiveRuns`'s `includeQueued` opt-in. The CONFLICT guard, orphan
+ * cleanup, and the frontend treat `queued` as active.
+ */
+export const ACTIVE_RUN_STATUSES = ['running', 'queued'] as const;
+
+/** True when `status` is a non-terminal (active) run status. */
+export function isActiveRunStatus(status: string): boolean {
+	return (ACTIVE_RUN_STATUSES as readonly string[]).includes(status);
+}
+
+// ============================================================================
 // Run CRUD
 // ============================================================================
 
@@ -90,6 +112,80 @@ export async function createRun(input: CreateRunInput): Promise<string> {
 		})
 		.returning({ id: agentRuns.id });
 	return row.id;
+}
+
+/**
+ * Create a pre-dispatch run row with `status='queued'` (MNG-1695, Improvement B).
+ *
+ * Called at tRPC trigger time so a manual run is visible in the dashboard within
+ * ~1s — long before the worker container boots and flips it to `running` via
+ * {@link activateQueuedRun}. Mirrors {@link createRun} but inserts the `queued`
+ * status. The caller resolves `engine` with the same `resolveEngineName` resolver
+ * `runAgent` uses, so the stored engine matches the eventually-activated run
+ * (`activateQueuedRun` never overwrites the `engine` column).
+ */
+export async function createQueuedRun(input: CreateRunInput): Promise<string> {
+	const db = getDb();
+	const [row] = await db
+		.insert(agentRuns)
+		.values({
+			projectId: input.projectId,
+			workItemId: input.workItemId,
+			prNumber: input.prNumber,
+			agentType: input.agentType,
+			engine: input.engine,
+			triggerType: input.triggerType,
+			model: input.model,
+			maxIterations: input.maxIterations,
+			status: 'queued',
+		})
+		.returning({ id: agentRuns.id });
+	return row.id;
+}
+
+/**
+ * Flip a pre-created `queued` run to `running` (MNG-1695, Improvement B).
+ *
+ * Guarded on `status='queued'` so a BullMQ second attempt (or any double-fire)
+ * is an idempotent no-op that returns `false` — `tryCreateRun` still returns the
+ * existing runId in that case. Resets `startedAt` to now() so `durationMs` is
+ * measured from worker boot, matching today's semantics (the queued badge shows
+ * elapsed-since-trigger until activation). Does NOT touch the `engine` column —
+ * the value stored by {@link createQueuedRun} is final.
+ *
+ * @returns `true` when a `queued` row was flipped to `running`; `false` when no
+ *   `queued` row matched (already activated, terminal, or never existed).
+ */
+export async function activateQueuedRun(runId: string): Promise<boolean> {
+	const db = getDb();
+	const [updated] = await db
+		.update(agentRuns)
+		.set({ status: 'running', startedAt: new Date() })
+		.where(and(eq(agentRuns.id, runId), eq(agentRuns.status, 'queued')))
+		.returning({ id: agentRuns.id });
+	return !!updated;
+}
+
+/**
+ * Mark a still-active (`queued` or `running`) run as terminal (MNG-1695).
+ *
+ * Used for enqueue-failure rollback (tRPC trigger) and the dispatch compensator
+ * fast-path so a pre-created row never leaks as a stuck `queued`/`running` row
+ * when the worker never starts. Guarded on `status IN (queued, running)` so it
+ * is safe to call even if the run already completed.
+ */
+export async function failQueuedOrRunningRun(
+	runId: string,
+	reason: string,
+	status: 'failed' | 'timed_out' = 'failed',
+): Promise<boolean> {
+	const db = getDb();
+	const [updated] = await db
+		.update(agentRuns)
+		.set({ status, completedAt: new Date(), error: reason })
+		.where(and(eq(agentRuns.id, runId), inArray(agentRuns.status, ACTIVE_RUN_STATUSES)))
+		.returning({ id: agentRuns.id });
+	return !!updated;
 }
 
 export async function updateRunPRNumber(runId: string, prNumber: number): Promise<void> {
@@ -187,6 +283,13 @@ export interface CountActiveRunsOpts {
 	workItemId?: string;
 	agentType?: string;
 	maxAgeMs?: number;
+	/**
+	 * When `true`, count both `queued` and `running` rows (MNG-1695). Defaults to
+	 * `false` so capacity/lock callers (`agent-type-lock`, `work-item-lock`,
+	 * `implementation-freshness-gate`) keep their `running`-only semantics. Only
+	 * the work-item CONFLICT guard (`hasActiveRunForWorkItem`) opts in.
+	 */
+	includeQueued?: boolean;
 }
 
 /**
@@ -197,7 +300,9 @@ export async function countActiveRuns(opts: CountActiveRunsOpts): Promise<number
 	const db = getDb();
 	const conditions: SQL[] = [
 		eq(agentRuns.projectId, opts.projectId),
-		eq(agentRuns.status, 'running'),
+		opts.includeQueued
+			? inArray(agentRuns.status, ACTIVE_RUN_STATUSES)
+			: eq(agentRuns.status, 'running'),
 	];
 	if (opts.workItemId !== undefined) {
 		conditions.push(eq(agentRuns.workItemId, opts.workItemId));
@@ -221,7 +326,10 @@ export async function hasActiveRunForWorkItem(
 	workItemId: string,
 	maxAgeMs?: number,
 ): Promise<boolean> {
-	return (await countActiveRuns({ projectId, workItemId, maxAgeMs })) > 0;
+	// MNG-1695: a pre-created `queued` row counts as active here so the CONFLICT
+	// guard (runs.trigger + runs.retry) blocks a duplicate dispatch on the same
+	// work item during the brief queued window.
+	return (await countActiveRuns({ projectId, workItemId, maxAgeMs, includeQueued: true })) > 0;
 }
 
 export async function failOrphanedRun(
@@ -239,7 +347,9 @@ export async function failOrphanedRun(
 			and(
 				eq(agentRuns.projectId, projectId),
 				eq(agentRuns.workItemId, workItemId),
-				eq(agentRuns.status, 'running'),
+				// MNG-1695: a worker that crashes before activation still has a
+				// `queued` row, so orphan cleanup must match both active statuses.
+				inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
 			),
 		)
 		.orderBy(desc(agentRuns.startedAt))
@@ -254,15 +364,16 @@ export async function failOrphanedRun(
 			error: reason,
 			durationMs,
 		})
-		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
+		.where(and(eq(agentRuns.id, row.id), inArray(agentRuns.status, ACTIVE_RUN_STATUSES)))
 		.returning({ id: agentRuns.id });
 	return updated?.id ?? null;
 }
 
 /**
- * Fail the most recent running run for a project without a workItemId (e.g. GitHub PR runs).
+ * Fail the most recent active run for a project without a workItemId (e.g. GitHub PR runs).
  * Uses projectId + optional agentType + startedAfter to identify the run.
- * Guards on status='running' so it's safe to call even if the run already completed.
+ * Guards on an active status (`queued`/`running`, MNG-1695) so it's safe to call
+ * even if the run already completed.
  */
 export async function failOrphanedRunFallback(
 	projectId: string,
@@ -275,7 +386,9 @@ export async function failOrphanedRunFallback(
 	const db = getDb();
 	const conditions: SQL[] = [
 		eq(agentRuns.projectId, projectId),
-		eq(agentRuns.status, 'running'),
+		// MNG-1695: match `queued` rows too so a worker that crashes before
+		// activation still gets failed.
+		inArray(agentRuns.status, ACTIVE_RUN_STATUSES),
 		gte(agentRuns.startedAt, startedAfter),
 	];
 	if (agentType) {
@@ -297,7 +410,7 @@ export async function failOrphanedRunFallback(
 			error: reason,
 			durationMs,
 		})
-		.where(and(eq(agentRuns.id, row.id), eq(agentRuns.status, 'running')))
+		.where(and(eq(agentRuns.id, row.id), inArray(agentRuns.status, ACTIVE_RUN_STATUSES)))
 		.returning({ id: agentRuns.id });
 	return updated?.id ?? null;
 }

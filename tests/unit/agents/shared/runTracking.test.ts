@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	createRun: vi.fn(),
+	activateQueuedRun: vi.fn(),
 	completeRun: vi.fn(),
 	storeRunLogs: vi.fn(),
 	updateRunJobId: vi.fn(),
@@ -36,6 +37,7 @@ import {
 	tryUpdateRunPlanResolution,
 } from '../../../../src/agents/shared/runTracking.js';
 import {
+	activateQueuedRun,
 	completeRun,
 	createRun,
 	storeRunLogs,
@@ -45,6 +47,7 @@ import {
 import { logger } from '../../../../src/utils/logging.js';
 
 const mockCreateRun = vi.mocked(createRun);
+const mockActivateQueuedRun = vi.mocked(activateQueuedRun);
 const mockCompleteRun = vi.mocked(completeRun);
 const mockStoreRunLogs = vi.mocked(storeRunLogs);
 const mockUpdateRunJobId = vi.mocked(updateRunJobId);
@@ -74,6 +77,7 @@ describe('tryCreateRun', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockCreateRun.mockResolvedValue('run-abc');
+		mockActivateQueuedRun.mockResolvedValue(true);
 		mockUpdateRunJobId.mockResolvedValue(undefined);
 	});
 
@@ -139,6 +143,43 @@ describe('tryCreateRun', () => {
 			message: expect.stringContaining('DB error'),
 		});
 		await expect(tryCreateRun(baseInput)).rejects.toThrow(BootFailureError);
+	});
+
+	// MNG-1695 (Improvement B): when a queued row was pre-created at trigger time,
+	// tryCreateRun activates it instead of inserting a fresh row.
+	it('activates the pre-created queued row and returns its id (does not call createRun)', async () => {
+		const runId = await tryCreateRun({ ...baseInput, preCreatedRunId: 'queued-run-1' });
+
+		expect(runId).toBe('queued-run-1');
+		expect(mockActivateQueuedRun).toHaveBeenCalledWith('queued-run-1');
+		expect(mockCreateRun).not.toHaveBeenCalled();
+	});
+
+	it('returns the pre-created id even when activateQueuedRun returns false (already running / retry)', async () => {
+		mockActivateQueuedRun.mockResolvedValue(false);
+
+		const runId = await tryCreateRun({ ...baseInput, preCreatedRunId: 'queued-run-2' });
+
+		expect(runId).toBe('queued-run-2');
+		expect(mockActivateQueuedRun).toHaveBeenCalledWith('queued-run-2');
+		expect(mockCreateRun).not.toHaveBeenCalled();
+	});
+
+	it('uses the createRun INSERT path when preCreatedRunId is unset', async () => {
+		const runId = await tryCreateRun(baseInput);
+
+		expect(runId).toBe('run-abc');
+		expect(mockCreateRun).toHaveBeenCalledTimes(1);
+		expect(mockActivateQueuedRun).not.toHaveBeenCalled();
+	});
+
+	it('still stores the JOB_ID for an activated pre-created run', async () => {
+		process.env.JOB_ID = 'job-999';
+
+		const runId = await tryCreateRun({ ...baseInput, preCreatedRunId: 'queued-run-3' });
+
+		expect(runId).toBe('queued-run-3');
+		expect(mockUpdateRunJobId).toHaveBeenCalledWith('queued-run-3', 'job-999');
 	});
 });
 

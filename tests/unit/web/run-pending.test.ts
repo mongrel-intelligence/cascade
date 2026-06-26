@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
 	isNotFoundError,
+	isRunActive,
 	RUN_PENDING_GRACE_MS,
 	RUN_PENDING_MAX_RETRIES,
 	RUN_PENDING_POLL_MS,
@@ -48,6 +49,30 @@ describe('run-pending constants', () => {
 	it('grace window is poll * maxRetries (~60s)', () => {
 		expect(RUN_PENDING_GRACE_MS).toBe(RUN_PENDING_POLL_MS * RUN_PENDING_MAX_RETRIES);
 		expect(RUN_PENDING_GRACE_MS).toBe(60_000);
+	});
+});
+
+// ─── isRunActive (MNG-1695) ──────────────────────────────────────────────────
+
+describe('isRunActive', () => {
+	it('returns true for running', () => {
+		expect(isRunActive('running')).toBe(true);
+	});
+
+	it('returns true for queued', () => {
+		expect(isRunActive('queued')).toBe(true);
+	});
+
+	it('returns false for terminal statuses', () => {
+		expect(isRunActive('completed')).toBe(false);
+		expect(isRunActive('failed')).toBe(false);
+		expect(isRunActive('timed_out')).toBe(false);
+	});
+
+	it('returns false for an unknown status', () => {
+		expect(isRunActive('')).toBe(false);
+		expect(isRunActive('cancelled')).toBe(false);
+		expect(isRunActive('whatever')).toBe(false);
 	});
 });
 

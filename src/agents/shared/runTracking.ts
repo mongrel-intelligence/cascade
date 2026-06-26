@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 
 import {
+	activateQueuedRun,
 	type CompleteRunInput,
 	completeRun,
 	createRun,
@@ -23,6 +24,12 @@ export interface RunTrackingInput {
 	agentType: string;
 	engineName: string;
 	triggerType?: string;
+	/**
+	 * MNG-1695 (Improvement B): id of a pre-created `status='queued'` run row.
+	 * When set, `tryCreateRun` activates it (flips `queued → running`) instead of
+	 * inserting a new row.
+	 */
+	preCreatedRunId?: string;
 }
 
 // ============================================================================
@@ -30,11 +37,18 @@ export interface RunTrackingInput {
 // ============================================================================
 
 /**
- * Create a DB run record. Spec 018 intentionally treats creation failure as a
- * boot failure instead of a silent warn-and-continue: without this row, the
+ * Create (or activate) a DB run record. Spec 018 intentionally treats failure as
+ * a boot failure instead of a silent warn-and-continue: without this row, the
  * dashboard cannot show the job at all.
  *
- * If JOB_ID env var is set (Docker mode), store it immediately after run creation.
+ * MNG-1695 (Improvement B): when `input.preCreatedRunId` is set, a
+ * `status='queued'` row already exists (pre-created at tRPC trigger time). We
+ * activate it (`queued → running`) and reuse its id instead of inserting a fresh
+ * row. `activateQueuedRun` returning `false` (an already-`running` row, e.g. a
+ * BullMQ second attempt) is fine — we still return the same id. When unset, the
+ * legacy `createRun` INSERT path runs.
+ *
+ * If JOB_ID env var is set (Docker mode), store it immediately after.
  */
 export async function tryCreateRun(
 	input: RunTrackingInput,
@@ -42,16 +56,25 @@ export async function tryCreateRun(
 	maxIterations?: number,
 ): Promise<string | undefined> {
 	try {
-		const runId = await createRun({
-			projectId: input.projectId,
-			workItemId: input.workItemId,
-			prNumber: input.prNumber,
-			agentType: input.agentType,
-			engine: input.engineName,
-			triggerType: input.triggerType,
-			model,
-			maxIterations,
-		});
+		let runId: string;
+		if (input.preCreatedRunId) {
+			// Flip the pre-created queued row to running. The boolean is ignored —
+			// `false` means the row was already running (retry / second attempt), in
+			// which case reusing the same id is exactly right.
+			await activateQueuedRun(input.preCreatedRunId);
+			runId = input.preCreatedRunId;
+		} else {
+			runId = await createRun({
+				projectId: input.projectId,
+				workItemId: input.workItemId,
+				prNumber: input.prNumber,
+				agentType: input.agentType,
+				engine: input.engineName,
+				triggerType: input.triggerType,
+				model,
+				maxIterations,
+			});
+		}
 
 		// Store BullMQ jobId if running in Docker (JOB_ID env var is set)
 		const jobId = process.env.JOB_ID;

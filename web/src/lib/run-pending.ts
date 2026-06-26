@@ -38,6 +38,17 @@ export const RUN_RUNNING_POLL_MS = 5000;
 export const RUN_PENDING_GRACE_MS = RUN_PENDING_POLL_MS * RUN_PENDING_MAX_RETRIES;
 
 /**
+ * True when a run status is non-terminal — either worker-side `running` or the
+ * pre-dispatch `queued` state (MNG-1695). Mirrors the backend `ACTIVE_RUN_STATUSES`
+ * constant. Drives `refetchInterval` across the run pages so the dashboard keeps
+ * polling while a row is still `queued` and flips to `running`, and gates the
+ * retry button (a still-active run cannot be retried).
+ */
+export function isRunActive(status: string): boolean {
+	return status === 'running' || status === 'queued';
+}
+
+/**
  * True only when `error` is a tRPC client error whose `data.code` is
  * `NOT_FOUND`. Returns `false` for every other tRPC code (`BAD_REQUEST`,
  * `FORBIDDEN`, `UNAUTHORIZED`, …), a plain `Error`, `null`/`undefined`, or any

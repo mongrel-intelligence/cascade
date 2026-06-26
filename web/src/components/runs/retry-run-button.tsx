@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button.js';
+import { isRunActive } from '@/lib/run-pending.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 
 interface RetryRunButtonProps {
 	runId: string;
-	/** Hide button when status is 'running' */
+	/** Hide button while the run is still active ('running' or 'queued'). */
 	status: string;
 }
 
@@ -22,7 +23,7 @@ export function RetryRunButton({ runId, status }: RetryRunButtonProps) {
 		},
 	});
 
-	if (status === 'running') {
+	if (isRunActive(status)) {
 		return null;
 	}
 
