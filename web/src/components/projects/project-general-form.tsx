@@ -42,6 +42,7 @@ interface Project {
 	maxInFlightItems?: number | null;
 	snapshotEnabled?: boolean | null;
 	snapshotTtlMs?: number | null;
+	setupTimeoutMs?: number | null;
 }
 
 function numericFieldDefault(value: number | null | undefined): string {
@@ -97,6 +98,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 	const [runLinksEnabled, setRunLinksEnabled] = useState(project.runLinksEnabled ?? false);
 	const [snapshotEnabled, setSnapshotEnabled] = useState(project.snapshotEnabled ?? false);
 	const [snapshotTtlMs, setSnapshotTtlMs] = useState(numericFieldDefault(project.snapshotTtlMs));
+	const [setupTimeoutMs, setSetupTimeoutMs] = useState(numericFieldDefault(project.setupTimeoutMs));
 
 	// Track dirty state to enable/disable Save button
 	const isDirty = useMemo(() => {
@@ -108,7 +110,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 			maxInFlightItems !== numericFieldDefault(project.maxInFlightItems) ||
 			runLinksEnabled !== (project.runLinksEnabled ?? false) ||
 			snapshotEnabled !== (project.snapshotEnabled ?? false) ||
-			snapshotTtlMs !== numericFieldDefault(project.snapshotTtlMs)
+			snapshotTtlMs !== numericFieldDefault(project.snapshotTtlMs) ||
+			setupTimeoutMs !== numericFieldDefault(project.setupTimeoutMs)
 		);
 	}, [
 		name,
@@ -119,6 +122,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		runLinksEnabled,
 		snapshotEnabled,
 		snapshotTtlMs,
+		setupTimeoutMs,
 		project,
 	]);
 
@@ -131,6 +135,7 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 		setRunLinksEnabled(project.runLinksEnabled ?? false);
 		setSnapshotEnabled(project.snapshotEnabled ?? false);
 		setSnapshotTtlMs(numericFieldDefault(project.snapshotTtlMs));
+		setSetupTimeoutMs(numericFieldDefault(project.setupTimeoutMs));
 	}
 
 	function handleSubmit(e: React.FormEvent) {
@@ -145,6 +150,8 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 				runLinksEnabled,
 				snapshotEnabled,
 				snapshotTtlMs: snapshotTtlMs ? Number.parseInt(snapshotTtlMs, 10) : null,
+				// `"0"` is a truthy string, so an explicit 0 (disable) is sent; empty → null.
+				setupTimeoutMs: setupTimeoutMs ? Number.parseInt(setupTimeoutMs, 10) : null,
 			},
 			{
 				onSuccess: () => {
@@ -262,6 +269,35 @@ export function ProjectGeneralForm({ project }: { project: Project }) {
 									placeholder={watchdogPlaceholder}
 								/>
 								<p className="text-xs text-muted-foreground">{watchdogDescription}</p>
+							</div>
+							<div className="space-y-2">
+								<div className="flex items-center gap-1.5">
+									<Label htmlFor="setupTimeoutMs">Setup script timeout (ms)</Label>
+									<Tooltip>
+										<TooltipTrigger asChild>
+											<HelpCircle className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+										</TooltipTrigger>
+										<TooltipContent>
+											Wall-clock limit for <code>.cascade/setup.sh</code>. The idle timeout is
+											always disabled; this only bounds total wall time.
+										</TooltipContent>
+									</Tooltip>
+								</div>
+								<Input
+									id="setupTimeoutMs"
+									type="number"
+									min="0"
+									step="1"
+									className="w-48"
+									value={setupTimeoutMs}
+									onChange={(e) => setSetupTimeoutMs(e.target.value)}
+									placeholder="0 (no limit)"
+								/>
+								<p className="text-xs text-muted-foreground">
+									Wall-clock limit for <code>.cascade/setup.sh</code>. Leave blank or 0 for no limit
+									— the global worker container timeout is the safety net. Raise it for slow
+									installs (e.g. <code>npm ci</code> on large React Native repos).
+								</p>
 							</div>
 						</CardContent>
 					</Card>

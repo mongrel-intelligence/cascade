@@ -29,6 +29,11 @@ export const projects = pgTable(
 		snapshotEnabled: boolean('snapshot_enabled'),
 		snapshotTtlMs: integer('snapshot_ttl_ms'),
 
+		// Per-project wall timeout (ms) for `.cascade/setup.sh`. Nullable; NULL or 0
+		// means no per-project wall timeout (rely on the global worker/watchdog
+		// container timeout). A positive value bounds the setup script's wall clock.
+		setupTimeoutMs: integer('setup_timeout_ms'),
+
 		// Per-project worker image (spec 022). All nullable; NULL = use the
 		// global router-level default image. Dormant until plans 2-4 wire
 		// spawn resolution, validation, CLI/API, and UI.

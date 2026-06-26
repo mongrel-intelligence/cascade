@@ -52,6 +52,7 @@ interface ProjectConfig {
   agentUpdateChannels?: Record<string, 'none' | 'scm-only' | 'pm-only' | 'both'>;  // per-agent posting gate; default 'both'
   runLinksEnabled: boolean;
   maxInFlightItems?: number;        // hard cap on TODO+IN_PROGRESS+IN_REVIEW; default 1
+  setupTimeoutMs?: number;          // wall timeout (ms) for .cascade/setup.sh; null/0 = no limit (global worker timeout is the net)
   // ... PM config (trello/jira/linear), agent models, snapshot settings
 }
 ```

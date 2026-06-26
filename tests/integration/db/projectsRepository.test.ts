@@ -690,6 +690,56 @@ describe('projectsRepository (integration)', () => {
 		});
 	});
 
+	// =========================================================================
+	// Per-project setup.sh wall timeout (MNG-1701)
+	// =========================================================================
+
+	describe('setup-timeout column', () => {
+		it('accepts NULL setup_timeout_ms, reads back null', async () => {
+			const project = await createProject('test-org', {
+				id: 'no-setup-timeout',
+				name: 'No Setup Timeout',
+			});
+
+			expect(project.setupTimeoutMs).toBeNull();
+
+			const retrieved = await getProjectFull('no-setup-timeout', 'test-org');
+			expect(retrieved?.setupTimeoutMs).toBeNull();
+		});
+
+		it('round-trips a positive setupTimeoutMs on create', async () => {
+			await createProject('test-org', {
+				id: 'setup-timeout-project',
+				name: 'Setup Timeout Project',
+				setupTimeoutMs: 1800000,
+			});
+
+			const retrieved = await getProjectFull('setup-timeout-project', 'test-org');
+			expect(retrieved?.setupTimeoutMs).toBe(1800000);
+		});
+
+		it('persists an explicit 0 (disable) distinct from null on create', async () => {
+			await createProject('test-org', {
+				id: 'setup-timeout-zero',
+				name: 'Setup Timeout Zero',
+				setupTimeoutMs: 0,
+			});
+
+			const retrieved = await getProjectFull('setup-timeout-zero', 'test-org');
+			expect(retrieved?.setupTimeoutMs).toBe(0);
+		});
+
+		it('updateProject persists, then can clear setupTimeoutMs back to null', async () => {
+			await updateProject('test-project', 'test-org', { setupTimeoutMs: 900000 });
+			let updated = await getProjectFull('test-project', 'test-org');
+			expect(updated?.setupTimeoutMs).toBe(900000);
+
+			await updateProject('test-project', 'test-org', { setupTimeoutMs: null });
+			updated = await getProjectFull('test-project', 'test-org');
+			expect(updated?.setupTimeoutMs).toBeNull();
+		});
+	});
+
 	describe('recordWorkerImageValidationResult', () => {
 		const REF = 'ghcr.io/acme/cascade-worker:latest';
 

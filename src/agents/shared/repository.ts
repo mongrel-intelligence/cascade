@@ -238,16 +238,20 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
 		log.info('Running project setup script', { path: '.cascade/setup.sh', agentType });
+		// The idle timeout stays disabled unconditionally: setup.sh may compile language
+		// runtimes (e.g. Ruby via asdf/ruby-build) whose make output is suppressed, and may
+		// run large npm ci installs that take 10-15+ min with no stdout. The wall timeout is
+		// per-project configurable via `project.setupTimeoutMs`: unset or 0 disables it (the
+		// global worker/watchdog container timeout is the safety net for truly hung setups),
+		// while a positive value re-introduces a per-project wall bound. `runCommand` treats
+		// `wallTimeoutMs <= 0` as disabled (see createSubprocessWatcher in src/utils/repo.ts).
+		const setupWallTimeoutMs = project.setupTimeoutMs ?? 0;
 		const setupResult = await runCommand(
 			'bash',
 			[setupScriptPath],
 			repoDir,
 			{ AGENT_PROFILE_NAME: agentType },
-			// Disable both idle and wall timeouts: setup.sh may compile language runtimes
-			// (e.g. Ruby via asdf/ruby-build) whose make output is suppressed, and may run
-			// large npm ci installs that take 10-15+ min. The global worker container timeout
-			// (WORKER_TIMEOUT_MS) is the safety net for truly hung setups.
-			{ idleTimeoutMs: 0, wallTimeoutMs: 0 },
+			{ idleTimeoutMs: 0, wallTimeoutMs: setupWallTimeoutMs },
 		);
 		log.info('Setup script completed', {
 			exitCode: setupResult.exitCode,

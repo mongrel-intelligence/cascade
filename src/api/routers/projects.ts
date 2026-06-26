@@ -269,6 +269,9 @@ export const projectsRouter = router({
 				maxInFlightItems: z.number().int().positive().nullish(),
 				snapshotEnabled: z.boolean().nullish(),
 				snapshotTtlMs: z.number().int().positive().nullish(),
+				// Wall timeout (ms) for `.cascade/setup.sh`. `.nonnegative()` (NOT
+				// `.positive()`) so an explicit `0` ("disable") is transmitted.
+				setupTimeoutMs: z.number().int().nonnegative().nullish(),
 				// Per-project worker image (spec 022). Superadmin-only; a malformed
 				// ref is rejected synchronously. `null` is accepted as an explicit
 				// "use the global default".
@@ -322,6 +325,9 @@ export const projectsRouter = router({
 				maxInFlightItems: z.number().int().positive().nullish(),
 				snapshotEnabled: z.boolean().nullish(),
 				snapshotTtlMs: z.number().int().positive().nullish(),
+				// Wall timeout (ms) for `.cascade/setup.sh`. `.nonnegative()` (NOT
+				// `.positive()`) so the CLI/UI can send `0` to disable.
+				setupTimeoutMs: z.number().int().nonnegative().nullish(),
 				// Per-project worker image (spec 022). Superadmin-only; a malformed
 				// ref → `BAD_REQUEST` (nothing persisted). `null` clears it back to
 				// the global default. Set → stored `pending` + validation enqueued.

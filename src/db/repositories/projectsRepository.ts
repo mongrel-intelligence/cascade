@@ -46,6 +46,7 @@ export async function createProject(
 		maxInFlightItems?: number | null;
 		snapshotEnabled?: boolean | null;
 		snapshotTtlMs?: number | null;
+		setupTimeoutMs?: number | null;
 		workerImage?: string | null;
 		workerImageDigest?: string | null;
 		workerImageStatus?: string | null;
@@ -74,6 +75,7 @@ export async function createProject(
 			maxInFlightItems: rest.maxInFlightItems,
 			snapshotEnabled: rest.snapshotEnabled,
 			snapshotTtlMs: rest.snapshotTtlMs,
+			setupTimeoutMs: rest.setupTimeoutMs,
 			workerImage: rest.workerImage,
 			workerImageDigest: rest.workerImageDigest,
 			workerImageStatus: rest.workerImageStatus,
@@ -106,6 +108,7 @@ export async function updateProject(
 		maxInFlightItems?: number | null;
 		snapshotEnabled?: boolean | null;
 		snapshotTtlMs?: number | null;
+		setupTimeoutMs?: number | null;
 		workerImage?: string | null;
 		workerImageDigest?: string | null;
 		workerImageStatus?: string | null;
