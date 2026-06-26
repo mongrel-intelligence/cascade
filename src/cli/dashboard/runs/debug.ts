@@ -83,6 +83,14 @@ export default class RunsDebug extends DashboardCommand {
 				return;
 			}
 
+			if (status.status === 'failed') {
+				// Terminal failure — the analysis errored out. Surface it promptly
+				// instead of polling to the deadline and printing a misleading
+				// timeout message.
+				this.log('Debug analysis failed.');
+				return;
+			}
+
 			if (status.status === 'idle') {
 				// Analysis finished but no result — likely failed
 				this.log('Debug analysis finished but no result was stored (analysis may have failed).');

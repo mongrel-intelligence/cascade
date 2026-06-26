@@ -15,15 +15,20 @@ const {
 	mockGetLlmCallByNumber,
 	mockGetDebugAnalysisByRunId,
 	mockDeleteDebugAnalysisByRunId,
+	mockGetDebugAnalysisRunState,
+	mockMarkDebugAnalysisRunning,
+	mockIsDebugAnalysisRunActive,
 	mockHasActiveRunForWorkItem,
 	mockCancelRunById,
-	mockIsAnalysisRunning,
 	mockTriggerDebugAnalysis,
 	mockTriggerManualRun,
 	mockTriggerRetryRun,
 	mockLoadProjectConfigById,
 	mockPublishCancelCommand,
 	mockIsAgentEnabledForProject,
+	mockDebugAnalysisJobId,
+	mockRemoveDashboardJob,
+	mockSubmitDashboardJob,
 } = vi.hoisted(() => ({
 	mockListRuns: vi.fn(),
 	mockGetRunById: vi.fn(),
@@ -32,15 +37,29 @@ const {
 	mockGetLlmCallByNumber: vi.fn(),
 	mockGetDebugAnalysisByRunId: vi.fn(),
 	mockDeleteDebugAnalysisByRunId: vi.fn(),
+	// Durable debug-analysis lifecycle status (debug_analysis_status table).
+	mockGetDebugAnalysisRunState: vi.fn(),
+	mockMarkDebugAnalysisRunning: vi.fn().mockResolvedValue(undefined),
+	// Real-logic stand-in so router precedence (running vs stale) is exercised
+	// faithfully; staleness itself is unit-tested in the repository.
+	mockIsDebugAnalysisRunActive: vi.fn(
+		(state: { status: string; updatedAt: Date | null } | null) => {
+			if (!state || state.status !== 'running') return false;
+			if (!state.updatedAt) return true;
+			return Date.now() - new Date(state.updatedAt).getTime() < 2 * 60 * 60 * 1000;
+		},
+	),
 	mockHasActiveRunForWorkItem: vi.fn().mockResolvedValue(false),
 	mockCancelRunById: vi.fn().mockResolvedValue(true),
-	mockIsAnalysisRunning: vi.fn(),
 	mockTriggerDebugAnalysis: vi.fn(),
 	mockTriggerManualRun: vi.fn(),
 	mockTriggerRetryRun: vi.fn(),
 	mockLoadProjectConfigById: vi.fn(),
 	mockPublishCancelCommand: vi.fn().mockResolvedValue(undefined),
 	mockIsAgentEnabledForProject: vi.fn().mockResolvedValue(true),
+	mockDebugAnalysisJobId: vi.fn((runId: string) => `debug-analysis-${runId}`),
+	mockRemoveDashboardJob: vi.fn().mockResolvedValue(undefined),
+	mockSubmitDashboardJob: vi.fn().mockResolvedValue('debug-analysis-job-id'),
 }));
 
 vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
@@ -52,6 +71,9 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	getLlmCallByNumber: mockGetLlmCallByNumber,
 	getDebugAnalysisByRunId: mockGetDebugAnalysisByRunId,
 	deleteDebugAnalysisByRunId: mockDeleteDebugAnalysisByRunId,
+	getDebugAnalysisRunState: mockGetDebugAnalysisRunState,
+	markDebugAnalysisRunning: mockMarkDebugAnalysisRunning,
+	isDebugAnalysisRunActive: mockIsDebugAnalysisRunActive,
 	hasActiveRunForWorkItem: mockHasActiveRunForWorkItem,
 	cancelRunById: mockCancelRunById,
 }));
@@ -67,11 +89,6 @@ vi.mock('../../../../src/db/client.js', () => ({
 
 vi.mock('../../../../src/db/schema/index.js', () => ({
 	projects: { id: 'id', orgId: 'org_id' },
-}));
-
-// Mock debug-status tracker
-vi.mock('../../../../src/triggers/shared/debug-status.js', () => ({
-	isAnalysisRunning: mockIsAnalysisRunning,
 }));
 
 // Mock triggerDebugAnalysis (fire-and-forget)
@@ -103,6 +120,13 @@ vi.mock('../../../../src/queue/cancel.js', () => ({
 // Mock isAgentEnabledForProject — default: agent is enabled
 vi.mock('../../../../src/db/repositories/agentConfigsRepository.js', () => ({
 	isAgentEnabledForProject: mockIsAgentEnabledForProject,
+}));
+
+// Mock the durable dashboard-jobs queue client (queue-mode debug-analysis path)
+vi.mock('../../../../src/queue/client.js', () => ({
+	debugAnalysisJobId: mockDebugAnalysisJobId,
+	removeDashboardJob: mockRemoveDashboardJob,
+	submitDashboardJob: mockSubmitDashboardJob,
 }));
 
 import { runsRouter } from '../../../../src/api/routers/runs.js';
@@ -598,23 +622,27 @@ describe('runsRouter', () => {
 	});
 
 	describe('getDebugAnalysisStatus', () => {
-		it('returns running when analysis is in progress', async () => {
+		// Status is derived uniformly (queue + local dev) from the durable
+		// `debug_analysis_status` row plus the persisted analysis — never from the
+		// BullMQ job, which completes at container spawn rather than at analysis end.
+		beforeEach(() => {
 			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(true);
+		});
+
+		it('returns running when an active status row exists, short-circuiting the DB', async () => {
+			mockGetDebugAnalysisRunState.mockResolvedValue({ status: 'running', updatedAt: new Date() });
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
 
 			expect(result).toEqual({ status: 'running' });
-			// Should not query DB for analysis when running
+			// An active run short-circuits the content lookup.
 			expect(mockGetDebugAnalysisByRunId).not.toHaveBeenCalled();
 		});
 
 		it('returns completed when analysis exists in DB', async () => {
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
-			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(false);
+			mockGetDebugAnalysisRunState.mockResolvedValue(null);
 			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -623,16 +651,48 @@ describe('runsRouter', () => {
 			expect(result).toEqual({ status: 'completed' });
 		});
 
-		it('returns idle when not running and no analysis exists', async () => {
-			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
-			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(false);
+		it('returns completed when a content row exists even alongside a failed status row (DB wins)', async () => {
+			mockGetDebugAnalysisRunState.mockResolvedValue({ status: 'failed', updatedAt: new Date() });
+			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'completed' });
+		});
+
+		it('returns failed when the status row is failed and no analysis exists', async () => {
+			mockGetDebugAnalysisRunState.mockResolvedValue({ status: 'failed', updatedAt: new Date() });
+			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'failed' });
+		});
+
+		it('returns idle when there is no status row and no analysis', async () => {
+			mockGetDebugAnalysisRunState.mockResolvedValue(null);
 			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
 
 			expect(result).toEqual({ status: 'idle' });
+		});
+
+		it('treats a stale running row as idle (crashed worker never wedges)', async () => {
+			// `running` but older than the staleness window → not active. With no
+			// content row, precedence falls through to idle and the DB is consulted.
+			const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+			mockGetDebugAnalysisRunState.mockResolvedValue({ status: 'running', updatedAt: stale });
+			mockGetDebugAnalysisByRunId.mockResolvedValue(null);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.getDebugAnalysisStatus({ runId: RUN_UUID });
+
+			expect(result).toEqual({ status: 'idle' });
+			expect(mockGetDebugAnalysisByRunId).toHaveBeenCalled();
 		});
 
 		it('throws UNAUTHORIZED when unauthenticated', async () => {
@@ -663,7 +723,7 @@ describe('runsRouter', () => {
 
 		it('allows superadmin to get debug analysis status from any org', async () => {
 			mockGetRunById.mockResolvedValue({ id: RUN_UUID, projectId: 'p1' });
-			mockIsAnalysisRunning.mockReturnValue(false);
+			mockGetDebugAnalysisRunState.mockResolvedValue(null);
 			mockGetDebugAnalysisByRunId.mockResolvedValue({ summary: 'done' });
 
 			const superAdmin = createMockSuperAdmin();
@@ -675,7 +735,12 @@ describe('runsRouter', () => {
 		});
 	});
 
-	describe('triggerDebugAnalysis', () => {
+	describe('triggerDebugAnalysis (local dev / non-queue)', () => {
+		beforeEach(() => {
+			// No status row → guard passes.
+			mockGetDebugAnalysisRunState.mockResolvedValue(null);
+		});
+
 		it('triggers analysis for a valid run', async () => {
 			mockGetRunById.mockResolvedValue({
 				id: RUN_UUID,
@@ -684,7 +749,6 @@ describe('runsRouter', () => {
 				workItemId: 'card-1',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(false);
 			mockLoadProjectConfigById.mockResolvedValue({
 				project: { id: 'p1', name: 'Test' },
 				config: {},
@@ -696,6 +760,8 @@ describe('runsRouter', () => {
 
 			expect(result).toEqual({ triggered: true });
 			expect(mockDeleteDebugAnalysisByRunId).toHaveBeenCalledWith(RUN_UUID);
+			// Durable `running` marker is written before the in-process fire.
+			expect(mockMarkDebugAnalysisRunning).toHaveBeenCalledWith(RUN_UUID);
 			expect(mockTriggerDebugAnalysis).toHaveBeenCalledWith(
 				RUN_UUID,
 				{ id: 'p1', name: 'Test' },
@@ -712,7 +778,6 @@ describe('runsRouter', () => {
 				workItemId: null,
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(false);
 			mockLoadProjectConfigById.mockResolvedValue({
 				project: { id: 'p1', name: 'Test' },
 				config: {},
@@ -767,19 +832,46 @@ describe('runsRouter', () => {
 			});
 		});
 
-		it('throws CONFLICT when analysis is already running', async () => {
+		it('throws CONFLICT when an analysis is already running (durable status row)', async () => {
 			mockGetRunById.mockResolvedValue({
 				id: RUN_UUID,
 				projectId: 'p1',
 				agentType: 'implementation',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(true);
+			mockGetDebugAnalysisRunState.mockResolvedValue({ status: 'running', updatedAt: new Date() });
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'CONFLICT',
 			});
+			expect(mockMarkDebugAnalysisRunning).not.toHaveBeenCalled();
+			expect(mockTriggerDebugAnalysis).not.toHaveBeenCalled();
+		});
+
+		it('proceeds when the status row is a stale running marker (crash recovery)', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+				workItemId: 'card-1',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+			// `running` but older than the staleness window → not active.
+			mockGetDebugAnalysisRunState.mockResolvedValue({
+				status: 'running',
+				updatedAt: new Date(Date.now() - 3 * 60 * 60 * 1000),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(result).toEqual({ triggered: true });
+			expect(mockTriggerDebugAnalysis).toHaveBeenCalled();
 		});
 
 		it('throws BAD_REQUEST when run has no projectId', async () => {
@@ -788,7 +880,6 @@ describe('runsRouter', () => {
 				projectId: null,
 				agentType: 'implementation',
 			});
-			mockIsAnalysisRunning.mockReturnValue(false);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
@@ -803,7 +894,6 @@ describe('runsRouter', () => {
 				agentType: 'implementation',
 			});
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
-			mockIsAnalysisRunning.mockReturnValue(false);
 			mockLoadProjectConfigById.mockResolvedValue(undefined);
 
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
@@ -817,6 +907,99 @@ describe('runsRouter', () => {
 			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
 				code: 'UNAUTHORIZED',
 			});
+		});
+	});
+
+	describe('triggerDebugAnalysis (queue mode)', () => {
+		beforeEach(() => {
+			vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+				workItemId: 'card-1',
+			});
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockLoadProjectConfigById.mockResolvedValue({
+				project: { id: 'p1', name: 'Test' },
+				config: {},
+			});
+			mockDeleteDebugAnalysisByRunId.mockResolvedValue(undefined);
+			mockRemoveDashboardJob.mockResolvedValue(undefined);
+			mockSubmitDashboardJob.mockResolvedValue('debug-analysis-job-id');
+			// No status row → guard passes.
+			mockGetDebugAnalysisRunState.mockResolvedValue(null);
+		});
+
+		it('throws CONFLICT when an analysis is already running (durable status row)', async () => {
+			mockGetDebugAnalysisRunState.mockResolvedValue({ status: 'running', updatedAt: new Date() });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await expect(caller.triggerDebugAnalysis({ runId: RUN_UUID })).rejects.toMatchObject({
+				code: 'CONFLICT',
+			});
+			// Must not enqueue or mark when an analysis is already in flight.
+			expect(mockRemoveDashboardJob).not.toHaveBeenCalled();
+			expect(mockSubmitDashboardJob).not.toHaveBeenCalled();
+			expect(mockMarkDebugAnalysisRunning).not.toHaveBeenCalled();
+		});
+
+		it('re-enqueues with the deterministic id, clearing any prior job first', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(result).toEqual({ triggered: true });
+			const jobId = `debug-analysis-${RUN_UUID}`;
+			expect(mockDeleteDebugAnalysisByRunId).toHaveBeenCalledWith(RUN_UUID);
+			expect(mockRemoveDashboardJob).toHaveBeenCalledWith(jobId);
+			expect(mockSubmitDashboardJob).toHaveBeenCalledWith(
+				{
+					type: 'debug-analysis',
+					runId: RUN_UUID,
+					projectId: 'p1',
+					workItemId: 'card-1',
+				},
+				jobId,
+			);
+			expect(mockMarkDebugAnalysisRunning).toHaveBeenCalledWith(RUN_UUID);
+			// Non-queue fire-and-forget branch must not run in queue mode
+			expect(mockTriggerDebugAnalysis).not.toHaveBeenCalled();
+		});
+
+		it('marks running only after the job is enqueued (remove → submit → mark)', async () => {
+			const callOrder: string[] = [];
+			mockRemoveDashboardJob.mockImplementation(async () => {
+				callOrder.push('remove');
+			});
+			mockSubmitDashboardJob.mockImplementation(async () => {
+				callOrder.push('submit');
+				return 'debug-analysis-job-id';
+			});
+			mockMarkDebugAnalysisRunning.mockImplementation(async () => {
+				callOrder.push('mark');
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(callOrder).toEqual(['remove', 'submit', 'mark']);
+		});
+
+		it('passes undefined workItemId when the run has no card', async () => {
+			mockGetRunById.mockResolvedValue({
+				id: RUN_UUID,
+				projectId: 'p1',
+				agentType: 'implementation',
+				workItemId: null,
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.triggerDebugAnalysis({ runId: RUN_UUID });
+
+			expect(mockSubmitDashboardJob).toHaveBeenCalledWith(
+				expect.objectContaining({ workItemId: undefined }),
+				`debug-analysis-${RUN_UUID}`,
+			);
 		});
 	});
 

@@ -8,13 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ── Mocks (must be set up before dynamic import) ──────────────────────────────
 
 const mockQueueAdd = vi.fn();
-const mockQueueGetJob = vi.fn();
 const mockQueueRemove = vi.fn();
 
 vi.mock('bullmq', () => ({
 	Queue: vi.fn().mockImplementation(() => ({
 		add: mockQueueAdd,
-		getJob: mockQueueGetJob,
 		remove: mockQueueRemove,
 	})),
 }));
@@ -39,7 +37,6 @@ async function freshImport() {
 	vi.mock('bullmq', () => ({
 		Queue: vi.fn().mockImplementation(() => ({
 			add: mockQueueAdd,
-			getJob: mockQueueGetJob,
 			remove: mockQueueRemove,
 		})),
 	}));
@@ -209,39 +206,6 @@ describe('debugAnalysisJobId', () => {
 
 		expect(debugAnalysisJobId('abc')).toBe('debug-analysis-abc');
 		expect(debugAnalysisJobId('abc')).toBe(debugAnalysisJobId('abc'));
-	});
-});
-
-describe('getDashboardJobState', () => {
-	beforeEach(() => {
-		vi.stubEnv('REDIS_URL', 'redis://localhost:6379');
-	});
-
-	afterEach(() => {
-		vi.unstubAllEnvs();
-		vi.resetModules();
-	});
-
-	it('resolves the job by id and returns its BullMQ state', async () => {
-		const getState = vi.fn().mockResolvedValue('active');
-		mockQueueGetJob.mockResolvedValue({ getState });
-		const { getDashboardJobState } = await freshImport();
-
-		const state = await getDashboardJobState('debug-analysis-run-1');
-
-		expect(mockQueueGetJob).toHaveBeenCalledWith('debug-analysis-run-1');
-		expect(getState).toHaveBeenCalledTimes(1);
-		expect(state).toBe('active');
-	});
-
-	it('returns null when the job is absent', async () => {
-		mockQueueGetJob.mockResolvedValue(undefined);
-		const { getDashboardJobState } = await freshImport();
-
-		const state = await getDashboardJobState('debug-analysis-missing');
-
-		expect(mockQueueGetJob).toHaveBeenCalledWith('debug-analysis-missing');
-		expect(state).toBeNull();
 	});
 });
 

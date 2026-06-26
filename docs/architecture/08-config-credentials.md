@@ -56,6 +56,13 @@ interface ProjectConfig {
 }
 ```
 
+**Run links.** When `runLinksEnabled` is `true`, agent comments carry a subtle dashboard
+footer linking back to the run — `/runs/<id>` once a run row exists, or the work-item runs
+page `/work-items/<projectId>/<workItemId>` posted at ack time before the worker has committed
+the run row. Because such a link can be opened before the run row exists, the work-item runs
+page renders a transient "Run is starting…" state and keeps polling through a bounded grace
+window rather than flashing a terminal "No runs found".
+
 ### Agent update channel
 
 `src/config/updateChannel.ts`

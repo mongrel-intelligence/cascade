@@ -229,7 +229,22 @@ export async function processDashboardJob(jobId: string, jobData: DashboardJobDa
 		logger.info('[Worker] Processing debug-analysis job', { jobId, runId: jobData.runId });
 		const { triggerDebugAnalysis } = await import('./triggers/shared/debug-runner.js');
 		const pc = await loadProjectConfigById(jobData.projectId);
-		if (!pc) throw new Error(`Project not found: ${jobData.projectId}`);
+		if (!pc) {
+			// The dashboard marked this run `running` at trigger time, and this throw
+			// happens *before* `triggerDebugAnalysis` (whose `catch` would otherwise
+			// flip the status to `failed`) is reached. Surface the failure here so the
+			// status reads `failed` instead of leaving the `running` row to self-stale
+			// to `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS`. Best-effort: a
+			// status-write error must not mask the original project-not-found failure.
+			const { markDebugAnalysisFailed } = await import('./db/repositories/runsRepository.js');
+			await markDebugAnalysisFailed(jobData.runId).catch((statusErr) => {
+				logger.warn('Failed to mark debug analysis failed', {
+					runId: jobData.runId,
+					error: String(statusErr),
+				});
+			});
+			throw new Error(`Project not found: ${jobData.projectId}`);
+		}
 		await triggerDebugAnalysis(jobData.runId, pc.project, pc.config, jobData.workItemId);
 	}
 }

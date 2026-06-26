@@ -84,10 +84,6 @@ vi.mock('../../../src/db/crypto.js', () => ({
 	encryptCredential: (v: string) => v,
 }));
 
-vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
-	isAnalysisRunning: vi.fn().mockReturnValue(false),
-}));
-
 vi.mock('../../../src/config/provider.js', () => ({
 	loadProjectConfigById: vi.fn(),
 }));

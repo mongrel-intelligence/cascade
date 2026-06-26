@@ -238,16 +238,27 @@ export async function setupRepository(options: SetupRepositoryOptions): Promise<
 	const setupScriptPath = join(repoDir, '.cascade', 'setup.sh');
 	if (existsSync(setupScriptPath)) {
 		log.info('Running project setup script', { path: '.cascade/setup.sh', agentType });
-		const setupResult = await runCommand('bash', [setupScriptPath], repoDir, {
-			AGENT_PROFILE_NAME: agentType,
-		});
+		const setupResult = await runCommand(
+			'bash',
+			[setupScriptPath],
+			repoDir,
+			{ AGENT_PROFILE_NAME: agentType },
+			// Disable idle timeout: setup.sh may compile language runtimes (e.g. Ruby via
+			// asdf/ruby-build) whose make output is suppressed, causing false idle-timeout
+			// kills. The wall timeout (10 min) remains the safety net for truly hung setups.
+			{ idleTimeoutMs: 0 },
+		);
 		log.info('Setup script completed', {
 			exitCode: setupResult.exitCode,
+			reason: setupResult.reason,
 			stdout: setupResult.stdout.slice(-500),
 			stderr: setupResult.stderr.slice(-500),
 		});
 		if (setupResult.exitCode !== 0) {
-			log.warn('Setup script exited with non-zero code', { exitCode: setupResult.exitCode });
+			log.warn('Setup script exited with non-zero code', {
+				exitCode: setupResult.exitCode,
+				reason: setupResult.reason,
+			});
 		}
 	}
 

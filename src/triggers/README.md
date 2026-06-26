@@ -87,8 +87,14 @@ To reduce duplication across the three worker-side handlers, shared utilities ar
 | `agent-execution-followups.ts` | Recursive follow-up dispatch for post-completion review and splitting auto-chain | `agent-execution.ts` |
 | `post-completion-review.ts` | Builds the deterministic review dispatch after a successful implementation PR with passing CI | `agent-execution-followups.ts` |
 | `splitting-auto-chain.ts` | Propagates the auto label after splitting and optionally chains backlog-manager | `agent-execution-followups.ts` |
-| `agent-auto-debug.ts` | Triggers configured debug analysis after failed or timed-out runs | `agent-execution.ts` |
+| `agent-auto-debug.ts` | Triggers configured debug analysis after failed or timed-out runs; the shared runner records a durable, cross-process status (see [Debug-analysis status](#debug-analysis-status-durable-cross-process)) | `agent-execution.ts` |
 | `webhook-execution.ts` | `runAgentWithCredentials()` — LLM keys + credentials + pipeline | GitHub, PM |
+
+### Debug-analysis status (durable, cross-process)
+
+`agent-auto-debug.ts` and the manual dashboard "Run Analysis" button both drive the shared `triggerDebugAnalysis()` runner in `debug-runner.ts`. Because the analysis runs in a separate worker container from the dashboard API that polls its progress, the running/failed lifecycle is recorded in the **durable, cross-process** `debug_analysis_status` table (`debugAnalysisRepository.ts`), not an in-process flag — an in-memory flag in the worker is invisible to the dashboard process. The runner marks `running` around the analysis, clears the row on success (a persisted `debug_analyses` row is then the `completed` signal), and marks `failed` on a catchable in-process error.
+
+`runs.getDebugAnalysisStatus` reads that table uniformly in queue mode and local dev (precedence: active `running` → `completed` → `failed` → `idle`; a row older than `DEBUG_ANALYSIS_RUNNING_STALE_MS` self-stales to `idle`). The deterministic `debug-analysis-<runId>` dashboard job (`debugAnalysisJobId()` in `src/queue/client.ts`) only provides idempotent re-enqueue + double-trigger dedup, since a BullMQ job reaches `completed` at container spawn rather than at analysis completion. An earlier in-memory `Set` (`debug-status.ts`) was removed because it was never visible to the dashboard process (MNG-1667). Full write-up: [`docs/architecture/01-services.md`](../../docs/architecture/01-services.md) and [`docs/architecture/03-trigger-system.md`](../../docs/architecture/03-trigger-system.md).
 
 ---
 

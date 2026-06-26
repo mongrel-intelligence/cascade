@@ -11,6 +11,7 @@ import { formatCost, formatRelativeTime } from '@/lib/utils.js';
 import { CancelRunButton } from './cancel-run-button.js';
 import { LiveDuration } from './live-duration.js';
 import { RetryRunButton } from './retry-run-button.js';
+import { RunPendingState } from './run-pending-state.js';
 import { RunStatusBadge } from './run-status-badge.js';
 
 interface WorkItemRun {
@@ -30,9 +31,22 @@ interface WorkItemRunsTableProps {
 	isLoading: boolean;
 	isError: boolean;
 	error?: { message: string } | null;
+	/**
+	 * When true, an empty result renders the shared "Run is starting…" pending
+	 * placeholder instead of the terminal "No runs found" copy. Work-item / PR
+	 * runs links are posted at ack time — before the worker commits the run row —
+	 * so an empty list within the grace window means "starting", not "none".
+	 */
+	isPending?: boolean;
 }
 
-export function WorkItemRunsTable({ runs, isLoading, isError, error }: WorkItemRunsTableProps) {
+export function WorkItemRunsTable({
+	runs,
+	isLoading,
+	isError,
+	error,
+	isPending,
+}: WorkItemRunsTableProps) {
 	if (isLoading) {
 		return <div className="py-8 text-center text-muted-foreground">Loading runs...</div>;
 	}
@@ -46,6 +60,11 @@ export function WorkItemRunsTable({ runs, isLoading, isError, error }: WorkItemR
 	}
 
 	if (!runs || runs.length === 0) {
+		if (isPending) {
+			return (
+				<RunPendingState message="This work item's runs will appear here automatically once the worker starts (usually a few seconds)." />
+			);
+		}
 		return <div className="py-8 text-center text-muted-foreground italic">No runs found</div>;
 	}
 

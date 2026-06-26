@@ -24,6 +24,7 @@ erDiagram
     agent_runs ||--o| agent_run_logs : "has"
     agent_runs ||--o{ agent_run_llm_calls : "logs"
     agent_runs ||--o| debug_analyses : "analyzed by"
+    agent_runs ||--o| debug_analysis_status : "status"
 
     users ||--o{ sessions : "has"
     users ||--o{ org_memberships : "has"
@@ -151,6 +152,7 @@ erDiagram
 | `org_memberships` | Multi-org membership: links a user to an org with a per-org role, so one account can belong to many orgs. `users.org_id`/`users.role` remain the home org + global role. Read by effective-org resolution + the per-org actor-role helper (spec 021 plan 2); written by the grant mutation (`users.addExistingUserToOrg`) and the membership-mirroring create, and read by membership-based member listing (spec 021 plan 3). The listing returns BOTH the per-org `role` and the global `users.role` so the Settings → Users editor keeps targeting the global role until the plan-4 UI reconciliation. The idempotent home-org backfill runs in migration `0053` and is re-run by `0054` so accounts created via the old `createUser` (and bootstrap superadmins) never vanish from the inner-join listing. | UNIQUE(`user_id`, `org_id`) |
 | `sessions` | Session tokens for cookie auth (30-day expiry); `active_org_id` (nullable) tracks the org the session is currently acting in for multi-org | — |
 | `debug_analyses` | AI debug analysis results | — |
+| `debug_analysis_status` | Durable, cross-process lifecycle status (`running` / `failed`) for a debug analysis. The analysis runs in a separate worker container, so an in-memory flag is invisible to the dashboard API; the worker (and the dashboard at trigger time) writes this row instead. It is deleted on success — a present `debug_analyses` row is then the `completed` signal — and a `running` row older than `DEBUG_ANALYSIS_RUNNING_STALE_MS` is treated as stale (`idle`) so a crashed worker never wedges the run. Status read precedence (uniform in queue mode + local dev): active `running` → `completed` (a persisted `debug_analyses` row wins over a stale terminal status row) → `failed` → `idle`. `failed` is written only for catchable in-process errors (the runner's `catch`, plus the pre-runner project-config-load failure); a hard kill (watchdog/OOM) leaves the `running` row to self-stale to `idle` rather than surfacing `failed`, with router-side reconciliation on non-zero container exit the deliberate follow-up. | PK on `analyzed_run_id`, FK → `agent_runs` ON DELETE CASCADE |
 
 ## Repositories
 
@@ -177,7 +179,7 @@ Each table has a dedicated repository providing typed query methods. Key reposit
 | `partialsRepository` | Prompt partial CRUD |
 | `prWorkItemsRepository` | PR ↔ work item mapping |
 | `webhookLogsRepository` | Webhook audit trail |
-| `debugAnalysisRepository` | Debug analysis results |
+| `debugAnalysisRepository` | Debug analysis results + durable cross-process analysis lifecycle status (`debug_analysis_status`: mark running/failed, clear on success, read run state, staleness check) |
 
 ## Connection Management
 

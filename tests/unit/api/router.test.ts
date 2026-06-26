@@ -27,10 +27,6 @@ vi.mock('../../../src/config/provider.js', () => ({
 	loadConfig: vi.fn(),
 }));
 
-vi.mock('../../../src/triggers/shared/debug-status.js', () => ({
-	isAnalysisRunning: vi.fn(),
-}));
-
 vi.mock('../../../src/triggers/shared/debug-runner.js', () => ({
 	triggerDebugAnalysis: vi.fn(),
 }));

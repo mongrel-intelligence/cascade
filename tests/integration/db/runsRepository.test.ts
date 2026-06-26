@@ -4,10 +4,12 @@ import {
 	linkPRToWorkItem,
 } from '../../../src/db/repositories/prWorkItemsRepository.js';
 import {
+	clearDebugAnalysisStatus,
 	completeRun,
 	createRun,
 	deleteDebugAnalysisByRunId,
 	getDebugAnalysisByRunId,
+	getDebugAnalysisRunState,
 	getLlmCallByNumber,
 	getLlmCallsByRunId,
 	getRunById,
@@ -16,9 +18,12 @@ import {
 	getRunsByWorkItem,
 	getRunsByWorkItemId,
 	getRunsForPR,
+	isDebugAnalysisRunActive,
 	listLlmCallsMeta,
 	listProjectsForOrg,
 	listRuns,
+	markDebugAnalysisFailed,
+	markDebugAnalysisRunning,
 	storeDebugAnalysis,
 	storeLlmCall,
 	storeLlmCallsBulk,
@@ -426,6 +431,72 @@ describe('runsRepository (integration)', () => {
 
 			const analysis = await getDebugAnalysisByRunId(runId);
 			expect(analysis).toBeNull();
+		});
+	});
+
+	// =========================================================================
+	// Debug Analysis lifecycle status (durable, cross-process)
+	// =========================================================================
+
+	describe('debug analysis status lifecycle', () => {
+		it('marks running, reads an active state, then clears on success', async () => {
+			const runId = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			// No row → not active.
+			expect(await getDebugAnalysisRunState(runId)).toBeNull();
+
+			await markDebugAnalysisRunning(runId);
+			const running = await getDebugAnalysisRunState(runId);
+			expect(running?.status).toBe('running');
+			expect(isDebugAnalysisRunActive(running)).toBe(true);
+
+			// Success clears the lifecycle row.
+			await clearDebugAnalysisStatus(runId);
+			expect(await getDebugAnalysisRunState(runId)).toBeNull();
+		});
+
+		it('upserts the same analyzed run (one row per run) and records failure', async () => {
+			const runId = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+
+			await markDebugAnalysisRunning(runId);
+			// Idempotent upsert keyed by analyzed run — a second mark must not create
+			// a duplicate row (PK on analyzed_run_id).
+			await markDebugAnalysisFailed(runId);
+
+			const state = await getDebugAnalysisRunState(runId);
+			expect(state?.status).toBe('failed');
+			expect(isDebugAnalysisRunActive(state)).toBe(false);
+		});
+
+		it('is removed when the analyzed run is deleted (ON DELETE CASCADE)', async () => {
+			const runId = await createRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			await markDebugAnalysisRunning(runId);
+			expect(await getDebugAnalysisRunState(runId)).not.toBeNull();
+
+			// Delete the parent agent_runs row directly so this genuinely exercises
+			// the FK's ON DELETE CASCADE. truncateAll() issues `TRUNCATE ... CASCADE`,
+			// which clears every referencing table regardless of the FK action — it
+			// would pass even if the constraint were NO ACTION/RESTRICT. A targeted
+			// DELETE only succeeds (and removes the status row) because the FK
+			// cascades; a non-cascading FK would raise a foreign-key violation here.
+			const { getDb } = await import('../../../src/db/client.js');
+			const { agentRuns } = await import('../../../src/db/schema/index.js');
+			const { eq } = await import('drizzle-orm');
+			await getDb().delete(agentRuns).where(eq(agentRuns.id, runId));
+
+			expect(await getDebugAnalysisRunState(runId)).toBeNull();
 		});
 	});
 

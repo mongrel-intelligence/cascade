@@ -3,16 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runAgent } from '../../agents/registry.js';
 import {
+	clearDebugAnalysisStatus,
 	getLlmCallsByRunId,
 	getRunById,
 	getRunLogs,
+	markDebugAnalysisFailed,
+	markDebugAnalysisRunning,
 	storeDebugAnalysis,
 } from '../../db/repositories/runsRepository.js';
 import { getPMProvider } from '../../pm/index.js';
 import type { AgentResult, CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { cleanupTempDir } from '../../utils/repo.js';
-import { markAnalysisComplete, markAnalysisRunning } from './debug-status.js';
 
 /**
  * Extract logs from the database and write them to a temp directory
@@ -142,6 +144,12 @@ export async function triggerDebugAnalysis(
 ): Promise<void> {
 	const run = await getRunById(analyzedRunId);
 	if (!run) {
+		// `failed`-coverage gap (same class as the catch block below): the dashboard
+		// already wrote a `running` marker at trigger time, and this bare `return`
+		// neither clears it nor marks `failed`, so the row lingers and self-stales to
+		// `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather than surfacing
+		// `failed`. A missing run is a non-retryable terminal condition (the analyzed
+		// run was deleted), so the bounded re-trigger CONFLICT window is acceptable.
 		logger.warn('Run not found for debug analysis', { analyzedRunId });
 		return;
 	}
@@ -152,7 +160,11 @@ export async function triggerDebugAnalysis(
 		workItemId,
 	});
 
-	markAnalysisRunning(analyzedRunId);
+	// Durable, cross-process `running` marker. The analysis runs in this worker
+	// container while the dashboard API (a separate process) polls status, so an
+	// in-memory flag is never visible to it. Idempotent: the dashboard may have
+	// already marked running at trigger time.
+	await markDebugAnalysisRunning(analyzedRunId);
 	let logDir: string | undefined;
 	try {
 		logDir = await extractLogsToTempDir(analyzedRunId);
@@ -185,13 +197,37 @@ export async function triggerDebugAnalysis(
 			await postDebugComment(workItemId, analyzedRunId, parsed);
 		}
 
+		// Success: clear the lifecycle marker. The persisted debug_analyses row is
+		// now the `completed` signal.
+		await clearDebugAnalysisStatus(analyzedRunId);
+
 		logger.info('Debug analysis completed', {
 			analyzedRunId,
 			debugRunId: agentResult.runId,
 			success: agentResult.success,
 		});
+	} catch (err) {
+		// Failure: persist `failed` so status reflects the failed analysis (not
+		// `idle`) and surfaces the re-run affordance. Don't let a status-write
+		// error mask the original failure.
+		//
+		// Coverage caveat: this path only fires for catchable in-process errors. A
+		// hard kill (watchdog timeout / OOM), or this runner's own early
+		// `getRunById`-null return above, skip it; the lingering `running` row then
+		// self-stales to `idle` after `DEBUG_ANALYSIS_RUNNING_STALE_MS` rather than
+		// surfacing `failed`. (A worker-side throw *before* this runner is reached —
+		// e.g. `processDashboardJob` failing to load the project config after the
+		// dashboard already marked running — now marks `failed` at that site.)
+		// Surfacing `failed` on hard kill (e.g. router-side reconciliation on
+		// non-zero container exit) is a deliberate follow-up.
+		await markDebugAnalysisFailed(analyzedRunId).catch((statusErr) => {
+			logger.warn('Failed to mark debug analysis failed', {
+				analyzedRunId,
+				error: String(statusErr),
+			});
+		});
+		throw err;
 	} finally {
-		markAnalysisComplete(analyzedRunId);
 		if (logDir) {
 			try {
 				cleanupTempDir(logDir);
