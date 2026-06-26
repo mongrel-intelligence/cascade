@@ -66,6 +66,7 @@ import {
 	triggerRetryRun,
 } from '../../../src/triggers/shared/manual-runner.js';
 import type { CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
+import { logger } from '../../../src/utils/logging.js';
 
 const mockProject: ProjectConfig = {
 	id: 'test-project',
@@ -282,9 +283,14 @@ describe('triggerManualRun', () => {
 		expect(isTriggerRunning(key)).toBe(false);
 	});
 
-	// MNG-1695: an error thrown before the worker activated the pre-created
-	// `queued` row is swallowed by the catch (container exits 0), so the row must
-	// be resolved here or it leaks and locks out later triggers/retries.
+	// MNG-1695: the pre-created `queued` row is reconciled in `finally` on EVERY
+	// manual-run outcome that did not activate it — independent of the path taken.
+	// A worker that throws, OR returns cleanly (exit 0) without activating the row
+	// (a pre-activation pipeline skip, or `runAgent`'s `!engine` / `!supportsAgentType`
+	// guard returning a failed AgentResult without throwing) would otherwise leak it
+	// forever (perpetual `queued` badge) and lock out later triggers/retries via the
+	// CONFLICT guard for ~2h. `failQueuedOrRunningRun` no-ops at the DB level on a row
+	// that already reached terminal, so the call is safe even on a successful run.
 	it('resolves the pre-created queued run when the pipeline throws before activation', async () => {
 		vi.mocked(runAgentExecutionPipeline).mockRejectedValueOnce(new Error('PM provider boom'));
 
@@ -305,7 +311,34 @@ describe('triggerManualRun', () => {
 		);
 	});
 
-	it('does not resolve a pre-created run on error when no preCreatedRunId was threaded', async () => {
+	// The reviewer's gap (PR #1465): a clean (exit-0) `runAgent` engine-guard return
+	// — unknown/misconfigured engine name (`!engine`) or `!supportsAgentType` —
+	// produces a failed AgentResult WITHOUT throwing and WITHOUT reaching
+	// `executeWithEngine`/`tryCreateRun`, so the pipeline resolves its void promise
+	// and the catch is never entered. The path-independent `finally` must still
+	// resolve the never-activated queued row. A pre-activation pipeline skip
+	// (validation / freshness gate / budget) also lands here (clean void return).
+	it('resolves the pre-created queued run on a clean pipeline return that never activated it', async () => {
+		vi.mocked(runAgentExecutionPipeline).mockResolvedValueOnce(undefined);
+
+		await triggerManualRun(
+			{
+				projectId: 'test-project',
+				agentType: 'implementation',
+				workItemId: 'card-clean-skip',
+				preCreatedRunId: 'queued-run-clean',
+			},
+			mockProject,
+			mockConfig,
+		);
+
+		expect(vi.mocked(failQueuedOrRunningRun)).toHaveBeenCalledWith(
+			'queued-run-clean',
+			expect.stringContaining('before the agent started'),
+		);
+	});
+
+	it('does not resolve a pre-created run when no preCreatedRunId was threaded (non-manual / legacy)', async () => {
 		vi.mocked(runAgentExecutionPipeline).mockRejectedValueOnce(new Error('boom'));
 
 		await triggerManualRun(
@@ -317,19 +350,30 @@ describe('triggerManualRun', () => {
 		expect(vi.mocked(failQueuedOrRunningRun)).not.toHaveBeenCalled();
 	});
 
-	it('does not resolve the pre-created run on a successful pipeline', async () => {
-		await triggerManualRun(
-			{
-				projectId: 'test-project',
-				agentType: 'implementation',
-				workItemId: 'card-ok',
-				preCreatedRunId: 'queued-run-ok',
-			},
-			mockProject,
-			mockConfig,
-		);
+	it('swallows a DB error while resolving the pre-created queued row (clean worker must not crash)', async () => {
+		vi.mocked(failQueuedOrRunningRun).mockRejectedValueOnce(new Error('db down'));
 
-		expect(vi.mocked(failQueuedOrRunningRun)).not.toHaveBeenCalled();
+		await expect(
+			triggerManualRun(
+				{
+					projectId: 'test-project',
+					agentType: 'implementation',
+					workItemId: 'card-db-error',
+					preCreatedRunId: 'queued-run-db',
+				},
+				mockProject,
+				mockConfig,
+			),
+		).resolves.toBeUndefined();
+
+		expect(vi.mocked(failQueuedOrRunningRun)).toHaveBeenCalledWith(
+			'queued-run-db',
+			expect.any(String),
+		);
+		expect(vi.mocked(logger).warn).toHaveBeenCalledWith(
+			expect.stringContaining('could not resolve pre-created queued run'),
+			expect.objectContaining({ runId: 'queued-run-db' }),
+		);
 	});
 });
 

@@ -1,4 +1,3 @@
-import { failQueuedOrRunningRun } from '../../db/repositories/runsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import type { TriggerResult } from '../types.js';
@@ -72,10 +71,6 @@ export async function runAgentExecutionPipeline(
 		executionConfig: executionContext.executionConfig,
 	});
 	if (!canExecute) {
-		await resolvePreCreatedRunOnSkip(
-			executionContext,
-			'Skipped before start: integration validation failed',
-		);
 		return;
 	}
 
@@ -85,10 +80,6 @@ export async function runAgentExecutionPipeline(
 	// router locks are released by the normal worker cleanup path.
 	const blockedByFreshness = await runFreshnessGate(executionContext);
 	if (blockedByFreshness) {
-		await resolvePreCreatedRunOnSkip(
-			executionContext,
-			'Skipped before start: implementation freshness gate (existing PR or completed checklist)',
-		);
 		return;
 	}
 
@@ -99,13 +90,7 @@ export async function runAgentExecutionPipeline(
 			executionContext.project,
 			executionContext.lifecycle,
 		);
-		if (budgetResult.abort) {
-			await resolvePreCreatedRunOnSkip(
-				executionContext,
-				'Skipped before start: work-item budget exceeded',
-			);
-			return;
-		}
+		if (budgetResult.abort) return;
 		remainingBudgetUsd = budgetResult.remainingBudgetUsd;
 	}
 
@@ -137,44 +122,6 @@ export async function runAgentExecutionPipeline(
 	await dispatchAgentFollowUps(executionContext, agentResult, runAgentExecutionPipeline);
 
 	await triggerAutoDebugIfNeeded(agentResult, executionContext.project, executionContext.config);
-}
-
-/**
- * MNG-1695: resolve a pre-created `status='queued'` run row to a terminal state
- * when the pipeline skips/aborts BEFORE activating it.
- *
- * Manual runs pre-create a `queued` row at tRPC trigger time (threaded as
- * `agentInput.preCreatedRunId`); the worker flips it to `running` deep inside
- * `runAgentForContext` → `executeWithEngine` → `tryCreateRun`. Every early return
- * above that line (integration validation, freshness gate, budget abort) returns
- * cleanly, so the worker container exits 0 — `cleanupWorker` skips `failOrphanedRun`
- * (it only fires on a non-zero exit) and the periodic orphan sweep can't help once
- * the AutoRemove container is already gone. The row would otherwise leak as a
- * perpetual `queued` badge and, because `hasActiveRunForWorkItem` counts `queued`,
- * lock out every later trigger/retry on the work item for ~2h.
- *
- * No-op for every non-manual source (no `preCreatedRunId`). `failQueuedOrRunningRun`
- * itself no-ops on a row that already reached a terminal state, so calling it is
- * always safe. Its own failure must never crash the worker on an otherwise-clean
- * skip, so DB errors are logged and swallowed.
- */
-async function resolvePreCreatedRunOnSkip(
-	context: AgentExecutionContext,
-	reason: string,
-): Promise<void> {
-	const preCreatedRunId = context.agentInput.preCreatedRunId;
-	if (!preCreatedRunId) return;
-	try {
-		await failQueuedOrRunningRun(preCreatedRunId, reason);
-	} catch (err) {
-		logger.warn('[MNG-1695] could not resolve pre-created queued run on pipeline skip', {
-			projectId: context.project.id,
-			workItemId: context.workItemId,
-			runId: preCreatedRunId,
-			reason,
-			error: String(err),
-		});
-	}
 }
 
 /**

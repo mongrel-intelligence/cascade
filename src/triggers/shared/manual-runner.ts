@@ -165,6 +165,7 @@ export async function triggerManualRun(
 		prNumber: input.prNumber,
 	};
 
+	let pipelineError: unknown;
 	try {
 		startWatchdog(project.watchdogTimeoutMs);
 
@@ -186,32 +187,48 @@ export async function triggerManualRun(
 			agentType: input.agentType,
 		});
 	} catch (err) {
+		pipelineError = err;
 		logger.error('Manual agent run failed', {
 			projectId: input.projectId,
 			agentType: input.agentType,
 			error: String(err),
 		});
-		// MNG-1695: an error thrown before the worker activated the pre-created
-		// `queued` row (PM-provider/credential setup, or any pre-activation
-		// pipeline step) would otherwise leave the row stuck `queued` — this catch
-		// swallows the error so the container still exits 0, and neither the
-		// non-zero-exit `failOrphanedRun` nor the periodic orphan sweep resolves it.
-		// Resolve it here. `failQueuedOrRunningRun` no-ops on a row already finalized
-		// by the `executeAgentPipeline` path (post-activation success/failure keeps
-		// its own terminal status + error), so this only rescues a never-activated row.
+	} finally {
+		// MNG-1695: path-independent reconciliation of the pre-created `queued`
+		// run row. The worker activates it (queued → running) deep inside
+		// `runAgentForContext → runAgent → executeWithEngine → tryCreateRun`, but a
+		// manual run can end WITHOUT ever reaching that line and WITHOUT throwing:
+		//   - a pipeline pre-activation early return (integration validation,
+		//     freshness gate, budget abort) returns void cleanly, OR
+		//   - `runAgent`'s engine guards (`!engine` for an unknown/misconfigured
+		//     engine name, or `!supportsAgentType`) return a failed AgentResult
+		//     without throwing and without ever calling `executeWithEngine`.
+		// In every such case the container exits 0, so the non-zero-exit
+		// `failOrphanedRun` and the periodic orphan sweep never fire and the row
+		// leaks as a perpetual `queued` badge that (because `hasActiveRunForWorkItem`
+		// counts `queued`) locks out every later trigger/retry on the work item for
+		// ~2h. Resolving it here in `finally` is independent of WHICH path the
+		// pipeline took — clean return or throw — so it cannot be defeated by a
+		// future early-return we forgot to enumerate. `failQueuedOrRunningRun`
+		// no-ops at the DB level on a row already finalized by `executeAgentPipeline`
+		// (a genuinely-activated run is `completed`/`failed`/`timed_out` by now and
+		// keeps its own status + error), and no-ops entirely when no `preCreatedRunId`
+		// was threaded (every non-manual source). Its own failure must never crash an
+		// otherwise-clean worker, so DB errors are logged and swallowed.
 		if (input.preCreatedRunId) {
 			await failQueuedOrRunningRun(
 				input.preCreatedRunId,
-				`Manual run failed before completion: ${String(err)}`,
+				pipelineError
+					? `Manual run failed before completion: ${String(pipelineError)}`
+					: 'Manual run ended before the agent started (skipped by a pre-flight gate or an unsupported/misconfigured engine)',
 			).catch((failErr) => {
-				logger.warn('[MNG-1695] could not resolve pre-created queued run after manual run error', {
+				logger.warn('[MNG-1695] could not resolve pre-created queued run after manual run', {
 					projectId: input.projectId,
 					runId: input.preCreatedRunId,
 					error: String(failErr),
 				});
 			});
 		}
-	} finally {
 		markTriggerComplete(triggerKey);
 	}
 }

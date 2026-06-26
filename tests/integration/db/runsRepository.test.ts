@@ -166,6 +166,32 @@ describe('runsRepository (integration)', () => {
 			expect(run?.status).toBe('failed');
 		});
 
+		// MNG-1695: the path-independent reconciliation in `triggerManualRun`'s
+		// `finally` calls `failQueuedOrRunningRun` on EVERY manual run — including
+		// successful ones that already finalized their own row. This no-op-on-terminal
+		// guarantee is the safety net that makes the unconditional call correct: a
+		// genuinely-activated, completed run must keep its own status + error.
+		it('failQueuedOrRunningRun no-ops on an already-terminal (completed) row', async () => {
+			const id = await createQueuedRun({
+				projectId: 'test-project',
+				agentType: 'implementation',
+				engine: 'claude-code',
+			});
+			await activateQueuedRun(id);
+			await completeRun(id, {
+				status: 'completed',
+				durationMs: 1000,
+				success: true,
+				outputSummary: 'done',
+			});
+
+			// Returns false (nothing matched) and leaves the terminal row untouched.
+			expect(await failQueuedOrRunningRun(id, 'late reconciliation')).toBe(false);
+			const run = await getRunById(id);
+			expect(run?.status).toBe('completed');
+			expect(run?.error).toBeNull();
+		});
+
 		it('hasActiveRunForWorkItem counts a queued row as active', async () => {
 			await createQueuedRun({
 				projectId: 'test-project',
