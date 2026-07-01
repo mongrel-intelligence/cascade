@@ -29,7 +29,7 @@ import {
 	extractTrelloContext,
 	generateAckMessage,
 } from './router/ackMessageGenerator.js';
-import { readOffloadedJobData } from './router/job-data-offload.js';
+import { buildJobDataRedisKey, readOffloadedJobData } from './router/job-data-offload.js';
 import { dispatchPMAck } from './router/pm-ack-dispatch.js';
 import { captureException, flush, setTag } from './sentry.js';
 import {
@@ -460,29 +460,56 @@ export async function dispatchJob(
  * with "argument list too long". Must run before scrubSensitiveEnv() strips
  * REDIS_URL. Exits the process with a clear, grep-able reason on any failure —
  * never the cryptic exec crash, never a payload-less worker.
+ *
+ * The Redis key is authoritative ONLY when it names THIS job's payload. The
+ * router sets EXACTLY ONE of JOB_DATA / JOB_DATA_REDIS_KEY per spawn
+ * (worker-env.ts is an if/else), and JOB_ID is set fresh on every spawn while the
+ * offload key embeds that jobId (`buildJobDataRedisKey`). But `docker commit`
+ * bakes the committed container's ENV into the snapshot image, and
+ * `docker run -e ...` does NOT clear a baked key that this run doesn't re-set. A
+ * reused snapshot can therefore carry a stale co-present channel from a PRIOR run
+ * of the same work item. Disambiguate both directions by matching the key to
+ * JOB_ID:
+ *
+ *  - Forward case — this run is OFFLOADED (fresh JOB_DATA_REDIS_KEY) but the
+ *    snapshot baked a stale `JOB_DATA=<json>` from a prior INLINE run. The key
+ *    matches JOB_ID → read Redis, ignoring the stale inline value. Reading inline
+ *    first silently ran the wrong (prior) agent (prod incident ucho/MNG-1622 +
+ *    MNG-1702: a 'splitting' run reused a 'planning' snapshot and re-ran planning,
+ *    producing no story cards).
+ *  - Reverse case — this run is INLINE (fresh JOB_DATA) but the snapshot baked a
+ *    stale `JOB_DATA_REDIS_KEY=<priorJobId>` from a prior OFFLOADED run. The key
+ *    does NOT match JOB_ID → it is a stale baked artifact whose key the prior run
+ *    already deleted from Redis; reading it would throw and crash the worker.
+ *    Ignore it and fall through to this run's fresh inline JOB_DATA.
  */
 async function resolveRawJobData(): Promise<string> {
+	const key = process.env.JOB_DATA_REDIS_KEY;
+	const jobId = process.env.JOB_ID;
+	// Trust the key only when it names THIS job's payload; a mismatched key is a
+	// stale artifact baked into a reused snapshot (see fn doc, reverse case).
+	if (key && jobId && key === buildJobDataRedisKey(jobId)) {
+		try {
+			return await readOffloadedJobData(key);
+		} catch (err) {
+			console.error('[Worker] Failed to read offloaded JOB_DATA from Redis:', err);
+			captureException(err, { tags: { source: 'worker_job_data_redis_read' } });
+			await flush();
+			process.exit(1);
+		}
+	}
+
 	const inline = process.env.JOB_DATA;
 	if (inline) return inline;
 
-	const key = process.env.JOB_DATA_REDIS_KEY;
-	if (!key) {
-		// Defensive: main() validates that JOB_DATA or JOB_DATA_REDIS_KEY is present.
-		const err = new Error('JOB_DATA could not be resolved from env or Redis');
-		console.error(`[Worker] ${err.message}`);
-		captureException(err, { tags: { source: 'worker_env' } });
-		await flush();
-		process.exit(1);
-	}
-
-	try {
-		return await readOffloadedJobData(key);
-	} catch (err) {
-		console.error('[Worker] Failed to read offloaded JOB_DATA from Redis:', err);
-		captureException(err, { tags: { source: 'worker_job_data_redis_read' } });
-		await flush();
-		process.exit(1);
-	}
+	// Defensive: main() validates that JOB_DATA or JOB_DATA_REDIS_KEY is present.
+	// Reaching here means the only channel set is a stale baked key (no matching
+	// JOB_ID) with no fresh inline fallback — the router set neither for this run.
+	const err = new Error('JOB_DATA could not be resolved from env or Redis');
+	console.error(`[Worker] ${err.message}`);
+	captureException(err, { tags: { source: 'worker_env' } });
+	await flush();
+	process.exit(1);
 }
 
 export async function main(): Promise<void> {

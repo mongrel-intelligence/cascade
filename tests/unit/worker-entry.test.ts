@@ -50,6 +50,9 @@ vi.mock('../../src/router/pm-ack-dispatch.js', () => ({
 
 vi.mock('../../src/router/job-data-offload.js', () => ({
 	readOffloadedJobData: vi.fn(),
+	// Real key-building semantics so the JOB_ID↔key match check in
+	// resolveRawJobData behaves exactly as it does in production.
+	buildJobDataRedisKey: (jobId: string) => `cascade:jobdata:${jobId}`,
 }));
 
 vi.mock('../../src/router/ackMessageGenerator.js', () => ({
@@ -1072,9 +1075,11 @@ describe('main() - environment variable validation', () => {
 	it('exits 1 with worker_job_data_redis_read tag when the offloaded key is missing/expired', async () => {
 		process.env.JOB_ID = 'job-offload-missing';
 		process.env.JOB_TYPE = 'linear';
-		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:gone';
+		// A fresh offload key always matches JOB_ID (worker-env.ts builds it from
+		// job.id) — so it is trusted and read even when Redis has since dropped it.
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:job-offload-missing';
 		vi.mocked(readOffloadedJobData).mockRejectedValueOnce(
-			new Error('Offloaded JOB_DATA key cascade:jobdata:gone not found in Redis'),
+			new Error('Offloaded JOB_DATA key cascade:jobdata:job-offload-missing not found in Redis'),
 		);
 
 		await expect(main()).rejects.toThrow('process.exit(1)');
@@ -1098,5 +1103,136 @@ describe('main() - environment variable validation', () => {
 			expect.anything(),
 			expect.objectContaining({ tags: { source: 'worker_job_data_redis_read' } }),
 		);
+	});
+
+	// ── stale-snapshot JOB_DATA regression (ucho/MNG-1622, MNG-1702) ────────────
+	//
+	// The router sets EXACTLY ONE of JOB_DATA / JOB_DATA_REDIS_KEY per spawn
+	// (worker-env.ts is an if/else). But a snapshot IMAGE committed from a prior
+	// INLINE run bakes that prior run's `JOB_DATA=<json>` into the image ENV
+	// (docker commit preserves container ENV). When a later run for the same work
+	// item is OFFLOADED (large payload → only JOB_DATA_REDIS_KEY is set) and spawns
+	// from that snapshot, `docker run -e JOB_DATA_REDIS_KEY=...` does NOT clear the
+	// baked JOB_DATA. So the worker sees BOTH. The offload key must win — it names
+	// THIS job's payload; the inline value is a stale artifact of a prior run.
+	//
+	// Live incident: a 'splitting' run reused a snapshot baked from an earlier
+	// 'planning' run of the same issue and silently re-ran planning (wrong agent,
+	// no story cards produced).
+	it('prefers the Redis-offloaded payload over a stale baked-in JOB_DATA when both are present', async () => {
+		process.env.JOB_ID = 'job-stale-snapshot';
+		process.env.JOB_TYPE = 'linear';
+		// Stale inline value baked into the snapshot image from a PRIOR inline run.
+		// This is the wrong (planning) agent's pre-resolved trigger result.
+		process.env.JOB_DATA = JSON.stringify({
+			type: 'linear',
+			source: 'linear',
+			payload: { type: 'Issue', data: { id: 'lin-STALE' } },
+			projectId: 'proj-1',
+			workItemId: 'lin-STALE',
+			eventType: 'update/Issue',
+			receivedAt: '2024-01-01T00:00:00Z',
+			triggerResult: { agentType: 'planning' },
+		});
+		// THIS job's real payload lives in Redis (it was offloaded because large).
+		// This is the correct (splitting) agent's pre-resolved trigger result.
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:job-stale-snapshot';
+		vi.mocked(readOffloadedJobData).mockResolvedValueOnce(
+			JSON.stringify({
+				type: 'linear',
+				source: 'linear',
+				payload: { type: 'Issue', data: { id: 'lin-FRESH' } },
+				projectId: 'proj-1',
+				workItemId: 'lin-FRESH',
+				eventType: 'update/Issue',
+				receivedAt: '2024-06-25T00:00:00Z',
+				triggerResult: { agentType: 'splitting' },
+			}),
+		);
+
+		await expect(main()).rejects.toThrow('process.exit(');
+
+		// The offloaded (fresh) payload must be read and used…
+		expect(readOffloadedJobData).toHaveBeenCalledWith('cascade:jobdata:job-stale-snapshot');
+		// …and the worker must dispatch with the FRESH payload, not the stale one.
+		expect(processLinearWebhook).toHaveBeenCalledWith(
+			{ type: 'Issue', data: { id: 'lin-FRESH' } },
+			expect.anything(),
+			undefined,
+			expect.objectContaining({ agentType: 'splitting' }),
+			'proj-1',
+		);
+		expect(flush).toHaveBeenCalled();
+	});
+
+	it('still uses inline JOB_DATA when JOB_DATA_REDIS_KEY is absent (inline-only path unchanged)', async () => {
+		process.env.JOB_ID = 'job-inline-only';
+		process.env.JOB_TYPE = 'linear';
+		process.env.JOB_DATA = JSON.stringify({
+			type: 'linear',
+			source: 'linear',
+			payload: { type: 'Issue', data: { id: 'lin-INLINE' } },
+			projectId: 'proj-1',
+			workItemId: 'lin-INLINE',
+			eventType: 'update/Issue',
+			receivedAt: '2024-01-01T00:00:00Z',
+			triggerResult: { agentType: 'implementation' },
+		});
+		// No JOB_DATA_REDIS_KEY — pure inline path.
+
+		await expect(main()).rejects.toThrow('process.exit(');
+
+		expect(readOffloadedJobData).not.toHaveBeenCalled();
+		expect(processLinearWebhook).toHaveBeenCalledWith(
+			{ type: 'Issue', data: { id: 'lin-INLINE' } },
+			expect.anything(),
+			undefined,
+			expect.objectContaining({ agentType: 'implementation' }),
+			'proj-1',
+		);
+	});
+
+	// ── reverse stale-snapshot case: baked JOB_DATA_REDIS_KEY + fresh inline ─────
+	//
+	// The symmetric hazard: a snapshot committed from a prior OFFLOADED run bakes a
+	// stale `JOB_DATA_REDIS_KEY=cascade:jobdata:<priorJobId>` into the image ENV.
+	// When a later INLINE run for the same work item reuses that snapshot,
+	// `docker run -e JOB_DATA=...` does NOT clear the baked key, so the worker sees
+	// BOTH a fresh inline payload AND the stale key. The prior run already deleted
+	// that key from Redis, so trusting the key would throw → process.exit(1) on a
+	// run that used to succeed. The key must be ignored because it does not name
+	// THIS job (JOB_ID is fresh; the baked key embeds the prior jobId).
+	it('ignores a stale baked JOB_DATA_REDIS_KEY that does not match JOB_ID and uses fresh inline JOB_DATA', async () => {
+		process.env.JOB_ID = 'job-fresh-inline';
+		process.env.JOB_TYPE = 'linear';
+		// Fresh inline payload set by the router for THIS run.
+		process.env.JOB_DATA = JSON.stringify({
+			type: 'linear',
+			source: 'linear',
+			payload: { type: 'Issue', data: { id: 'lin-FRESH-INLINE' } },
+			projectId: 'proj-1',
+			workItemId: 'lin-FRESH-INLINE',
+			eventType: 'update/Issue',
+			receivedAt: '2024-06-25T00:00:00Z',
+			triggerResult: { agentType: 'implementation' },
+		});
+		// Stale key baked into the snapshot from a PRIOR offloaded run (different
+		// jobId). The prior run already del'd it from Redis, so reading it throws.
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:job-prior-offloaded';
+
+		await expect(main()).rejects.toThrow('process.exit(');
+
+		// The stale key must NOT be read — it doesn't name THIS job's payload…
+		expect(readOffloadedJobData).not.toHaveBeenCalled();
+		// …and the worker dispatches with the fresh inline payload instead of
+		// crashing on a key the prior run already deleted.
+		expect(processLinearWebhook).toHaveBeenCalledWith(
+			{ type: 'Issue', data: { id: 'lin-FRESH-INLINE' } },
+			expect.anything(),
+			undefined,
+			expect.objectContaining({ agentType: 'implementation' }),
+			'proj-1',
+		);
+		expect(flush).toHaveBeenCalled();
 	});
 });
