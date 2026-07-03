@@ -84,13 +84,35 @@ function repositoryOf(reference: string): string {
 	return lastColon > lastSlash ? noDigest.slice(0, lastColon) : noDigest;
 }
 
+// ── Un-mockable Docker-daemon glue (excluded from coverage) ─────────────────
+// `defaultInspectImageDigest` and `runWorkerImageSmokeTest` only execute against
+// a live Docker daemon (image inspect / docker.run), so unit tests drive the
+// handler through injected fakes and the runtime contract is covered by the
+// shared worker-image smoke-test (tests/docker/worker-runtime-tools). These
+// default-impl blocks carry line-level v8-ignore markers so they cannot
+// recurrently fail codecov/patch on future image/build PRs — see the
+// "Un-mockable Docker-daemon glue policy" note in codecov.yml. Deliberately
+// narrow: resolveDigestFromRepoDigests + the handler logic stay counted.
+/* v8 ignore start */
 async function defaultInspectImageDigest(ref: string): Promise<string | null> {
 	const image = docker.getImage(ref);
 	const info = (await image.inspect()) as { RepoDigests?: string[] };
 	return resolveDigestFromRepoDigests(ref, info.RepoDigests ?? []);
 }
 
-async function defaultRunImageCheck(ref: string): Promise<{ exitCode: number; output: string }> {
+/**
+ * Run the cascade-compatible-worker-image runtime smoke-test inside a one-shot
+ * `docker run --rm` against `ref` and return its exit code + combined output.
+ *
+ * Exported so the router-side build engine (spec 023,
+ * `worker-image-build.ts`) runs the EXACT same smoke-test against a freshly
+ * built image — a single source of truth for "does this image satisfy the
+ * runtime contract" across the reference-image (spec 022) and dockerfile-build
+ * (spec 023) paths.
+ */
+export async function runWorkerImageSmokeTest(
+	ref: string,
+): Promise<{ exitCode: number; output: string }> {
 	const script = buildWorkerImageCheckScript();
 	const chunks: Buffer[] = [];
 	const sink = new Writable({
@@ -127,11 +149,12 @@ async function defaultRunImageCheck(ref: string): Promise<{ exitCode: number; ou
 		if (timer) clearTimeout(timer);
 	}
 }
+/* v8 ignore stop */
 
 const defaultDeps: WorkerImageValidationDeps = {
 	pullImage: (ref) => pullImageOnce(ref),
 	inspectImageDigest: defaultInspectImageDigest,
-	runImageCheck: defaultRunImageCheck,
+	runImageCheck: runWorkerImageSmokeTest,
 	recordResult: recordWorkerImageValidationResult,
 	captureException: captureExceptionDefault,
 };

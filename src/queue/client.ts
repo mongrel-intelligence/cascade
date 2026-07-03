@@ -63,7 +63,28 @@ export interface WorkerImageValidationJob {
 	ref: string;
 }
 
-export type DashboardJob = ManualRunJob | RetryRunJob | DebugAnalysisJob | WorkerImageValidationJob;
+/**
+ * Eager per-project worker-image BUILD job (spec 023 plan 3). Enqueued by the
+ * set-Dockerfile surface (plan 4). The router consumes it (it owns the Docker
+ * socket), composes the operator's layers onto the pinned base, builds a local
+ * image, pins its immutable local image ID, runs the runtime smoke-test, and
+ * marks the project `verified` or `failed` — a strict superset of the validation
+ * job. Carries only the projectId and the content-hash (`buildHash`); the handler
+ * reads/writes everything else. The build hash is BOTH the payload identity and
+ * the supersede guard (a re-enqueue with a newer hash drops the stale result).
+ */
+export interface WorkerImageBuildJob {
+	type: 'worker-image-build';
+	projectId: string;
+	buildHash: string;
+}
+
+export type DashboardJob =
+	| ManualRunJob
+	| RetryRunJob
+	| DebugAnalysisJob
+	| WorkerImageValidationJob
+	| WorkerImageBuildJob;
 
 // ── Queue ────────────────────────────────────────────────────────────────────
 
@@ -167,6 +188,42 @@ export async function enqueueWorkerImageValidationJob(payload: {
 	await removeDashboardJob(jobId);
 	return submitDashboardJob(
 		{ type: 'worker-image-validation', projectId: payload.projectId, ref: payload.ref },
+		jobId,
+	);
+}
+
+// ── Worker-image-build enqueue helper (spec 023) ────────────────────────────────
+
+/**
+ * Deterministic BullMQ job id for a project's worker-image build.
+ *
+ * One job per project: re-setting the Dockerfile removes any stale
+ * completed/failed job for the same id before enqueueing, so a re-enqueue
+ * SUPERSEDES an in-flight build rather than racing a stale one. Mirrors
+ * {@link workerImageValidationJobId}.
+ */
+export function workerImageBuildJobId(projectId: string): string {
+	return `worker-image-build-${projectId}`;
+}
+
+/**
+ * Enqueue an eager worker-image build job onto the dashboard-jobs queue.
+ *
+ * Called by the set-Dockerfile surface (plan 4) after persisting the project's
+ * `workerDockerfile` + content-hash and flipping the build status to `building`.
+ * The router-side handler does the Docker work and flips the project to
+ * `verified`/`failed`.
+ */
+export async function enqueueWorkerImageBuildJob(payload: {
+	projectId: string;
+	buildHash: string;
+}): Promise<string> {
+	const jobId = workerImageBuildJobId(payload.projectId);
+	// Clear any prior (completed/failed) job for this project so a re-set always
+	// schedules a fresh build rather than colliding with a stale job id.
+	await removeDashboardJob(jobId);
+	return submitDashboardJob(
+		{ type: 'worker-image-build', projectId: payload.projectId, buildHash: payload.buildHash },
 		jobId,
 	);
 }

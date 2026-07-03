@@ -17,6 +17,7 @@
 		"test:fast": "vitest run --changed origin/dev --project unit-triggers --project unit-backends --project unit-api --project unit-core",
 		"test:unit": "vitest run --project unit-triggers --project unit-backends --project unit-api --project unit-core",
 		"test:integration": "vitest run --project integration",
+		"test:integration:coverage": "vitest run --project integration --coverage --coverage.thresholds.lines=0 --coverage.thresholds.functions=0 --coverage.thresholds.branches=0 --coverage.thresholds.statements=0",
 		"test:all": "vitest run",
 		"test:watch": "vitest --project unit-triggers --project unit-backends --project unit-api --project unit-core",
 		"test:coverage": "vitest run --project unit-triggers --project unit-backends --project unit-api --project unit-core --coverage",

@@ -172,6 +172,15 @@ cascade projects show <id>                          # shows pending / verified �
 
 Because the Docker socket is router-only, the set mutation never validates inline: it stores the reference as `pending` and enqueues an eager **router-side** validation job that pulls the image, pins its immutable `@sha256:` digest, and runs the runtime smoke-test. On success the project is marked `verified` and **the pinned digest is launched** from then on; any failure (malformed ref, unpullable image, missing tool) marks it `failed` with a precise reason and **never launches** — fail-closed, so a project can never spawn a bad image. Every set/clear is **audited** via a structured `project_worker_image_changed` log line.
 
+**Build from a Dockerfile instead of referencing one** — rather than building and hosting an image yourself, a superadmin can paste **only the extra layers** (RUN / COPY / ENV …) into the **Worker Image** card (source: **Dockerfile**) or via `--dockerfile-file`, and CASCADE supplies the pinned `FROM cascade-worker` base for you. The router builds the image locally, pins its immutable local image ID, and runs the same fail-closed smoke-test, so an unbuildable Dockerfile or a broken runtime marks the project `failed` and never launches. A referenced image and a Dockerfile are **mutually exclusive** — selecting one clears the other (a project has exactly one effective image source). Because the built image is **local to the router that built it** (not pushed to a registry), a Dockerfile-sourced project must be served by the **same single router** that built it. A **Rebuild** button (dashboard) / `--rebuild-worker-image` (CLI) re-runs the build against the current base, so you can pick up a refreshed worker base without editing the content.
+
+```bash
+# Superadmin only. Supply extra layers only; CASCADE prepends the pinned FROM.
+cascade projects update <id> --dockerfile-file ./extra-layers.Dockerfile   # or "-" for stdin
+cascade projects update <id> --rebuild-worker-image      # rebuild against a refreshed base
+cascade projects update <id> --clear-dockerfile          # revert to the global default
+```
+
 For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
 
 ---

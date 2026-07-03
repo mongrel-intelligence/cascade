@@ -42,7 +42,9 @@ vi.mock('@/lib/trpc.js', () => ({
 			listFull: { queryOptions: () => ({ queryKey: ['projects.listFull'] }) },
 		},
 	},
-	trpcClient: { projects: { update: { mutate: mockUpdate } } },
+	trpcClient: {
+		projects: { update: { mutate: mockUpdate }, rebuildWorkerImage: { mutate: vi.fn() } },
+	},
 }));
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -113,6 +115,9 @@ describe('ProjectWorkerImage', () => {
 			},
 		});
 		render(createElement(ProjectWorkerImage, { projectId: 'p1' }));
+		// An unset project derives source `default`; pick "Referenced image" to
+		// reveal the spec-022 reference input.
+		fireEvent.change(screen.getByLabelText('Image source'), { target: { value: 'reference' } });
 		const input = screen.getByLabelText('Image reference') as HTMLInputElement;
 		expect(input.placeholder).toContain(GLOBAL_DEFAULT);
 	});
@@ -128,6 +133,8 @@ describe('ProjectWorkerImage', () => {
 			},
 		});
 		render(createElement(ProjectWorkerImage, { projectId: 'p1' }));
+		// An unset project derives source `default`; pick "Referenced image" first.
+		fireEvent.change(screen.getByLabelText('Image source'), { target: { value: 'reference' } });
 		fireEvent.change(screen.getByLabelText('Image reference'), {
 			target: { value: 'my-registry/img:1' },
 		});

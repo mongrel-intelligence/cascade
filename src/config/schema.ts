@@ -21,12 +21,30 @@ const AgentEngineConfigSchema = z.object({
 });
 
 /**
- * Per-project worker-image validation lifecycle (spec 022).
- * `pending` — set but not yet validated; `verified` — validated, digest pinned;
- * `failed` — validation rejected the reference (see `workerImageError`).
+ * Per-project worker-image lifecycle (spec 022; `building` added in spec 023).
+ * Answers "is there a runnable image + may spawn launch it":
+ * `pending` — set but not yet validated; `building` — a build is in progress for a
+ * dockerfile-sourced project; `verified` — validated/built, pin recorded;
+ * `failed` — validation/build rejected the source (see `workerImageError`).
  */
-export const WorkerImageStatusSchema = z.enum(['pending', 'verified', 'failed']);
+export const WorkerImageStatusSchema = z.enum(['pending', 'building', 'verified', 'failed']);
 export type WorkerImageStatus = z.infer<typeof WorkerImageStatusSchema>;
+
+/**
+ * Per-project worker-image (re)build attempt status (spec 023). Tracks the most
+ * recent build ATTEMPT independently of {@link WorkerImageStatusSchema}: NULL =
+ * idle, `building` = a build is running, `failed` = the last build failed. Kept
+ * separate so a failed rebuild never strands the still-runnable verified pin.
+ */
+export const WorkerImageBuildStatusSchema = z.enum(['building', 'failed']);
+export type WorkerImageBuildStatus = z.infer<typeof WorkerImageBuildStatusSchema>;
+
+/**
+ * Derived (never stored) effective image source for a project (spec 023):
+ * `dockerfile` (worker_dockerfile set) > `reference` (worker_image set) > `default`.
+ */
+export const WorkerImageSourceSchema = z.enum(['default', 'reference', 'dockerfile']);
+export type WorkerImageSource = z.infer<typeof WorkerImageSourceSchema>;
 
 // Plan 009/5 removed the inline Trello / JIRA / Linear config schemas.
 // Each provider's manifest now owns its schema (see
@@ -106,6 +124,18 @@ export const ProjectConfigSchema = z.object({
 	workerImageDigest: z.string().optional(),
 	workerImageStatus: WorkerImageStatusSchema.optional(),
 	workerImageError: z.string().optional(),
+
+	/**
+	 * Per-project worker Dockerfile (spec 023). All optional with NO `.default()`.
+	 * `workerDockerfile` — operator's extra-layers content; `workerImageBuildHash`
+	 * — content-hash of the desired content; `workerImageBuildStatus` — most recent
+	 * (re)build attempt status. `workerImageSource` is DERIVED by the config mapper
+	 * (dockerfile > reference > default), never persisted. Dormant until plans 2-5.
+	 */
+	workerDockerfile: z.string().optional(),
+	workerImageBuildHash: z.string().optional(),
+	workerImageBuildStatus: WorkerImageBuildStatusSchema.optional(),
+	workerImageSource: WorkerImageSourceSchema.optional(),
 });
 
 export const CascadeConfigSchema = z.object({

@@ -414,6 +414,13 @@
 			"when": 1793000000000,
 			"tag": "0058_add_setup_timeout_ms",
 			"breakpoints": false
+		},
+		{
+			"idx": 59,
+			"version": "7",
+			"when": 1794000000000,
+			"tag": "0059_project_worker_dockerfile",
+			"breakpoints": false
 		}
 	]
 }

@@ -246,6 +246,46 @@ describe('dangling-image-cleanup', () => {
 		});
 	});
 
+	describe('cascade-built rebuild GC (spec 023) — rides the existing loop, no new GC', () => {
+		// A dockerfile-built image is tagged `cascade-built-<proj>:latest` and
+		// carries `LABEL cascade.managed=true`. A successful rebuild retags
+		// `:latest` to the new image, so the SUPERSEDED digest becomes dangling
+		// (untagged) and carries the managed label — exactly what this existing
+		// reaper matches. There is deliberately NO new GC loop for spec 023.
+		it('reclaims a superseded (dangling) cascade-built rebuild digest via the existing filter', async () => {
+			mockDockerListImages.mockResolvedValue([
+				makeImageSummary('sha256:superseded-built-digest', 6_000_000_000),
+			]);
+
+			await scanAndCleanupDanglingImages();
+
+			// Matched by the very same {dangling=true, label=cascade.managed=true}
+			// filter — no new GC path needed for built images.
+			expect(mockDockerListImages).toHaveBeenCalledWith({
+				filters: { dangling: ['true'], label: ['cascade.managed=true'] },
+			});
+			expect(mockDockerGetImage).toHaveBeenCalledWith('sha256:superseded-built-digest');
+			expect(mockImageRemove).toHaveBeenCalledWith({ force: false });
+		});
+
+		it('never reaps the active tagged built image — the scan filter is dangling=true (structurally exempt)', async () => {
+			// The active pin `cascade-built-<proj>:latest` is TAGGED, and a tagged
+			// image is by Docker's own definition never `dangling`. The reaper only
+			// ever asks Docker for `dangling=true` images, so the active tag can
+			// never appear in the result set and thus can never be removed — the
+			// last-good image is safe even mid-rebuild.
+			mockDockerListImages.mockResolvedValue([]);
+
+			await scanAndCleanupDanglingImages();
+
+			const callArg = mockDockerListImages.mock.calls[0]?.[0] as {
+				filters: { dangling?: string[] };
+			};
+			expect(callArg.filters.dangling).toEqual(['true']);
+			expect(mockImageRemove).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('Dockerfile LABEL contract — static guard', () => {
 		// Counterpart to the scan-filter regression guard above. The filter
 		// only matches images carrying the `cascade.managed=true` label, and

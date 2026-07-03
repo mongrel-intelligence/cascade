@@ -45,6 +45,10 @@ vi.mock('../../../src/router/worker-image-validation.js', () => ({
 	handleWorkerImageValidation: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../src/router/worker-image-build.js', () => ({
+	handleWorkerImageBuild: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: {
 		redisUrl: 'redis://localhost:6379',
@@ -83,6 +87,7 @@ import {
 import { classifyDispatchError } from '../../../src/router/dispatch-error-classifier.js';
 import { acquireSlot } from '../../../src/router/slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from '../../../src/router/snapshot-cleanup.js';
+import { handleWorkerImageBuild } from '../../../src/router/worker-image-build.js';
 import { handleWorkerImageValidation } from '../../../src/router/worker-image-validation.js';
 import {
 	startWorkerProcessor,
@@ -106,6 +111,7 @@ const mockLogger = vi.mocked(logger);
 const mockAcquireSlot = vi.mocked(acquireSlot);
 const mockClassifyDispatchError = vi.mocked(classifyDispatchError);
 const mockHandleWorkerImageValidation = vi.mocked(handleWorkerImageValidation);
+const mockHandleWorkerImageBuild = vi.mocked(handleWorkerImageBuild);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -333,6 +339,39 @@ describe('startWorkerProcessor', () => {
 		expect(mockAcquireSlot).not.toHaveBeenCalled();
 	});
 
+	// spec 023 plan 3/5 — the worker-image-build dashboard job runs entirely
+	// router-side (compose + build + pin + smoke-test) and must NOT take a worker
+	// slot or spawn a container, mirroring worker-image-validation.
+	it('routes a worker-image-build dashboard job to the build engine, not a container spawn', async () => {
+		startWorkerProcessor();
+
+		const dashboardCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-dashboard-jobs',
+		);
+		const processFn = dashboardCall?.[0].processFn as (j: unknown) => Promise<void>;
+
+		mockSpawnWorker.mockClear();
+		mockAcquireSlot.mockClear();
+		mockHandleWorkerImageBuild.mockClear();
+
+		const fakeJob = {
+			id: 'wib-1',
+			data: {
+				type: 'worker-image-build',
+				projectId: 'p1',
+				buildHash: 'sha256-content-hash',
+			},
+		};
+		await processFn(fakeJob);
+
+		expect(mockHandleWorkerImageBuild).toHaveBeenCalledWith({
+			projectId: 'p1',
+			buildHash: 'sha256-content-hash',
+		});
+		expect(mockSpawnWorker).not.toHaveBeenCalled();
+		expect(mockAcquireSlot).not.toHaveBeenCalled();
+	});
+
 	it('still spawns a container for non-validation dashboard jobs (manual-run)', async () => {
 		startWorkerProcessor();
 
@@ -343,6 +382,7 @@ describe('startWorkerProcessor', () => {
 
 		mockSpawnWorker.mockClear();
 		mockHandleWorkerImageValidation.mockClear();
+		mockHandleWorkerImageBuild.mockClear();
 
 		const fakeJob = {
 			id: 'mr-1',
@@ -352,6 +392,7 @@ describe('startWorkerProcessor', () => {
 
 		expect(mockSpawnWorker).toHaveBeenCalledWith(fakeJob);
 		expect(mockHandleWorkerImageValidation).not.toHaveBeenCalled();
+		expect(mockHandleWorkerImageBuild).not.toHaveBeenCalled();
 	});
 });
 

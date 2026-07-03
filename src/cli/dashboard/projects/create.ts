@@ -1,5 +1,6 @@
 import { Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
+import { readDockerfileInput } from '../_shared/file-input.js';
 
 export default class ProjectsCreate extends DashboardCommand {
 	static override description = 'Create a new project.';
@@ -34,6 +35,12 @@ export default class ProjectsCreate extends DashboardCommand {
 		}),
 		'worker-image': Flags.string({
 			description: 'Per-project worker image reference (superadmin only; validated router-side)',
+			exclusive: ['dockerfile-file'],
+		}),
+		'dockerfile-file': Flags.string({
+			description:
+				'Path to a worker Dockerfile (extra layers only; superadmin only). Use "-" to read from stdin.',
+			exclusive: ['worker-image'],
 		}),
 	};
 
@@ -64,6 +71,9 @@ export default class ProjectsCreate extends DashboardCommand {
 						? { setupTimeoutMs: flags['setup-timeout-ms'] }
 						: {}),
 					...(flags['worker-image'] !== undefined ? { workerImage: flags['worker-image'] } : {}),
+					...(flags['dockerfile-file'] !== undefined
+						? { workerDockerfile: readDockerfileInput(flags['dockerfile-file']) }
+						: {}),
 				}),
 			);
 

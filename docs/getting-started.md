@@ -512,6 +512,36 @@ node bin/cascade.js projects show my-project        # shows the reference + life
 
 > **Tip:** A deliberately incompatible image (e.g. `FROM alpine`, which lacks the Cascade runtime) reaches **failed** with a reason naming the first missing requirement — a quick way to confirm the fail-closed behavior. Trigger a job after a **verified** result to see the custom toolchain available in the agent's shell.
 
+#### Alternative: supply a Dockerfile and let Cascade build it
+
+If you'd rather not build and host an image yourself, supply **only the extra layers** and Cascade builds the image for you on top of the pinned worker base. This is mutually exclusive with a referenced image — a project has a single effective image source, so choosing one clears the other.
+
+> **Single-daemon constraint.** The image Cascade builds stays **local to the router that built it** — it is never pushed to a registry. A Dockerfile-sourced project must therefore be served by the **same single router daemon** that built its image. Use the referenced-image path above for multi-router / registry-backed topologies.
+
+**1. Write the extra layers.** Provide only the `RUN` / `COPY` / `ENV` lines you want on top of the base — **do not** write your own `FROM`; Cascade prepends the pinned `FROM cascade-worker` for you (and drops back to the non-root `node` user after any `root`-only steps):
+
+```dockerfile
+# extra-layers.Dockerfile — NO `FROM`; Cascade supplies the pinned base.
+RUN sudo apt-get update \
+  && sudo apt-get install -y --no-install-recommends protobuf-compiler \
+  && sudo rm -rf /var/lib/apt/lists/*
+```
+
+**2. Save it.** In the dashboard, open **Projects → _your project_ → Settings → General → Worker Image**, choose the **Dockerfile** source, paste the extra layers, and click **Set**. The equivalent from the CLI/API (superadmin):
+
+```bash
+node bin/cascade.js projects update my-project --dockerfile-file ./extra-layers.Dockerfile   # or "-" for stdin
+node bin/cascade.js projects update my-project --clear-dockerfile          # revert to the global default
+```
+
+**3. Watch it build and verify.** The card reflects the router-side build lifecycle live (it polls while a build is in flight):
+
+- **Building…** — the router resolved the base digest, prepended the `FROM`, and is building + smoke-testing the image.
+- **Verified — pinned to `<local image id>`** — the build passed; that immutable local image is what every worker for this project now launches.
+- **Failed: `<reason>`** — fail-closed; the reason names the failure (e.g. a Docker `build failed:` error, or `runtime requirement missing:` from the smoke-test) and **no job ever launches**. Fix the layers and **Set** again.
+
+**4. Rebuild to pick up a refreshed base.** When the worker base image is updated, click **Rebuild** (or `projects update my-project --rebuild-worker-image`) to re-run the build against the current base **without editing the content**. While a rebuild runs, the project keeps launching its **last verified** image — a *failed* rebuild reads **"Verified … · last rebuild failed: `<reason>`"** (the project stays runnable), not a misleading top-level "Failed".
+
 ---
 
 ## Troubleshooting

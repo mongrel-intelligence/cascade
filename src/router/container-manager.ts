@@ -118,6 +118,12 @@ async function launchConfiguredWorkerContainer(
  * global base.
  *
  * Failure semantics differ by base kind:
+ * - **Local-only dockerfile base** (`effectiveBaseImageLocalOnly === true`, spec
+ *   023): a dockerfile-built image lives ONLY on the router daemon that built it
+ *   (single-router-daemon constraint). A registry pull can NEVER satisfy it, so
+ *   on image-not-found we do **NOT** pull — we fail loud with a terminal,
+ *   grep-stable `WorkerImageResolutionError` (`built worker image not present on
+ *   this router daemon`) naming the project. Never a silent global fallback.
  * - **Global base** (`effectiveBaseImage === routerConfig.workerImage`): on pull
  *   failure, propagate the pull error (not the original 404) so the dispatch-error
  *   classifier sees its actual shape — registry 429s, ECONNRESET, and other
@@ -125,11 +131,11 @@ async function launchConfiguredWorkerContainer(
  *   terminal. Closes the 2026-06-15 outage class where a host-side prune of
  *   `cascade-worker:latest` produced silent terminal `UnrecoverableError`s for
  *   every spawn.
- * - **Custom per-project base** (`effectiveBaseImage !== routerConfig.workerImage`):
- *   on pull failure / still-missing-after-pull, fail loud with a terminal
- *   `WorkerImageResolutionError` naming the image. We must NEVER silently relaunch
- *   on the global default for a project that explicitly configured its own image
- *   (spec 022, AC #6).
+ * - **Custom per-project reference base** (`effectiveBaseImage !==
+ *   routerConfig.workerImage` and NOT local-only): on pull failure /
+ *   still-missing-after-pull, fail loud with a terminal `WorkerImageResolutionError`
+ *   naming the image. We must NEVER silently relaunch on the global default for a
+ *   project that explicitly configured its own image (spec 022, AC #6).
  */
 async function launchOrPullAndRetry(
 	job: Job<CascadeJob>,
@@ -139,6 +145,7 @@ async function launchOrPullAndRetry(
 	workItemId: string | undefined,
 	agentType: string | undefined,
 	effectiveBaseImage: string,
+	effectiveBaseImageLocalOnly: boolean,
 	config: WorkerContainerLaunchConfig,
 ): Promise<void> {
 	try {
@@ -157,62 +164,110 @@ async function launchOrPullAndRetry(
 		if (!isImageNotFoundError(err) || config.workerImage !== effectiveBaseImage) {
 			throw err;
 		}
-		const imageName = config.workerImage;
-		const isCustomBase = effectiveBaseImage !== routerConfig.workerImage;
-		logger.info('[WorkerManager] Base worker image missing — pulling', {
+		// Single-daemon reachability guard (spec 023): a dockerfile-built base is a
+		// purely LOCAL image ID. A pull can never satisfy it, so fail-closed with a
+		// terminal, grep-stable error instead of attempting a pointless pull or
+		// silently falling back to the global default.
+		if (effectiveBaseImageLocalOnly) {
+			throw new WorkerImageResolutionError(
+				`built worker image not present on this router daemon: project=${projectId ?? 'unknown'} image=${config.workerImage} — a dockerfile-built worker image is local-only (reachable only on the single router daemon that built it) and can never be satisfied by a registry pull`,
+				{ cause: err },
+			);
+		}
+		// Registry-backed base (global default OR a per-project reference digest):
+		// pull-on-missing, then retry the launch once. Extracted so this dispatcher
+		// stays within the cognitive-complexity budget.
+		await pullBaseImageAndRetryLaunch(
+			job,
+			jobId,
+			containerName,
+			projectId,
+			workItemId,
+			agentType,
+			effectiveBaseImage,
+			config,
+		);
+	}
+}
+
+/**
+ * Pull a missing **registry-backed** effective base image once and retry the
+ * launch. Only reached for a NON-local base (the global default or a per-project
+ * `reference` digest); a local-only dockerfile base never gets here (its guard
+ * fails closed upstream). Failure semantics mirror the base kind:
+ * - **Custom per-project reference base** (`effectiveBaseImage !==
+ *   routerConfig.workerImage`): pull failure / still-missing-after-pull throws a
+ *   terminal `WorkerImageResolutionError` naming the image — never a silent global
+ *   fallback (spec 022, AC #6).
+ * - **Global base**: the pull error itself is propagated (not the original 404)
+ *   so transient pull failures (registry 429, ECONNRESET) burn a BullMQ retry
+ *   rather than being misclassified as terminal.
+ */
+async function pullBaseImageAndRetryLaunch(
+	job: Job<CascadeJob>,
+	jobId: string,
+	containerName: string,
+	projectId: string | null,
+	workItemId: string | undefined,
+	agentType: string | undefined,
+	effectiveBaseImage: string,
+	config: WorkerContainerLaunchConfig,
+): Promise<void> {
+	const imageName = config.workerImage;
+	const isCustomBase = effectiveBaseImage !== routerConfig.workerImage;
+	logger.info('[WorkerManager] Base worker image missing — pulling', {
+		jobId,
+		imageName,
+		isCustomBase,
+	});
+	try {
+		await pullImageOnce(imageName);
+	} catch (pullErr) {
+		logger.error('[WorkerManager] Failed to pull base worker image:', {
 			jobId,
 			imageName,
 			isCustomBase,
+			error: String(pullErr),
 		});
-		try {
-			await pullImageOnce(imageName);
-		} catch (pullErr) {
-			logger.error('[WorkerManager] Failed to pull base worker image:', {
-				jobId,
-				imageName,
-				isCustomBase,
-				error: String(pullErr),
-			});
-			captureException(pullErr, {
-				tags: { source: 'worker_image_pull_fallback', jobType: job.data.type },
-				extra: { jobId, imageName, isCustomBase },
-			});
-			if (isCustomBase) {
-				// A project's configured image is unobtainable — fail loud + terminal.
-				// Never silently relaunch on the global default.
-				throw new WorkerImageResolutionError(
-					`Project worker image unobtainable: ${imageName} could not be pulled`,
-					{ cause: pullErr },
-				);
-			}
-			// Propagate the pull error (not the original 404) so the dispatch-error
-			// classifier can see its actual shape — registry 429s, ECONNRESET, and
-			// other transient pull failures should burn a BullMQ retry instead of
-			// being misclassified as terminal via `isImageNotFoundError`.
-			throw pullErr;
-		}
-		logger.info('[WorkerManager] Base image pulled, retrying spawn', { jobId, imageName });
-		try {
-			await launchConfiguredWorkerContainer(
-				job,
-				jobId,
-				containerName,
-				projectId,
-				workItemId,
-				agentType,
-				config,
+		captureException(pullErr, {
+			tags: { source: 'worker_image_pull_fallback', jobType: job.data.type },
+			extra: { jobId, imageName, isCustomBase },
+		});
+		if (isCustomBase) {
+			// A project's configured image is unobtainable — fail loud + terminal.
+			// Never silently relaunch on the global default.
+			throw new WorkerImageResolutionError(
+				`Project worker image unobtainable: ${imageName} could not be pulled`,
+				{ cause: pullErr },
 			);
-		} catch (retryErr) {
-			if (isCustomBase && isImageNotFoundError(retryErr)) {
-				// Pull reported success but the image is still absent → the reference
-				// is invalid/unobtainable. Fail loud + terminal; no global fallback.
-				throw new WorkerImageResolutionError(
-					`Project worker image unobtainable: ${imageName} not present after pull`,
-					{ cause: retryErr },
-				);
-			}
-			throw retryErr;
 		}
+		// Propagate the pull error (not the original 404) so the dispatch-error
+		// classifier can see its actual shape — registry 429s, ECONNRESET, and
+		// other transient pull failures should burn a BullMQ retry instead of
+		// being misclassified as terminal via `isImageNotFoundError`.
+		throw pullErr;
+	}
+	logger.info('[WorkerManager] Base image pulled, retrying spawn', { jobId, imageName });
+	try {
+		await launchConfiguredWorkerContainer(
+			job,
+			jobId,
+			containerName,
+			projectId,
+			workItemId,
+			agentType,
+			config,
+		);
+	} catch (retryErr) {
+		if (isCustomBase && isImageNotFoundError(retryErr)) {
+			// Pull reported success but the image is still absent → the reference
+			// is invalid/unobtainable. Fail loud + terminal; no global fallback.
+			throw new WorkerImageResolutionError(
+				`Project worker image unobtainable: ${imageName} not present after pull`,
+				{ cause: retryErr },
+			);
+		}
+		throw retryErr;
 	}
 }
 
@@ -241,8 +296,13 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 
 	const workItemId = extractWorkItemId(job.data);
 
-	const { snapshotEnabled, workerImage, effectiveBaseImage, containerTimeoutMs } =
-		await resolveSpawnSettings(projectId, workItemId, jobId);
+	const {
+		snapshotEnabled,
+		workerImage,
+		effectiveBaseImage,
+		effectiveBaseImageLocalOnly,
+		containerTimeoutMs,
+	} = await resolveSpawnSettings(projectId, workItemId, jobId);
 
 	// A snapshot is being reused when snapshotEnabled and the launch image differs
 	// from the effective base image. Comparing against effectiveBaseImage (not the
@@ -285,6 +345,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 			workItemId,
 			agentType,
 			effectiveBaseImage,
+			effectiveBaseImageLocalOnly,
 			launchConfig,
 		);
 	} catch (err) {
@@ -295,7 +356,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 		if (snapshotReuse && projectId && workItemId && isImageNotFoundError(err)) {
 			logger.warn(
 				'[WorkerManager] Snapshot image not found — invalidating and retrying with base image:',
-				{ jobId, staleImage: workerImage, effectiveBaseImage },
+				{ jobId, staleImage: workerImage, effectiveBaseImage, effectiveBaseImageLocalOnly },
 			);
 			invalidateSnapshot(projectId, workItemId);
 			const fallbackEnv = await buildWorkerEnvWithProjectId(job, projectId, false, snapshotEnabled);
@@ -306,6 +367,8 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 				workerEnv: fallbackEnv,
 			};
 			try {
+				// Relaunch targets the built/effective base and honors local-only: a
+				// dockerfile-built base is never pulled on the relaunch either (spec 023).
 				await launchOrPullAndRetry(
 					job,
 					jobId,
@@ -314,6 +377,7 @@ export async function spawnWorker(job: Job<CascadeJob>): Promise<void> {
 					workItemId,
 					agentType,
 					effectiveBaseImage,
+					effectiveBaseImageLocalOnly,
 					fallbackConfig,
 				);
 				return;

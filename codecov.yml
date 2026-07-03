@@ -1,3 +1,12 @@
+# Codecov configuration for CASCADE.
+#
+# Coverage is uploaded from two CI jobs (see .github/workflows/ci.yml):
+#   • flag `unit`        — `npm run test:coverage` (the 4 unit projects)
+#   • flag `integration` — `npm run test:integration:coverage` (real Postgres/Redis)
+# Codecov merges both flags per-commit into one combined report, so repository/db
+# code exercised only by the integration suite (e.g. the projectsRepository
+# worker-image build-result writers) counts toward project/patch instead of
+# reading as 0% patch on the unit-only run.
 coverage:
   status:
     project:
@@ -8,11 +17,38 @@ coverage:
       default:
         target: 80%
 
+# Flags let the unit + integration coverage uploads merge into one combined
+# report. carryforward keeps the last-known coverage for a flag when a given
+# commit does not re-upload it (e.g. a job is skipped), so the combined
+# project/patch status stays accurate.
+flags:
+  unit:
+    carryforward: true
+  integration:
+    carryforward: true
+
 comment:
   layout: "reach,diff,flags,files"
   behavior: default
   require_changes: true
 
+# ── Un-mockable Docker-daemon glue policy ───────────────────────────────────
+# The injectable `defaultDeps` real-Docker implementations in
+# src/router/worker-image-build.ts and src/router/worker-image-validation.ts
+# (docker.buildImage / image inspect / docker.run smoke-test) only execute
+# against a live Docker daemon, which unit tests do not have — the handlers are
+# unit-tested through injected fakes, and the runtime contract is covered by the
+# shared worker-image smoke-test (tests/docker/worker-runtime-tools, run in the
+# `docker-build-check` CI job). Those specific default-impl blocks carry
+# line-level `/* v8 ignore start | stop */` markers in the source so they are
+# excluded from the coverage report and cannot recurrently fail `codecov/patch`
+# on future image/build PRs (PR #1474 merged with codecov/patch red for exactly
+# this reason — MNG-1723/MNG-1726).
+#
+# This is deliberately narrow: only the daemon-only default functions are
+# excluded. The handler logic, the compose/hashing helpers, and the
+# createSingleFileTar ustar builder in those files stay fully counted — do NOT
+# blanket-ignore the files below.
 ignore:
   - "src/**/*.test.ts"
   - "src/types/**"

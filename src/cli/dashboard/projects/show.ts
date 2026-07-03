@@ -2,12 +2,52 @@ import { Args } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
 
 /**
- * Render the per-project worker image and its validation lifecycle (spec 022).
- * Unset → the global default; otherwise the operator ref plus its status
- * (`pending` validation, `verified` with the pinned digest, or `failed` with the
- * precise reason).
+ * Render a Dockerfile-sourced project's build lifecycle (spec 023). The launchable
+ * `workerImageStatus` and the most-recent build ATTEMPT `workerImageBuildStatus`
+ * are surfaced independently: under the no-strand rule a project can be `verified`
+ * (still running its last-good image) while its latest rebuild `build failed`.
+ */
+function formatWorkerDockerfile(project: Record<string, unknown>): string {
+	const status =
+		typeof project.workerImageStatus === 'string' ? project.workerImageStatus : 'building';
+	const buildStatus =
+		typeof project.workerImageBuildStatus === 'string' ? project.workerImageBuildStatus : null;
+	const digest =
+		typeof project.workerImageDigest === 'string' && project.workerImageDigest.length > 0
+			? project.workerImageDigest
+			: null;
+	const error =
+		typeof project.workerImageError === 'string' && project.workerImageError.length > 0
+			? project.workerImageError
+			: null;
+
+	const segments: string[] = ['Dockerfile'];
+	if (status === 'verified') {
+		segments.push(`verified → ${digest ?? 'unknown image'}`);
+	} else if (status === 'failed') {
+		segments.push(`failed: ${error ?? 'no reason recorded'}`);
+	} else {
+		segments.push(status);
+	}
+	if (buildStatus) segments.push(`build ${buildStatus}`);
+	// Surface a recorded error the status branch above did not already show (e.g. a
+	// still-verified pin whose most-recent rebuild failed under the no-strand rule).
+	if (error && status !== 'failed') segments.push(`error: ${error}`);
+	return segments.join(' · ');
+}
+
+/**
+ * Render the per-project worker image and its lifecycle. A Dockerfile-sourced
+ * project (spec 023) renders its build state; otherwise the referenced-image
+ * path (spec 022): unset → the global default, else the operator ref plus its
+ * status (`pending`, `verified` with the pinned digest, or `failed` with reason).
  */
 function formatWorkerImage(project: Record<string, unknown>): string {
+	const dockerfile = project.workerDockerfile;
+	if (typeof dockerfile === 'string' && dockerfile.length > 0) {
+		return formatWorkerDockerfile(project);
+	}
+
 	const ref = project.workerImage;
 	if (typeof ref !== 'string' || ref.length === 0) {
 		return '(global default)';

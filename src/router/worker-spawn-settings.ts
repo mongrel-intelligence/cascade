@@ -6,6 +6,7 @@
  * names. This module intentionally has no Docker dependency.
  */
 
+import type { WorkerImageSource } from '../config/schema.js';
 import type { ProjectConfig } from '../types/index.js';
 import { logger } from '../utils/logging.js';
 import { loadProjectConfig, routerConfig } from './config.js';
@@ -31,6 +32,22 @@ export interface SpawnSettings {
 	 * ON TOP of this value.
 	 */
 	effectiveBaseImage: string;
+	/**
+	 * True ONLY when `effectiveBaseImage` is a **dockerfile-built** image (spec
+	 * 023) — an immutable LOCAL image ID that exists solely on the router daemon
+	 * that built it. A registry pull can NEVER satisfy such an image, so
+	 * container-manager.ts must fail-closed (terminal reachability error) instead
+	 * of pulling when a local-only base is missing. `false` for `default` and
+	 * `reference` sources (both registry-backed and safe to pull-on-missing).
+	 */
+	effectiveBaseImageLocalOnly: boolean;
+	/**
+	 * The derived image source that governed this resolution (spec 023):
+	 * `dockerfile` > `reference` > `default`. Surfaced so the spawn log records
+	 * which image kind governed a run and so downstream launch code never has to
+	 * re-derive it.
+	 */
+	workerImageSource: WorkerImageSource;
 	containerTimeoutMs: number;
 	snapshotTtlMs: number;
 }
@@ -68,25 +85,53 @@ export function buildWorkerContainerName(jobId: string): string {
 }
 
 /**
- * Resolve the effective base image for a project (spec 022).
+ * Resolve the effective base image for a project (spec 022, extended for the
+ * dockerfile source in spec 023).
  *
- * Returns the project's verified per-project worker image digest when one is
- * configured, otherwise the global `routerConfig.workerImage`. A configured image
- * MUST be `verified` with a non-empty pinned digest before it can launch —
- * otherwise this throws a terminal `WorkerImageResolutionError`. We never silently
- * fall back to the global default for a project that explicitly set its own image.
+ * Returns the resolved base image plus `localOnly` (true only for a
+ * `dockerfile`-built image). Resolution is keyed on the derived
+ * `workerImageSource`:
+ *
+ * - **`dockerfile`** (spec 023): launch by the immutable LOCAL image ID held in
+ *   `workerImageDigest`. Requires `workerImageStatus === 'verified'` AND a
+ *   non-empty pin (a `pending`/`building`/`failed`/empty-pin source throws
+ *   terminal — never a silent global fallback). Marked `localOnly: true` because
+ *   the built image lives only on the router daemon that built it and can never
+ *   be satisfied by a registry pull.
+ * - **`reference`** (spec 022) / **`default`**: byte-for-byte the original
+ *   spec-022 behavior — a configured `workerImage` must be `verified` with a
+ *   non-empty pinned digest, otherwise throw terminal; no `workerImage` falls
+ *   back to the global default. Both are registry-backed → `localOnly: false`.
+ *
+ * We NEVER silently fall back to the global default for a project that explicitly
+ * configured its own image (reference) or Dockerfile.
  */
 function resolveEffectiveBaseImage(
 	projectId: string,
 	projectCfg: ProjectConfig | undefined,
-): string {
-	if (!projectCfg?.workerImage) return routerConfig.workerImage;
+): { image: string; localOnly: boolean } {
+	const source: WorkerImageSource = projectCfg?.workerImageSource ?? 'default';
+
+	// Dockerfile-built image (spec 023): launch by the immutable LOCAL image ID.
+	// Fail-closed on any non-verified/empty-pin state; the built image is
+	// local-only so it must never be resolved to (or pulled as) a registry image.
+	if (source === 'dockerfile') {
+		if (projectCfg?.workerImageStatus !== 'verified' || !projectCfg.workerImageDigest) {
+			throw new WorkerImageResolutionError(
+				`Project worker image not verified: ${projectId} status=${projectCfg?.workerImageStatus ?? 'unset'} source=dockerfile`,
+			);
+		}
+		return { image: projectCfg.workerImageDigest, localOnly: true };
+	}
+
+	// default / reference — byte-for-byte unchanged from spec 022.
+	if (!projectCfg?.workerImage) return { image: routerConfig.workerImage, localOnly: false };
 	if (projectCfg.workerImageStatus !== 'verified' || !projectCfg.workerImageDigest) {
 		throw new WorkerImageResolutionError(
 			`Project worker image not verified: ${projectId} status=${projectCfg.workerImageStatus ?? 'unset'} image=${projectCfg.workerImage}`,
 		);
 	}
-	return projectCfg.workerImageDigest;
+	return { image: projectCfg.workerImageDigest, localOnly: false };
 }
 
 /**
@@ -108,6 +153,8 @@ export async function resolveSpawnSettings(
 			snapshotEnabled,
 			workerImage,
 			effectiveBaseImage: workerImage,
+			effectiveBaseImageLocalOnly: false,
+			workerImageSource: 'default',
 			containerTimeoutMs,
 			snapshotTtlMs,
 		};
@@ -122,11 +169,17 @@ export async function resolveSpawnSettings(
 	// Per-project TTL overrides the global default.
 	snapshotTtlMs = projectCfg?.snapshotTtlMs ?? routerConfig.snapshotDefaultTtlMs;
 
-	// Per-project worker image (spec 022). Resolved BEFORE the snapshot block so a
-	// reused snapshot is committed/launched on top of the correct base. The
-	// verified digest becomes BOTH the launch image and the effective base;
-	// snapshot substitution is layered on top of `effectiveBaseImage` below.
-	const effectiveBaseImage = resolveEffectiveBaseImage(projectId, projectCfg);
+	// Per-project worker image (spec 022; dockerfile source added in spec 023).
+	// Resolved BEFORE the snapshot block so a reused snapshot is committed/launched
+	// on top of the correct base. The verified pin (registry digest for a
+	// `reference` image, immutable LOCAL image ID for a `dockerfile`-built image)
+	// becomes BOTH the launch image and the effective base; snapshot substitution
+	// is layered on top of `effectiveBaseImage` below. `localOnly` (true only for
+	// a dockerfile-built base) rides along so container-manager.ts never pulls a
+	// purely-local image.
+	const workerImageSource: WorkerImageSource = projectCfg?.workerImageSource ?? 'default';
+	const { image: effectiveBaseImage, localOnly: effectiveBaseImageLocalOnly } =
+		resolveEffectiveBaseImage(projectId, projectCfg);
 	workerImage = effectiveBaseImage;
 
 	if (snapshotEnabled && workItemId) {
@@ -164,6 +217,11 @@ export async function resolveSpawnSettings(
 		workItemId,
 		workerImage,
 		effectiveBaseImage,
+		// The derived image source + local-only flag that governed this run (spec
+		// 023). Lets an operator confirm which image kind launched and whether the
+		// single-router-daemon (local-only) constraint applied.
+		workerImageSource,
+		effectiveBaseImageLocalOnly,
 		// `projectWorkerImage` is the operator-set reference (null when unset);
 		// `globalWorkerImage` is the global default. Together with
 		// `effectiveBaseImage` they make a post-mortem able to confirm which image
@@ -177,5 +235,13 @@ export async function resolveSpawnSettings(
 		globalWorkerTimeoutMs: routerConfig.workerTimeoutMs,
 	});
 
-	return { snapshotEnabled, workerImage, effectiveBaseImage, containerTimeoutMs, snapshotTtlMs };
+	return {
+		snapshotEnabled,
+		workerImage,
+		effectiveBaseImage,
+		effectiveBaseImageLocalOnly,
+		workerImageSource,
+		containerTimeoutMs,
+		snapshotTtlMs,
+	};
 }

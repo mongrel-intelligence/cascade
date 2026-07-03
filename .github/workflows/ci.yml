@@ -45,10 +45,11 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
-      - name: Upload coverage to Codecov
+      - name: Upload unit coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
           files: coverage/lcov.info
+          flags: unit
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -117,11 +118,26 @@ jobs:
       - name: Build backend
         run: npm run build
 
-      - name: Run integration tests
-        run: npm run test:integration
+      - name: Run integration tests with coverage
+        run: npm run test:integration:coverage
         env:
           TEST_DATABASE_URL: postgresql://cascade_test:cascade_test@localhost:5433/cascade_test
           REDIS_URL: redis://localhost:6379
+
+      # Upload the integration coverage under its own flag. Codecov merges the
+      # `unit` + `integration` flags per-commit, so repository/db code exercised
+      # only by the integration suite (e.g. the projectsRepository worker-image
+      # build-result writers) counts toward project/patch instead of reading as
+      # 0% patch on the unit-only run. Thresholds are disabled for this run (see
+      # the test:integration:coverage script) because the integration suite alone
+      # does not exercise 80% of src/**; the combined Codecov report is the gate.
+      - name: Upload integration coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage/lcov.info
+          flags: integration
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   docker-build-check:
     name: Validate Docker builds

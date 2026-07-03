@@ -1,5 +1,6 @@
 import { Args, Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
+import { readDockerfileInput } from '../_shared/file-input.js';
 
 export default class ProjectsUpdate extends DashboardCommand {
 	static override description = 'Update a project.';
@@ -41,20 +42,62 @@ export default class ProjectsUpdate extends DashboardCommand {
 		}),
 		'worker-image': Flags.string({
 			description: 'Per-project worker image reference (superadmin only; validated router-side)',
-			exclusive: ['clear-worker-image'],
+			exclusive: ['clear-worker-image', 'dockerfile-file', 'clear-dockerfile'],
 		}),
 		'clear-worker-image': Flags.boolean({
 			description: 'Clear the per-project worker image (revert to the global default)',
-			exclusive: ['worker-image'],
+			exclusive: ['worker-image', 'dockerfile-file'],
+		}),
+		'dockerfile-file': Flags.string({
+			description:
+				'Path to a worker Dockerfile (extra layers only; superadmin only). Use "-" to read from stdin.',
+			exclusive: ['worker-image', 'clear-worker-image', 'clear-dockerfile'],
+		}),
+		'clear-dockerfile': Flags.boolean({
+			description: 'Clear the per-project worker Dockerfile (revert to the global default)',
+			exclusive: ['worker-image', 'dockerfile-file'],
+		}),
+		'rebuild-worker-image': Flags.boolean({
+			description:
+				'Trigger a rebuild of the Dockerfile-sourced worker image (superadmin only; rebuilds even when unchanged)',
+			exclusive: ['worker-image', 'clear-worker-image', 'dockerfile-file', 'clear-dockerfile'],
 		}),
 	};
 
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(ProjectsUpdate);
 
+		// `--rebuild-worker-image` is a standalone action — it re-enqueues a build
+		// for a Dockerfile-sourced project and does not touch other fields.
+		if (flags['rebuild-worker-image']) {
+			try {
+				await this.withSpinner('Rebuilding worker image...', () =>
+					this.client.projects.rebuildWorkerImage.mutate({ projectId: args.id }),
+				);
+
+				if (flags.json) {
+					this.outputJson({ ok: true });
+					return;
+				}
+
+				this.success(`Triggered worker image rebuild for '${args.id}'`);
+				return;
+			} catch (err) {
+				this.handleError(err);
+			}
+		}
+
 		// `--worker-image <ref>` sets it; `--clear-worker-image` sends an explicit
 		// null (revert to the global default). Absent → omitted (left untouched).
 		const workerImage = flags['clear-worker-image'] ? null : flags['worker-image'];
+
+		// `--dockerfile-file <path>` (or `-` for stdin) sets the Dockerfile content;
+		// `--clear-dockerfile` sends an explicit null. Absent → omitted (untouched).
+		const workerDockerfile = flags['clear-dockerfile']
+			? null
+			: flags['dockerfile-file'] !== undefined
+				? readDockerfileInput(flags['dockerfile-file'])
+				: undefined;
 
 		try {
 			await this.withSpinner('Updating project...', () =>
@@ -85,6 +128,7 @@ export default class ProjectsUpdate extends DashboardCommand {
 						? { setupTimeoutMs: flags['setup-timeout-ms'] }
 						: {}),
 					...(workerImage !== undefined ? { workerImage } : {}),
+					...(workerDockerfile !== undefined ? { workerDockerfile } : {}),
 				}),
 			);
 

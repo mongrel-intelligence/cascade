@@ -37,6 +37,15 @@ export interface RouterConfig {
 	 * BullMQ then retries). Spec 015/2.
 	 */
 	slotWaitTimeoutMs: number;
+	/**
+	 * Wall-clock budget (ms) for a single router-side worker-image BUILD (spec
+	 * 023). A composed `docker build` that exceeds this resolves the project to
+	 * `failed` (fail-closed) rather than hanging the dashboard-jobs consumer.
+	 * Deliberately generous by default because a first build compiles Playwright
+	 * / installs OS packages on top of the base; override via
+	 * `WORKER_BUILD_TIMEOUT_MS`.
+	 */
+	workerBuildTimeoutMs: number;
 
 	// Network settings
 	dockerNetwork: string;
@@ -141,6 +150,7 @@ export const routerConfig: RouterConfig = {
 	workerMemoryMb: Number(process.env.WORKER_MEMORY_MB) || 4096,
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	slotWaitTimeoutMs: Number(process.env.SLOT_WAIT_TIMEOUT_MS) || 5 * 60 * 1000, // 5 minutes
+	workerBuildTimeoutMs: Number(process.env.WORKER_BUILD_TIMEOUT_MS) || 10 * 60 * 1000, // 10 minutes
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
 	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
 	webhookCallbackBaseUrl: process.env.WEBHOOK_CALLBACK_BASE_URL,

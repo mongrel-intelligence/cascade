@@ -58,6 +58,8 @@ describe('worker-spawn-settings', () => {
 			snapshotEnabled: false,
 			workerImage: 'base-worker:latest',
 			effectiveBaseImage: 'base-worker:latest',
+			effectiveBaseImageLocalOnly: false,
+			workerImageSource: 'default',
 			containerTimeoutMs: 30 * 60 * 1000,
 			snapshotTtlMs: 24 * 60 * 60 * 1000,
 		});

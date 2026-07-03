@@ -25,6 +25,7 @@ import type { CascadeJob } from './queue.js';
 import { acquireSlot, clearAllWaiters } from './slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from './snapshot-cleanup.js';
 import { syncSnapshotsFromDocker } from './snapshot-startup-sync.js';
+import { handleWorkerImageBuild } from './worker-image-build.js';
 import { handleWorkerImageValidation } from './worker-image-validation.js';
 
 // Re-export container-manager public API so existing callers are unaffected.
@@ -71,18 +72,34 @@ async function guardedSpawn(job: Job<CascadeJob>): Promise<void> {
 
 /**
  * Dashboard-jobs processor. Most dashboard jobs (manual-run / retry-run /
- * debug-analysis) spawn a worker container via `guardedSpawn`. The
- * `worker-image-validation` job (spec 022) is the exception: it runs entirely
- * router-side (pull + inspect + smoke-test) and must NOT take a worker slot or
- * spawn a container, so it is dispatched directly to its handler. The handler is
- * fail-closed and never throws, so BullMQ always sees the job complete.
+ * debug-analysis) spawn a worker container via `guardedSpawn`. Two jobs are the
+ * exception and run entirely router-side (they own the Docker socket) and must
+ * NOT take a worker slot or spawn a container:
+ *
+ *   - `worker-image-validation` (spec 022): pull + inspect + smoke-test.
+ *   - `worker-image-build` (spec 023): compose + build + pin + smoke-test.
+ *
+ * Both handlers are fail-closed and never throw, so BullMQ always sees the job
+ * complete.
  */
 async function processDashboardJob(job: Job): Promise<void> {
-	const data = job.data as { type?: string; projectId?: string; ref?: string };
+	const data = job.data as {
+		type?: string;
+		projectId?: string;
+		ref?: string;
+		buildHash?: string;
+	};
 	if (data?.type === 'worker-image-validation') {
 		await handleWorkerImageValidation({
 			projectId: String(data.projectId),
 			ref: String(data.ref),
+		});
+		return;
+	}
+	if (data?.type === 'worker-image-build') {
+		await handleWorkerImageBuild({
+			projectId: String(data.projectId),
+			buildHash: String(data.buildHash),
 		});
 		return;
 	}

@@ -37,10 +37,31 @@ export const projects = pgTable(
 		// Per-project worker image (spec 022). All nullable; NULL = use the
 		// global router-level default image. Dormant until plans 2-4 wire
 		// spawn resolution, validation, CLI/API, and UI.
+		//
+		// For a dockerfile-sourced project (spec 023) the meaning of the shared
+		// columns widens: worker_image stays the REFERENCED ref (null when built
+		// from a Dockerfile), worker_image_digest holds the active launchable pin
+		// (a registry digest OR the LOCAL built image ID), and worker_image_status
+		// additionally admits 'building'.
 		workerImage: text('worker_image'),
 		workerImageDigest: text('worker_image_digest'),
 		workerImageStatus: text('worker_image_status'),
 		workerImageError: text('worker_image_error'),
+
+		// Per-project worker Dockerfile (spec 023). All nullable; NULL = not a
+		// dockerfile-sourced project. Dormant until plans 2-5 wire spawn
+		// resolution, the build engine, set surfaces, and UI.
+		//
+		// worker_dockerfile         — operator's extra-layers content (RUN/COPY/ENV).
+		// worker_image_build_hash   — content-hash of desired content (job identity
+		//                             + supersede guard; computed by plan 4).
+		// worker_image_build_status — status of the most recent (re)build ATTEMPT
+		//                             ('building' | 'failed'; NULL = idle). Split from
+		//                             worker_image_status so a failed rebuild never
+		//                             strands the still-runnable verified pin.
+		workerDockerfile: text('worker_dockerfile'),
+		workerImageBuildHash: text('worker_image_build_hash'),
+		workerImageBuildStatus: text('worker_image_build_status'),
 
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')

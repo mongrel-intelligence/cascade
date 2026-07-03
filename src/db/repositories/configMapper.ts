@@ -116,6 +116,15 @@ export interface ProjectConfigRaw {
 	workerImageDigest?: string;
 	workerImageStatus?: string;
 	workerImageError?: string;
+	/** Per-project worker Dockerfile (spec 023). Raw strings; validated by ProjectConfigSchema. */
+	workerDockerfile?: string;
+	workerImageBuildHash?: string;
+	workerImageBuildStatus?: string;
+	/**
+	 * Derived (never stored) effective image source: `dockerfile` (worker_dockerfile
+	 * set) > `reference` (worker_image set) > `default`. Computed by mapProjectRow.
+	 */
+	workerImageSource?: 'default' | 'reference' | 'dockerfile';
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -177,6 +186,9 @@ type ProjectRow = {
 	workerImageDigest: string | null;
 	workerImageStatus: string | null;
 	workerImageError: string | null;
+	workerDockerfile: string | null;
+	workerImageBuildHash: string | null;
+	workerImageBuildStatus: string | null;
 };
 
 export function buildAgentMaps(configs: AgentConfigRow[]): {
@@ -292,7 +304,26 @@ function buildBaseProjectFields(
 		workerImageDigest: nullToUndefined(row.workerImageDigest),
 		workerImageStatus: nullToUndefined(row.workerImageStatus),
 		workerImageError: nullToUndefined(row.workerImageError),
+		workerDockerfile: nullToUndefined(row.workerDockerfile),
+		workerImageBuildHash: nullToUndefined(row.workerImageBuildHash),
+		workerImageBuildStatus: nullToUndefined(row.workerImageBuildStatus),
+		// Derived, never stored: dockerfile > reference > default.
+		workerImageSource: deriveWorkerImageSource(row),
 	};
+}
+
+/**
+ * Derives the effective worker-image source (spec 023). Precedence is
+ * `dockerfile` (worker_dockerfile set) > `reference` (worker_image set) >
+ * `default` (neither set). Purely a function of the two source columns; the
+ * pin/status columns do not participate.
+ */
+function deriveWorkerImageSource(
+	row: Pick<ProjectRow, 'workerDockerfile' | 'workerImage'>,
+): 'default' | 'reference' | 'dockerfile' {
+	if (row.workerDockerfile != null) return 'dockerfile';
+	if (row.workerImage != null) return 'reference';
+	return 'default';
 }
 
 // ---------------------------------------------------------------------------
