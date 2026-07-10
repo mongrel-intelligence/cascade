@@ -266,6 +266,38 @@ describe('JiraIntegration', () => {
 				fn,
 			);
 		});
+
+		it('threads authType from getJiraConfig(project)?.authType into withJiraCredentials (MNG-1741)', async () => {
+			mockGetIntegrationCredential.mockResolvedValueOnce('bot@example.com');
+			mockGetIntegrationCredential.mockResolvedValueOnce('api-token-xxx');
+			mockFindProjectById.mockResolvedValue(makeProject());
+			mockGetJiraConfig.mockReturnValue(makeJiraConfig({ authType: 'scoped' }));
+
+			const fn = vi.fn().mockResolvedValue('done');
+			await integration.withCredentials('proj-1', fn);
+
+			expect(mockWithJiraCredentials).toHaveBeenCalledWith(
+				expect.objectContaining({
+					email: 'bot@example.com',
+					apiToken: 'api-token-xxx',
+					baseUrl: 'https://example.atlassian.net',
+					authType: 'scoped',
+				}),
+				fn,
+			);
+		});
+
+		it('leaves authType undefined when jira config has none (basic downstream default)', async () => {
+			mockGetIntegrationCredential.mockResolvedValue('value');
+			mockFindProjectById.mockResolvedValue(makeProject());
+			mockGetJiraConfig.mockReturnValue(makeJiraConfig()); // no authType
+
+			const fn = vi.fn().mockResolvedValue(undefined);
+			await integration.withCredentials('proj-1', fn);
+
+			const [creds] = mockWithJiraCredentials.mock.calls[0] as [{ authType?: string }, unknown];
+			expect(creds.authType).toBeUndefined();
+		});
 	});
 
 	// =========================================================================

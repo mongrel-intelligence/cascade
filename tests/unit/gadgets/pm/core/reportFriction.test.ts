@@ -58,6 +58,12 @@ beforeEach(() => {
 	delete process.env.CASCADE_PROJECT_ID;
 	delete process.env.CASCADE_PM_TYPE;
 	delete process.env.CASCADE_PROJECT_NAME;
+	// Clear JIRA env-synthesis vars so each env-reconstruction test starts clean.
+	delete process.env.CASCADE_JIRA_PROJECT_KEY;
+	delete process.env.CASCADE_JIRA_BASE_URL;
+	delete process.env.JIRA_BASE_URL;
+	delete process.env.CASCADE_JIRA_STATUSES;
+	delete process.env.CASCADE_JIRA_AUTH_TYPE;
 });
 
 describe('reportFriction', () => {
@@ -246,6 +252,70 @@ describe('reportFriction', () => {
 				headSha: 'abc123sha',
 			},
 		});
+		rmSync(path, { force: true });
+	});
+
+	it('env-synthesized JIRA config carries authType from CASCADE_JIRA_AUTH_TYPE (MNG-1741)', async () => {
+		// No params.project + empty SessionState → projectFromEnv() reconstruction.
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'jira-project';
+		process.env.CASCADE_PM_TYPE = 'jira';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://acme.atlassian.net';
+		process.env.CASCADE_JIRA_AUTH_TYPE = 'scoped';
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'CASCADE-1',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'JIRA auth mode carried',
+			details: 'The synthesized project must carry authType so in-worker calls use the right host.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		// Materialization must receive the synthesized JIRA project with authType set.
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					jira: expect.objectContaining({ authType: 'scoped' }),
+				}),
+			}),
+		);
+		rmSync(path, { force: true });
+	});
+
+	it("env-synthesized JIRA config defaults authType to 'basic' when CASCADE_JIRA_AUTH_TYPE is unset (MNG-1741)", async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'jira-project';
+		process.env.CASCADE_PM_TYPE = 'jira';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://acme.atlassian.net';
+		// CASCADE_JIRA_AUTH_TYPE intentionally unset → normalizes to 'basic'.
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'CASCADE-2',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'JIRA default auth mode',
+			details: 'Absent env var should synthesize basic to preserve existing projects.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					jira: expect.objectContaining({ authType: 'basic' }),
+				}),
+			}),
+		);
 		rmSync(path, { force: true });
 	});
 

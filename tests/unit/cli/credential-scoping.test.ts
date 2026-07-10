@@ -105,6 +105,9 @@ describe('CredentialScopedCommand', () => {
 		delete process.env.JIRA_API_TOKEN;
 		delete process.env.JIRA_BASE_URL;
 		delete process.env.CASCADE_JIRA_BASE_URL;
+		delete process.env.CASCADE_JIRA_PROJECT_KEY;
+		delete process.env.CASCADE_JIRA_STATUSES;
+		delete process.env.CASCADE_JIRA_AUTH_TYPE;
 		vi.mocked(withJiraCredentials).mockClear();
 		vi.mocked(withLinearCredentials).mockClear();
 	});
@@ -184,12 +187,51 @@ describe('CredentialScopedCommand', () => {
 		await cmd.run();
 
 		expect(cmd.executeCalled).toBe(true);
+		// authType defaults to 'basic' when CASCADE_JIRA_AUTH_TYPE is unset (MNG-1741).
 		expect(withJiraCredentials).toHaveBeenCalledWith(
 			{
 				email: 'bot@example.com',
 				apiToken: 'jira-token',
 				baseUrl: 'https://cascade.atlassian.net',
+				authType: 'basic',
 			},
+			expect.any(Function),
+		);
+	});
+
+	it('threads authType into withJiraCredentials from CASCADE_JIRA_AUTH_TYPE (MNG-1741)', async () => {
+		process.env.JIRA_EMAIL = 'bot@example.com';
+		process.env.JIRA_API_TOKEN = 'jira-token';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://cascade.atlassian.net';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+		process.env.CASCADE_JIRA_AUTH_TYPE = 'scoped';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(withJiraCredentials).toHaveBeenCalledWith(
+			{
+				email: 'bot@example.com',
+				apiToken: 'jira-token',
+				baseUrl: 'https://cascade.atlassian.net',
+				authType: 'scoped',
+			},
+			expect.any(Function),
+		);
+	});
+
+	it("normalizes an unknown CASCADE_JIRA_AUTH_TYPE to 'basic' in the credential scope (MNG-1741)", async () => {
+		process.env.JIRA_EMAIL = 'bot@example.com';
+		process.env.JIRA_API_TOKEN = 'jira-token';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://cascade.atlassian.net';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+		process.env.CASCADE_JIRA_AUTH_TYPE = 'bearer'; // not in the basic|scoped domain
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(withJiraCredentials).toHaveBeenCalledWith(
+			expect.objectContaining({ authType: 'basic' }),
 			expect.any(Function),
 		);
 	});
@@ -262,6 +304,40 @@ describe('CredentialScopedCommand', () => {
 			boardId: 'board-123',
 			lists: { todo: 'list-todo', friction: 'list-friction' },
 			labels: { auto: 'label-auto' },
+		});
+	});
+
+	it('synthesises JIRA config from env vars including authType from CASCADE_JIRA_AUTH_TYPE (MNG-1741)', async () => {
+		process.env.CASCADE_PM_TYPE = 'jira';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://acme.atlassian.net';
+		process.env.CASCADE_JIRA_AUTH_TYPE = 'scoped';
+		process.env.CASCADE_JIRA_STATUSES = JSON.stringify({ todo: 'To Do' });
+
+		const cmd = new InspectPMProviderCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.providerConfig).toEqual({
+			projectKey: 'CASCADE',
+			baseUrl: 'https://acme.atlassian.net',
+			authType: 'scoped',
+			statuses: { todo: 'To Do' },
+		});
+	});
+
+	it("synthesises JIRA config with authType 'basic' when CASCADE_JIRA_AUTH_TYPE is unset (MNG-1741)", async () => {
+		process.env.CASCADE_PM_TYPE = 'jira';
+		process.env.CASCADE_JIRA_PROJECT_KEY = 'CASCADE';
+		process.env.CASCADE_JIRA_BASE_URL = 'https://acme.atlassian.net';
+		// CASCADE_JIRA_AUTH_TYPE intentionally unset → normalizes to 'basic'.
+
+		const cmd = new InspectPMProviderCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.providerConfig).toMatchObject({
+			projectKey: 'CASCADE',
+			baseUrl: 'https://acme.atlassian.net',
+			authType: 'basic',
 		});
 	});
 });

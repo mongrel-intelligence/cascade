@@ -5,6 +5,7 @@ import {
 	appendQueuedFrictionReport,
 } from '../../../friction/sidecar.js';
 import type { FrictionReport } from '../../../friction/types.js';
+import { normalizeJiraAuthType } from '../../../jira/authType.js';
 import type { ProjectConfig } from '../../../types/index.js';
 import {
 	FRICTION_SIDECAR_ENV_VAR,
@@ -92,6 +93,7 @@ function projectFromEnv(): ProjectConfig {
 			jira: {
 				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
 				baseUrl: process.env.CASCADE_JIRA_BASE_URL ?? process.env.JIRA_BASE_URL ?? '',
+				authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
 				statuses: parseJsonRecord(process.env.CASCADE_JIRA_STATUSES),
 			},
 		} as ProjectConfig;
