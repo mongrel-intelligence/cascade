@@ -221,8 +221,10 @@ await withTrelloCredentials({ apiKey, token }, async () => {
 });
 
 // JIRA
-await withJiraCredentials({ email, apiToken, baseUrl }, async () => {
-  // All JIRA API calls use these credentials
+await withJiraCredentials({ email, apiToken, baseUrl, authType }, async () => {
+  // All JIRA API calls use these credentials.
+  // `authType` ('basic' | 'scoped', optional) selects the REST v3 host
+  // via the shared resolveJiraApiBaseUrl() resolver — see below.
 });
 
 // Linear
@@ -230,6 +232,25 @@ await withLinearCredentials({ apiKey }, async () => {
   // All Linear API calls use these credentials
 });
 ```
+
+### JIRA authentication modes (scoped tokens)
+
+`src/jira/api-host.ts`, `src/jira/authType.ts`
+
+JIRA supports classic unscoped site tokens **and** Atlassian API tokens with scopes. The mode is selected by the optional `authType` field on the JIRA integration config (`project_integrations.config`) — a non-secret connection setting that mirrors `baseUrl`, **not** a credential role. Values: `'basic'` (or absent) and `'scoped'`. Both modes authenticate with **HTTP Basic** (`email:api_token`); `authType` selects the REST v3 *host*, not the auth scheme.
+
+Every REST v3 call site routes through one shared resolver, `resolveJiraApiBaseUrl(creds)` — the JIRA analogue of the shared auth-header helper:
+
+| `authType` | REST v3 host | Notes |
+|---|---|---|
+| `basic` / absent | tenant **site URL** (`creds.baseUrl`, e.g. `https://acme.atlassian.net`) | Classic behavior, unchanged. Every pre-existing config maps here. |
+| `scoped` | Atlassian **gateway** (`https://api.atlassian.com/ex/jira/{cloudId}`) | `cloudId` is resolved from `${baseUrl}/_edge/tenant_info` (always the site URL, never the gateway) with the same Basic scoped token, cached per `baseUrl`. Direct site REST v3 calls can fail under scoped tokens, so the gateway is the supported path. |
+
+The worker/CLI credential scope carries the mode across process boundaries via the `CASCADE_JIRA_AUTH_TYPE` env var (injected by `secretBuilder.augmentProjectSecrets`); `normalizeJiraAuthType` maps absent/unknown values back to `'basic'` so existing projects keep working. `accessible-resources` is intentionally **not** used to discover `cloudId` — it is OAuth 2.0 / 3LO guidance and returns `401` for scoped API tokens.
+
+**Required scopes.** Read/write Jira work (classic OAuth `read:jira-work` + `write:jira-work`). Programmatic webhook management additionally needs webhook scopes — classic OAuth `manage:jira-webhook`, or granular `read:field:jira` + `read:project:jira` + `write:webhook:jira`. A scoped token without webhook scopes (or a non-app caller) gets `401`/`403` from `/rest/api/3/webhook`; the wizard then surfaces an actionable message pointing at manual webhook registration.
+
+**Known limitation — ack reactions.** The "eyes" acknowledgment reaction uses Jira's internal `/rest/reactions/1.0/` API, which lives only on the tenant site URL and is not confirmed on the scoped gateway. Under `scoped` auth the reaction degrades quietly (one log line, then skip) — it is best-effort and never fails a run. Comments, status transitions, and label writes are unaffected.
 
 ## Credential Encryption
 

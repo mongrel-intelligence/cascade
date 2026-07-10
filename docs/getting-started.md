@@ -264,6 +264,29 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","statuses":{"todo":"To Do","inProgress":"In Progress","inReview":"In Review"}}'
 ```
 
+#### Scoped API tokens (`authType`)
+
+Cascade also supports Atlassian **API tokens with scopes** ("scoped" tokens) alongside classic unscoped site tokens. Opt in with the `authType` field on the integration config:
+
+```bash
+node bin/cascade.js projects integration-set my-project \
+  --category pm --provider jira \
+  --config '{"baseUrl":"https://yourorg.atlassian.net","projectKey":"PROJ","authType":"scoped","statuses":{"todo":"To Do","inProgress":"In Progress","inReview":"In Review"}}'
+```
+
+`authType` is a non-secret connection setting (like `baseUrl`), **not** a credential — the stored `JIRA_EMAIL` / `JIRA_API_TOKEN` are unchanged. Both modes authenticate with **HTTP Basic** (`email:api_token`), so `authType` selects the request *host*, not the auth scheme:
+
+- `authType: "basic"` (or omitted — the historical default) routes REST v3 calls to your tenant **site URL** (`https://yourorg.atlassian.net`). Every existing config keeps working untouched.
+- `authType: "scoped"` routes REST v3 calls through the Atlassian **gateway** (`https://api.atlassian.com/ex/jira/{cloudId}/rest/api/3/...`). Cascade resolves `cloudId` automatically from `https://yourorg.atlassian.net/_edge/tenant_info` using the same Basic scoped token and caches it per site URL. Direct site REST v3 calls can fail under a scoped token, so the gateway is the supported path for scoped tokens.
+
+**Required scopes.** Grant the token read/write access to Jira work (classic OAuth `read:jira-work` + `write:jira-work`). Programmatic webhook management additionally needs webhook scopes — classic OAuth `manage:jira-webhook`, or the granular `read:field:jira` + `read:project:jira` + `write:webhook:jira`.
+
+**Known limitations under scoped tokens:**
+
+- **Ack reactions are unavailable.** The "eyes" acknowledgment reaction uses Jira's internal `/rest/reactions/1.0/` API, which is not exposed through the scoped gateway. Under `scoped` auth Cascade logs one line and skips the reaction — it is cosmetic and never fails a run. Comments, status transitions, and label writes are unaffected.
+- **Webhook auto-registration may be rejected.** Atlassian can restrict programmatic `/rest/api/3/webhook` registration to app callers and requires webhook scopes, so a scoped token may get `401`/`403`. If it does, register the webhook manually in Jira (**System → WebHooks**) pointing at `https://your-router-host/jira/webhook`.
+- **`accessible-resources` is not used** to discover `cloudId` — that endpoint is OAuth 2.0 / 3LO guidance and returns `401` for scoped API tokens, so Cascade uses `/_edge/tenant_info` instead.
+
 ### Linear
 
 1. Generate a **Personal API key** from https://linear.app/settings/api
