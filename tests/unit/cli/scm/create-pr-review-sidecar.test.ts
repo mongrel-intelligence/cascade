@@ -4,6 +4,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { REVIEW_EVENT_POLICY_FILE } from '../../../../src/config/reviewEventPolicy.js';
+
 // Mock createPRReview before importing the command
 const mockCreatePRReview = vi.fn();
 vi.mock('../../../../src/gadgets/github/core/createPRReview.js', () => ({
@@ -199,6 +201,12 @@ describe('CreatePRReviewCommand review event policy', () => {
 		originalPolicyEnv = process.env.CASCADE_REVIEW_EVENT_POLICY;
 		process.env.CASCADE_REVIEW_SIDECAR_PATH = sidecarPath;
 		Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_EVENT_POLICY');
+		// resolveEventPolicyFromEnv() falls back to reading REVIEW_EVENT_POLICY_FILE
+		// (a hardcoded global /tmp path) when the env var is absent/invalid. A sibling
+		// suite (create-pr-review.test.ts) writes that file, and unit-core runs files in
+		// parallel forks (isolate: false), so a leftover file would leak 'comment-only'
+		// into the env-absent/invalid cases below. Remove it so these tests are hermetic.
+		rmSync(REVIEW_EVENT_POLICY_FILE, { force: true });
 	});
 
 	afterEach(() => {
@@ -207,6 +215,8 @@ describe('CreatePRReviewCommand review event policy', () => {
 		} catch {
 			// ignore
 		}
+		// Never let this suite leak the policy file to sibling suites either.
+		rmSync(REVIEW_EVENT_POLICY_FILE, { force: true });
 		if (originalSidecarEnv !== undefined) {
 			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalSidecarEnv;
 		} else {
