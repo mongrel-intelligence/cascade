@@ -239,6 +239,42 @@ describe('AgentsCreate (create)', () => {
 		await expect(cmd.run()).rejects.toThrow();
 	});
 
+	it('passes optional --review-event-policy flag to mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new AgentsCreate(
+			[
+				'--agent-type',
+				'review',
+				'--project-id',
+				'my-project',
+				'--review-event-policy',
+				'comment-only',
+			],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.agentConfigs.create.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				agentType: 'review',
+				projectId: 'my-project',
+				reviewEventPolicy: 'comment-only',
+			}),
+		);
+	});
+
+	it('rejects an invalid --review-event-policy value', async () => {
+		mockCreateDashboardClient.mockReturnValue(makeClient());
+
+		const cmd = new AgentsCreate(
+			['--agent-type', 'review', '--project-id', 'my-project', '--review-event-policy', 'bogus'],
+			oclifConfig as never,
+		);
+		await expect(cmd.run()).rejects.toThrow();
+	});
+
 	it('outputs json when --json flag is set', async () => {
 		const client = makeClient();
 		mockCreateDashboardClient.mockReturnValue(client);
@@ -355,6 +391,24 @@ describe('AgentsUpdate (update)', () => {
 			expect.objectContaining({
 				id: 1,
 				updateChannel: 'scm-only',
+			}),
+		);
+	});
+
+	it('passes ID with --review-event-policy flag to mutate', async () => {
+		const client = makeClient();
+		mockCreateDashboardClient.mockReturnValue(client);
+
+		const cmd = new AgentsUpdate(
+			['1', '--review-event-policy', 'comment-only'],
+			oclifConfig as never,
+		);
+		await cmd.run();
+
+		expect(client.agentConfigs.update.mutate).toHaveBeenCalledWith(
+			expect.objectContaining({
+				id: 1,
+				reviewEventPolicy: 'comment-only',
 			}),
 		);
 	});

@@ -364,6 +364,63 @@ describe('agentConfigsRepository (integration)', () => {
 	});
 
 	// =========================================================================
+	// reviewEventPolicy round-trip
+	// =========================================================================
+
+	describe('reviewEventPolicy persistence', () => {
+		it('persists reviewEventPolicy via createAgentConfig and round-trips', async () => {
+			await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'review',
+				reviewEventPolicy: 'comment-only',
+			});
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs).toHaveLength(1);
+			expect(configs[0].reviewEventPolicy).toBe('comment-only');
+		});
+
+		it('defaults reviewEventPolicy to NULL when not provided', async () => {
+			await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'review',
+			});
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].reviewEventPolicy).toBeNull();
+		});
+
+		it('updates reviewEventPolicy via updateAgentConfig and can reset to NULL', async () => {
+			const { id } = await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'review',
+			});
+
+			await updateAgentConfig(id, { reviewEventPolicy: 'comment-only' });
+			let configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].reviewEventPolicy).toBe('comment-only');
+
+			await updateAgentConfig(id, { reviewEventPolicy: null });
+			configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].reviewEventPolicy).toBeNull();
+		});
+
+		it('leaves reviewEventPolicy unchanged on a partial update that omits it', async () => {
+			const { id } = await createAgentConfig({
+				projectId: 'test-project',
+				agentType: 'review',
+				reviewEventPolicy: 'comment-only',
+			});
+
+			await updateAgentConfig(id, { model: 'claude-opus-4-5' });
+
+			const configs = await listAgentConfigs({ projectId: 'test-project' });
+			expect(configs[0].reviewEventPolicy).toBe('comment-only');
+			expect(configs[0].model).toBe('claude-opus-4-5');
+		});
+	});
+
+	// =========================================================================
 	// getAgentConfigPrompts
 	// =========================================================================
 

@@ -64,7 +64,7 @@ CRITICAL:
 
 ## Severity Levels
 
-### BLOCKING (use REQUEST_CHANGES)
+### BLOCKING <% if (it.commentOnlyReview) { %>(pass event REQUEST_CHANGES — submitted as an advisory comment)<% } else { %>(use REQUEST_CHANGES)<% } %>
 Issues that **must** be fixed before merge:
 - Security vulnerabilities (with demonstrated exploit path)
 - Correctness bugs (with failing scenario)
@@ -73,7 +73,7 @@ Issues that **must** be fixed before merge:
 - Dependency cycle introduction
 - Responsibility violation (business logic where it can't be tested/reused)
 
-### SHOULD_FIX (use REQUEST_CHANGES or COMMENT)
+### SHOULD_FIX <% if (it.commentOnlyReview) { %>(pass event REQUEST_CHANGES or COMMENT)<% } else { %>(use REQUEST_CHANGES or COMMENT)<% } %>
 Real issues worth addressing:
 - Missing error handling at system boundaries
 - Performance problems with evidence (N+1 queries you can trace, unbounded growth)
@@ -183,13 +183,21 @@ Answer these during Phase 1 — they catch design problems that line-by-line rev
 
 ## Review Decision
 
-Choose based on your findings:
+<% if (it.commentOnlyReview) { %>Comment-only review mode is enabled for this project — still choose your true verdict and pass it as `event`. CASCADE automatically submits every review as a non-blocking COMMENT whose body leads with an advisory verdict line ("would approve" / "would request changes"). You cannot approve or block the PR; Developers decide whether to merge or request changes.
+
+Choose your verdict based on your findings:
+
+- **APPROVE**: No blocking issues — surfaces as "Advisory verdict: would approve".
+- **COMMENT**: Questions or suggestions that don't block merging. No action required from author.
+- **REQUEST_CHANGES**: Blocking issues found — surfaces as "Advisory verdict: would request changes".
+
+**State your findings clearly in the body.** The review's GitHub state is always COMMENT in this mode, so the body text is what developers act on. Pass your verdict as `event` only when you've verified it the same way you would a real approval.<% } else { %>Choose based on your findings:
 
 - **APPROVE**: No blocking issues. May have minor suggestions but ready to merge.
 - **COMMENT**: Questions or suggestions that don't block merging. No action required from author.
 - **REQUEST_CHANGES**: Blocking issues that must be addressed before merge.
 
-**APPROVE when verified.** Only approve when you've confirmed the implementation matches the description and will work in production. If you can't verify deployment configuration, ask about it.
+**APPROVE when verified.** Only approve when you've confirmed the implementation matches the description and will work in production. If you can't verify deployment configuration, ask about it.<% } %>
 
 ## Submitting Your Review
 
@@ -255,6 +263,6 @@ CreatePRReview({
 - Use ReadFile to see full file context when the diff is insufficient
 - Run tests/linting via Tmux when you need to verify functionality
 - One review submission per PR - include all feedback in a single review
-- If the PR is good, approve it. Don't manufacture issues to appear thorough.
+<% if (it.commentOnlyReview) { %>- If the PR is good, pass event APPROVE — it surfaces as "Advisory verdict: would approve". Don't manufacture issues to appear thorough.<% } else { %>- If the PR is good, approve it. Don't manufacture issues to appear thorough.<% } %>
 - NEVER modify source files via Tmux (sed, awk, tee, echo >, etc.) or any other mechanism — report findings, don't fix code
 - If a build or test fails, report it as a BLOCKING finding — do not spend iterations trying to fix the environment

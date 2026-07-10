@@ -32,6 +32,31 @@ describe.concurrent('ProjectConfigSchema', () => {
 		expect(result.branchPrefix).toBe('feature/');
 	});
 
+	it('accepts agentReviewEventPolicies keyed by agent type', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			agentReviewEventPolicies: { review: 'comment-only' },
+		};
+
+		const result = ProjectConfigSchema.parse(config);
+		expect(result.agentReviewEventPolicies).toEqual({ review: 'comment-only' });
+	});
+
+	it('rejects unknown agentReviewEventPolicies values', () => {
+		const config = {
+			id: 'test',
+			orgId: 'default',
+			name: 'Test',
+			repo: 'owner/repo',
+			agentReviewEventPolicies: { review: 'both' },
+		};
+
+		expect(() => ProjectConfigSchema.parse(config)).toThrow();
+	});
+
 	it('leaves pm undefined for an SCM-only project (no pm field, not defaulted to trello)', () => {
 		const config = {
 			id: 'scm-only',

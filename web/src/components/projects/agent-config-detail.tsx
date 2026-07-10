@@ -54,6 +54,9 @@ function DefinitionAgentSection({
 	const [agentEngine, setAgentEngine] = useState(config?.agentEngine ?? '');
 	const [maxConcurrency, setMaxConcurrency] = useState(config?.maxConcurrency?.toString() ?? '');
 	const [updateChannel, setUpdateChannel] = useState<string>(config?.updateChannel ?? 'both');
+	const [reviewEventPolicy, setReviewEventPolicy] = useState<string>(
+		config?.reviewEventPolicy ?? 'all',
+	);
 	const [engineSettings, setEngineSettings] = useState<
 		Record<string, Record<string, unknown>> | undefined
 	>(config?.agentEngineSettings ?? undefined);
@@ -89,6 +92,7 @@ function DefinitionAgentSection({
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
 		setUpdateChannel(config?.updateChannel ?? 'both');
+		setReviewEventPolicy(config?.reviewEventPolicy ?? 'all');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
 		setSystemPrompt(config?.systemPrompt ?? '');
 		setTaskPrompt(config?.taskPrompt ?? '');
@@ -159,6 +163,7 @@ function DefinitionAgentSection({
 			agentEngine,
 			maxConcurrency,
 			updateChannel,
+			reviewEventPolicy,
 			engineSettings,
 			systemPrompt,
 			taskPrompt,
@@ -173,6 +178,7 @@ function DefinitionAgentSection({
 		setAgentEngine(config?.agentEngine ?? '');
 		setMaxConcurrency(config?.maxConcurrency?.toString() ?? '');
 		setUpdateChannel(config?.updateChannel ?? 'both');
+		setReviewEventPolicy(config?.reviewEventPolicy ?? 'all');
 		setEngineSettings(config?.agentEngineSettings ?? undefined);
 		setSystemPrompt(config?.systemPrompt ?? '');
 		setTaskPrompt(config?.taskPrompt ?? '');
@@ -281,6 +287,25 @@ function DefinitionAgentSection({
 							status moves) always run.
 						</p>
 					</div>
+					{agentType === 'review' && (
+						<div className="space-y-2">
+							<Label htmlFor={`${agentType}-review-event-policy`}>Review event policy</Label>
+							<Select value={reviewEventPolicy} onValueChange={setReviewEventPolicy}>
+								<SelectTrigger id={`${agentType}-review-event-policy`} className="w-full">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="all">All events</SelectItem>
+									<SelectItem value="comment-only">Comment only (advisory)</SelectItem>
+								</SelectContent>
+							</Select>
+							<p className="text-xs text-muted-foreground">
+								Comment only: reviews are submitted as non-blocking comments with an advisory
+								verdict; developers approve PRs. Keep the respond-to-review trigger disabled with
+								this mode.
+							</p>
+						</div>
+					)}
 				</TabsContent>
 
 				{/* Prompts Tab */}

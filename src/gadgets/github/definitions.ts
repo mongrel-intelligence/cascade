@@ -213,7 +213,8 @@ export const createPRReviewDef: ToolDefinition = {
 		event: {
 			type: 'enum',
 			options: ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'],
-			describe: 'The review action: APPROVE, REQUEST_CHANGES, or COMMENT',
+			describe:
+				'The review action: APPROVE, REQUEST_CHANGES, or COMMENT. Under a comment-only review policy the submission is automatically downgraded to COMMENT with an advisory verdict line — still pass your true verdict.',
 			required: true,
 		},
 		body: {

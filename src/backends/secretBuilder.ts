@@ -1,5 +1,10 @@
 import type { AgentProfile } from '../agents/definitions/profiles.js';
 import { getAllProjectCredentials } from '../config/provider.js';
+import {
+	isCommentOnlyReview,
+	REVIEW_EVENT_POLICY_ENV_VAR,
+	resolveReviewEventPolicy,
+} from '../config/reviewEventPolicy.js';
 import { getPersonaToken } from '../github/personas.js';
 import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
@@ -125,6 +130,15 @@ export async function augmentProjectSecrets(
 	// Inject agent type so Finish command can validate without flags
 	projectSecrets.CASCADE_AGENT_TYPE = agentType;
 	injectAgentInputContext(projectSecrets, input);
+
+	// Inject the review event policy so the cascade-tools create-pr-review
+	// subprocess enforces comment-only mode. Omitted under the default (`all`)
+	// policy — absence means "no restriction". In-process gadget runs resolve
+	// the policy from SessionState instead (see src/gadgets/github/CreatePRReview.ts).
+	const reviewEventPolicy = resolveReviewEventPolicy(project, agentType);
+	if (isCommentOnlyReview(reviewEventPolicy)) {
+		projectSecrets[REVIEW_EVENT_POLICY_ENV_VAR] = reviewEventPolicy;
+	}
 
 	// Inject PM type so cascade-tools uses the correct provider. Omitted for
 	// SCM-only projects (no PM provider) so the worker doesn't assume Trello.

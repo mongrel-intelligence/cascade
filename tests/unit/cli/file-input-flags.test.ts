@@ -457,6 +457,7 @@ describe('CreatePRReview --body-file', () => {
 				event: 'COMMENT',
 				body: 'Review body from file',
 			}),
+			{ eventPolicy: 'all' },
 		);
 	});
 
@@ -472,6 +473,7 @@ describe('CreatePRReview --body-file', () => {
 			expect.objectContaining({
 				body: 'from file',
 			}),
+			{ eventPolicy: 'all' },
 		);
 	});
 
@@ -498,6 +500,7 @@ describe('CreatePRReview --body-file', () => {
 				body: 'Needs a small change',
 				comments,
 			}),
+			{ eventPolicy: 'all' },
 		);
 	});
 
@@ -523,6 +526,7 @@ describe('CreatePRReview --body-file', () => {
 				body: 'Needs a small change',
 				comments: [comment],
 			}),
+			{ eventPolicy: 'all' },
 		);
 	});
 

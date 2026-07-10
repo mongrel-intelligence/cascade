@@ -89,6 +89,28 @@ describe('augmentProjectSecrets', () => {
 		expect(secrets.CASCADE_AGENT_TYPE).toBe('review');
 	});
 
+	it('injects CASCADE_REVIEW_EVENT_POLICY when the agent policy is comment-only', async () => {
+		const project = makeProject({
+			agentReviewEventPolicies: { review: 'comment-only' },
+		});
+		const secrets = await augmentProjectSecrets(project, 'review', {} as AgentInput);
+		expect(secrets.CASCADE_REVIEW_EVENT_POLICY).toBe('comment-only');
+	});
+
+	it('does not inject CASCADE_REVIEW_EVENT_POLICY under the default policy', async () => {
+		const project = makeProject();
+		const secrets = await augmentProjectSecrets(project, 'review', {} as AgentInput);
+		expect(secrets.CASCADE_REVIEW_EVENT_POLICY).toBeUndefined();
+	});
+
+	it('does not inject CASCADE_REVIEW_EVENT_POLICY for agents without a comment-only policy', async () => {
+		const project = makeProject({
+			agentReviewEventPolicies: { review: 'comment-only' },
+		});
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_REVIEW_EVENT_POLICY).toBeUndefined();
+	});
+
 	it('injects work item and PR runtime metadata from agent input', async () => {
 		const project = makeProject();
 		const secrets = await augmentProjectSecrets(project, 'review', {

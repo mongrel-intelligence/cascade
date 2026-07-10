@@ -10,6 +10,8 @@ vi.mock('../../../../src/gadgets/sessionState.js', async (importOriginal) => {
 		...actual,
 		recordReviewSubmission: vi.fn(),
 		deleteInitialComment: vi.fn(),
+		getProject: vi.fn(),
+		getAgentType: vi.fn(),
 	};
 });
 
@@ -17,12 +19,17 @@ import { CreatePRReview } from '../../../../src/gadgets/github/CreatePRReview.js
 import { createPRReview } from '../../../../src/gadgets/github/core/createPRReview.js';
 import {
 	deleteInitialComment,
+	getAgentType,
+	getProject,
 	recordReviewSubmission,
 } from '../../../../src/gadgets/sessionState.js';
+import type { ProjectConfig } from '../../../../src/types/index.js';
 
 const mockCreatePRReview = vi.mocked(createPRReview);
 const mockRecordReviewSubmission = vi.mocked(recordReviewSubmission);
 const mockDeleteInitialComment = vi.mocked(deleteInitialComment);
+const mockGetProject = vi.mocked(getProject);
+const mockGetAgentType = vi.mocked(getAgentType);
 
 const BASE_PARAMS = {
 	comment: 'Approving after review',
@@ -33,7 +40,14 @@ const BASE_PARAMS = {
 	body: 'LGTM!',
 };
 
-function structuredReviewResult(overrides: Partial<{ reviewUrl: string; event: string }> = {}) {
+function structuredReviewResult(
+	overrides: Partial<{
+		reviewUrl: string;
+		event: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+		advisoryEvent: 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
+		finalBody: string;
+	}> = {},
+) {
 	return {
 		id: '1',
 		status: 'ok' as const,
@@ -41,6 +55,7 @@ function structuredReviewResult(overrides: Partial<{ reviewUrl: string; event: s
 		url: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
 		reviewUrl: 'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
 		event: 'APPROVE' as const,
+		finalBody: 'LGTM!',
 		repoFullName: 'acme/myapp',
 		prNumber: 42,
 		submittedAt: '2026-05-01T10:00:00Z',
@@ -54,6 +69,8 @@ describe('CreatePRReview', () => {
 
 	beforeEach(() => {
 		gadget = new CreatePRReview();
+		mockGetProject.mockReturnValue(null);
+		mockGetAgentType.mockReturnValue(null);
 	});
 
 	it('submits review, records it, and deletes ack comment on success', async () => {
@@ -61,14 +78,17 @@ describe('CreatePRReview', () => {
 
 		const result = await gadget.execute(BASE_PARAMS);
 
-		expect(mockCreatePRReview).toHaveBeenCalledWith({
-			owner: 'acme',
-			repo: 'myapp',
-			prNumber: 42,
-			event: 'APPROVE',
-			body: 'LGTM!',
-			comments: undefined,
-		});
+		expect(mockCreatePRReview).toHaveBeenCalledWith(
+			{
+				owner: 'acme',
+				repo: 'myapp',
+				prNumber: 42,
+				event: 'APPROVE',
+				body: 'LGTM!',
+				comments: undefined,
+			},
+			{ eventPolicy: 'all' },
+		);
 		expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
 			'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
 			'LGTM!',
@@ -76,6 +96,48 @@ describe('CreatePRReview', () => {
 		);
 		expect(mockDeleteInitialComment).toHaveBeenCalledWith('acme', 'myapp');
 		expect(result).toContain('Review submitted successfully');
+	});
+
+	it('resolves the comment-only policy from SessionState and records the submitted event/body', async () => {
+		mockGetProject.mockReturnValue({
+			id: 'p1',
+			agentReviewEventPolicies: { review: 'comment-only' },
+		} as unknown as ProjectConfig);
+		mockGetAgentType.mockReturnValue('review');
+		const advisoryBody = '**Advisory verdict: would approve** …\n\nLGTM!';
+		mockCreatePRReview.mockResolvedValue(
+			structuredReviewResult({
+				event: 'COMMENT',
+				advisoryEvent: 'APPROVE',
+				finalBody: advisoryBody,
+			}),
+		);
+
+		const result = await gadget.execute(BASE_PARAMS);
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(expect.any(Object), {
+			eventPolicy: 'comment-only',
+		});
+		expect(mockRecordReviewSubmission).toHaveBeenCalledWith(
+			'https://github.com/acme/myapp/pull/42#pullrequestreview-1',
+			advisoryBody,
+			'COMMENT',
+		);
+		expect(result).toContain('comment-only review mode');
+		expect(result).toContain('advisory verdict: APPROVE');
+	});
+
+	it("resolves the 'all' policy when the project has no override for the agent type", async () => {
+		mockGetProject.mockReturnValue({
+			id: 'p1',
+			agentReviewEventPolicies: { review: 'comment-only' },
+		} as unknown as ProjectConfig);
+		mockGetAgentType.mockReturnValue('implementation');
+		mockCreatePRReview.mockResolvedValue(structuredReviewResult());
+
+		await gadget.execute(BASE_PARAMS);
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(expect.any(Object), { eventPolicy: 'all' });
 	});
 
 	it('does not fail if deleteInitialComment throws', async () => {

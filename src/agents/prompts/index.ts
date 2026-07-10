@@ -82,6 +82,10 @@ export interface PromptContext {
 	// Capacity / pipeline management
 	maxInFlightItems?: number;
 
+	// Review agent — true when the agent's review event policy is `comment-only`
+	// (reviews are downgraded to advisory COMMENT submissions by the tool layer).
+	commentOnlyReview?: boolean;
+
 	// Future extensibility
 	[key: string]: unknown;
 }
@@ -378,6 +382,12 @@ export function getTemplateVariables(): Array<{
 			name: 'maxInFlightItems',
 			group: 'Capacity',
 			description: 'Maximum number of items allowed in the active pipeline at once (default: 1)',
+		},
+		{
+			name: 'commentOnlyReview',
+			group: 'Review',
+			description:
+				'True when the review event policy is comment-only (reviews are submitted as advisory COMMENTs)',
 		},
 	];
 }

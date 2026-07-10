@@ -314,6 +314,80 @@ describe('buildAgentMaps', () => {
 		expect(result.updateChannels).toEqual({ review: 'both' });
 		expect(result.updateChannels.implementation).toBeUndefined();
 	});
+
+	it('returns empty reviewEventPolicies map for empty input', () => {
+		const result = buildAgentMaps([]);
+		expect(result.reviewEventPolicies).toEqual({});
+	});
+
+	it('maps a valid reviewEventPolicy per agent type', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				reviewEventPolicy: 'comment-only',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'custom-reviewer',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				reviewEventPolicy: 'all',
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.reviewEventPolicies).toEqual({
+			review: 'comment-only',
+			'custom-reviewer': 'all',
+		});
+	});
+
+	it('ignores null reviewEventPolicy values', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				reviewEventPolicy: null,
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(Object.keys(result.reviewEventPolicies)).toHaveLength(0);
+	});
+
+	it('ignores unknown reviewEventPolicy values (validated against REVIEW_EVENT_POLICIES)', () => {
+		const configs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				// an update-channel value, not a review-event policy — must be ignored
+				reviewEventPolicy: 'both',
+			},
+			{
+				projectId: 'proj1',
+				agentType: 'custom-reviewer',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				reviewEventPolicy: 'comment-only',
+			},
+		];
+
+		const result = buildAgentMaps(configs);
+		expect(result.reviewEventPolicies).toEqual({ 'custom-reviewer': 'comment-only' });
+		expect(result.reviewEventPolicies.review).toBeUndefined();
+	});
 });
 
 // ---------------------------------------------------------------------------
@@ -597,5 +671,35 @@ describe('mapProjectRow', () => {
 		];
 		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
 		expect(result.agentUpdateChannels).toBeUndefined();
+	});
+
+	it('builds agentReviewEventPolicies from project agent configs', () => {
+		const agentConfigs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: null,
+				maxIterations: null,
+				agentEngine: null,
+				reviewEventPolicy: 'comment-only',
+			},
+		];
+		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
+		expect(result.agentReviewEventPolicies).toEqual({ review: 'comment-only' });
+	});
+
+	it('leaves agentReviewEventPolicies undefined when no policies are configured (orUndefined)', () => {
+		const agentConfigs: AgentConfigRow[] = [
+			{
+				projectId: 'proj1',
+				agentType: 'review',
+				model: 'some-model',
+				maxIterations: null,
+				agentEngine: null,
+				reviewEventPolicy: null,
+			},
+		];
+		const result = mapProjectRow(makeInput({ projectAgentConfigs: agentConfigs }));
+		expect(result.agentReviewEventPolicies).toBeUndefined();
 	});
 });

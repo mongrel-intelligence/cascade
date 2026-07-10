@@ -12,6 +12,7 @@ import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { buildPromptContext } from '../agents/shared/promptContext.js';
 import type { createAgentLogger } from '../agents/utils/logging.js';
 import { mergeEngineSettings } from '../config/engineSettings.js';
+import { isCommentOnlyReview, resolveReviewEventPolicy } from '../config/reviewEventPolicy.js';
 import { filterPostingGadgetNames, resolveUpdateChannel } from '../config/updateChannel.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
@@ -86,6 +87,13 @@ export async function buildExecutionPlan(
 		prContext,
 		undefined,
 		alertingResultsContainerId,
+	);
+
+	// Thread the comment-only review flag into prompt rendering so review.eta
+	// can explain the advisory-verdict contract. The tool layer enforces the
+	// policy regardless (see src/gadgets/github/core/createPRReview.ts).
+	promptContext.commentOnlyReview = isCommentOnlyReview(
+		resolveReviewEventPolicy(project, agentType),
 	);
 
 	// Load DB partials for template include resolution

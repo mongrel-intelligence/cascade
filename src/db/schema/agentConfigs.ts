@@ -21,6 +21,9 @@ export const agentConfigs = pgTable(
 		// Per-agent update-channel override. NULL → inherit the default (`both`).
 		// Validated against UPDATE_CHANNELS in the config mapper. See src/config/updateChannel.ts.
 		updateChannel: text('update_channel'),
+		// Per-agent review-event-policy override. NULL → inherit the default (`all`).
+		// Validated against REVIEW_EVENT_POLICIES in the config mapper. See src/config/reviewEventPolicy.ts.
+		reviewEventPolicy: text('review_event_policy'),
 		createdAt: timestamp('created_at').defaultNow(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

@@ -106,6 +106,23 @@ describe('agentConfigsRepository', () => {
 				}),
 			);
 		});
+
+		it('persists reviewEventPolicy when provided', async () => {
+			mockDb.chain.returning.mockResolvedValueOnce([{ id: 46 }]);
+
+			const result = await createAgentConfig({
+				projectId: 'proj-1',
+				agentType: 'review',
+				reviewEventPolicy: 'comment-only',
+			});
+
+			expect(result).toEqual({ id: 46 });
+			expect(mockDb.chain.values).toHaveBeenCalledWith(
+				expect.objectContaining({
+					reviewEventPolicy: 'comment-only',
+				}),
+			);
+		});
 	});
 
 	describe('updateAgentConfig', () => {
@@ -173,6 +190,26 @@ describe('agentConfigsRepository', () => {
 
 			const setArg = mockDb.chain.set.mock.calls[0][0];
 			expect(setArg.updateChannel).toBeNull();
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('persists reviewEventPolicy when provided', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateAgentConfig(42, { reviewEventPolicy: 'comment-only' });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.reviewEventPolicy).toBe('comment-only');
+			expect(setArg.updatedAt).toBeInstanceOf(Date);
+		});
+
+		it('can set reviewEventPolicy to null', async () => {
+			mockDb.chain.where.mockResolvedValueOnce(undefined);
+
+			await updateAgentConfig(42, { reviewEventPolicy: null });
+
+			const setArg = mockDb.chain.set.mock.calls[0][0];
+			expect(setArg.reviewEventPolicy).toBeNull();
 			expect(setArg.updatedAt).toBeInstanceOf(Date);
 		});
 	});

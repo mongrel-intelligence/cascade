@@ -9,6 +9,7 @@ import {
 } from '../../agents/prompts/index.js';
 import { getEngineCatalog, registerBuiltInEngines } from '../../backends/index.js';
 import { EngineSettingsSchema } from '../../config/engineSettings.js';
+import { ReviewEventPolicySchema } from '../../config/reviewEventPolicy.js';
 import { UpdateChannelSchema } from '../../config/updateChannel.js';
 import { getDb } from '../../db/client.js';
 import { loadPartials } from '../../db/repositories/partialsRepository.js';
@@ -80,6 +81,7 @@ export const agentConfigsRouter = router({
 				systemPrompt: z.string().nullish(),
 				taskPrompt: z.string().nullish(),
 				updateChannel: UpdateChannelSchema.nullish(),
+				reviewEventPolicy: ReviewEventPolicySchema.nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {
@@ -101,6 +103,9 @@ export const agentConfigsRouter = router({
 				...(input.systemPrompt !== undefined ? { systemPrompt: input.systemPrompt } : {}),
 				...(input.taskPrompt !== undefined ? { taskPrompt: input.taskPrompt } : {}),
 				...(input.updateChannel !== undefined ? { updateChannel: input.updateChannel } : {}),
+				...(input.reviewEventPolicy !== undefined
+					? { reviewEventPolicy: input.reviewEventPolicy }
+					: {}),
 			});
 		}),
 
@@ -117,6 +122,7 @@ export const agentConfigsRouter = router({
 				systemPrompt: z.string().nullish(),
 				taskPrompt: z.string().nullish(),
 				updateChannel: UpdateChannelSchema.nullish(),
+				reviewEventPolicy: ReviewEventPolicySchema.nullish(),
 			}),
 		)
 		.mutation(async ({ ctx, input }) => {

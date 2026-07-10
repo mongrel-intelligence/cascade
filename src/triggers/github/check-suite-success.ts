@@ -1,3 +1,4 @@
+import { isCommentOnlyReview, resolveReviewEventPolicy } from '../../config/reviewEventPolicy.js';
 import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -217,13 +218,22 @@ export class CheckSuiteSuccessTrigger implements TriggerHandler {
 		// (evaluateAuthorMode above already verified personaIdentities exists)
 		const reviewerUsername = ctx.personaIdentities?.reviewer;
 
-		// Only consider actual reviews (approved/changes_requested), not COMMENTED
-		// which are reply acknowledgments posted by respond-to-review agent
+		// Only consider actual reviews (approved/changes_requested) by default.
+		// COMMENTED reviews are excluded because respond-to-review's inline reply
+		// acks surface as COMMENTED reviews — those are implementer-persona and
+		// already fail the reviewer-login filter, but the review agent can also
+		// submit genuine COMMENT reviews that historically didn't count as "reviewed".
+		// Under a comment-only review event policy EVERY review-agent submission is
+		// COMMENTED, so reviewer-persona commented reviews must count or each green
+		// check suite would re-review the same HEAD forever.
+		const countCommented = isCommentOnlyReview(resolveReviewEventPolicy(ctx.project, 'review'));
 		const ourReviews = reviews.filter(
 			(r) =>
 				reviewerUsername &&
 				r.user.login === reviewerUsername &&
-				(r.state === 'approved' || r.state === 'changes_requested'),
+				(r.state === 'approved' ||
+					r.state === 'changes_requested' ||
+					(countCommented && r.state === 'commented')),
 		);
 		if (ourReviews.length > 0) {
 			const latestReview = ourReviews[ourReviews.length - 1];

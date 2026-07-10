@@ -68,6 +68,7 @@ import {
 	resolveEffectiveCapabilities,
 } from '../../../src/agents/capabilities/resolver.js';
 import { getAgentProfile } from '../../../src/agents/definitions/profiles.js';
+import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.js';
 import { buildPromptContext } from '../../../src/agents/shared/promptContext.js';
 import {
 	buildExecutionPlan,
@@ -299,6 +300,67 @@ describe('buildExecutionPlan', () => {
 		);
 
 		expect(withoutFriction.systemPrompt).not.toContain('Friction Reporting');
+	});
+
+	describe('review event policy prompt flag', () => {
+		it('sets promptContext.commentOnlyReview=true for a comment-only review agent', async () => {
+			mockBuildPromptContext.mockReturnValueOnce({});
+			const project = makeProject({ agentReviewEventPolicies: { review: 'comment-only' } });
+
+			await buildExecutionPlan(
+				'review',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
+			expect(promptContext.commentOnlyReview).toBe(true);
+		});
+
+		it('sets promptContext.commentOnlyReview=false under the default policy', async () => {
+			mockBuildPromptContext.mockReturnValueOnce({});
+
+			await buildExecutionPlan(
+				'review',
+				makeInput(makeProject(), 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
+			expect(promptContext.commentOnlyReview).toBe(false);
+		});
+
+		it('sets promptContext.commentOnlyReview=false for non-review agents on a comment-only project', async () => {
+			mockBuildPromptContext.mockReturnValueOnce({});
+			const project = makeProject({ agentReviewEventPolicies: { review: 'comment-only' } });
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
+			expect(promptContext.commentOnlyReview).toBe(false);
+		});
 	});
 
 	// MNG-1685: the native-tool engine family (claude-code/codex/opencode) renders

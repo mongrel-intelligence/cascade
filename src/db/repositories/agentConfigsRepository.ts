@@ -23,6 +23,7 @@ export async function createAgentConfig(data: {
 	systemPrompt?: string | null;
 	taskPrompt?: string | null;
 	updateChannel?: string | null;
+	reviewEventPolicy?: string | null;
 }) {
 	const db = getDb();
 	const [row] = await db
@@ -38,6 +39,7 @@ export async function createAgentConfig(data: {
 			systemPrompt: data.systemPrompt,
 			taskPrompt: data.taskPrompt,
 			updateChannel: data.updateChannel,
+			reviewEventPolicy: data.reviewEventPolicy,
 		})
 		.returning({ id: agentConfigs.id });
 	return row;
@@ -55,6 +57,7 @@ export async function updateAgentConfig(
 		systemPrompt?: string | null;
 		taskPrompt?: string | null;
 		updateChannel?: string | null;
+		reviewEventPolicy?: string | null;
 	},
 ) {
 	const db = getDb();

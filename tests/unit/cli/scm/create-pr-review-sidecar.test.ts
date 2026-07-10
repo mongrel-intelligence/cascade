@@ -75,6 +75,7 @@ describe('CreatePRReviewCommand sidecar write', () => {
 		mockCreatePRReview.mockResolvedValue({
 			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-123',
 			event: 'REQUEST_CHANGES',
+			finalBody: 'Needs changes to error handling',
 		});
 
 		const cmd = new CreatePRReviewCommand([], {} as never);
@@ -167,5 +168,111 @@ describe('CreatePRReviewCommand sidecar write', () => {
 		await cmd.execute();
 
 		expect(existsSync(sidecarPath)).toBe(false);
+	});
+});
+
+describe('CreatePRReviewCommand review event policy', () => {
+	let sidecarPath: string;
+	let originalSidecarEnv: string | undefined;
+	let originalPolicyEnv: string | undefined;
+
+	function makeParseResult() {
+		return {
+			flags: {
+				owner: 'owner',
+				repo: 'repo',
+				prNumber: 1,
+				event: 'REQUEST_CHANGES',
+				body: 'Needs changes',
+			},
+			args: {},
+			argv: [],
+			raw: [],
+			metadata: {},
+			nonExistentFlags: {},
+		} as never;
+	}
+
+	beforeEach(() => {
+		sidecarPath = join(tmpdir(), `cascade-test-review-policy-${Date.now()}.json`);
+		originalSidecarEnv = process.env.CASCADE_REVIEW_SIDECAR_PATH;
+		originalPolicyEnv = process.env.CASCADE_REVIEW_EVENT_POLICY;
+		process.env.CASCADE_REVIEW_SIDECAR_PATH = sidecarPath;
+		Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_EVENT_POLICY');
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(sidecarPath, { force: true });
+		} catch {
+			// ignore
+		}
+		if (originalSidecarEnv !== undefined) {
+			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalSidecarEnv;
+		} else {
+			Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_SIDECAR_PATH');
+		}
+		if (originalPolicyEnv !== undefined) {
+			process.env.CASCADE_REVIEW_EVENT_POLICY = originalPolicyEnv;
+		} else {
+			Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_EVENT_POLICY');
+		}
+		vi.restoreAllMocks();
+	});
+
+	it('passes the env-resolved comment-only policy to the core and writes the SUBMITTED event/body', async () => {
+		process.env.CASCADE_REVIEW_EVENT_POLICY = 'comment-only';
+		const advisoryBody = '**Advisory verdict: would request changes** …\n\nNeeds changes';
+		mockCreatePRReview.mockResolvedValue({
+			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-321',
+			event: 'COMMENT',
+			advisoryEvent: 'REQUEST_CHANGES',
+			finalBody: advisoryBody,
+		});
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult());
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(expect.any(Object), {
+			eventPolicy: 'comment-only',
+		});
+		const sidecar = JSON.parse(readFileSync(sidecarPath, 'utf-8'));
+		expect(sidecar).toMatchObject({
+			event: 'COMMENT',
+			body: advisoryBody,
+		});
+	});
+
+	it("resolves the 'all' policy when the env var is absent", async () => {
+		mockCreatePRReview.mockResolvedValue({
+			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-322',
+			event: 'REQUEST_CHANGES',
+			finalBody: 'Needs changes',
+		});
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult());
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(expect.any(Object), { eventPolicy: 'all' });
+	});
+
+	it("treats an invalid env value as the default 'all' policy", async () => {
+		process.env.CASCADE_REVIEW_EVENT_POLICY = 'yolo';
+		mockCreatePRReview.mockResolvedValue({
+			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-323',
+			event: 'REQUEST_CHANGES',
+			finalBody: 'Needs changes',
+		});
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult());
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(expect.any(Object), { eventPolicy: 'all' });
 	});
 });

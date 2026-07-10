@@ -3,6 +3,7 @@ import { jiraConfigSchema } from '../integrations/pm/jira/config-schema.js';
 import { linearConfigSchema } from '../integrations/pm/linear/config-schema.js';
 import { trelloConfigSchema } from '../integrations/pm/trello/config-schema.js';
 import { EngineSettingsSchema } from './engineSettings.js';
+import { ReviewEventPolicySchema } from './reviewEventPolicy.js';
 import { UpdateChannelSchema } from './updateChannel.js';
 
 export const PROJECT_DEFAULTS = {
@@ -101,6 +102,13 @@ export const ProjectConfigSchema = z.object({
 	 * Read at runtime via resolveUpdateChannel() in src/config/updateChannel.ts.
 	 */
 	agentUpdateChannels: z.record(z.string(), UpdateChannelSchema).optional(),
+	/**
+	 * Per-agent review-event-policy overrides keyed by agent type.
+	 * Populated from agent_configs.review_event_policy rows at config load time.
+	 * Absent / NULL means the agent inherits the default policy (`all`).
+	 * Read at runtime via resolveReviewEventPolicy() in src/config/reviewEventPolicy.ts.
+	 */
+	agentReviewEventPolicies: z.record(z.string(), ReviewEventPolicySchema).optional(),
 	runLinksEnabled: z.boolean().default(false),
 	maxInFlightItems: z.number().int().positive().optional(),
 	snapshotEnabled: z.boolean().optional(),

@@ -1,4 +1,5 @@
 import { Args, Flags } from '@oclif/core';
+import type { ReviewEventPolicy } from '../../../config/reviewEventPolicy.js';
 import type { UpdateChannel } from '../../../config/updateChannel.js';
 import { DashboardCommand } from '../_shared/base.js';
 
@@ -20,6 +21,11 @@ export default class AgentsUpdate extends DashboardCommand {
 			description: 'Where this agent posts status updates',
 			options: ['none', 'scm-only', 'pm-only', 'both'],
 		}),
+		'review-event-policy': Flags.string({
+			description:
+				'Which PR review verdicts the agent may submit (comment-only downgrades every review to an advisory comment)',
+			options: ['all', 'comment-only'],
+		}),
 	};
 
 	async run(): Promise<void> {
@@ -35,6 +41,7 @@ export default class AgentsUpdate extends DashboardCommand {
 					agentEngine: flags.engine,
 					maxConcurrency: flags['max-concurrency'],
 					updateChannel: flags['update-channel'] as UpdateChannel | undefined,
+					reviewEventPolicy: flags['review-event-policy'] as ReviewEventPolicy | undefined,
 				}),
 			);
 

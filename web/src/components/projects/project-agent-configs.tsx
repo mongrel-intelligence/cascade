@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import type { ResolvedTrigger } from '@/components/shared/definition-trigger-toggles.js';
 import type { TriggerParameterValue } from '@/lib/trigger-agent-mapping.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
+import type { ReviewEventPolicy } from '../../../../src/config/reviewEventPolicy.js';
 import type { UpdateChannel } from '../../../../src/config/updateChannel.js';
 import { AgentDetailView } from './agent-config-detail.js';
 import { AgentListView } from './agent-config-list.js';
@@ -60,6 +61,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
 			updateChannel: UpdateChannel | null;
+			reviewEventPolicy: ReviewEventPolicy | null;
 			systemPrompt: string | null;
 			taskPrompt: string | null;
 		}) =>
@@ -72,6 +74,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
 				updateChannel: input.updateChannel,
+				reviewEventPolicy: input.reviewEventPolicy,
 				systemPrompt: input.systemPrompt,
 				taskPrompt: input.taskPrompt,
 			}),
@@ -99,6 +102,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			engineSettings: Record<string, Record<string, unknown>> | null;
 			maxConcurrency: number | null;
 			updateChannel: UpdateChannel | null;
+			reviewEventPolicy: ReviewEventPolicy | null;
 			systemPrompt: string | null;
 			taskPrompt: string | null;
 		}) =>
@@ -111,6 +115,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				engineSettings: input.engineSettings,
 				maxConcurrency: input.maxConcurrency,
 				updateChannel: input.updateChannel,
+				reviewEventPolicy: input.reviewEventPolicy,
 				systemPrompt: input.systemPrompt,
 				taskPrompt: input.taskPrompt,
 			}),
@@ -151,6 +156,7 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 				engineSettings: null,
 				maxConcurrency: null,
 				updateChannel: null,
+				reviewEventPolicy: null,
 				systemPrompt: null,
 				taskPrompt: null,
 			}),
@@ -254,6 +260,11 @@ export function ProjectAgentConfigs({ projectId }: { projectId: string }) {
 			engineSettings: activeEngineSettings,
 			maxConcurrency: values.maxConcurrency ? Number(values.maxConcurrency) : null,
 			updateChannel: values.updateChannel ? (values.updateChannel as UpdateChannel) : null,
+			// Persist NULL for the default ('all') so unconfigured rows stay clean.
+			reviewEventPolicy:
+				values.reviewEventPolicy && values.reviewEventPolicy !== 'all'
+					? (values.reviewEventPolicy as ReviewEventPolicy)
+					: null,
 			// When the user explicitly cleared an override, send null to remove it server-side.
 			// Otherwise fall back to empty-string → null conversion for unpopulated fields.
 			systemPrompt: values.systemPromptCleared ? null : values.systemPrompt || null,

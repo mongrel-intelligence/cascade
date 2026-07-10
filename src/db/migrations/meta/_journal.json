@@ -421,6 +421,13 @@
 			"when": 1794000000000,
 			"tag": "0059_project_worker_dockerfile",
 			"breakpoints": false
+		},
+		{
+			"idx": 60,
+			"version": "7",
+			"when": 1795000000000,
+			"tag": "0060_agent_config_review_event_policy",
+			"breakpoints": false
 		}
 	]
 }

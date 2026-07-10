@@ -609,6 +609,162 @@ describe('CheckSuiteSuccessTrigger', () => {
 			expect(result?.waitForChecks).toBeUndefined();
 		});
 
+		it('skips when a comment-only project has a reviewer-persona COMMENTED review at current HEAD', async () => {
+			const commentOnlyProject = createMockProject({
+				agentReviewEventPolicies: { review: 'comment-only' },
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-reviewer' },
+					state: 'commented',
+					body: '**Advisory verdict: would approve** …\n\nLGTM',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+			]);
+
+			const ctx: TriggerContext = {
+				project: commentOnlyProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expectSkip(result);
+		});
+
+		it('re-reviews when the comment-only advisory review covers a stale SHA', async () => {
+			const commentOnlyProject = createMockProject({
+				agentReviewEventPolicies: { review: 'comment-only' },
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-reviewer' },
+					state: 'commented',
+					body: '**Advisory verdict: would request changes** …\n\nTwo issues',
+					submittedAt: '',
+					commitId: 'old-sha',
+				},
+			]);
+
+			const ctx: TriggerContext = {
+				project: commentOnlyProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('still ignores reviewer-persona COMMENTED reviews under the default policy (regression pin)', async () => {
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-reviewer' },
+					state: 'commented',
+					body: 'Non-blocking suggestions',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+			]);
+
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('ignores implementer-persona COMMENTED reply acks even on a comment-only project', async () => {
+			const commentOnlyProject = createMockProject({
+				agentReviewEventPolicies: { review: 'comment-only' },
+			});
+			vi.mocked(githubClient.getPR).mockResolvedValue({
+				number: 42,
+				title: 'Test PR',
+				body: 'https://trello.com/c/abc123/card-name',
+				state: 'open',
+				headRef: 'feature/test',
+				headSha: 'sha123',
+				baseRef: 'main',
+				merged: false,
+				htmlUrl: 'https://github.com/owner/repo/pull/42',
+				user: { login: 'cascade-impl' },
+			});
+			vi.mocked(githubClient.getPRReviews).mockResolvedValue([
+				{
+					id: 1,
+					user: { login: 'cascade-impl' },
+					state: 'commented',
+					body: 'Replied to review comments',
+					submittedAt: '',
+					commitId: 'sha123',
+				},
+			]);
+
+			const ctx: TriggerContext = {
+				project: commentOnlyProject,
+				source: 'github',
+				payload: makeCheckSuitePayload(),
+				personaIdentities: mockPersonaIdentities,
+			};
+
+			const result = await trigger.handle(ctx);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
 		it('proceeds when PR has reviews from other users only', async () => {
 			vi.mocked(githubClient.getPR).mockResolvedValue({
 				number: 42,

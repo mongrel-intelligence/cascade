@@ -509,6 +509,122 @@ describe('agentConfigsRouter', () => {
 		});
 	});
 
+	describe('create with reviewEventPolicy', () => {
+		it('passes reviewEventPolicy to repository when creating project-scoped config', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 50 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				reviewEventPolicy: 'comment-only',
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ reviewEventPolicy: 'comment-only' }),
+			);
+		});
+
+		it('passes null reviewEventPolicy to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 51 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+				reviewEventPolicy: null,
+			});
+
+			expect(mockCreateAgentConfig).toHaveBeenCalledWith(
+				expect.objectContaining({ reviewEventPolicy: null }),
+			);
+		});
+
+		it('omits reviewEventPolicy from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+			mockCreateAgentConfig.mockResolvedValue({ id: 52 });
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.create({
+				projectId: 'proj-1',
+				agentType: 'review',
+			});
+
+			const callArg = mockCreateAgentConfig.mock.calls[0][0];
+			expect(Object.hasOwn(callArg, 'reviewEventPolicy')).toBe(false);
+		});
+
+		it('rejects an invalid reviewEventPolicy value', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				caller.create({
+					projectId: 'proj-1',
+					agentType: 'review',
+					// @ts-expect-error: testing invalid enum value
+					reviewEventPolicy: 'both',
+				}),
+			).rejects.toThrow();
+
+			expect(mockCreateAgentConfig).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('update with reviewEventPolicy', () => {
+		it('passes reviewEventPolicy to repository when updating project-scoped config', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 12, reviewEventPolicy: 'comment-only' });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				12,
+				expect.objectContaining({ reviewEventPolicy: 'comment-only' }),
+			);
+		});
+
+		it('passes null reviewEventPolicy to repository when explicitly set to null', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 12, reviewEventPolicy: null });
+
+			expect(mockUpdateAgentConfig).toHaveBeenCalledWith(
+				12,
+				expect.objectContaining({ reviewEventPolicy: null }),
+			);
+		});
+
+		it('omits reviewEventPolicy from repository call when not provided', async () => {
+			mockDbWhere.mockResolvedValueOnce([{ projectId: 'proj-1' }]);
+			mockDbWhere.mockResolvedValueOnce([{ orgId: 'org-1' }]);
+			mockUpdateAgentConfig.mockResolvedValue(undefined);
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await caller.update({ id: 12, model: 'new-model' });
+
+			const callArg = mockUpdateAgentConfig.mock.calls[0][1];
+			expect(Object.hasOwn(callArg, 'reviewEventPolicy')).toBe(false);
+		});
+
+		it('rejects an invalid reviewEventPolicy value', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+
+			await expect(
+				// @ts-expect-error: testing invalid enum value
+				caller.update({ id: 12, reviewEventPolicy: 'APPROVE' }),
+			).rejects.toThrow();
+
+			expect(mockUpdateAgentConfig).not.toHaveBeenCalled();
+		});
+	});
+
 	describe('create with prompts', () => {
 		it('passes systemPrompt and taskPrompt to repository when provided', async () => {
 			mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);

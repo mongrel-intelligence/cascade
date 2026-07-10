@@ -1,4 +1,5 @@
 import type { EngineSettings } from '../../config/engineSettings.js';
+import { REVIEW_EVENT_POLICIES, type ReviewEventPolicy } from '../../config/reviewEventPolicy.js';
 import { UPDATE_CHANNELS, type UpdateChannel } from '../../config/updateChannel.js';
 
 /**
@@ -59,6 +60,8 @@ export interface AgentConfigRow {
 	agentEngineSettings?: EngineSettings | null;
 	/** Per-agent update-channel override. NULL/absent → inherit the default (`both`). */
 	updateChannel?: string | null;
+	/** Per-agent review-event-policy override. NULL/absent → inherit the default (`all`). */
+	reviewEventPolicy?: string | null;
 }
 
 export interface IntegrationRow {
@@ -105,6 +108,8 @@ export interface ProjectConfigRaw {
 	agentEngineSettings?: Record<string, EngineSettings>;
 	/** Per-agent update-channel overrides keyed by agent type. */
 	agentUpdateChannels?: Record<string, UpdateChannel>;
+	/** Per-agent review-event-policy overrides keyed by agent type. */
+	agentReviewEventPolicies?: Record<string, ReviewEventPolicy>;
 	runLinksEnabled?: boolean;
 	maxInFlightItems?: number;
 	snapshotEnabled?: boolean;
@@ -197,12 +202,14 @@ export function buildAgentMaps(configs: AgentConfigRow[]): {
 	engines: Record<string, string>;
 	engineSettings: Record<string, EngineSettings>;
 	updateChannels: Record<string, UpdateChannel>;
+	reviewEventPolicies: Record<string, ReviewEventPolicy>;
 } {
 	const models: Record<string, string> = {};
 	const iterations: Record<string, number> = {};
 	const engines: Record<string, string> = {};
 	const engineSettings: Record<string, EngineSettings> = {};
 	const updateChannels: Record<string, UpdateChannel> = {};
+	const reviewEventPolicies: Record<string, ReviewEventPolicy> = {};
 	for (const ac of configs) {
 		if (ac.model) models[ac.agentType] = ac.model;
 		if (ac.maxIterations != null) iterations[ac.agentType] = ac.maxIterations;
@@ -213,13 +220,22 @@ export function buildAgentMaps(configs: AgentConfigRow[]): {
 		if (ac.updateChannel != null && isUpdateChannel(ac.updateChannel)) {
 			updateChannels[ac.agentType] = ac.updateChannel;
 		}
+		// Same contract for the review-event policy: unknown/NULL values are skipped.
+		if (ac.reviewEventPolicy != null && isReviewEventPolicy(ac.reviewEventPolicy)) {
+			reviewEventPolicies[ac.agentType] = ac.reviewEventPolicy;
+		}
 	}
-	return { models, iterations, engines, engineSettings, updateChannels };
+	return { models, iterations, engines, engineSettings, updateChannels, reviewEventPolicies };
 }
 
 /** Type guard narrowing a persisted string to a known {@link UpdateChannel}. */
 function isUpdateChannel(value: string): value is UpdateChannel {
 	return (UPDATE_CHANNELS as readonly string[]).includes(value);
+}
+
+/** Type guard narrowing a persisted string to a known {@link ReviewEventPolicy}. */
+function isReviewEventPolicy(value: string): value is ReviewEventPolicy {
+	return (REVIEW_EVENT_POLICIES as readonly string[]).includes(value);
 }
 
 export function orUndefined<T extends Record<string, unknown>>(obj: T): T | undefined {
@@ -361,6 +377,7 @@ export function mapProjectRow({
 		engines,
 		engineSettings: agentEngineSettingsMap,
 		updateChannels,
+		reviewEventPolicies,
 	} = buildAgentMaps(projectAgentConfigs);
 
 	// Derive PM type from integration config. No PM integration → `undefined`
@@ -381,6 +398,7 @@ export function mapProjectRow({
 			| Record<string, EngineSettings>
 			| undefined,
 		agentUpdateChannels: orUndefined(updateChannels),
+		agentReviewEventPolicies: orUndefined(reviewEventPolicies),
 	};
 
 	if (trelloConfig) {

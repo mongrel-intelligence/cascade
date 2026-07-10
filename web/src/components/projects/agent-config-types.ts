@@ -7,6 +7,7 @@
 
 import type { ResolvedTrigger } from '@/components/shared/definition-trigger-toggles.js';
 import type { TriggerParameterValue } from '@/lib/trigger-agent-mapping.js';
+import type { ReviewEventPolicy } from '../../../../src/config/reviewEventPolicy.js';
 import type { UpdateChannel } from '../../../../src/config/updateChannel.js';
 
 export interface AgentConfig {
@@ -20,6 +21,7 @@ export interface AgentConfig {
 	systemPrompt: string | null;
 	taskPrompt: string | null;
 	updateChannel: UpdateChannel | null;
+	reviewEventPolicy: ReviewEventPolicy | null;
 }
 
 interface EngineSettingFieldOption {
@@ -62,6 +64,7 @@ export interface SaveConfigValues {
 	agentEngine: string;
 	maxConcurrency: string;
 	updateChannel: string;
+	reviewEventPolicy: string;
 	engineSettings: Record<string, Record<string, unknown>> | undefined;
 	systemPrompt: string;
 	taskPrompt: string;
