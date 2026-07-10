@@ -31,6 +31,8 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { findProjectById, getIntegrationCredential } from '../../../src/config/provider.js';
 import {
+	_resetJiraCloudIdCache,
+	JiraPlatformClient,
 	LinearPlatformClient,
 	resolveGitHubHeaders,
 	resolveJiraCredentials,
@@ -90,6 +92,12 @@ const MOCK_PROJECT_WITH_JIRA = {
 	},
 };
 
+/** Same project but configured for scoped gateway-token auth. */
+const MOCK_PROJECT_WITH_JIRA_SCOPED = {
+	...MOCK_PROJECT_WITH_JIRA,
+	jira: { ...MOCK_PROJECT_WITH_JIRA.jira, authType: 'scoped' as const },
+};
+
 beforeEach(() => {
 	mockFetch.mockReset();
 
@@ -138,6 +146,22 @@ describe('resolveJiraCredentials', () => {
 		// auth is base64 of email:apiToken
 		const expected = Buffer.from('bot@example.com:jira-api-token').toString('base64');
 		expect(result?.auth).toBe(expected);
+	});
+
+	it('leaves authType undefined when the JIRA config does not set it (basic default)', async () => {
+		const result = await resolveJiraCredentials('proj1');
+
+		expect(result).not.toBeNull();
+		expect(result?.authType).toBeUndefined();
+	});
+
+	it('reads authType from the project JIRA config when set to scoped', async () => {
+		mockFindProjectById.mockResolvedValue(MOCK_PROJECT_WITH_JIRA_SCOPED);
+
+		const result = await resolveJiraCredentials('proj1');
+
+		expect(result).not.toBeNull();
+		expect(result?.authType).toBe('scoped');
 	});
 
 	it('returns null when credentials are missing', async () => {
@@ -423,6 +447,138 @@ describe('LinearPlatformClient', () => {
 
 			expect(lastFetchAuth()).toBe(LINEAR_API_KEY);
 			expect(lastFetchAuth()).not.toMatch(/^Bearer\s/);
+		});
+	});
+});
+
+// ---------------------------------------------------------------------------
+// JiraPlatformClient — effective-host routing (MNG-1739)
+// ---------------------------------------------------------------------------
+
+describe('JiraPlatformClient', () => {
+	beforeEach(() => {
+		mockLogger.info.mockReset();
+		mockLogger.warn.mockReset();
+		// The cloudId cache is module-level; reset it so scoped tests re-fetch tenant_info.
+		_resetJiraCloudIdCache();
+	});
+
+	describe('postComment', () => {
+		it('basic mode: posts to the tenant site URL with a Basic auth header (no tenant_info lookup)', async () => {
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: async () => ({ id: 'jira-comment-1' }),
+			});
+
+			const client = new JiraPlatformClient('proj1');
+			const result = await client.postComment('PROJ-1', 'Hello');
+
+			expect(result).toBe('jira-comment-1');
+			// Only the comment POST fires in basic mode — no gateway/cloudId resolution.
+			expect(mockFetch).toHaveBeenCalledOnce();
+			const [url, options] = mockFetch.mock.calls[0];
+			expect(url).toBe('https://test.atlassian.net/rest/api/3/issue/PROJ-1/comment');
+			expect(options.method).toBe('POST');
+			expect(options.headers.Authorization).toMatch(/^Basic /);
+		});
+
+		it('scoped mode: resolves cloudId from tenant_info then posts to the Atlassian gateway URL', async () => {
+			mockFindProjectById.mockResolvedValue(MOCK_PROJECT_WITH_JIRA_SCOPED);
+			// 1) tenant_info → cloudId, then 2) the gateway comment POST.
+			mockFetch
+				.mockResolvedValueOnce({ ok: true, json: async () => ({ cloudId: 'cloud-abc' }) })
+				.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'jira-comment-9' }) });
+
+			const client = new JiraPlatformClient('proj1');
+			const result = await client.postComment('PROJ-1', 'Hi scoped');
+
+			expect(result).toBe('jira-comment-9');
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+
+			const [tenantUrl] = mockFetch.mock.calls[0];
+			expect(tenantUrl).toBe('https://test.atlassian.net/_edge/tenant_info');
+
+			const [commentUrl, commentOptions] = mockFetch.mock.calls[1];
+			expect(commentUrl).toBe(
+				'https://api.atlassian.com/ex/jira/cloud-abc/rest/api/3/issue/PROJ-1/comment',
+			);
+			expect(commentOptions.method).toBe('POST');
+			expect(commentOptions.headers.Authorization).toMatch(/^Basic /);
+		});
+
+		it('scoped mode: falls back to the site URL when cloudId resolution fails', async () => {
+			mockFindProjectById.mockResolvedValue(MOCK_PROJECT_WITH_JIRA_SCOPED);
+			// tenant_info fails; the comment POST still fires against the site URL.
+			mockFetch
+				.mockResolvedValueOnce({ ok: false, status: 401, text: async () => 'nope' })
+				.mockResolvedValueOnce({ ok: true, json: async () => ({ id: 'jira-comment-fb' }) });
+
+			const client = new JiraPlatformClient('proj1');
+			const result = await client.postComment('PROJ-1', 'fallback');
+
+			expect(result).toBe('jira-comment-fb');
+			const [commentUrl] = mockFetch.mock.calls[1];
+			expect(commentUrl).toBe('https://test.atlassian.net/rest/api/3/issue/PROJ-1/comment');
+		});
+	});
+
+	describe('deleteComment', () => {
+		it('basic mode: deletes against the tenant site URL (v2 REST)', async () => {
+			mockFetch.mockResolvedValueOnce({ ok: true });
+
+			const client = new JiraPlatformClient('proj1');
+			await client.deleteComment('PROJ-1', 'jira-comment-1');
+
+			expect(mockFetch).toHaveBeenCalledOnce();
+			const [url, options] = mockFetch.mock.calls[0];
+			expect(url).toBe('https://test.atlassian.net/rest/api/2/issue/PROJ-1/comment/jira-comment-1');
+			expect(options.method).toBe('DELETE');
+		});
+
+		it('scoped mode: deletes against the Atlassian gateway URL (v2 REST)', async () => {
+			mockFindProjectById.mockResolvedValue(MOCK_PROJECT_WITH_JIRA_SCOPED);
+			mockFetch
+				.mockResolvedValueOnce({ ok: true, json: async () => ({ cloudId: 'cloud-abc' }) })
+				.mockResolvedValueOnce({ ok: true });
+
+			const client = new JiraPlatformClient('proj1');
+			await client.deleteComment('PROJ-1', 'jira-comment-1');
+
+			const [url, options] = mockFetch.mock.calls[1];
+			expect(url).toBe(
+				'https://api.atlassian.com/ex/jira/cloud-abc/rest/api/2/issue/PROJ-1/comment/jira-comment-1',
+			);
+			expect(options.method).toBe('DELETE');
+		});
+	});
+
+	describe('postReaction', () => {
+		it('stays on the tenant site URL under scoped auth and never throws when the reactions API fails', async () => {
+			mockFindProjectById.mockResolvedValue(MOCK_PROJECT_WITH_JIRA_SCOPED);
+			// 1) tenant_info (cloudId for the ARI), then 2) the reactions PUT fails.
+			mockFetch
+				.mockResolvedValueOnce({ ok: true, json: async () => ({ cloudId: 'cloud-abc' }) })
+				.mockResolvedValueOnce({
+					ok: false,
+					status: 401,
+					text: async () => 'scope does not match',
+				});
+
+			const client = new JiraPlatformClient('proj1');
+			await expect(
+				client.postReaction('PROJ-1', { issueId: 'issue-1', commentId: 'c-1' }),
+			).resolves.toBeUndefined();
+
+			// The reactions call must NOT be routed through the gateway.
+			const [reactionUrl] = mockFetch.mock.calls[1];
+			expect(reactionUrl).toContain('https://test.atlassian.net/rest/reactions/1.0/');
+			expect(reactionUrl).not.toContain('api.atlassian.com');
+			// Degradation is logged, not thrown.
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('JIRA reactions API failed'),
+				401,
+				expect.stringContaining('skipping'),
+			);
 		});
 	});
 });
