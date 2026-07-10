@@ -171,6 +171,8 @@ Bare `null` means "this handler did not handle the event; continue registry disp
 
 The router preserves structured skips in webhook logs with `Trigger <handler> skipped: <message>`. Use structured skip for disabled trigger config, author-mode gates, self-loop gates, incomplete aggregate check-suite state, missing PR/work-item prerequisites, and similar expected non-dispatch outcomes.
 
+Self-loop gates are intentionally narrow. `ReviewRequestedTrigger` exempts a **self-directed** request (`sender === requested_reviewer`, both a CASCADE persona) and dispatches `review`, because a human using the shared `GITHUB_TOKEN_REVIEWER` can re-request their own review; only cross-persona `review_requested` events (`sender ≠ requested_reviewer`) are skipped as bot loops. This is safe because CASCADE never programmatically calls GitHub's "request reviewers" API and review *submissions* emit `pull_request_review`, not `review_requested`.
+
 ### Deferred re-checks
 
 Handlers that cannot make a final decision yet can return `deferredRecheck: { delayMs, coalesceKey, recheckKind? }` with `agentType: null`. The router schedules a coalesced delayed BullMQ job and exits without spawning an agent.

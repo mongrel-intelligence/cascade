@@ -124,7 +124,10 @@ describe('ReviewRequestedTrigger', () => {
 			expectSkip(result);
 		});
 
-		it('returns null when sender is the implementer persona (loop prevention)', async () => {
+		it('returns null when sender is the implementer persona (cross-persona loop prevention)', async () => {
+			// Cross-persona: sender (cascade-impl) !== requested_reviewer
+			// (cascade-reviewer). This is an implementer-authored PR auto-assigning
+			// the reviewer — a bot loop that must still skip.
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -138,7 +141,9 @@ describe('ReviewRequestedTrigger', () => {
 			expectSkip(result);
 		});
 
-		it('returns null when sender is the reviewer persona (loop prevention)', async () => {
+		it('returns null when sender is the reviewer persona (cross-persona loop prevention)', async () => {
+			// Cross-persona: sender (cascade-reviewer) !== requested_reviewer
+			// (cascade-impl). Still a bot loop, so it must skip.
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -152,7 +157,12 @@ describe('ReviewRequestedTrigger', () => {
 			expectSkip(result);
 		});
 
-		it('returns null when a persona requests review from itself (loop prevention)', async () => {
+		it('dispatches review when a persona requests review from itself (self-directed, shared-reviewer-token contributor)', async () => {
+			// A human whose GitHub account also holds the shared GITHUB_TOKEN_REVIEWER
+			// re-requests their OWN review: sender === requested_reviewer, both a
+			// CASCADE persona. This is always human-initiated (CASCADE never
+			// programmatically requests reviewers), so it must fall through to
+			// dispatch instead of being skipped by the sender loop-prevention guard.
 			const ctx: TriggerContext = {
 				project: mockProject,
 				source: 'github',
@@ -163,7 +173,47 @@ describe('ReviewRequestedTrigger', () => {
 				personaIdentities: mockPersonaIdentities,
 			};
 			const result = await trigger.handle(ctx);
-			expectSkip(result);
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('dispatches review for a reviewer self-request and runs the release-before-claim dedup sequence', async () => {
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					...makeReviewRequestedPayload('cascade-reviewer'),
+					sender: { login: 'cascade-reviewer' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expect(result?.agentType).toBe('review');
+			// Human-initiated self-request supersedes any prior automated dispatch
+			// claim: release runs before claim, and the freed slot is re-claimed.
+			expect(mockReleaseReviewDispatch).toHaveBeenCalledWith('owner/repo:42:abc123');
+			expect(mockClaimReviewDispatch).toHaveBeenCalledWith(
+				'owner/repo:42:abc123',
+				'review-requested',
+				expect.objectContaining({ prNumber: 42, headSha: 'abc123' }),
+			);
+		});
+
+		it('still skips a non-persona self-request with the not-a-cascade-persona reason', async () => {
+			// sender === requested_reviewer, but 'human-x' is NOT a CASCADE persona.
+			// The self-directed exemption only bypasses the SENDER loop guard; the
+			// requested-reviewer persona gate still rejects a non-persona reviewer.
+			const ctx: TriggerContext = {
+				project: mockProject,
+				source: 'github',
+				payload: {
+					...makeReviewRequestedPayload('human-x'),
+					sender: { login: 'human-x' },
+				},
+				personaIdentities: mockPersonaIdentities,
+			};
+			const result = await trigger.handle(ctx);
+			expectSkip(result, /not a cascade persona/);
 		});
 
 		it('returns null when requested reviewer is not a CASCADE persona', async () => {

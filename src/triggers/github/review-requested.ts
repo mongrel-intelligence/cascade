@@ -17,9 +17,32 @@ import { resolveWorkItemIdWithFallback } from './utils.js';
  *
  * This trigger:
  * 1. Fires on `pull_request.review_requested` events
- * 2. Rejects requests sent by CASCADE personas (loop prevention)
+ * 2. Rejects requests sent by CASCADE personas (loop prevention) — EXCEPT a
+ *    self-directed request where `sender === requested_reviewer` (see below)
  * 3. Checks if the requested reviewer is a CASCADE persona (implementer OR reviewer)
  * 4. Fires the `review` agent with PR number and work item ID from DB lookup
+ *
+ * ## Self-directed exemption (shared-reviewer-token contributor)
+ *
+ * When the sender IS the requested reviewer and both resolve to a CASCADE
+ * persona, the event is a human — whose GitHub account also holds the shared
+ * `GITHUB_TOKEN_REVIEWER` — re-requesting *their own* review. The sender
+ * loop-prevention guard exempts this case so it falls through to the normal
+ * dispatch path instead of being silently skipped.
+ *
+ * This exemption cannot reintroduce a bot loop, because:
+ * - **CASCADE never programmatically calls GitHub's "request reviewers" API.**
+ *   There is no `requestReviewers` call anywhere in `src/`, so every
+ *   `review_requested` event is human-initiated by construction.
+ * - **A review *submission* by a persona emits `pull_request_review`, not
+ *   `review_requested`.** An agent finishing a review therefore cannot re-fire
+ *   this trigger.
+ * - **Dispatch is deduped per PR+SHA** via `claimReviewDispatch` /
+ *   `releaseReviewDispatch`, so even a duplicate delivery is a no-op.
+ *
+ * Cross-persona requests (`sender !== requested_reviewer`, e.g. an
+ * implementer-authored PR auto-assigning the reviewer persona) are NOT exempt
+ * and still skip with the loop-prevention reason.
  *
  * Default: **disabled** (opt-in via trigger config).
  *
@@ -58,13 +81,30 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 		if (!personasResult.ok) return personasResult.skip;
 		const personas = personasResult.value;
 
-		// Skip review requests FROM CASCADE personas (self-loop prevention)
+		// Hoisted above the sender guard so a self-directed request can be
+		// detected before the loop-prevention skip decision is made.
 		const senderLogin = payload.sender.login;
-		if (isCascadeBot(senderLogin, personas)) {
+		const requestedReviewer = payload.requested_reviewer?.login;
+
+		// A self-directed request is one where the sender IS the requested
+		// reviewer. GitHub forbids requesting a review from the PR author, so the
+		// precise mechanic is `sender === requested_reviewer` (not authorship).
+		// This is always human-initiated: CASCADE never programmatically calls
+		// GitHub's "request reviewers" API (no `requestReviewers` in `src/`), and
+		// a persona *submitting* a review emits `pull_request_review`, not
+		// `review_requested` — so this cannot be a bot re-firing the trigger.
+		// Dispatch is additionally deduped per PR+SHA below, so a duplicate
+		// delivery is a no-op. See the class JSDoc for the full rationale.
+		const isSelfDirectedReviewRequest = !!requestedReviewer && senderLogin === requestedReviewer;
+
+		// Skip review requests FROM CASCADE personas (self-loop prevention),
+		// EXCEPT self-directed requests (a human using the shared reviewer token
+		// re-requesting their own review), which fall through to dispatch.
+		if (isCascadeBot(senderLogin, personas) && !isSelfDirectedReviewRequest) {
 			logger.info('Skipping review request from CASCADE persona (loop prevention)', {
 				prNumber,
 				sender: senderLogin,
-				requestedReviewer: payload.requested_reviewer?.login,
+				requestedReviewer,
 			});
 			return skip(
 				this.name,
@@ -72,8 +112,9 @@ export class ReviewRequestedTrigger implements TriggerHandler {
 			);
 		}
 
-		// Check if the requested reviewer is a CASCADE persona
-		const requestedReviewer = payload.requested_reviewer?.login;
+		// Check if the requested reviewer is a CASCADE persona. A non-persona
+		// self-request (sender === requested_reviewer but not a CASCADE persona)
+		// still skips here with the not-a-cascade-persona reason.
 		if (!requestedReviewer) {
 			logger.debug('No requested reviewer in payload, skipping', { prNumber });
 			return skip(

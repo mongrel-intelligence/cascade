@@ -102,7 +102,7 @@ cascade projects credentials-set <id> --key GITHUB_TOKEN_REVIEWER --value ghp_..
 - `respond-to-review` fires **only** when the **reviewer** persona submits `changes_requested`.
 - `respond-to-pr-comment` skips @mentions from **any** known persona.
 - `check-suite-success` checks reviews from the **reviewer** persona specifically.
-- All trigger handlers use `isCascadeBot(login)` to filter self-events.
+- All trigger handlers use `isCascadeBot(login)` to filter self-events. **Self-directed exemption:** `review-requested` treats a request where `sender === requested_reviewer` (both a CASCADE persona) as human-initiated and dispatches `review` — the shared-`GITHUB_TOKEN_REVIEWER` contributor re-requesting their own review. Cross-persona `review_requested` events (`sender ≠ requested_reviewer`, e.g. an implementer-authored PR auto-assigning the reviewer) still skip. Safe because CASCADE never programmatically calls GitHub's "request reviewers" API and review *submissions* emit `pull_request_review`, not `review_requested`.
 
 ## Agent update channel
 
