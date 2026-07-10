@@ -42,6 +42,16 @@ export const ReviewEventPolicySchema = z.enum(REVIEW_EVENT_POLICIES);
  */
 export const REVIEW_EVENT_POLICY_ENV_VAR = 'CASCADE_REVIEW_EVENT_POLICY';
 
+/**
+ * Policy file written by the worker process before the agent starts. Used as a
+ * fallback when {@link REVIEW_EVENT_POLICY_ENV_VAR} is stripped by the claude
+ * subprocess chain (observed with @anthropic-ai/claude-code ≤ 2.1.185 — the
+ * bun-compiled binary does not forward all custom env vars to bash subprocesses).
+ * The path is fixed inside the ephemeral worker container's /tmp, so there is no
+ * cross-run collision.
+ */
+export const REVIEW_EVENT_POLICY_FILE = '/tmp/cascade-review-event-policy';
+
 /** The GitHub pull-request review event types CreatePRReview can submit. */
 export const REVIEW_EVENTS = ['APPROVE', 'REQUEST_CHANGES', 'COMMENT'] as const;
 

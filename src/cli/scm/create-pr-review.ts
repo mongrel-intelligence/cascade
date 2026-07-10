@@ -1,8 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { GITHUB_ACK_COMMENT_ID_ENV_VAR } from '../../backends/secretBuilder.js';
 import {
 	DEFAULT_REVIEW_EVENT_POLICY,
 	REVIEW_EVENT_POLICY_ENV_VAR,
+	REVIEW_EVENT_POLICY_FILE,
 	type ReviewEvent,
+	type ReviewEventPolicy,
 	ReviewEventPolicySchema,
 } from '../../config/reviewEventPolicy.js';
 import { createPRReview } from '../../gadgets/github/core/createPRReview.js';
@@ -31,10 +34,31 @@ async function deleteAckComment(owner: string, repo: string): Promise<boolean> {
 	}
 }
 
-/** Resolve the review event policy injected by the router (absent/invalid → `all`). */
-function resolveEventPolicyFromEnv() {
-	const parsed = ReviewEventPolicySchema.safeParse(process.env[REVIEW_EVENT_POLICY_ENV_VAR]);
-	return parsed.success ? parsed.data : DEFAULT_REVIEW_EVENT_POLICY;
+/**
+ * Resolve the review event policy for this run.
+ *
+ * Checks two sources in order:
+ * 1. `CASCADE_REVIEW_EVENT_POLICY` env var — injected into the SDK env dict by
+ *    `augmentProjectSecrets`. May be stripped by the claude subprocess chain.
+ * 2. Policy file written to `/tmp/cascade-review-event-policy` by the worker
+ *    process before the agent starts — survives subprocess env filtering.
+ *
+ * Absent/invalid in both sources → {@link DEFAULT_REVIEW_EVENT_POLICY}.
+ */
+function resolveEventPolicyFromEnv(): ReviewEventPolicy {
+	const envParsed = ReviewEventPolicySchema.safeParse(process.env[REVIEW_EVENT_POLICY_ENV_VAR]);
+	if (envParsed.success) return envParsed.data;
+
+	try {
+		const fileParsed = ReviewEventPolicySchema.safeParse(
+			readFileSync(REVIEW_EVENT_POLICY_FILE, 'utf-8').trim(),
+		);
+		if (fileParsed.success) return fileParsed.data;
+	} catch {
+		// File absent or unreadable → default
+	}
+
+	return DEFAULT_REVIEW_EVENT_POLICY;
 }
 
 export default createCLICommand(createPRReviewDef, async (params) => {

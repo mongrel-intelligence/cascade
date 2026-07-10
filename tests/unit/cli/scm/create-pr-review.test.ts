@@ -1,8 +1,10 @@
-import { existsSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { REVIEW_EVENT_POLICY_FILE } from '../../../../src/config/reviewEventPolicy.js';
 
 // Mock createPRReview before importing the command
 const mockCreatePRReview = vi.fn();
@@ -198,5 +200,121 @@ describe('CreatePRReviewCommand — GitHub ack comment deletion', () => {
 		await cmd.execute();
 
 		expect(mockDeletePRComment).not.toHaveBeenCalled();
+	});
+});
+
+describe('CreatePRReviewCommand — review event policy resolution', () => {
+	let originalPolicyEnv: string | undefined;
+	let originalSidecarEnv: string | undefined;
+	let sidecarPath: string;
+
+	beforeEach(() => {
+		originalPolicyEnv = process.env.CASCADE_REVIEW_EVENT_POLICY;
+		originalSidecarEnv = process.env.CASCADE_REVIEW_SIDECAR_PATH;
+		sidecarPath = join(tmpdir(), `cascade-test-review-policy-${Date.now()}.json`);
+		process.env.CASCADE_REVIEW_SIDECAR_PATH = sidecarPath;
+		Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_EVENT_POLICY');
+		// Clean up any leftover policy file from previous tests
+		try {
+			rmSync(REVIEW_EVENT_POLICY_FILE, { force: true });
+		} catch {
+			/* no-op */
+		}
+		mockCreatePRReview.mockResolvedValue({
+			reviewUrl: 'https://github.com/owner/repo/pull/1#pullrequestreview-1',
+		});
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(sidecarPath, { force: true });
+		} catch {
+			/* no-op */
+		}
+		try {
+			rmSync(REVIEW_EVENT_POLICY_FILE, { force: true });
+		} catch {
+			/* no-op */
+		}
+		if (originalPolicyEnv !== undefined) {
+			process.env.CASCADE_REVIEW_EVENT_POLICY = originalPolicyEnv;
+		} else {
+			Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_EVENT_POLICY');
+		}
+		if (originalSidecarEnv !== undefined) {
+			process.env.CASCADE_REVIEW_SIDECAR_PATH = originalSidecarEnv;
+		} else {
+			Reflect.deleteProperty(process.env, 'CASCADE_REVIEW_SIDECAR_PATH');
+		}
+		vi.restoreAllMocks();
+	});
+
+	it('uses env var when present', async () => {
+		process.env.CASCADE_REVIEW_EVENT_POLICY = 'comment-only';
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult({ event: 'REQUEST_CHANGES' }));
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ eventPolicy: 'comment-only' }),
+		);
+	});
+
+	it('falls back to policy file when env var is absent', async () => {
+		writeFileSync(REVIEW_EVENT_POLICY_FILE, 'comment-only', 'utf-8');
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult({ event: 'REQUEST_CHANGES' }));
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ eventPolicy: 'comment-only' }),
+		);
+	});
+
+	it('env var wins over policy file when both are present', async () => {
+		process.env.CASCADE_REVIEW_EVENT_POLICY = 'all';
+		writeFileSync(REVIEW_EVENT_POLICY_FILE, 'comment-only', 'utf-8');
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult({ event: 'REQUEST_CHANGES' }));
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ eventPolicy: 'all' }),
+		);
+	});
+
+	it('defaults to all when both env var and file are absent', async () => {
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult({ event: 'REQUEST_CHANGES' }));
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ eventPolicy: 'all' }),
+		);
+	});
+
+	it('defaults to all when policy file contains invalid content', async () => {
+		writeFileSync(REVIEW_EVENT_POLICY_FILE, 'not-a-valid-policy', 'utf-8');
+
+		const cmd = new CreatePRReviewCommand([], {} as never);
+		vi.mocked(cmd.parse).mockResolvedValue(makeParseResult({ event: 'REQUEST_CHANGES' }));
+
+		await cmd.execute();
+
+		expect(mockCreatePRReview).toHaveBeenCalledWith(
+			expect.any(Object),
+			expect.objectContaining({ eventPolicy: 'all' }),
+		);
 	});
 });

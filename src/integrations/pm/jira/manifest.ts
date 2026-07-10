@@ -153,6 +153,7 @@ export const jiraManifest: PMProviderManifest = {
 	configFixture: {
 		projectKey: 'CASCADE',
 		baseUrl: 'https://example.atlassian.net',
+		authType: 'basic',
 		statuses: { backlog: 'Backlog', todo: 'To Do', done: 'Done' },
 		issueTypes: { task: 'Task' },
 		customFields: { cost: 'customfield_10100' },

@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs';
 import {
 	createIntegrationChecker,
 	resolveEffectiveCapabilities,
@@ -12,7 +13,11 @@ import { resolveModelConfig } from '../agents/shared/modelResolution.js';
 import { buildPromptContext } from '../agents/shared/promptContext.js';
 import type { createAgentLogger } from '../agents/utils/logging.js';
 import { mergeEngineSettings } from '../config/engineSettings.js';
-import { isCommentOnlyReview, resolveReviewEventPolicy } from '../config/reviewEventPolicy.js';
+import {
+	isCommentOnlyReview,
+	REVIEW_EVENT_POLICY_FILE,
+	resolveReviewEventPolicy,
+} from '../config/reviewEventPolicy.js';
 import { filterPostingGadgetNames, resolveUpdateChannel } from '../config/updateChannel.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
@@ -147,6 +152,18 @@ export async function buildExecutionPlan(
 
 	// Build per-project secrets with CASCADE env var injections
 	const projectSecrets = await augmentProjectSecrets(project, agentType, input);
+
+	// Write the review event policy to a well-known file so cascade-tools can read
+	// it even when the env var is stripped by the claude subprocess chain.
+	// (@anthropic-ai/claude-code ≤ 2.1.185 does not forward all custom env vars to
+	// bash subprocesses; the file lives in the container's ephemeral /tmp.)
+	if (isCommentOnlyReview(resolveReviewEventPolicy(project, agentType))) {
+		try {
+			writeFileSync(REVIEW_EVENT_POLICY_FILE, 'comment-only', 'utf-8');
+		} catch {
+			// Non-fatal — env-var mechanism remains the primary path
+		}
+	}
 
 	// Inject pre-seeded progress comment ID so the subprocess finds it at startup
 	injectProgressCommentId(
