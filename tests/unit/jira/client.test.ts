@@ -69,6 +69,7 @@ vi.mock('jira.js', () => ({
 	})),
 }));
 
+import { Version3Client } from 'jira.js';
 import {
 	_resetCloudIdCache,
 	getJiraCredentials,
@@ -940,6 +941,157 @@ describe('jiraClient', () => {
 					'com.atlassian.jira.plugin.system.customfieldtypes:float',
 				),
 			).rejects.toThrow('No JIRA credentials in scope');
+		});
+	});
+
+	// ===== Effective-host routing (MNG-1738) =====
+	//
+	// NOTE: These blocks intentionally do NOT call vi.restoreAllMocks() — that
+	// would wipe the Version3Client mock implementation from vi.mock() (see the
+	// file-level afterEach note). They rely on the global clearMocks: true to
+	// clear call history between tests, and must run BEFORE the downloadAttachment
+	// block (the only block that restores mocks).
+
+	describe('effective host routing', () => {
+		describe('basic / absent authType (default behavior unchanged)', () => {
+			it('constructs Version3Client with the tenant site host and Basic auth', async () => {
+				const fetchSpy = vi.spyOn(globalThis, 'fetch');
+				mockIssues.getIssue.mockResolvedValue({ key: 'TEST-1', fields: {} });
+
+				await withJiraCredentials(creds, () => jiraClient.getIssue('TEST-1'));
+
+				expect(Version3Client).toHaveBeenCalledWith(
+					expect.objectContaining({
+						host: 'https://jira.example.com',
+						authentication: {
+							basic: { email: 'bot@example.com', apiToken: 'jira-token' },
+						},
+					}),
+				);
+				// Site host needs no cloudId lookup — no network call is made.
+				expect(fetchSpy).not.toHaveBeenCalled();
+			});
+
+			it('routes to the site host when authType is explicitly basic', async () => {
+				const fetchSpy = vi.spyOn(globalThis, 'fetch');
+				mockIssues.getIssue.mockResolvedValue({ key: 'TEST-1', fields: {} });
+
+				await withJiraCredentials({ ...creds, authType: 'basic' }, () =>
+					jiraClient.getIssue('TEST-1'),
+				);
+
+				expect(Version3Client).toHaveBeenCalledWith(
+					expect.objectContaining({ host: 'https://jira.example.com' }),
+				);
+				expect(fetchSpy).not.toHaveBeenCalled();
+			});
+		});
+
+		describe('scoped authType', () => {
+			const scopedCreds = { ...creds, authType: 'scoped' as const };
+
+			it('constructs Version3Client with the Atlassian gateway host (still Basic auth)', async () => {
+				vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+					new Response(JSON.stringify({ cloudId: 'cloud-scoped-1' }), { status: 200 }),
+				);
+				mockIssues.getIssue.mockResolvedValue({ key: 'TEST-1', fields: {} });
+
+				await withJiraCredentials(scopedCreds, () => jiraClient.getIssue('TEST-1'));
+
+				expect(Version3Client).toHaveBeenCalledWith(
+					expect.objectContaining({
+						host: 'https://api.atlassian.com/ex/jira/cloud-scoped-1',
+						// Auth stays Basic (email:api_token) — host changes, not the scheme.
+						authentication: {
+							basic: { email: 'bot@example.com', apiToken: 'jira-token' },
+						},
+					}),
+				);
+			});
+
+			it('resolves the gateway host from the site /_edge/tenant_info endpoint', async () => {
+				const fetchSpy = vi
+					.spyOn(globalThis, 'fetch')
+					.mockResolvedValue(
+						new Response(JSON.stringify({ cloudId: 'cloud-scoped-2' }), { status: 200 }),
+					);
+				mockIssues.editIssue.mockResolvedValue(undefined);
+
+				await withJiraCredentials(scopedCreds, () =>
+					jiraClient.updateIssue('TEST-1', { summary: 'New Title' }),
+				);
+
+				// cloudId discovery still hits the tenant SITE URL, not the gateway.
+				expect(fetchSpy).toHaveBeenCalledWith(
+					'https://jira.example.com/_edge/tenant_info',
+					expect.objectContaining({ headers: { Authorization: expectedAuth } }),
+				);
+			});
+
+			it('routes createIssue through the gateway host under scoped auth', async () => {
+				vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+					new Response(JSON.stringify({ cloudId: 'cloud-scoped-3' }), { status: 200 }),
+				);
+				mockIssues.createIssue.mockResolvedValue({ id: '10001', key: 'TEST-2' });
+
+				await withJiraCredentials(scopedCreds, () =>
+					jiraClient.createIssue({
+						project: { key: 'TEST' },
+						summary: 'New Issue',
+						issuetype: { name: 'Task' },
+					}),
+				);
+
+				expect(Version3Client).toHaveBeenCalledWith(
+					expect.objectContaining({
+						host: 'https://api.atlassian.com/ex/jira/cloud-scoped-3',
+					}),
+				);
+			});
+		});
+	});
+
+	// ===== getCloudId site-host invariant (MNG-1738) =====
+
+	describe('getCloudId site-host invariant', () => {
+		it('hits the site /_edge/tenant_info endpoint even under scoped authType', async () => {
+			const fetchSpy = vi
+				.spyOn(globalThis, 'fetch')
+				.mockResolvedValue(
+					new Response(JSON.stringify({ cloudId: 'cloud-abc-123' }), { status: 200 }),
+				);
+
+			const result = await withJiraCredentials({ ...creds, authType: 'scoped' }, () =>
+				jiraClient.getCloudId(),
+			);
+
+			expect(result).toBe('cloud-abc-123');
+			expect(fetchSpy).toHaveBeenCalledWith(
+				'https://jira.example.com/_edge/tenant_info',
+				expect.objectContaining({ headers: { Authorization: expectedAuth } }),
+			);
+		});
+	});
+
+	// ===== addCommentReaction scoped degradation (MNG-1738) =====
+
+	describe('addCommentReaction scoped degradation', () => {
+		it('skips quietly (no fetch, no throw) and logs under scoped authType', async () => {
+			const fetchSpy = vi.spyOn(globalThis, 'fetch');
+			const { logger } = await import('../../../src/utils/logging.js');
+
+			await expect(
+				withJiraCredentials({ ...creds, authType: 'scoped' }, () =>
+					jiraClient.addCommentReaction('10001', '20001', 'atlassian-thought_balloon'),
+				),
+			).resolves.toBeUndefined();
+
+			// Reactions are unavailable via the scoped gateway — no network call at all.
+			expect(fetchSpy).not.toHaveBeenCalled();
+			expect(logger.info).toHaveBeenCalledWith(
+				'JIRA reactions are unavailable under scoped API tokens; skipping comment reaction',
+				{ issueId: '10001', commentId: '20001' },
+			);
 		});
 	});
 

@@ -8,6 +8,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { Version3Client } from 'jira.js';
 import { logger } from '../utils/logging.js';
+import { resolveJiraApiBaseUrl } from './api-host.js';
 import type { JiraCredentials } from './types.js';
 
 const jiraCredentialStore = new AsyncLocalStorage<JiraCredentials>();
@@ -26,10 +27,30 @@ export function getJiraCredentials(): JiraCredentials {
 	return scoped;
 }
 
-function getClient(): Version3Client {
+/**
+ * Build a jira.js `Version3Client` scoped to the current request's credentials,
+ * routed through the *effective* REST v3 host.
+ *
+ * The host is resolved via the shared `resolveJiraApiBaseUrl(creds)` resolver
+ * (MNG-1737): `basic` / absent `authType` keeps the classic tenant site URL
+ * (default behavior, unchanged), while `authType === 'scoped'` routes through
+ * the Atlassian gateway (`https://api.atlassian.com/ex/jira/{cloudId}`) so
+ * scoped API tokens reach the correct endpoint. Resolving the host requires an
+ * async cloudId lookup under scoped auth, so this helper is `async` — every
+ * `jiraClient.*` method `await`s it.
+ *
+ * Auth scheme is HTTP Basic (`email:api_token`) for BOTH modes: live probes in
+ * MNG-1735 confirmed scoped API tokens authenticate via Basic against the
+ * gateway and that Bearer/OAuth2 did NOT authenticate as the user. `authType`
+ * therefore selects the host, not the auth scheme — no scoped-Bearer branch is
+ * needed here. If a future spike shows Bearer is required for scoped, switch to
+ * `authentication.oauth2.accessToken` only inside a `scoped` branch.
+ */
+async function getClientForRequest(): Promise<Version3Client> {
 	const creds = getJiraCredentials();
+	const host = await resolveJiraApiBaseUrl(creds);
 	return new Version3Client({
-		host: creds.baseUrl,
+		host,
 		authentication: {
 			basic: {
 				email: creds.email,
@@ -57,7 +78,7 @@ export function _resetCloudIdCache(): void {
 export const jiraClient = {
 	async getIssue(issueKey: string) {
 		logger.debug('Fetching JIRA issue', { issueKey });
-		return getClient().issues.getIssue({
+		return (await getClientForRequest()).issues.getIssue({
 			issueIdOrKey: issueKey,
 			fields: [
 				'summary',
@@ -79,7 +100,7 @@ export const jiraClient = {
 
 	async getIssueComments(issueKey: string) {
 		logger.debug('Fetching JIRA issue comments', { issueKey });
-		const result = await getClient().issueComments.getComments({
+		const result = await (await getClientForRequest()).issueComments.getComments({
 			issueIdOrKey: issueKey,
 			orderBy: '-created',
 		});
@@ -91,7 +112,7 @@ export const jiraClient = {
 		const fields: Record<string, unknown> = {};
 		if (updates.summary) fields.summary = updates.summary;
 		if (updates.description) fields.description = updates.description;
-		await getClient().issues.editIssue({
+		await (await getClientForRequest()).issues.editIssue({
 			issueIdOrKey: issueKey,
 			fields,
 		});
@@ -99,7 +120,7 @@ export const jiraClient = {
 
 	async addComment(issueKey: string, body: unknown): Promise<string> {
 		logger.debug('Adding JIRA comment', { issueKey });
-		const result = await getClient().issueComments.addComment({
+		const result = await (await getClientForRequest()).issueComments.addComment({
 			issueIdOrKey: issueKey,
 			comment: body as Parameters<Version3Client['issueComments']['addComment']>[0]['comment'],
 		});
@@ -108,7 +129,7 @@ export const jiraClient = {
 
 	async updateComment(issueKey: string, commentId: string, body: unknown): Promise<void> {
 		logger.debug('Updating JIRA comment', { issueKey, commentId });
-		await getClient().issueComments.updateComment({
+		await (await getClientForRequest()).issueComments.updateComment({
 			issueIdOrKey: issueKey,
 			id: commentId,
 			body: body as Parameters<Version3Client['issueComments']['updateComment']>[0]['body'],
@@ -117,7 +138,7 @@ export const jiraClient = {
 
 	async getIssueTypesForProject(projectKey: string): Promise<{ name: string; subtask: boolean }[]> {
 		logger.debug('Fetching JIRA issue types for project', { projectKey });
-		const project = await getClient().projects.getProject({
+		const project = await (await getClientForRequest()).projects.getProject({
 			projectIdOrKey: projectKey,
 		});
 		const types = (project.issueTypes ?? []) as { name?: string; subtask?: boolean }[];
@@ -129,7 +150,7 @@ export const jiraClient = {
 
 	async searchProjects(): Promise<Array<{ key: string; name: string }>> {
 		logger.debug('Searching JIRA projects');
-		const result = await getClient().projects.searchProjects({ maxResults: 100 });
+		const result = await (await getClientForRequest()).projects.searchProjects({ maxResults: 100 });
 		const values = (result.values ?? []) as Array<{ key?: string; name?: string }>;
 		return values.map((p) => ({
 			key: p.key ?? '',
@@ -139,7 +160,7 @@ export const jiraClient = {
 
 	async getProjectStatuses(projectKey: string): Promise<Array<{ name: string; id: string }>> {
 		logger.debug('Fetching JIRA project statuses', { projectKey });
-		const result = await getClient().projects.getAllStatuses({
+		const result = await (await getClientForRequest()).projects.getAllStatuses({
 			projectIdOrKey: projectKey,
 		});
 		// getAllStatuses returns issueType-grouped statuses; flatten and deduplicate
@@ -161,7 +182,7 @@ export const jiraClient = {
 
 	async getFields(): Promise<Array<{ id: string; name: string; custom: boolean }>> {
 		logger.debug('Fetching JIRA fields');
-		const fields = await getClient().issueFields.getFields();
+		const fields = await (await getClientForRequest()).issueFields.getFields();
 		return (fields as Array<{ id?: string; name?: string; custom?: boolean }>).map((f) => ({
 			id: f.id ?? '',
 			name: f.name ?? '',
@@ -174,7 +195,7 @@ export const jiraClient = {
 			project: (fields.project as { key?: string })?.key,
 		});
 		try {
-			return await getClient().issues.createIssue({
+			return await (await getClientForRequest()).issues.createIssue({
 				fields: fields as Parameters<Version3Client['issues']['createIssue']>[0]['fields'],
 			});
 		} catch (error: unknown) {
@@ -197,7 +218,7 @@ export const jiraClient = {
 
 	async transitionIssue(issueKey: string, transitionId: string) {
 		logger.debug('Transitioning JIRA issue', { issueKey, transitionId });
-		await getClient().issues.doTransition({
+		await (await getClientForRequest()).issues.doTransition({
 			issueIdOrKey: issueKey,
 			transition: { id: transitionId },
 		});
@@ -205,20 +226,22 @@ export const jiraClient = {
 
 	async getTransitions(issueKey: string) {
 		logger.debug('Fetching JIRA transitions', { issueKey });
-		const result = await getClient().issues.getTransitions({ issueIdOrKey: issueKey });
+		const result = await (await getClientForRequest()).issues.getTransitions({
+			issueIdOrKey: issueKey,
+		});
 		return result.transitions ?? [];
 	},
 
 	async updateLabels(issueKey: string, labels: string[]) {
 		logger.debug('Updating JIRA issue labels', { issueKey, labels });
-		await getClient().issues.editIssue({
+		await (await getClientForRequest()).issues.editIssue({
 			issueIdOrKey: issueKey,
 			fields: { labels },
 		});
 	},
 
 	async getIssueLabels(issueKey: string): Promise<string[]> {
-		const issue = await getClient().issues.getIssue({
+		const issue = await (await getClientForRequest()).issues.getIssue({
 			issueIdOrKey: issueKey,
 			fields: ['labels'],
 		});
@@ -230,7 +253,7 @@ export const jiraClient = {
 		fields: string[] = ['summary', 'status', 'labels', 'created', 'updated'],
 	) {
 		logger.debug('Searching JIRA issues', { jql });
-		const result = await getClient().issueSearch.searchForIssuesUsingJql({
+		const result = await (await getClientForRequest()).issueSearch.searchForIssuesUsingJql({
 			jql,
 			fields,
 		});
@@ -238,7 +261,7 @@ export const jiraClient = {
 	},
 
 	async getCustomFieldValue(issueKey: string, fieldId: string): Promise<unknown> {
-		const issue = await getClient().issues.getIssue({
+		const issue = await (await getClientForRequest()).issues.getIssue({
 			issueIdOrKey: issueKey,
 			fields: [fieldId],
 		});
@@ -246,7 +269,7 @@ export const jiraClient = {
 	},
 
 	async updateCustomField(issueKey: string, fieldId: string, value: unknown) {
-		await getClient().issues.editIssue({
+		await (await getClientForRequest()).issues.editIssue({
 			issueIdOrKey: issueKey,
 			fields: { [fieldId]: value },
 		});
@@ -254,12 +277,18 @@ export const jiraClient = {
 
 	async getMyself() {
 		logger.debug('Fetching authenticated JIRA user');
-		return getClient().myself.getCurrentUser();
+		return (await getClientForRequest()).myself.getCurrentUser();
 	},
 
 	/**
 	 * Resolve the tenant cloudId from the site `/_edge/tenant_info` endpoint,
 	 * caching the result per `baseUrl`.
+	 *
+	 * This ALWAYS hits the tenant site URL (`${creds.baseUrl}/_edge/tenant_info`)
+	 * regardless of `authType` — it is how we *discover* the cloudId that scoped
+	 * requests route through, so it must never itself be routed through the
+	 * gateway. The scoped `/_edge/tenant_info` probe with a scoped Basic token is
+	 * confirmed working live (MNG-1735).
 	 *
 	 * @param explicitCreds - Optional credentials to use instead of the
 	 *   `withJiraCredentials()` scope. Pass these when resolving outside an
@@ -287,9 +316,26 @@ export const jiraClient = {
 		return data.cloudId;
 	},
 
+	/**
+	 * Add a best-effort "eyes"-style reaction to a JIRA comment.
+	 *
+	 * Reactions use the internal `/rest/reactions/1.0/` API which lives ONLY on
+	 * the tenant site URL — it is not exposed through the scoped Atlassian
+	 * gateway, and live probes (MNG-1735) found no supported scoped-token
+	 * reactions path. Under scoped auth we therefore degrade quietly: log one
+	 * line and skip. This is a cosmetic acknowledgment and must never fail the
+	 * run. Basic / absent auth keeps the classic site-URL behavior unchanged.
+	 */
 	async addCommentReaction(issueId: string, commentId: string, emojiId: string): Promise<void> {
 		logger.debug('Adding reaction to JIRA comment', { issueId, commentId, emojiId });
 		const creds = getJiraCredentials();
+		if (creds.authType === 'scoped') {
+			logger.info(
+				'JIRA reactions are unavailable under scoped API tokens; skipping comment reaction',
+				{ issueId, commentId },
+			);
+			return;
+		}
 		const cloudId = await jiraClient.getCloudId();
 		const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
 		const response = await fetch(
@@ -309,7 +355,7 @@ export const jiraClient = {
 
 	async deleteIssue(issueKey: string) {
 		logger.debug('Deleting JIRA issue', { issueKey });
-		await getClient().issues.deleteIssue({ issueIdOrKey: issueKey });
+		await (await getClientForRequest()).issues.deleteIssue({ issueIdOrKey: issueKey });
 	},
 
 	/**
@@ -318,6 +364,12 @@ export const jiraClient = {
 	 * JIRA attachment download URLs always require `Authorization: Basic …`
 	 * credentials.  Returns `null` on any failure so the caller pipeline never
 	 * crashes.
+	 *
+	 * Host note: attachment `content` URLs are ABSOLUTE tenant site URLs handed
+	 * back by the JIRA API (e.g. `${baseUrl}/secure/attachment/...`), so this
+	 * fetch is intentionally NOT routed through `resolveJiraApiBaseUrl` / the
+	 * scoped gateway — the absolute URL already points at the correct host and
+	 * Basic auth downloads it directly under both basic and scoped tokens.
 	 *
 	 * @param url - The JIRA attachment URL to download.
 	 * @returns `{ buffer, mimeType }` on success, `null` on failure.
@@ -331,7 +383,7 @@ export const jiraClient = {
 
 	async addAttachmentFile(issueKey: string, buffer: Buffer, filename: string) {
 		logger.debug('Adding JIRA attachment', { issueKey, filename });
-		await getClient().issueAttachments.addAttachment({
+		await (await getClientForRequest()).issueAttachments.addAttachment({
 			issueIdOrKey: issueKey,
 			attachment: {
 				filename,
@@ -342,7 +394,7 @@ export const jiraClient = {
 
 	async addRemoteLink(issueKey: string, url: string, title: string): Promise<void> {
 		logger.debug('Adding JIRA remote link', { issueKey, url, title });
-		await getClient().issueRemoteLinks.createOrUpdateRemoteIssueLink({
+		await (await getClientForRequest()).issueRemoteLinks.createOrUpdateRemoteIssueLink({
 			issueIdOrKey: issueKey,
 			globalId: url,
 			relationship: 'Pull Request',
@@ -364,7 +416,7 @@ export const jiraClient = {
 	): Promise<{ id: string; name: string }> {
 		logger.debug('Creating JIRA custom field', { name, type, searcherKey });
 		try {
-			const result = await getClient().issueFields.createCustomField({
+			const result = await (await getClientForRequest()).issueFields.createCustomField({
 				name,
 				type,
 				// searcherKey enables JQL searchability for this field (e.g. `"Cost" > 100`).
