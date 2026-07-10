@@ -46,6 +46,14 @@ const jiraCredsInput = z.object({
 	email: z.string().min(1),
 	apiToken: z.string().min(1),
 	baseUrl: z.string().url(),
+	/**
+	 * Optional JIRA auth mode. Non-secret connection setting mirroring
+	 * `baseUrl` (NOT a credential). Threaded into `withJiraCredentials` so
+	 * wizard-time verification routes through the correct host — the classic
+	 * site URL for `basic`, the Atlassian gateway for `scoped`. Absent ⇒
+	 * downstream treats it as `basic` (the historical default).
+	 */
+	authType: z.enum(['basic', 'scoped']).optional(),
 });
 
 const linearCredsInput = z.object({
@@ -63,10 +71,20 @@ async function withTrelloCreds<T>(
 async function withJiraCreds<T>(
 	input: z.infer<typeof jiraCredsInput>,
 	label: string,
-	fn: (creds: { email: string; apiToken: string; baseUrl: string }) => Promise<T>,
+	fn: (creds: {
+		email: string;
+		apiToken: string;
+		baseUrl: string;
+		authType?: 'basic' | 'scoped';
+	}) => Promise<T>,
 ): Promise<T> {
 	return wrapIntegrationCall(label, () =>
-		fn({ email: input.email, apiToken: input.apiToken, baseUrl: input.baseUrl }),
+		fn({
+			email: input.email,
+			apiToken: input.apiToken,
+			baseUrl: input.baseUrl,
+			authType: input.authType,
+		}),
 	);
 }
 
@@ -205,14 +223,21 @@ export const integrationsDiscoveryRouter = router({
 				'jira',
 				'api_token',
 			);
-			const baseUrl = (integration.config as Record<string, unknown> | null)?.baseUrl as
-				| string
-				| undefined;
+			const config = integration.config as Record<string, unknown> | null;
+			const baseUrl = config?.baseUrl as string | undefined;
+			// Resolve the saved auth mode from config (mirrors `baseUrl` — a
+			// non-secret connection setting, not a credential). Threading it into
+			// `withJiraCredentials` makes edit-mode re-verification for scoped
+			// projects route through the Atlassian gateway instead of the site
+			// URL. Unknown / absent ⇒ undefined ⇒ downstream treats it as basic.
+			const rawAuthType = config?.authType;
+			const authType =
+				rawAuthType === 'basic' || rawAuthType === 'scoped' ? rawAuthType : undefined;
 			if (!email || !apiToken || !baseUrl) {
 				throw new TRPCError({ code: 'NOT_FOUND', message: 'JIRA credentials not configured' });
 			}
 			return wrapIntegrationCall('Failed to fetch JIRA project details', () =>
-				withJiraCredentials({ email, apiToken, baseUrl }, () =>
+				withJiraCredentials({ email, apiToken, baseUrl, authType }, () =>
 					Promise.all([
 						jiraClient.getProjectStatuses(input.projectKey),
 						jiraClient.getIssueTypesForProject(input.projectKey),

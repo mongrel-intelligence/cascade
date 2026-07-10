@@ -9,6 +9,7 @@ const {
 	mockTrelloGetBoardLabels,
 	mockTrelloGetBoardCustomFields,
 	mockTrelloCreateBoardCustomField,
+	mockWithJiraCredentials,
 	mockJiraGetMyself,
 	mockJiraSearchProjects,
 	mockJiraGetProjectStatuses,
@@ -32,6 +33,7 @@ const {
 	mockTrelloGetBoardLabels: vi.fn(),
 	mockTrelloGetBoardCustomFields: vi.fn(),
 	mockTrelloCreateBoardCustomField: vi.fn(),
+	mockWithJiraCredentials: vi.fn((_creds: unknown, cb: () => unknown) => cb()),
 	mockJiraGetMyself: vi.fn(),
 	mockJiraSearchProjects: vi.fn(),
 	mockJiraGetProjectStatuses: vi.fn(),
@@ -66,10 +68,7 @@ vi.mock('../../../../src/trello/client.js', () => ({
 }));
 
 vi.mock('../../../../src/jira/client.js', () => ({
-	withJiraCredentials: (...args: unknown[]) => {
-		const cb = args[1] as () => unknown;
-		return cb();
-	},
+	withJiraCredentials: mockWithJiraCredentials,
 	jiraClient: {
 		getMyself: mockJiraGetMyself,
 		searchProjects: mockJiraSearchProjects,
@@ -319,6 +318,56 @@ describe('integrationsDiscoveryRouter', () => {
 			expect(mockJiraGetIssueTypesForProject).toHaveBeenCalledWith('PROJ');
 		});
 
+		// MNG-1743: authType from the wizard form is threaded into
+		// withJiraCredentials so raw-creds verification routes through the
+		// correct host (site URL for basic, Atlassian gateway for scoped).
+		it('threads authType into withJiraCredentials (raw-creds path)', async () => {
+			mockJiraGetProjectStatuses.mockResolvedValue([]);
+			mockJiraGetIssueTypesForProject.mockResolvedValue([]);
+			mockJiraGetFields.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.jiraProjectDetails({
+				...jiraCredsInput,
+				authType: 'scoped',
+				projectKey: 'PROJ',
+			});
+
+			expect(mockWithJiraCredentials).toHaveBeenCalledWith(
+				expect.objectContaining({
+					email: jiraCredsInput.email,
+					apiToken: jiraCredsInput.apiToken,
+					baseUrl: jiraCredsInput.baseUrl,
+					authType: 'scoped',
+				}),
+				expect.any(Function),
+			);
+		});
+
+		it('passes authType undefined when omitted (raw-creds path)', async () => {
+			mockJiraGetProjectStatuses.mockResolvedValue([]);
+			mockJiraGetIssueTypesForProject.mockResolvedValue([]);
+			mockJiraGetFields.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.jiraProjectDetails({ ...jiraCredsInput, projectKey: 'PROJ' });
+
+			const call = mockWithJiraCredentials.mock.calls.at(-1);
+			expect((call?.[0] as { authType?: string }).authType).toBeUndefined();
+		});
+
+		it('rejects an unknown authType value at the input boundary', async () => {
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			// `authType` is a `basic | scoped` enum — cast past the compile-time
+			// type to prove the runtime Zod enum rejects anything else.
+			const badInput = {
+				...jiraCredsInput,
+				authType: 'bearer',
+				projectKey: 'PROJ',
+			} as unknown as Parameters<typeof caller.jiraProjectDetails>[0];
+			await expect(caller.jiraProjectDetails(badInput)).rejects.toThrow();
+		});
+
 		it('rejects lowercase projectKey', async () => {
 			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
 			await expect(
@@ -444,6 +493,73 @@ describe('integrationsDiscoveryRouter', () => {
 			expect(result.fields).toEqual([
 				{ id: 'customfield_10001', name: 'Story Points', custom: true },
 			]);
+		});
+
+		// MNG-1743: resolve the saved auth mode from integration config and
+		// thread it into withJiraCredentials so edit-mode re-verification for
+		// scoped projects routes through the Atlassian gateway host.
+		it('resolves authType from saved config and threads it into withJiraCredentials', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
+				config: { baseUrl: 'https://myorg.atlassian.net', authType: 'scoped' },
+			});
+			mockJiraGetProjectStatuses.mockResolvedValue([]);
+			mockJiraGetIssueTypesForProject.mockResolvedValue([]);
+			mockJiraGetFields.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' });
+
+			expect(mockWithJiraCredentials).toHaveBeenCalledWith(
+				expect.objectContaining({
+					email: 'stored@example.com',
+					apiToken: 'stored-token',
+					baseUrl: 'https://myorg.atlassian.net',
+					authType: 'scoped',
+				}),
+				expect.any(Function),
+			);
+		});
+
+		it('passes authType undefined when saved config has no authType (stored-creds path)', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
+				config: { baseUrl: 'https://myorg.atlassian.net' },
+			});
+			mockJiraGetProjectStatuses.mockResolvedValue([]);
+			mockJiraGetIssueTypesForProject.mockResolvedValue([]);
+			mockJiraGetFields.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' });
+
+			const call = mockWithJiraCredentials.mock.calls.at(-1);
+			expect((call?.[0] as { authType?: string }).authType).toBeUndefined();
+		});
+
+		it('ignores an unrecognized authType stored in config (stored-creds path)', async () => {
+			mockGetIntegrationCredentialOrNull
+				.mockResolvedValueOnce('stored@example.com')
+				.mockResolvedValueOnce('stored-token');
+			mockGetIntegrationByProjectAndCategory.mockResolvedValue({
+				provider: 'jira',
+				config: { baseUrl: 'https://myorg.atlassian.net', authType: 'bearer' },
+			});
+			mockJiraGetProjectStatuses.mockResolvedValue([]);
+			mockJiraGetIssueTypesForProject.mockResolvedValue([]);
+			mockJiraGetFields.mockResolvedValue([]);
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			await caller.jiraProjectDetailsByProject({ projectId: 'proj-1', projectKey: 'PROJ' });
+
+			const call = mockWithJiraCredentials.mock.calls.at(-1);
+			expect((call?.[0] as { authType?: string }).authType).toBeUndefined();
 		});
 
 		it('throws NOT_FOUND when credentials are missing', async () => {

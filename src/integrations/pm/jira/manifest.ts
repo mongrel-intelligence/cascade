@@ -30,7 +30,7 @@ import { JiraReadyToProcessLabelTrigger } from '../../../triggers/jira/label-add
 import { JiraStatusChangedTrigger } from '../../../triggers/jira/status-changed.js';
 import { makeHmacSha256Verifier } from '../_shared/webhook-verifier.js';
 import type { PMProviderManifest } from '../manifest.js';
-import { jiraConfigSchema } from './config-schema.js';
+import { type JiraAuthType, jiraConfigSchema } from './config-schema.js';
 
 /**
  * Coerce a JIRA status name to a CASCADE-canonical category. JIRA
@@ -48,6 +48,20 @@ function classifyJiraStatus(
 	if (n === 'to do' || n === 'todo' || n === 'open' || n === 'backlog') return 'todo';
 	if (n === 'in progress' || n === 'in review' || n === 'in testing') return 'in_progress';
 	return 'unknown';
+}
+
+/**
+ * Narrow a raw `auth_type` value to the {@link JiraAuthType} union. Accepts
+ * `unknown` so it can guard both the discovery credentials bag (a
+ * `Record<string, string>`, where the value is a plain string or `undefined`)
+ * and the persisted integration config (where `authType` is untyped JSON).
+ * Anything other than the two recognized modes returns `undefined`, which the
+ * JIRA client + host resolver (`resolveJiraApiBaseUrl`) treat as `'basic'` —
+ * the historical default. This keeps unknown / absent values from ever
+ * selecting the scoped gateway host.
+ */
+function coerceJiraAuthType(value: unknown): JiraAuthType | undefined {
+	return value === 'basic' || value === 'scoped' ? value : undefined;
 }
 
 const jiraIntegration = new JiraIntegration();
@@ -101,7 +115,11 @@ export const jiraManifest: PMProviderManifest = {
 		const email = credentials.email ?? '';
 		const apiToken = credentials.api_token ?? '';
 		const baseUrl = credentials.base_url ?? '';
-		return withJiraCredentials({ email, apiToken, baseUrl }, async () => {
+		// Carry the configured auth mode so the JIRA client routes the
+		// createCustomField call through the correct host (site vs. scoped
+		// gateway). Absent ⇒ downstream treats it as 'basic'.
+		const authType = coerceJiraAuthType(credentials.auth_type);
+		return withJiraCredentials({ email, apiToken, baseUrl, authType }, async () => {
 			const result = await jiraClient.createCustomField(
 				name,
 				'com.atlassian.jira.plugin.system.customfieldtypes:float',
@@ -134,19 +152,29 @@ export const jiraManifest: PMProviderManifest = {
 	},
 
 	/**
-	 * JIRA's cloud tenant URL is a non-secret connection field stored on
-	 * `project_integrations.config.baseUrl`, not `project_credentials`. The
-	 * pm-discovery resolver invokes this hook on the projectId path to
-	 * promote the URL into the credentials bag the `createDiscoveryProvider`
-	 * factory below consumes. Without it, edit-mode re-verification in the
-	 * wizard constructs `new Version3Client({ host: '' })` and throws
-	 * "Couldn't parse the host URL" (prod incident 2026-04-24).
+	 * JIRA's cloud tenant URL and auth mode are non-secret connection fields
+	 * stored on `project_integrations.config` (`baseUrl` / `authType`), not
+	 * `project_credentials`. The pm-discovery resolver invokes this hook on the
+	 * projectId path to promote them into the credentials bag the
+	 * `createDiscoveryProvider` factory below consumes. Without `base_url`,
+	 * edit-mode re-verification in the wizard constructs
+	 * `new Version3Client({ host: '' })` and throws "Couldn't parse the host
+	 * URL" (prod incident 2026-04-24). Without `auth_type`, scoped projects
+	 * re-verify against the classic site host instead of the Atlassian gateway
+	 * (MNG-1743).
 	 */
 	configToCredentials: (config: unknown): Record<string, string> => {
 		if (!config || typeof config !== 'object') return {};
+		const promoted: Record<string, string> = {};
 		const baseUrl = (config as { baseUrl?: unknown }).baseUrl;
-		if (typeof baseUrl !== 'string' || baseUrl.length === 0) return {};
-		return { base_url: baseUrl };
+		if (typeof baseUrl === 'string' && baseUrl.length > 0) {
+			promoted.base_url = baseUrl;
+		}
+		const authType = coerceJiraAuthType((config as { authType?: unknown }).authType);
+		if (authType) {
+			promoted.auth_type = authType;
+		}
+		return promoted;
 	},
 
 	configSchema: jiraConfigSchema,
@@ -195,9 +223,16 @@ export const jiraManifest: PMProviderManifest = {
 		const email = creds.email ?? '';
 		const apiToken = creds.api_token ?? '';
 		const baseUrl = creds.base_url ?? '';
+		// Carry the configured auth mode so wizard-time / edit-mode discovery
+		// (currentUser / projects / states / customFields) routes through the
+		// correct host — the classic site URL for basic, the Atlassian gateway
+		// for scoped. `configToCredentials` promotes `config.authType` into
+		// `auth_type` on the projectId (edit-mode) path; the raw-creds
+		// (first-time setup) path receives it straight from the wizard.
+		const authType = coerceJiraAuthType(creds.auth_type);
 
 		const runWithCreds = <T>(fn: () => Promise<T>): Promise<T> =>
-			withJiraCredentials({ email, apiToken, baseUrl }, fn);
+			withJiraCredentials({ email, apiToken, baseUrl, authType }, fn);
 
 		const provider: Pick<PMProvider, 'type' | 'discover'> = {
 			type: 'jira',
