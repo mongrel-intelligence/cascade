@@ -57,6 +57,13 @@ vi.mock('../../../../src/utils/repo.js', () => ({
 	},
 }));
 
+// Passthrough the JIRA REST host resolver so these tests stay hermetic (no
+// jira.js import) and preserve site-URL behavior for basic/absent authType.
+// Scoped-mode gateway routing is covered in webhooks/jira.test.ts.
+vi.mock('../../../../src/jira/api-host.js', () => ({
+	resolveJiraApiBaseUrl: vi.fn(async (creds: { baseUrl: string }) => creds.baseUrl),
+}));
+
 // Mock global fetch for Trello API calls
 vi.stubGlobal('fetch', mockFetch);
 

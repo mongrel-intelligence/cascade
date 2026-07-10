@@ -45,6 +45,7 @@ export async function resolveProjectContext(
 		pmType: project.pm?.type ?? 'trello',
 		boardId: trelloConfig?.boardId,
 		jiraBaseUrl: jiraConfig?.baseUrl,
+		jiraAuthType: jiraConfig?.authType,
 		jiraProjectKey: jiraConfig?.projectKey,
 		jiraLabels,
 		trelloApiKey: creds.TRELLO_API_KEY ?? '',

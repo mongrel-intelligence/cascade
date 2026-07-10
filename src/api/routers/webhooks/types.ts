@@ -2,6 +2,8 @@
  * Shared types for webhook service modules.
  */
 
+import type { JiraAuthType } from '../../../jira/authType.js';
+
 export interface TrelloWebhook {
 	id: string;
 	description: string;
@@ -47,6 +49,13 @@ export interface ProjectContext {
 	pmType: 'trello' | 'jira' | 'linear';
 	boardId?: string;
 	jiraBaseUrl?: string;
+	/**
+	 * JIRA authentication mode resolved from `jiraConfig?.authType` (non-secret
+	 * connection setting, mirrors `jiraBaseUrl`). `'scoped'` routes REST v3 calls
+	 * through the Atlassian gateway; `'basic'`/absent uses the site URL. Consumed
+	 * by the shared `resolveJiraApiBaseUrl` host resolver in `webhooks/jira.ts`.
+	 */
+	jiraAuthType?: JiraAuthType;
 	jiraProjectKey?: string;
 	jiraLabels?: string[];
 	trelloApiKey: string;
