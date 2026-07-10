@@ -20,6 +20,12 @@ export interface TrelloConfig {
 export interface JiraConfig {
 	projectKey: string;
 	baseUrl: string;
+	/**
+	 * Optional JIRA authentication mode (non-secret config, mirrors `baseUrl`).
+	 * `'basic'` = classic site-token mode; `'scoped'` = scoped gateway-token
+	 * mode. Absent ⇒ treated as `'basic'`. Later stories consume this field.
+	 */
+	authType?: 'basic' | 'scoped';
 	statuses: Record<string, string>;
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };

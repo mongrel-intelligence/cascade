@@ -27,6 +27,21 @@ export const jiraConfigSchema = z
 		baseUrl: z.string().url(),
 
 		/**
+		 * Optional JIRA authentication mode. Non-secret connection setting
+		 * (mirrors `baseUrl`), NOT a credential role.
+		 *
+		 * - `'basic'` — classic site-token mode (the historical default).
+		 * - `'scoped'` — scoped gateway-token mode (API tokens with scopes).
+		 *
+		 * Both modes still authenticate via HTTP Basic with `email:api_token`
+		 * (confirmed live in MNG-1735) — the enum distinguishes the token
+		 * class, not a Basic-vs-Bearer scheme. Absent ⇒ treated as `'basic'`,
+		 * so every existing saved config stays valid untouched. Later stories
+		 * consume this field for host routing / client behavior.
+		 */
+		authType: z.enum(['basic', 'scoped']).optional(),
+
+		/**
 		 * Mapping from CASCADE status keys (backlog/todo/inProgress/done/...)
 		 * to JIRA status names or transition IDs.
 		 */
