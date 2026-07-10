@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { logger } from '../../utils/logging.js';
 import { adminProcedure, router } from '../trpc.js';
 import {
 	applyOneTimeTokens,
@@ -67,7 +68,21 @@ async function maybeCreateJiraWebhook(
 	if (!pctx.jiraEmail || !pctx.jiraApiToken || !pctx.jiraBaseUrl) return {};
 
 	const callbackUrl = `${baseUrl}/jira/webhook`;
-	const existing = await jiraListWebhooks(pctx);
+	// Best-effort dedup: a scope-restricted token can reject GET /webhook (401/403).
+	// If the list fails we skip the router-level duplicate check and let
+	// jiraCreateWebhook run so its actionable scope / manual-registration error
+	// surfaces instead of a generic "Failed to list JIRA webhooks" failure.
+	// jiraCreateWebhook performs its own (also best-effort) dedup listing.
+	let existing: JiraWebhookInfo[] = [];
+	try {
+		existing = await jiraListWebhooks(pctx);
+	} catch (err) {
+		logger.warn('[JiraWebhook] Could not list existing webhooks for dedup (continuing)', {
+			projectId: pctx.projectId,
+			jiraProjectKey: pctx.jiraProjectKey,
+			error: String(err),
+		});
+	}
 	const duplicate = existing.find(
 		(w) => w.url === callbackUrl || w.url === `${baseUrl}/webhook/jira`,
 	);
