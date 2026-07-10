@@ -68,7 +68,19 @@ function makePRReviewPayload(overrides: {
 	};
 }
 
-function makeReviewRequestedPayload(requestedReviewer: string, prAuthor: string) {
+/**
+ * Builds a `review_requested` webhook payload.
+ *
+ * `senderLogin` defaults to `prAuthor` (the common case: someone requests a
+ * review of another user's PR). Pass an explicit `senderLogin` to model a
+ * self-directed request where `sender === requested_reviewer` — the
+ * shared-`GITHUB_TOKEN_REVIEWER` contributor re-requesting their own review.
+ */
+function makeReviewRequestedPayload(
+	requestedReviewer: string,
+	prAuthor: string,
+	senderLogin: string = prAuthor,
+) {
 	return {
 		action: 'review_requested',
 		number: 42,
@@ -86,7 +98,7 @@ function makeReviewRequestedPayload(requestedReviewer: string, prAuthor: string)
 		},
 		requested_reviewer: { login: requestedReviewer },
 		repository: { full_name: 'owner/repo', html_url: 'https://github.com/owner/repo' },
-		sender: { login: prAuthor },
+		sender: { login: senderLogin },
 	};
 }
 
@@ -393,6 +405,49 @@ describe('GitHub Dual-Persona System (integration)', () => {
 				personaIdentities: TEST_PERSONAS,
 			};
 
+			expect(trigger.matches(ctx)).toBe(true);
+			const result = await trigger.handle(ctx);
+			expect(result?.agentType).toBe('review');
+		});
+
+		it('triggers review for a self-directed request (sender === requested_reviewer, shared reviewer token)', async () => {
+			await seedIntegration({
+				category: 'scm',
+				provider: 'github',
+				config: {},
+			});
+			// Agent must be explicitly enabled for the trigger to fire
+			await seedAgentConfig({ agentType: 'review' });
+			await seedTriggerConfig({
+				agentType: 'review',
+				triggerEvent: 'scm:review-requested',
+				enabled: true,
+			});
+
+			const project = await findProjectByRepoFromDb('owner/repo');
+			expect(project).toBeDefined();
+			const trigger = new ReviewRequestedTrigger();
+
+			// Self-directed request: the reviewer persona is BOTH the sender and the
+			// requested reviewer (sender === requested_reviewer === TEST_PERSONAS.reviewer).
+			// This models a human contributor whose GitHub account also holds the shared
+			// GITHUB_TOKEN_REVIEWER re-requesting their own review. The self-directed
+			// exemption must let this fall through to dispatch instead of the
+			// loop-prevention skip that applies to cross-persona requests from a persona.
+			const payload = makeReviewRequestedPayload(
+				TEST_PERSONAS.reviewer, // requested_reviewer
+				'external-user', // prAuthor (GitHub forbids requesting review from the PR author)
+				TEST_PERSONAS.reviewer, // sender === requested_reviewer
+			);
+			const ctx: TriggerContext = {
+				project: assertFound(project),
+				source: 'github',
+				payload,
+				personaIdentities: TEST_PERSONAS,
+			};
+
+			// The sender IS a CASCADE persona, so a naive loop-prevention guard would
+			// skip; the self-directed exemption instead dispatches the review agent.
 			expect(trigger.matches(ctx)).toBe(true);
 			const result = await trigger.handle(ctx);
 			expect(result?.agentType).toBe('review');
