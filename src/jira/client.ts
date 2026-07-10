@@ -39,11 +39,19 @@ function getClient(): Version3Client {
 	});
 }
 
-let cachedCloudId: string | null = null;
+/**
+ * In-memory JIRA cloudId cache keyed by `baseUrl`.
+ *
+ * The router/dashboard process serves multiple projects, so a single
+ * module-level slot would collide across tenants once cloudId becomes
+ * load-bearing on every scoped request. Mirrors the per-baseUrl Map used by
+ * the platform client (`src/router/platformClients/jira.ts`).
+ */
+const cloudIdCache = new Map<string, string>();
 
 /** @internal Visible for testing only */
 export function _resetCloudIdCache(): void {
-	cachedCloudId = null;
+	cloudIdCache.clear();
 }
 
 export const jiraClient = {
@@ -249,9 +257,20 @@ export const jiraClient = {
 		return getClient().myself.getCurrentUser();
 	},
 
-	async getCloudId(): Promise<string> {
-		if (cachedCloudId) return cachedCloudId;
-		const creds = getJiraCredentials();
+	/**
+	 * Resolve the tenant cloudId from the site `/_edge/tenant_info` endpoint,
+	 * caching the result per `baseUrl`.
+	 *
+	 * @param explicitCreds - Optional credentials to use instead of the
+	 *   `withJiraCredentials()` scope. Pass these when resolving outside an
+	 *   AsyncLocalStorage scope (e.g. the shared `resolveJiraApiBaseUrl` host
+	 *   resolver, which receives credentials directly). Absent ⇒ falls back to
+	 *   the ambient scoped credentials.
+	 */
+	async getCloudId(explicitCreds?: JiraCredentials): Promise<string> {
+		const creds = explicitCreds ?? getJiraCredentials();
+		const cached = cloudIdCache.get(creds.baseUrl);
+		if (cached) return cached;
 		const response = await fetch(`${creds.baseUrl}/_edge/tenant_info`, {
 			headers: {
 				Authorization: `Basic ${Buffer.from(`${creds.email}:${creds.apiToken}`).toString('base64')}`,
@@ -264,8 +283,8 @@ export const jiraClient = {
 		if (!data.cloudId) {
 			throw new Error('JIRA tenant_info response missing cloudId');
 		}
-		cachedCloudId = data.cloudId;
-		return cachedCloudId;
+		cloudIdCache.set(creds.baseUrl, data.cloudId);
+		return data.cloudId;
 	},
 
 	async addCommentReaction(issueId: string, commentId: string, emojiId: string): Promise<void> {
