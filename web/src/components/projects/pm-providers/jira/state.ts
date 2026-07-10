@@ -1,3 +1,18 @@
+/**
+ * JIRA authentication mode. NON-secret connection setting (mirrors
+ * `baseUrl`), NOT a credential — both modes still authenticate via HTTP
+ * Basic with `email:api_token`. The enum distinguishes the token class /
+ * host routing:
+ * - `'basic'` — classic API token; Jira REST API at the site URL.
+ * - `'scoped'` — scoped API token; CASCADE routes Jira REST API calls
+ *   through the `api.atlassian.com/ex/jira/{cloudId}` gateway using the
+ *   token's granular scopes.
+ *
+ * Single source of truth for the wizard-state literal union so
+ * `pm-wizard-state.ts` and the provider slice cannot drift.
+ */
+export type JiraWizardAuthType = 'basic' | 'scoped';
+
 export interface JiraProjectOption {
 	key: string;
 	name: string;
@@ -21,6 +36,7 @@ export interface JiraWizardStateSlice {
 	jiraEmail: string;
 	jiraApiToken: string;
 	jiraBaseUrl: string;
+	jiraAuthType: JiraWizardAuthType;
 	jiraProjectKey: string;
 	jiraProjects: JiraProjectOption[];
 	jiraProjectDetails: JiraProjectDetails | null;
@@ -39,6 +55,7 @@ export type JiraWizardAction =
 	| { type: 'SET_JIRA_EMAIL'; value: string }
 	| { type: 'SET_JIRA_API_TOKEN'; value: string }
 	| { type: 'SET_JIRA_BASE_URL'; url: string }
+	| { type: 'SET_JIRA_AUTH_TYPE'; value: JiraWizardAuthType }
 	| { type: 'SET_JIRA_PROJECTS'; projects: JiraProjectOption[] }
 	| { type: 'SET_JIRA_PROJECT_KEY'; key: string }
 	| { type: 'SET_JIRA_PROJECT_DETAILS'; details: JiraProjectDetails | null }
@@ -53,6 +70,7 @@ export function createInitialJiraState(): JiraWizardStateSlice {
 		jiraEmail: '',
 		jiraApiToken: '',
 		jiraBaseUrl: '',
+		jiraAuthType: 'basic',
 		jiraProjectKey: '',
 		jiraProjects: [],
 		jiraProjectDetails: null,
@@ -90,6 +108,15 @@ export function jiraWizardReducer<T extends JiraWizardStateSlice & VerificationS
 			return {
 				...state,
 				jiraBaseUrl: action.url,
+				verificationResult: null,
+				verifyError: null,
+			};
+		case 'SET_JIRA_AUTH_TYPE':
+			// auth_type changes the host routing verification runs against, so
+			// any prior "Verified as …" result is now stale — clear it.
+			return {
+				...state,
+				jiraAuthType: action.value,
 				verificationResult: null,
 				verifyError: null,
 			};

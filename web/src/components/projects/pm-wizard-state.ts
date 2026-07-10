@@ -10,6 +10,7 @@ import {
 	type JiraProjectDetails,
 	type JiraProjectOption,
 	type JiraWizardAction,
+	type JiraWizardAuthType,
 	jiraWizardReducer,
 } from './pm-providers/jira/state.js';
 import {
@@ -70,6 +71,7 @@ export interface WizardState {
 	jiraEmail: string;
 	jiraApiToken: string;
 	jiraBaseUrl: string;
+	jiraAuthType: JiraWizardAuthType;
 	linearApiKey: string;
 	verificationResult: { provider: Provider; display: string } | null;
 	verifyError: string | null;

@@ -41,6 +41,9 @@ export function useJiraDiscovery(
 					email: state.jiraEmail,
 					api_token: state.jiraApiToken,
 					base_url: state.jiraBaseUrl,
+					// Non-secret connection setting — routes discovery through the
+					// correct host (site URL for basic, api.atlassian.com for scoped).
+					auth_type: state.jiraAuthType,
 				},
 			})) as Array<{ id: string; name: string }>;
 			return projects.map((p) => ({ key: p.id, name: p.name }));
@@ -63,6 +66,9 @@ export function useJiraDiscovery(
 				email: state.jiraEmail,
 				apiToken: state.jiraApiToken,
 				baseUrl: state.jiraBaseUrl,
+				// Non-secret connection setting — routes project-details discovery
+				// through the correct host (site URL for basic, gateway for scoped).
+				authType: state.jiraAuthType,
 				projectKey,
 			});
 		},
