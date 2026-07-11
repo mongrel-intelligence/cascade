@@ -69,27 +69,36 @@ export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
 	return buildWorkerEnvWithProjectId(job, projectId);
 }
 
+function hasEnvVar(env: string[], key: string): boolean {
+	const prefix = `${key}=`;
+	return env.some((e) => e.startsWith(prefix));
+}
+
 /**
  * Append optional infrastructure env vars that are conditionally forwarded to workers.
  * Extracted to keep buildWorkerEnvWithProjectId within complexity limits.
  */
 function appendOptionalEnvVars(env: string[]): void {
 	// Forward DB SSL config so workers use the same TLS settings as the router.
-	if (process.env.DATABASE_SSL) env.push(`DATABASE_SSL=${process.env.DATABASE_SSL}`);
-	if (process.env.DATABASE_CA_CERT) env.push(`DATABASE_CA_CERT=${process.env.DATABASE_CA_CERT}`);
+	if (process.env.DATABASE_SSL && !hasEnvVar(env, 'DATABASE_SSL'))
+		env.push(`DATABASE_SSL=${process.env.DATABASE_SSL}`);
+	if (process.env.DATABASE_CA_CERT && !hasEnvVar(env, 'DATABASE_CA_CERT'))
+		env.push(`DATABASE_CA_CERT=${process.env.DATABASE_CA_CERT}`);
 
 	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
-	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
+	if (process.env.CLAUDE_CODE_OAUTH_TOKEN && !hasEnvVar(env, 'CLAUDE_CODE_OAUTH_TOKEN'))
 		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
 
 	// Forward Sentry env vars so worker containers report to the same project.
-	if (process.env.SENTRY_DSN) env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
-	if (process.env.SENTRY_ENVIRONMENT)
+	if (process.env.SENTRY_DSN && !hasEnvVar(env, 'SENTRY_DSN'))
+		env.push(`SENTRY_DSN=${process.env.SENTRY_DSN}`);
+	if (process.env.SENTRY_ENVIRONMENT && !hasEnvVar(env, 'SENTRY_ENVIRONMENT'))
 		env.push(`SENTRY_ENVIRONMENT=${process.env.SENTRY_ENVIRONMENT}`);
-	if (process.env.SENTRY_RELEASE) env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
+	if (process.env.SENTRY_RELEASE && !hasEnvVar(env, 'SENTRY_RELEASE'))
+		env.push(`SENTRY_RELEASE=${process.env.SENTRY_RELEASE}`);
 
 	// Forward dashboard URL so worker progress comments can include run links.
-	if (process.env.CASCADE_DASHBOARD_URL)
+	if (process.env.CASCADE_DASHBOARD_URL && !hasEnvVar(env, 'CASCADE_DASHBOARD_URL'))
 		env.push(`CASCADE_DASHBOARD_URL=${process.env.CASCADE_DASHBOARD_URL}`);
 }
 
