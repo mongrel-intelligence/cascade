@@ -1,3 +1,4 @@
+import { TRPCError } from '@trpc/server';
 import { describe, expect, it, vi } from 'vitest';
 import { createMockUser } from '../../../helpers/factories.js';
 import {
@@ -55,6 +56,13 @@ vi.mock('../../../../src/utils/repo.js', () => ({
 		const slashIdx = fullName.indexOf('/');
 		return { owner: fullName.slice(0, slashIdx), repo: fullName.slice(slashIdx + 1) };
 	},
+}));
+
+// Passthrough the JIRA REST host resolver so these tests stay hermetic (no
+// jira.js import) and preserve site-URL behavior for basic/absent authType.
+// Scoped-mode gateway routing is covered in webhooks/jira.test.ts.
+vi.mock('../../../../src/jira/api-host.js', () => ({
+	resolveJiraApiBaseUrl: vi.fn(async (creds: { baseUrl: string }) => creds.baseUrl),
 }));
 
 // Mock global fetch for Trello API calls
@@ -669,6 +677,48 @@ describe('webhooksRouter', () => {
 
 			expect(result.jira).toMatchObject({ id: 101 });
 			expect(result.labelsEnsured).toEqual([]);
+		});
+
+		it('surfaces the create actionable error when the router-level dedup list is denied (scoped token)', async () => {
+			setupJiraProjectContext();
+
+			// Scoped-token scenario (MNG-1735): the token cannot even list webhooks,
+			// so GET /rest/api/3/webhook returns 401. The router-level dedup must be
+			// best-effort so jiraCreateWebhook still runs and its actionable 403
+			// scope / manual-registration message surfaces — instead of a generic
+			// "Failed to list JIRA webhooks: 401" masking it.
+			//
+			// Fetch calls in order:
+			// 1. jiraListWebhooks (router duplicate check) - 401 (caught, best-effort)
+			// 2. jiraListWebhooks (inside jiraCreateWebhook dedup) - 401 (caught, best-effort)
+			// 3. jiraCreateWebhook POST - 403 (throws the friendly FORBIDDEN message)
+			mockFetch
+				.mockResolvedValueOnce({ ok: false, status: 401, json: () => Promise.resolve({}) })
+				.mockResolvedValueOnce({ ok: false, status: 401, json: () => Promise.resolve({}) })
+				.mockResolvedValueOnce({
+					ok: false,
+					status: 403,
+					text: () => Promise.resolve('Unauthorized; scope does not match'),
+				});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const err = await caller
+				.create({
+					projectId: 'jira-project',
+					callbackBaseUrl: 'http://example.com',
+					jiraOnly: true,
+				})
+				.catch((e) => e);
+
+			// The actionable FORBIDDEN message reaches the caller (not INTERNAL_SERVER_ERROR
+			// from the router-level list) — this is the crux of the best-effort dedup fix.
+			expect(err).toBeInstanceOf(TRPCError);
+			expect(err.code).toBe('FORBIDDEN');
+			expect(err.message).toContain('manage:jira-webhook');
+			expect(err.message).toContain('write:webhook:jira');
+			expect(err.message).toMatch(/register the webhook manually/i);
+			// The POST create was actually reached: 2 denied list calls + the create.
+			expect(mockFetch).toHaveBeenCalledTimes(3);
 		});
 
 		it('returns Sentry manual setup info with paired project context', async () => {

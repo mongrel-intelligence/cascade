@@ -64,8 +64,11 @@ export class JiraIntegration implements PMIntegration {
 		const email = await getIntegrationCredential(projectId, 'pm', 'jira', 'email');
 		const apiToken = await getIntegrationCredential(projectId, 'pm', 'jira', 'api_token');
 		const project = await findProjectById(projectId);
-		const baseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
-		return withJiraCredentials({ email, apiToken, baseUrl }, fn);
+		const jiraConfig = project ? getJiraConfig(project) : undefined;
+		const baseUrl = jiraConfig?.baseUrl ?? '';
+		// Carry the configured auth mode so the JIRA client can choose the
+		// correct host. Absent ⇒ downstream treats it as 'basic' (the default).
+		return withJiraCredentials({ email, apiToken, baseUrl, authType: jiraConfig?.authType }, fn);
 	}
 
 	resolveLifecycleConfig(project: ProjectConfig): ProjectPMConfig {

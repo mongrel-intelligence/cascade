@@ -10,6 +10,22 @@ export type { TrelloCredentials } from '../../trello/types.js';
 export interface JiraCredentialsWithAuth extends JiraCredentials {
 	/** Pre-computed Base64 Basic auth value: `email:apiToken` */
 	auth: string;
+
+	/**
+	 * Optional JIRA authentication mode carried from the project config so the
+	 * router platform client can select the effective REST host.
+	 *
+	 * - `'basic'` / absent — classic site-token mode; REST calls hit the tenant
+	 *   site URL (`baseUrl`).
+	 * - `'scoped'` — scoped gateway-token mode; v3/v2 REST comment calls route
+	 *   through the Atlassian gateway (`https://api.atlassian.com/ex/jira/{cloudId}`).
+	 *
+	 * Both modes still authenticate via HTTP Basic `email:api_token` — the enum
+	 * selects the host, not the auth scheme (confirmed live in MNG-1735).
+	 * Redeclared from {@link JiraCredentials} to document its host-selection role
+	 * at the platform-client boundary.
+	 */
+	authType?: 'basic' | 'scoped';
 }
 
 /**

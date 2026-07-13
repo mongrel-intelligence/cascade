@@ -153,16 +153,20 @@ export async function buildExecutionPlan(
 	// Build per-project secrets with CASCADE env var injections
 	const projectSecrets = await augmentProjectSecrets(project, agentType, input);
 
-	// Write the review event policy to a well-known file so cascade-tools can read
-	// it even when the env var is stripped by the claude subprocess chain.
+	// Write the resolved review event policy to a well-known file so cascade-tools
+	// can read it even when the env var is stripped by the claude subprocess chain.
 	// (@anthropic-ai/claude-code ≤ 2.1.185 does not forward all custom env vars to
 	// bash subprocesses; the file lives in the container's ephemeral /tmp.)
-	if (isCommentOnlyReview(resolveReviewEventPolicy(project, agentType))) {
-		try {
-			writeFileSync(REVIEW_EVENT_POLICY_FILE, 'comment-only', 'utf-8');
-		} catch {
-			// Non-fatal — env-var mechanism remains the primary path
-		}
+	//
+	// Written UNCONDITIONALLY (both `all` and `comment-only`) so the file always
+	// reflects the current run's policy. This is self-correcting: if a `/tmp` path
+	// is ever reused across runs (non-container execution or a future change), an
+	// `all` run overwrites any stale `comment-only` file instead of inheriting it.
+	// The CLI's env > file > default precedence is unchanged.
+	try {
+		writeFileSync(REVIEW_EVENT_POLICY_FILE, resolveReviewEventPolicy(project, agentType), 'utf-8');
+	} catch {
+		// Non-fatal — env-var mechanism remains the primary path
 	}
 
 	// Inject pre-seeded progress comment ID so the subprocess finds it at startup

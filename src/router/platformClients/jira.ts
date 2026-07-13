@@ -8,7 +8,14 @@
 import { markdownToAdf } from '../../pm/jira/adf.js';
 import { logger } from '../../utils/logging.js';
 import { resolveJiraCredentials } from './credentials.js';
-import type { PlatformCommentClient } from './types.js';
+import type { JiraCredentialsWithAuth, PlatformCommentClient } from './types.js';
+
+/**
+ * Atlassian REST gateway origin used to route scoped API tokens. Mirrors
+ * `src/jira/api-host.ts` — the in-worker resolver — so router-side ack/PM
+ * comments hit the same host as the jira.js client under `authType: 'scoped'`.
+ */
+const ATLASSIAN_GATEWAY_ORIGIN = 'https://api.atlassian.com';
 
 /** In-memory JIRA CloudId cache keyed by baseUrl */
 const _jiraCloudIdCache = new Map<string, string>();
@@ -30,7 +37,8 @@ export class JiraPlatformClient implements PlatformCommentClient {
 
 		try {
 			const adfBody = markdownToAdf(message);
-			const url = `${creds.baseUrl}/rest/api/3/issue/${issueKey}/comment`;
+			const base = await this._resolveEffectiveBase(creds);
+			const url = `${base}/rest/api/3/issue/${issueKey}/comment`;
 			const response = await fetch(url, {
 				method: 'POST',
 				headers: {
@@ -62,7 +70,8 @@ export class JiraPlatformClient implements PlatformCommentClient {
 		const creds = await resolveJiraCredentials(this.projectId);
 		if (!creds) return;
 
-		const url = `${creds.baseUrl}/rest/api/2/issue/${issueKey}/comment/${commentId}`;
+		const base = await this._resolveEffectiveBase(creds);
+		const url = `${base}/rest/api/2/issue/${issueKey}/comment/${commentId}`;
 		try {
 			await fetch(url, {
 				method: 'DELETE',
@@ -81,6 +90,12 @@ export class JiraPlatformClient implements PlatformCommentClient {
 	 * Post a JIRA reactions-API reaction on a comment.
 	 * `target` is ignored (cloudId is resolved internally from credentials).
 	 * `reactionPayload` is `{ issueId, commentId }`.
+	 *
+	 * Intentionally stays on the tenant **site URL** even under `authType: 'scoped'`.
+	 * `/rest/reactions/1.0/` is not a confirmed gateway-supported scoped-token API
+	 * (the gateway probe returned `401 scope does not match`; MNG-1735), so this
+	 * call must NOT route through {@link _resolveEffectiveBase}. It is best-effort:
+	 * failures degrade to a warn log and never fail the run.
 	 */
 	async postReaction(
 		_target: string,
@@ -99,6 +114,7 @@ export class JiraPlatformClient implements PlatformCommentClient {
 			const { issueId, commentId } = reactionPayload;
 			const emojiId = 'atlassian-thought_balloon';
 			const ari = `ari%3Acloud%3Ajira%3A${cloudId}%3Acomment%2F${issueId}%2F${commentId}`;
+			// Site URL only — the internal reactions API is not gateway-routable (MNG-1735).
 			const reactionsUrl = `${creds.baseUrl}/rest/reactions/1.0/reactions/${ari}/${emojiId}`;
 
 			const reactionResponse = await fetch(reactionsUrl, {
@@ -121,6 +137,34 @@ export class JiraPlatformClient implements PlatformCommentClient {
 		} catch (err) {
 			logger.warn('[PlatformClient] Failed to post JIRA reaction:', String(err));
 		}
+	}
+
+	/**
+	 * Resolve the effective REST base host for v3/v2 comment calls.
+	 *
+	 * - `authType` basic / absent ⇒ the tenant site URL (`creds.baseUrl`) —
+	 *   classic behavior, unchanged.
+	 * - `authType === 'scoped'` ⇒ the Atlassian gateway
+	 *   `https://api.atlassian.com/ex/jira/{cloudId}`, where `cloudId` is resolved
+	 *   from the site `/_edge/tenant_info` endpoint via the existing per-`baseUrl`
+	 *   cache. If cloudId resolution fails, degrade to the site URL so the
+	 *   fire-and-forget comment path still attempts a post rather than throwing.
+	 */
+	private async _resolveEffectiveBase(creds: JiraCredentialsWithAuth): Promise<string> {
+		if (creds.authType !== 'scoped') {
+			return creds.baseUrl;
+		}
+
+		const cloudId = await this._getCloudId(creds.baseUrl, creds.auth);
+		if (!cloudId) {
+			logger.warn(
+				'[PlatformClient] Scoped JIRA cloudId unavailable, falling back to site URL:',
+				creds.baseUrl,
+			);
+			return creds.baseUrl;
+		}
+
+		return `${ATLASSIAN_GATEWAY_ORIGIN}/ex/jira/${cloudId}`;
 	}
 
 	private async _getCloudId(baseUrl: string, auth: string): Promise<string | null> {

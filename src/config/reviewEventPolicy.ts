@@ -48,7 +48,9 @@ export const REVIEW_EVENT_POLICY_ENV_VAR = 'CASCADE_REVIEW_EVENT_POLICY';
  * subprocess chain (observed with @anthropic-ai/claude-code ≤ 2.1.185 — the
  * bun-compiled binary does not forward all custom env vars to bash subprocesses).
  * The path is fixed inside the ephemeral worker container's /tmp, so there is no
- * cross-run collision.
+ * cross-run collision. Written UNCONDITIONALLY with the run's resolved policy
+ * (both `all` and `comment-only`), so the file always reflects the current run
+ * and self-corrects if a /tmp path is ever reused.
  */
 export const REVIEW_EVENT_POLICY_FILE = '/tmp/cascade-review-event-policy';
 

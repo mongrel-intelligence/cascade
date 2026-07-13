@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { Command } from '@oclif/core';
 import { withGitHubToken } from '../github/client.js';
+import { normalizeJiraAuthType } from '../jira/authType.js';
 import { withJiraCredentials } from '../jira/client.js';
 import { withLinearCredentials } from '../linear/client.js';
 import { createPMProvider, withPMProvider } from '../pm/index.js';
@@ -54,8 +55,14 @@ function wrapWithCredentialScopes(fn: () => Promise<void>): () => Promise<void> 
 	const jiraBaseUrl = resolveJiraBaseUrl();
 	if (jiraEmail && jiraApiToken && jiraBaseUrl) {
 		const prev = fn;
+		// Carry the injected JIRA auth mode into the credential scope so
+		// in-worker JIRA calls choose the correct host. Absent/unknown ⇒ 'basic'.
+		const jiraAuthType = normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE);
 		fn = () =>
-			withJiraCredentials({ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl }, prev);
+			withJiraCredentials(
+				{ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl, authType: jiraAuthType },
+				prev,
+			);
 	}
 	const linearApiKey = process.env.LINEAR_API_KEY;
 	if (linearApiKey) {
@@ -94,6 +101,7 @@ function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
 			jira: {
 				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
 				baseUrl: jiraBaseUrl ?? '',
+				authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
 				statuses: jiraStatuses ? JSON.parse(jiraStatuses) : {},
 			},
 		} as ProjectConfig;

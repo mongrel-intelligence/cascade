@@ -17,8 +17,11 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { ReactElement } from 'react';
+import { createElement, type ReactElement } from 'react';
+import { Button } from '@/components/ui/button.js';
+import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
+import type { DataProps } from '@/lib/data-props.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { buildMissingStatusTriggerConfigs } from '../save-trigger-configs.js';
 import { ContainerPickStep } from '../steps/container-pick.js';
@@ -30,6 +33,7 @@ import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types
 import { jiraAuthMetadata, jiraCredentialPersistence } from './auth.js';
 import { useJiraCustomFieldCreation, useJiraDiscovery } from './hooks.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
+import type { JiraWizardAuthType } from './state.js';
 import { JiraWebhookAdapter, normalizeJiraActiveWebhooks } from './webhook-step.js';
 
 // CASCADE stage keys that map to JIRA statuses (name-based, not id-based
@@ -140,22 +144,96 @@ function asJiraHooks(providerHooks: Record<string, unknown> | undefined): JiraPr
 
 // ── Per-step adapters ────────────────────────────────────────────────
 
+// Basic vs scoped token selector options. Presented as a host-routing /
+// security-scope choice, NOT a different auth protocol — the operator still
+// enters email + API token in both modes (see MNG-1735 research).
+const JIRA_AUTH_TYPE_OPTIONS: ReadonlyArray<{
+	readonly value: JiraWizardAuthType;
+	readonly label: string;
+	readonly hint: string;
+}> = [
+	{
+		value: 'basic',
+		label: 'API token',
+		hint: 'Classic API token. CASCADE calls the Jira REST API at your site URL.',
+	},
+	{
+		value: 'scoped',
+		label: 'API token with scopes',
+		hint: 'Scoped API token — CASCADE routes Jira REST API calls through the api.atlassian.com gateway using the token’s granular scopes. You still enter your email + API token.',
+	},
+];
+
+/**
+ * Segmented control for the JIRA auth-type (basic vs scoped). Rendered via
+ * shadcn `Button` primitives (SSR-safe; no raw radio/select) and dispatches
+ * `SET_JIRA_AUTH_TYPE`. Shows the selected option's helper text below.
+ */
+function JiraAuthTypeSelector({
+	value,
+	onChange,
+}: {
+	value: JiraWizardAuthType;
+	onChange: (next: JiraWizardAuthType) => void;
+}): ReactElement {
+	const activeHint = JIRA_AUTH_TYPE_OPTIONS.find((o) => o.value === value)?.hint ?? '';
+	return createElement(
+		'div',
+		{ className: 'space-y-2', 'data-auth-type-selector': 'jira' },
+		createElement(Label, null, 'Token type'),
+		createElement(
+			'div',
+			{ className: 'flex gap-2', role: 'radiogroup', 'aria-label': 'JIRA token type' },
+			...JIRA_AUTH_TYPE_OPTIONS.map((opt) =>
+				createElement(
+					Button,
+					{
+						key: opt.value,
+						type: 'button',
+						variant: value === opt.value ? 'default' : 'outline',
+						size: 'sm',
+						role: 'radio',
+						'aria-checked': value === opt.value,
+						'data-auth-type-option': opt.value,
+						'data-selected': value === opt.value ? 'true' : 'false',
+						onClick: () => onChange(opt.value),
+					} as React.ComponentProps<typeof Button> & DataProps,
+					opt.label,
+				),
+			),
+		),
+		createElement(
+			'p',
+			{ className: 'text-xs text-muted-foreground', 'data-auth-type-hint': value },
+			activeHint,
+		),
+	);
+}
+
 function JiraCredentialsAdapter({ state, dispatch }: ProviderWizardStepProps): ReactElement {
-	return CredentialsStep({
-		step: { kind: 'credentials', id: 'jira-credentials' },
-		providerId: 'jira',
-		credentialRoles: JIRA_CREDENTIAL_ROLES,
-		values: {
-			base_url: state.jiraBaseUrl,
-			email: state.jiraEmail,
-			api_token: state.jiraApiToken,
-		},
-		onChange: (role, value) => {
-			if (role === 'base_url') dispatch({ type: 'SET_JIRA_BASE_URL', url: value });
-			else if (role === 'email') dispatch({ type: 'SET_JIRA_EMAIL', value });
-			else if (role === 'api_token') dispatch({ type: 'SET_JIRA_API_TOKEN', value });
-		},
-	});
+	return createElement(
+		'div',
+		{ className: 'space-y-4' },
+		JiraAuthTypeSelector({
+			value: state.jiraAuthType,
+			onChange: (value) => dispatch({ type: 'SET_JIRA_AUTH_TYPE', value }),
+		}),
+		CredentialsStep({
+			step: { kind: 'credentials', id: 'jira-credentials' },
+			providerId: 'jira',
+			credentialRoles: JIRA_CREDENTIAL_ROLES,
+			values: {
+				base_url: state.jiraBaseUrl,
+				email: state.jiraEmail,
+				api_token: state.jiraApiToken,
+			},
+			onChange: (role, value) => {
+				if (role === 'base_url') dispatch({ type: 'SET_JIRA_BASE_URL', url: value });
+				else if (role === 'email') dispatch({ type: 'SET_JIRA_EMAIL', value });
+				else if (role === 'api_token') dispatch({ type: 'SET_JIRA_API_TOKEN', value });
+			},
+		}),
+	);
 }
 
 function JiraProjectPickAdapter({ state, providerHooks }: ProviderWizardStepProps): ReactElement {
@@ -302,6 +380,9 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 	buildIntegrationConfig: (state) => ({
 		projectKey: state.jiraProjectKey,
 		baseUrl: state.jiraBaseUrl,
+		// Non-secret connection setting persisted alongside baseUrl (mirrors the
+		// backend jiraConfigSchema.authType). Later stories read it for host routing.
+		authType: state.jiraAuthType,
 		statuses: state.jiraStatusMappings,
 		...(Object.keys(state.jiraIssueTypes).length > 0 ? { issueTypes: state.jiraIssueTypes } : {}),
 		...(Object.keys(state.jiraLabels).length > 0 ? { labels: state.jiraLabels } : {}),
@@ -323,6 +404,9 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		return {
 			provider: 'jira',
 			jiraBaseUrl: (initialConfig.baseUrl as string) ?? '',
+			// Hydrate the persisted auth mode; legacy configs without authType
+			// (saved before this field existed) default to 'basic'.
+			jiraAuthType: (initialConfig.authType as JiraWizardAuthType | undefined) ?? 'basic',
 			jiraProjectKey: (initialConfig.projectKey as string) ?? '',
 			...(statuses ? { jiraStatusMappings: statuses } : {}),
 			...(issueTypes ? { jiraIssueTypes: issueTypes } : {}),

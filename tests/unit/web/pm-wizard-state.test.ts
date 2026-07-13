@@ -44,6 +44,7 @@ describe('createInitialState', () => {
 		expect(state.jiraEmail).toBe('');
 		expect(state.jiraApiToken).toBe('');
 		expect(state.jiraBaseUrl).toBe('');
+		expect(state.jiraAuthType).toBe('basic');
 		expect(state.verificationResult).toBeNull();
 		expect(state.verifyError).toBeNull();
 		expect(state.trelloBoardId).toBe('');
@@ -96,6 +97,7 @@ describe('provider state slices', () => {
 			jiraEmail: '',
 			jiraApiToken: '',
 			jiraBaseUrl: '',
+			jiraAuthType: 'basic',
 			jiraProjectKey: '',
 			jiraProjects: [],
 			jiraProjectDetails: null,
@@ -173,6 +175,18 @@ describe('provider state slices', () => {
 			value: 'Sub-task',
 		});
 		expect(next.jiraIssueTypes).toEqual({ task: 'Task', subtask: 'Sub-task' });
+	});
+
+	it('handles SET_JIRA_AUTH_TYPE in the JIRA state reducer, clearing verification', () => {
+		const state = {
+			...createInitialState(),
+			verificationResult: { provider: 'jira' as const, display: 'JIRA User' },
+			verifyError: 'stale',
+		};
+		const next = jiraWizardReducer(state, { type: 'SET_JIRA_AUTH_TYPE', value: 'scoped' });
+		expect(next.jiraAuthType).toBe('scoped');
+		expect(next.verificationResult).toBeNull();
+		expect(next.verifyError).toBeNull();
 	});
 
 	it('handles Linear team reset in the Linear state reducer', () => {
@@ -316,6 +330,25 @@ describe('wizardReducer', () => {
 		expect(next.jiraBaseUrl).toBe('https://myorg.atlassian.net');
 		expect(next.verificationResult).toBeNull();
 		expect(next.verifyError).toBeNull();
+	});
+
+	it('SET_JIRA_AUTH_TYPE sets the auth mode and clears verification (MNG-1744)', () => {
+		const state = {
+			...initialState(),
+			provider: 'jira' as const,
+			verificationResult: { provider: 'jira' as const, display: 'JIRA User' },
+			verifyError: 'old error',
+		};
+		const next = dispatch(state, { type: 'SET_JIRA_AUTH_TYPE', value: 'scoped' });
+		expect(next.jiraAuthType).toBe('scoped');
+		expect(next.verificationResult).toBeNull();
+		expect(next.verifyError).toBeNull();
+	});
+
+	it('SET_JIRA_AUTH_TYPE can switch back to basic', () => {
+		const state = { ...initialState(), jiraAuthType: 'scoped' as const };
+		const next = dispatch(state, { type: 'SET_JIRA_AUTH_TYPE', value: 'basic' });
+		expect(next.jiraAuthType).toBe('basic');
 	});
 
 	it('SET_VERIFICATION stores result and clears error', () => {
@@ -743,6 +776,7 @@ describe('provider-owned edit hydration', () => {
 		const config = {
 			baseUrl: 'https://example.atlassian.net',
 			projectKey: 'PROJ',
+			authType: 'scoped',
 			statuses: { todo: 'To Do', done: 'Done' },
 			issueTypes: { task: 'Task', subtask: 'Subtask' },
 			labels: { processing: 'cascade-processing' },
@@ -754,11 +788,21 @@ describe('provider-owned edit hydration', () => {
 		expect(result.jiraEmail).toBeUndefined();
 		expect(result.jiraApiToken).toBeUndefined();
 		expect(result.jiraBaseUrl).toBe('https://example.atlassian.net');
+		// authType is hydrated from persisted config (MNG-1744).
+		expect(result.jiraAuthType).toBe('scoped');
 		expect(result.jiraProjectKey).toBe('PROJ');
 		expect(result.jiraStatusMappings).toEqual({ todo: 'To Do', done: 'Done' });
 		expect(result.jiraIssueTypes).toEqual({ task: 'Task', subtask: 'Subtask' });
 		expect(result.jiraLabels).toEqual({ processing: 'cascade-processing' });
 		expect(result.jiraCostFieldId).toBe('customfield_10042');
+	});
+
+	it('hydrates jiraAuthType to basic for legacy config without authType (MNG-1744)', () => {
+		const result = jiraProviderWizard.buildEditState(
+			{ baseUrl: 'https://example.atlassian.net', projectKey: 'PROJ' },
+			new Set<string>(),
+		);
+		expect(result.jiraAuthType).toBe('basic');
 	});
 
 	it('sets hasStoredCredentials true for jira when both keys present', () => {

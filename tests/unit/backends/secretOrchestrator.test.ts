@@ -63,6 +63,14 @@ vi.mock('../../../src/backends/sidecarManager.js', () => ({
 	createCompletionArtifacts: vi.fn().mockReturnValue({}),
 }));
 
+// Spy on writeFileSync only (preserve every other fs function) so we can assert
+// the review-event-policy file write without touching the real /tmp path.
+vi.mock('node:fs', async (importOriginal) => {
+	const actual = await importOriginal<typeof import('node:fs')>();
+	return { ...actual, writeFileSync: vi.fn() };
+});
+
+import { writeFileSync } from 'node:fs';
 import {
 	createIntegrationChecker,
 	resolveEffectiveCapabilities,
@@ -75,12 +83,14 @@ import {
 	injectRunLinkSecrets,
 } from '../../../src/backends/secretOrchestrator.js';
 import type { AgentEngine } from '../../../src/backends/types.js';
+import { REVIEW_EVENT_POLICY_FILE } from '../../../src/config/reviewEventPolicy.js';
 import type { UpdateChannel } from '../../../src/config/updateChannel.js';
 import { getSentryIntegrationConfig } from '../../../src/sentry/integration.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { getDashboardUrl } from '../../../src/utils/runLink.js';
 
 const mockGetDashboardUrl = vi.mocked(getDashboardUrl);
+const mockWriteFileSync = vi.mocked(writeFileSync);
 const mockGetSentryIntegrationConfig = vi.mocked(getSentryIntegrationConfig);
 const mockBuildPromptContext = vi.mocked(buildPromptContext);
 const mockCreateIntegrationChecker = vi.mocked(createIntegrationChecker);
@@ -360,6 +370,67 @@ describe('buildExecutionPlan', () => {
 
 			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
 			expect(promptContext.commentOnlyReview).toBe(false);
+		});
+	});
+
+	// The review-event-policy file is written UNCONDITIONALLY with the run's
+	// resolved policy so it self-corrects if a /tmp path is ever reused. The CLI's
+	// env > file > default precedence still holds (see resolveEventPolicyFromEnv).
+	describe('review event policy file write', () => {
+		it('writes the resolved policy (all) unconditionally under the default policy', async () => {
+			await buildExecutionPlan(
+				'review',
+				makeInput(makeProject(), 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			expect(mockWriteFileSync).toHaveBeenCalledWith(REVIEW_EVENT_POLICY_FILE, 'all', 'utf-8');
+		});
+
+		it('writes comment-only when the review agent policy is comment-only', async () => {
+			const project = makeProject({ agentReviewEventPolicies: { review: 'comment-only' } });
+
+			await buildExecutionPlan(
+				'review',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			expect(mockWriteFileSync).toHaveBeenCalledWith(
+				REVIEW_EVENT_POLICY_FILE,
+				'comment-only',
+				'utf-8',
+			);
+		});
+
+		it('writes all for a non-review agent even on a comment-only project (self-correcting)', async () => {
+			const project = makeProject({ agentReviewEventPolicies: { review: 'comment-only' } });
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			expect(mockWriteFileSync).toHaveBeenCalledWith(REVIEW_EVENT_POLICY_FILE, 'all', 'utf-8');
 		});
 	});
 

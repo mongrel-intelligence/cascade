@@ -112,6 +112,33 @@ Single-source-of-truth utilities live in `src/integrations/pm/_shared/`:
 - **`label-id-resolver.ts`** — `resolveLabelId(slot, mapping, ctx)` validates UUIDs before passing labelIds to APIs that require them (Linear). Returns `null` and logs a warn for misconfigurations.
 - **`project-id-extractor.ts`** — `extractProjectIdFromJobViaRegistry(jobData)` iterates the registry. Used by `src/router/worker-env.ts` before its (now-minimal) legacy branches.
 
+JIRA has one additional shared host resolver outside `_shared/` — `resolveJiraApiBaseUrl` (`src/jira/api-host.ts`), the JIRA analogue of the shared auth-header helper. See the next section.
+
+---
+
+## JIRA authentication modes (scoped tokens)
+
+JIRA supports classic unscoped **site tokens** and Atlassian **API tokens with scopes** ("scoped" tokens). The mode is chosen by the optional `authType` field on the JIRA integration config (`jiraConfigSchema` in `src/integrations/pm/jira/config-schema.ts`): `'basic'` (or absent) and `'scoped'`.
+
+- **`authType` is a non-secret connection setting**, not a credential role — it mirrors `baseUrl` and lives in `project_integrations.config`, never `project_credentials`. Absent ⇒ `'basic'`, so every pre-existing JIRA config stays valid untouched (`normalizeJiraAuthType` maps absent/unknown values back to `'basic'`).
+- **Both modes authenticate with HTTP Basic** (`email:api_token`) — confirmed live in MNG-1735. `authType` selects the REST v3 *host*, not a Basic-vs-Bearer scheme. There is no scoped-Bearer branch.
+
+### `resolveJiraApiBaseUrl` — the shared host-resolution contract
+
+Every JIRA REST v3 call site must route through the single shared resolver `resolveJiraApiBaseUrl(creds)` (`src/jira/api-host.ts`) so scoped tokens hit the Atlassian gateway consistently and no divergent host-selection copies exist. This is the JIRA analogue of the `auth-headers.ts` provenance rule:
+
+| `authType` | Resolved REST v3 base | Detail |
+|---|---|---|
+| `basic` / absent | tenant **site URL** (`creds.baseUrl`) | Classic site-token behavior, unchanged. |
+| `scoped` | Atlassian **gateway** `https://api.atlassian.com/ex/jira/{cloudId}` | `cloudId` resolved from `${baseUrl}/_edge/tenant_info` (**always** the site URL, never the gateway) with the same Basic scoped token, cached per `baseUrl` via `jiraClient.getCloudId`. |
+
+The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatformClient` (`src/router/platformClients/jira.ts`), the webhook-management router (`src/api/routers/webhooks/jira.ts`), and the wizard's discovery factory (`jiraManifest.createDiscoveryProvider` / `configToCredentials`) all resolve the effective base this way. The worker/CLI credential scope carries the mode across process boundaries via the `CASCADE_JIRA_AUTH_TYPE` env var (injected by `secretBuilder.augmentProjectSecrets`). `accessible-resources` is intentionally **not** used as a cloudId fallback — it is OAuth 2.0 / 3LO guidance and returns `401` for scoped API tokens (MNG-1735).
+
+### Required scopes and known limitations
+
+- **Scopes.** Read/write Jira work (classic OAuth `read:jira-work` + `write:jira-work`). Programmatic webhook management (`/rest/api/3/webhook`) additionally needs webhook scopes — classic OAuth `manage:jira-webhook`, or granular `read:field:jira` + `read:project:jira` + `write:webhook:jira`. A scoped token without those scopes (or a non-app caller) gets `401`/`403`; `jiraCreateWebhook` surfaces an actionable message pointing at manual registration (Jira **System → WebHooks**) rather than a raw status dump.
+- **Ack reactions are unavailable under scoped tokens.** The "eyes" reaction uses the internal `/rest/reactions/1.0/` API, which is not confirmed on the scoped gateway (the gateway probe returned `401 scope does not match`; MNG-1735). Under `scoped` auth both `jiraClient.addCommentReaction` and `JiraPlatformClient.postReaction` degrade quietly (one log line, then skip). The reaction is cosmetic and must never fail a run; comments, transitions, and label writes are unaffected.
+
 ---
 
 ## Registration at startup

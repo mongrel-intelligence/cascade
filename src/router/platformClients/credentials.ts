@@ -33,8 +33,10 @@ export async function resolveTrelloCredentials(
 
 /**
  * Resolve JIRA credentials for a project.
- * Returns `{ email, apiToken, baseUrl, auth }` or `null` if credentials/config are missing.
- * The `auth` field is the pre-computed Base64 Basic auth string.
+ * Returns `{ email, apiToken, baseUrl, auth, authType }` or `null` if credentials/config
+ * are missing. The `auth` field is the pre-computed Base64 Basic auth string; `authType`
+ * mirrors the project JIRA config (`'basic' | 'scoped'`, absent ⇒ `'basic'`) so the
+ * platform client can route scoped tokens through the Atlassian gateway.
  */
 export async function resolveJiraCredentials(
 	projectId: string,
@@ -43,10 +45,11 @@ export async function resolveJiraCredentials(
 		const email = await getIntegrationCredential(projectId, 'pm', 'jira', 'email');
 		const apiToken = await getIntegrationCredential(projectId, 'pm', 'jira', 'api_token');
 		const project = await findProjectById(projectId);
-		const baseUrl = (project ? getJiraConfig(project)?.baseUrl : undefined) ?? '';
+		const jiraConfig = project ? getJiraConfig(project) : undefined;
+		const baseUrl = jiraConfig?.baseUrl ?? '';
 		if (!baseUrl) throw new Error('Missing JIRA base URL');
 		const auth = Buffer.from(`${email}:${apiToken}`).toString('base64');
-		return { email, apiToken, baseUrl, auth };
+		return { email, apiToken, baseUrl, auth, authType: jiraConfig?.authType };
 	} catch {
 		return null;
 	}

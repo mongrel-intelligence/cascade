@@ -170,6 +170,47 @@ describe('augmentProjectSecrets', () => {
 		expect(secrets.CASCADE_JIRA_STATUSES).toBe(JSON.stringify(statuses));
 	});
 
+	it("defaults CASCADE_JIRA_AUTH_TYPE to 'basic' when jira.authType is absent (MNG-1741)", async () => {
+		const project = makeProject({
+			jira: {
+				projectKey: 'PROJ',
+				baseUrl: 'https://acme.atlassian.net',
+			},
+		});
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_JIRA_AUTH_TYPE).toBe('basic');
+	});
+
+	it("injects CASCADE_JIRA_AUTH_TYPE='scoped' when jira.authType is 'scoped' (MNG-1741)", async () => {
+		const project = makeProject({
+			jira: {
+				projectKey: 'PROJ',
+				baseUrl: 'https://acme.atlassian.net',
+				authType: 'scoped',
+			},
+		});
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_JIRA_AUTH_TYPE).toBe('scoped');
+	});
+
+	it("injects CASCADE_JIRA_AUTH_TYPE='basic' when jira.authType is explicitly 'basic' (MNG-1741)", async () => {
+		const project = makeProject({
+			jira: {
+				projectKey: 'PROJ',
+				baseUrl: 'https://acme.atlassian.net',
+				authType: 'basic',
+			},
+		});
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_JIRA_AUTH_TYPE).toBe('basic');
+	});
+
+	it('does NOT inject CASCADE_JIRA_AUTH_TYPE for non-JIRA projects (MNG-1741)', async () => {
+		const trelloProject = makeProject(); // default Trello fixture
+		const secrets = await augmentProjectSecrets(trelloProject, 'implementation', {} as AgentInput);
+		expect(secrets).not.toHaveProperty('CASCADE_JIRA_AUTH_TYPE');
+	});
+
 	it('injects CASCADE_LINEAR_* env vars when project is Linear-backed', async () => {
 		const statuses = { backlog: 'state-bl', todo: 'state-td' };
 		const project = makeProject({

@@ -97,6 +97,10 @@ export async function augmentProjectSecrets(
 		projectSecrets.CASCADE_JIRA_PROJECT_KEY = jiraConfig.projectKey;
 		projectSecrets.CASCADE_JIRA_BASE_URL = jiraConfig.baseUrl;
 		projectSecrets.JIRA_BASE_URL = jiraConfig.baseUrl;
+		// Carry the JIRA auth mode into the worker so in-worker JIRA calls
+		// (agent runs, friction reports) route through the correct host. Absent
+		// config ⇒ 'basic' (the historical default), preserving existing projects.
+		projectSecrets.CASCADE_JIRA_AUTH_TYPE = jiraConfig.authType ?? 'basic';
 		if (jiraConfig.statuses) {
 			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
 		}

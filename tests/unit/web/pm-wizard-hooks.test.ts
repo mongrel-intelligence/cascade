@@ -83,6 +83,29 @@ describe('provider credential metadata', () => {
 				email: 'user@example.com',
 				api_token: 'jira-tok',
 				base_url: 'https://example.atlassian.net',
+				// jiraAuthType defaults to 'basic' and is threaded as a non-secret
+				// connection setting (MNG-1744).
+				auth_type: 'basic',
+			},
+		});
+		// Scoped auth_type flows through the same metadata-driven verify bag.
+		expect(
+			buildProviderAuthArgFromMetadata(
+				jiraState({
+					jiraEmail: 'user@example.com',
+					jiraApiToken: 'jira-tok',
+					jiraBaseUrl: 'https://example.atlassian.net',
+					jiraAuthType: 'scoped',
+				}),
+				'proj-j',
+				jiraProviderWizard.auth,
+			),
+		).toEqual({
+			credentials: {
+				email: 'user@example.com',
+				api_token: 'jira-tok',
+				base_url: 'https://example.atlassian.net',
+				auth_type: 'scoped',
 			},
 		});
 		expect(
@@ -137,7 +160,12 @@ describe('provider credential metadata', () => {
 			'email',
 			'api_token',
 			'base_url',
+			'auth_type',
 		]);
+		// auth_type maps to the jiraAuthType wizard-state field (MNG-1744).
+		expect(
+			jiraProviderWizard.auth.rawCredentials.find((c) => c.role === 'auth_type')?.stateField,
+		).toBe('jiraAuthType');
 		expect(jiraProviderWizard.credentialPersistence.map((c) => c.envVarKey)).not.toContain(
 			'JIRA_BASE_URL',
 		);
@@ -266,6 +294,8 @@ describe('metadata-driven verification request', () => {
 				email: 'user@example.com',
 				api_token: 'jira-token',
 				base_url: 'https://example.atlassian.net',
+				// auth_type is auto-included in the verify bag (defaults to 'basic').
+				auth_type: 'basic',
 			},
 		});
 		expect(
@@ -279,6 +309,31 @@ describe('metadata-driven verification request', () => {
 			capability: 'currentUser',
 			args: {},
 			credentials: { api_key: 'lin-key' },
+		});
+	});
+
+	it('threads scoped auth_type into the JIRA verify (currentUser) credential bag (MNG-1744)', () => {
+		expect(
+			buildCurrentUserDiscoveryRequest(
+				jiraState({
+					jiraEmail: 'user@example.com',
+					jiraApiToken: 'jira-token',
+					jiraBaseUrl: 'https://example.atlassian.net',
+					jiraAuthType: 'scoped',
+				}),
+				'proj-j',
+				jiraProviderWizard,
+			),
+		).toEqual({
+			providerId: 'jira',
+			capability: 'currentUser',
+			args: {},
+			credentials: {
+				email: 'user@example.com',
+				api_token: 'jira-token',
+				base_url: 'https://example.atlassian.net',
+				auth_type: 'scoped',
+			},
 		});
 	});
 
@@ -442,6 +497,8 @@ describe('metadata-driven mutation requests', () => {
 				email: 'user@example.com',
 				api_token: 'jira-token',
 				base_url: 'https://example.atlassian.net',
+				// auth_type rides along the shared metadata-driven auth-arg builder.
+				auth_type: 'basic',
 			},
 		});
 	});
@@ -650,9 +707,16 @@ describe('jiraProviderWizard.buildIntegrationConfig', () => {
 		expect(config).toEqual({
 			projectKey: 'PROJ',
 			baseUrl: 'https://example.atlassian.net',
+			// authType defaults to 'basic' and is always persisted (MNG-1744).
+			authType: 'basic',
 			statuses: { todo: 'To Do', done: 'Done' },
 			labels: { processing: 'cascade-processing' },
 		});
+	});
+
+	it('persists authType: scoped when jiraAuthType is scoped (MNG-1744)', () => {
+		const config = jiraProviderWizard.buildIntegrationConfig(seed({ jiraAuthType: 'scoped' }));
+		expect(config.authType).toBe('scoped');
 	});
 
 	it('includes issueTypes when jiraIssueTypes non-empty', () => {

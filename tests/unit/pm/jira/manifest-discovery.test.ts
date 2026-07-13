@@ -49,6 +49,7 @@ vi.mock('../../../../src/jira/client.js', () => {
 });
 
 import { jiraManifest } from '../../../../src/integrations/pm/jira/manifest.js';
+import { withJiraCredentials } from '../../../../src/jira/client.js';
 
 describe('jiraManifest.discoveryCapabilities', () => {
 	it('declares projects, states, labels, customFields, currentUser', () => {
@@ -129,5 +130,76 @@ describe('jiraManifest.discover via createDiscoveryProvider', () => {
 			name: 'JIRA User',
 			displayName: 'jira@example.com',
 		});
+	});
+});
+
+/**
+ * MNG-1743: the discovery factory reads `creds.auth_type` and threads it into
+ * `withJiraCredentials` so wizard-time / edit-mode verification calls route
+ * through the correct host (site URL for basic, Atlassian gateway for scoped).
+ */
+describe('jiraManifest.createDiscoveryProvider threads authType (MNG-1743)', () => {
+	function makeProviderWith(credentials: Record<string, string>) {
+		if (!jiraManifest.createDiscoveryProvider) {
+			throw new Error('createDiscoveryProvider missing on jiraManifest');
+		}
+		return jiraManifest.createDiscoveryProvider({ credentials });
+	}
+
+	it("forwards auth_type: 'scoped' into withJiraCredentials", async () => {
+		const provider = makeProviderWith({
+			email: 'user@example.com',
+			api_token: 'tok',
+			base_url: 'https://example.atlassian.net',
+			auth_type: 'scoped',
+		});
+		await provider.discover?.('projects', {});
+		expect(withJiraCredentials).toHaveBeenCalledWith(
+			expect.objectContaining({
+				email: 'user@example.com',
+				apiToken: 'tok',
+				baseUrl: 'https://example.atlassian.net',
+				authType: 'scoped',
+			}),
+			expect.any(Function),
+		);
+	});
+
+	it("forwards auth_type: 'basic' into withJiraCredentials", async () => {
+		const provider = makeProviderWith({
+			email: 'user@example.com',
+			api_token: 'tok',
+			base_url: 'https://example.atlassian.net',
+			auth_type: 'basic',
+		});
+		await provider.discover?.('currentUser', {});
+		expect(withJiraCredentials).toHaveBeenCalledWith(
+			expect.objectContaining({ authType: 'basic' }),
+			expect.any(Function),
+		);
+	});
+
+	it('passes authType undefined when auth_type is absent (defaults to basic downstream)', async () => {
+		const provider = makeProviderWith({
+			email: 'user@example.com',
+			api_token: 'tok',
+			base_url: 'https://example.atlassian.net',
+		});
+		await provider.discover?.('projects', {});
+		const call = vi.mocked(withJiraCredentials).mock.calls.at(-1);
+		expect(call).toBeDefined();
+		expect((call?.[0] as { authType?: string }).authType).toBeUndefined();
+	});
+
+	it('passes authType undefined for an unrecognized auth_type value', async () => {
+		const provider = makeProviderWith({
+			email: 'user@example.com',
+			api_token: 'tok',
+			base_url: 'https://example.atlassian.net',
+			auth_type: 'bearer',
+		});
+		await provider.discover?.('projects', {});
+		const call = vi.mocked(withJiraCredentials).mock.calls.at(-1);
+		expect((call?.[0] as { authType?: string }).authType).toBeUndefined();
 	});
 });

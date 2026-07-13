@@ -202,6 +202,10 @@ Optional:
 
 **Project credentials (GitHub tokens, Trello/JIRA/Linear keys, LLM API keys) live in the `project_credentials` table.** The DB is the **sole source of truth** — there is no env var fallback for project-scoped secrets.
 
+## JIRA scoped tokens
+
+JIRA supports classic site tokens **and** Atlassian API tokens with scopes. The optional `authType` field on the JIRA integration config (`'basic' | 'scoped'`, default `'basic'`) is a **non-secret connection setting** (mirrors `baseUrl`, not a credential role) that selects the REST v3 host — **both modes authenticate with HTTP Basic (`email:api_token`)**, so `authType` picks the host, not the auth scheme. Every REST v3 call site routes through the shared resolver `resolveJiraApiBaseUrl(creds)` (`src/jira/api-host.ts`): `basic`/absent keeps the tenant **site URL**; `scoped` routes through the Atlassian **gateway** `https://api.atlassian.com/ex/jira/{cloudId}`, where `cloudId` is resolved from `${baseUrl}/_edge/tenant_info` (always the site URL, never the gateway) and cached per `baseUrl`. The worker carries the mode across process boundaries via `CASCADE_JIRA_AUTH_TYPE`. **Required scopes:** read/write Jira work, plus `manage:jira-webhook` (or granular `write:webhook:jira` + `read:field:jira` + `read:project:jira`) for programmatic `/rest/api/3/webhook` management — a scoped token lacking them gets `401`/`403`, and operators should register the webhook manually. **Known limitation:** ack reactions are unavailable under scoped tokens (`/rest/reactions/1.0/` is not exposed on the gateway), so the reaction degrades to a skipped no-op; `accessible-resources` is intentionally not used for cloudId (it is OAuth 2.0 / 3LO guidance and returns `401` for scoped API tokens).
+
 ## Git hooks
 
 Lefthook runs pre-commit (lint, typecheck) and pre-push (unit + integration tests) hooks automatically. Pre-push auto-starts an ephemeral Postgres via `npm run test:db:up` — Docker must be running.

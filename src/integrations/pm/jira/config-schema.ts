@@ -81,3 +81,6 @@ export const jiraConfigSchema = z
 	.describe('JIRA project integration config');
 
 export type JiraIntegrationConfig = z.infer<typeof jiraConfigSchema>;
+
+/** Shared union for JIRA authentication mode — single source of truth. */
+export type JiraAuthType = NonNullable<z.infer<typeof jiraConfigSchema>['authType']>;

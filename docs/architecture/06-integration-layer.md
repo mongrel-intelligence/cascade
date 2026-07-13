@@ -122,6 +122,8 @@ Each provider declares its credential roles — the mapping from logical role na
 - ADF (Atlassian Document Format) ↔ markdown conversion (`src/pm/jira/adf.ts`)
 - Status transitions via JIRA transition ID lookup
 - Issue key extraction via regex: `[A-Z][A-Z0-9]+-\d+`
+- **Auth mode** — the optional `authType` config field (`'basic' | 'scoped'`) is a non-secret connection setting (mirrors `baseUrl`, not a credential role) that selects the REST v3 host. Both modes use HTTP Basic (`email:api_token`); absent ⇒ `'basic'`.
+- **Host resolution** — every REST v3 call site routes through the shared `resolveJiraApiBaseUrl(creds)` resolver (`src/jira/api-host.ts`): `basic` keeps the tenant site URL; `scoped` routes through the Atlassian gateway `https://api.atlassian.com/ex/jira/{cloudId}` (cloudId resolved from `/_edge/tenant_info`). Scoped tokens have known limits — see [`08-config-credentials.md`](./08-config-credentials.md#jira-authentication-modes-scoped-tokens).
 
 ### Linear (`src/integrations/pm/linear/`, `src/pm/linear/`, `src/linear/`)
 

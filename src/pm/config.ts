@@ -6,6 +6,7 @@
  * unified `project.pm.config` or the legacy top-level fields.
  */
 
+import type { JiraAuthType } from '../integrations/pm/jira/config-schema.js';
 import type { ProjectConfig } from '../types/index.js';
 
 /** Trello-specific configuration (from project_integrations JSONB) */
@@ -25,7 +26,7 @@ export interface JiraConfig {
 	 * `'basic'` = classic site-token mode; `'scoped'` = scoped gateway-token
 	 * mode. Absent ⇒ treated as `'basic'`. Later stories consume this field.
 	 */
-	authType?: 'basic' | 'scoped';
+	authType?: JiraAuthType;
 	statuses: Record<string, string>;
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };

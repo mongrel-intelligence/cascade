@@ -511,6 +511,24 @@ describe('mapProjectRow', () => {
 		expect(result.jira?.statuses).toEqual({ splitting: 'Briefing', todo: 'To Do' });
 	});
 
+	// MNG-1736: the runtime DB-load path (not just ProjectConfigSchema.parse) must
+	// preserve the optional authType, otherwise a persisted value silently loads
+	// back as `undefined`. buildJiraConfig hand-picks fields, so it has to copy it.
+	it('preserves jira authType through the mapper', () => {
+		const result = mapProjectRow(
+			makeInput({
+				trelloConfig: undefined,
+				jiraConfig: { ...jiraConfig, authType: 'scoped' },
+			}),
+		);
+		expect(result.jira?.authType).toBe('scoped');
+	});
+
+	it('leaves jira authType undefined when not configured (backward compat)', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, jiraConfig }));
+		expect(result.jira?.authType).toBeUndefined();
+	});
+
 	it('builds linear config with teamId, statuses, and labels', () => {
 		const result = mapProjectRow(makeInput({ trelloConfig: undefined, linearConfig }));
 		expect(result.linear?.teamId).toBe('team-abc123');
