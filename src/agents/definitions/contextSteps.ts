@@ -5,7 +5,10 @@
  * These are the building blocks composed by the YAML contextPipeline arrays.
  */
 
-import { formatCheckStatus } from '../../gadgets/github/core/getPRChecks.js';
+import {
+	formatCheckStatus,
+	formatCheckStatusUnavailable,
+} from '../../gadgets/github/core/getPRChecks.js';
 import { ListDirectory } from '../../gadgets/ListDirectory.js';
 import {
 	readStructuredWorkItemDetails,
@@ -164,10 +167,31 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 
 	const prDetails = await githubClient.getPR(owner, repo, prNumber);
 	const prDiff = await githubClient.getPRDiff(owner, repo, prNumber);
-	const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, prDetails.headSha);
+
+	// CI check status is informational, not fatal (MNG-1750). A reviewer PAT
+	// without the "Actions: Read" permission throws 403 here; degrade gracefully
+	// so the review still boots instead of dying with a BootFailureError. The
+	// PR details + diff above stay fatal — a review without the PR is meaningless.
+	let checkStatusFormatted: string;
+	let checkStatusDescription = 'Pre-fetched CI check status';
+	try {
+		const checkStatus = await githubClient.getCheckSuiteStatus(owner, repo, prDetails.headSha);
+		checkStatusFormatted = formatCheckStatus(prNumber, checkStatus);
+	} catch (error) {
+		// Log/inject only `error.message`, never the raw Octokit RequestError
+		// object — it can carry the Authorization header.
+		const message = error instanceof Error ? error.message : String(error);
+		params.logWriter('WARN', 'CI check status unavailable', {
+			owner,
+			repo,
+			prNumber,
+			error: message,
+		});
+		checkStatusFormatted = formatCheckStatusUnavailable(prNumber, message);
+		checkStatusDescription = 'CI check status unavailable';
+	}
 
 	const prDetailsFormatted = formatPRDetails(prDetails);
-	const checkStatusFormatted = formatCheckStatus(prNumber, checkStatus);
 
 	injections.push({
 		toolName: 'GetPRDetails',
@@ -180,7 +204,7 @@ export async function fetchPRContextStep(params: FetchContextParams): Promise<Co
 		toolName: 'GetPRChecks',
 		params: { comment: 'Pre-fetching CI check status for review', owner, repo, prNumber },
 		result: checkStatusFormatted,
-		description: 'Pre-fetched CI check status',
+		description: checkStatusDescription,
 	});
 
 	// Total changed files (now complete — `getPRDiff` paginates beyond the first 100).
