@@ -9,6 +9,7 @@ vi.mock('../../../../../src/github/client.js', () => ({
 
 import {
 	formatCheckStatus,
+	formatCheckStatusUnavailable,
 	getPRChecks,
 } from '../../../../../src/gadgets/github/core/getPRChecks.js';
 import { githubClient } from '../../../../../src/github/client.js';
@@ -117,6 +118,45 @@ describe('formatCheckStatus', () => {
 			makeCheckStatus({ allPassing: false, checkRuns: [makeCheckRun({ conclusion: 'failure' })] }),
 		);
 		expect(result).toContain('All checks passing: false');
+	});
+});
+
+describe('formatCheckStatusUnavailable', () => {
+	it('includes the upstream error message', () => {
+		const result = formatCheckStatusUnavailable(
+			7,
+			'Resource not accessible by personal access token',
+		);
+		expect(result).toContain('Resource not accessible by personal access token');
+	});
+
+	it('includes the "Actions: Read" permission hint', () => {
+		const result = formatCheckStatusUnavailable(7, 'boom');
+		expect(result).toContain('Actions: Read');
+	});
+
+	it('references the PR number', () => {
+		const result = formatCheckStatusUnavailable(1234, 'boom');
+		expect(result).toContain('PR #1234');
+	});
+
+	it('is visibly distinct from the "No CI checks configured" message', () => {
+		const unavailable = formatCheckStatusUnavailable(7, 'boom');
+		const noChecks = formatCheckStatus(7, { totalCount: 0, allPassing: true, checkRuns: [] });
+		// The "unavailable" text carries the UNAVAILABLE marker; the "no checks"
+		// text does not. (The unavailable text intentionally *mentions* the
+		// "No CI checks configured" phrase to contrast against it, so the two are
+		// distinguished by the UNAVAILABLE marker and by not being equal.)
+		expect(unavailable).toContain('UNAVAILABLE');
+		expect(noChecks).not.toContain('UNAVAILABLE');
+		expect(unavailable).not.toBe(noChecks);
+	});
+
+	it('does not stringify error objects (takes a plain string only)', () => {
+		// The caller passes error.message, never the whole RequestError. This
+		// helper's signature enforces that: a string in, no [object Object].
+		const result = formatCheckStatusUnavailable(1, 'plain message');
+		expect(result).not.toContain('[object Object]');
 	});
 });
 

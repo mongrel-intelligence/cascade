@@ -897,4 +897,80 @@ describe('fetchPRContextStep — compact diffs + SKIPPED FILES contract', () => 
 			expect.objectContaining({ baseBranch: 'parent-feature' }),
 		);
 	});
+
+	// MNG-1750: a reviewer PAT lacking the "Actions: Read" permission makes
+	// getCheckSuiteStatus throw 403. That must degrade to an informational
+	// injection instead of killing the whole agent boot (BootFailureError).
+	describe('MNG-1750 — graceful CI check-status degradation', () => {
+		beforeEach(() => {
+			mockGetPRDiff.mockResolvedValue([
+				{
+					filename: 'src/a.ts',
+					status: 'modified',
+					additions: 1,
+					deletions: 0,
+					changes: 1,
+					patch: '@@ -1 +1 @@\n+x',
+				},
+			]);
+		});
+
+		it('proceeds when getCheckSuiteStatus throws 403 and injects an UNAVAILABLE signal', async () => {
+			const err = Object.assign(new Error('Resource not accessible by personal access token'), {
+				status: 403,
+			});
+			mockGetCheckSuiteStatus.mockRejectedValue(err);
+
+			const injections = await fetchPRContextStep(makePRParams()); // must NOT throw
+
+			const checks = injections.find((i) => i.toolName === 'GetPRChecks');
+			expect(checks).toBeDefined();
+			expect(checks?.result as string).toContain('UNAVAILABLE');
+			expect(checks?.result as string).toContain(
+				'Resource not accessible by personal access token',
+			);
+			expect(checks?.result as string).toContain('Actions: Read');
+			expect(checks?.description).toBe('CI check status unavailable');
+		});
+
+		it('logs a WARN carrying the upstream error message', async () => {
+			mockGetCheckSuiteStatus.mockRejectedValue(
+				new Error('Resource not accessible by personal access token'),
+			);
+
+			const params = makePRParams();
+			await fetchPRContextStep(params);
+
+			expect(params.logWriter).toHaveBeenCalledWith(
+				'WARN',
+				'CI check status unavailable',
+				expect.objectContaining({ error: 'Resource not accessible by personal access token' }),
+			);
+		});
+
+		it('leaves the GetPRChecks injection unchanged on the success path', async () => {
+			mockGetCheckSuiteStatus.mockResolvedValue({
+				totalCount: 1,
+				checkRuns: [{ name: 'build', status: 'completed', conclusion: 'success' }],
+				allPassing: true,
+			});
+
+			const injections = await fetchPRContextStep(makePRParams());
+
+			const checks = injections.find((i) => i.toolName === 'GetPRChecks');
+			expect(checks?.result as string).toContain('PR #1092 Check Status: 1/1');
+			expect(checks?.description).toBe('Pre-fetched CI check status');
+		});
+
+		it('still throws when getPR fails (PR details stay fatal)', async () => {
+			mockGetPR.mockRejectedValueOnce(new Error('PR not found'));
+			await expect(fetchPRContextStep(makePRParams())).rejects.toThrow('PR not found');
+		});
+
+		it('still throws when getPRDiff fails (diff stays fatal)', async () => {
+			mockGetPRDiff.mockReset();
+			mockGetPRDiff.mockRejectedValueOnce(new Error('diff unavailable'));
+			await expect(fetchPRContextStep(makePRParams())).rejects.toThrow('diff unavailable');
+		});
+	});
 });

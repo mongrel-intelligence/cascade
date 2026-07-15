@@ -26,6 +26,34 @@ export function formatCheckStatus(prNumber: number, checkStatus: CheckSuiteStatu
 	return lines.join('\n');
 }
 
+/**
+ * Format an operator/agent-facing message for the case where CI check status
+ * could NOT be fetched (MNG-1750). This is deliberately distinct from
+ * {@link formatCheckStatus}'s `No CI checks configured` string: the agent must
+ * be able to tell "CASCADE tried to read CI status and failed" apart from
+ * "there is nothing to check".
+ *
+ * Takes a plain `errorMessage` string (never a raw Octokit `RequestError`
+ * object) — callers pass only `error.message` to avoid leaking the
+ * `Authorization` header carried on the request object.
+ */
+export function formatCheckStatusUnavailable(prNumber: number, errorMessage: string): string {
+	return [
+		`PR #${prNumber}: CI check status UNAVAILABLE (could not be fetched)`,
+		'',
+		`Upstream error: ${errorMessage}`,
+		'',
+		'Probable cause: the reviewer credential is a fine-grained PAT lacking the',
+		'"Actions: Read" repository permission (GitHub returns 403 "Resource not',
+		'accessible by personal access token" for the Actions API).',
+		'',
+		'IMPORTANT: This is NOT the same as "No CI checks configured" — CASCADE',
+		'attempted to read CI status and failed. Do NOT assume checks are green or',
+		'red. You may retry with the GetPRChecks gadget later, or explicitly note in',
+		'your review that CI status could not be verified.',
+	].join('\n');
+}
+
 function getStatusIcon(status: string, conclusion: string | null): string {
 	if (status !== 'completed') {
 		return status === 'in_progress' ? '⏳' : '⏸';
