@@ -19,6 +19,13 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		safetyMargin: 0.8, // Conservative - start throttling at 80%
 	},
 
+	// Claude Fable 5 (Tier 1: 50 RPM, 10K TPM — priciest Anthropic model, throttle-sensitive)
+	'anthropic:claude-fable-5': {
+		requestsPerMinute: 50,
+		tokensPerMinute: 10_000,
+		safetyMargin: 0.85,
+	},
+
 	// Claude Opus 4.8 (Tier 1: 50 RPM, 10K TPM — Opus is throttle-sensitive)
 	'anthropic:claude-opus-4-8': {
 		requestsPerMinute: 50,

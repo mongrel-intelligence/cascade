@@ -146,6 +146,13 @@ describe('resolveCodexModel', () => {
 		expect(resolveCodexModel(`openai:${DEFAULT_CODEX_MODEL}`)).toBe(DEFAULT_CODEX_MODEL);
 	});
 
+	it('passes through the GPT-5.6 Sol/Terra/Luna tiers (bare and openai:-prefixed)', () => {
+		for (const id of ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+			expect(resolveCodexModel(id)).toBe(id);
+			expect(resolveCodexModel(`openai:${id}`)).toBe(id);
+		}
+	});
+
 	it('throws for incompatible models', () => {
 		expect(() => resolveCodexModel('openrouter:google/gemini-3-flash-preview')).toThrow(
 			'not compatible with the Codex engine',
