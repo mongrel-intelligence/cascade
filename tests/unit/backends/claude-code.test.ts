@@ -295,7 +295,7 @@ describe('buildSystemPrompt', () => {
 
 describe('CLAUDE_CODE_MODELS constants', () => {
 	it('contains the expected models', () => {
-		expect(CLAUDE_CODE_MODELS).toHaveLength(10);
+		expect(CLAUDE_CODE_MODELS).toHaveLength(11);
 	});
 
 	it('includes Opus 4.8, Opus 4.7, and the 1M context variants', () => {
@@ -305,6 +305,12 @@ describe('CLAUDE_CODE_MODELS constants', () => {
 		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-opus-4-7[1m]');
 		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-sonnet-4-6[1m]');
 		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-opus-4-6[1m]');
+	});
+
+	it('includes Claude Fable 5 (1M context by default — no [1m] variant)', () => {
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-fable-5');
+		// Fable 5 is 1M-context by default, so a [1m] suffix would be redundant.
+		expect(CLAUDE_CODE_MODEL_IDS).not.toContain('claude-fable-5[1m]');
 	});
 
 	it('has value/label pairs', () => {
@@ -325,6 +331,7 @@ describe('CLAUDE_CODE_MODELS constants', () => {
 
 describe('resolveClaudeModel', () => {
 	it('passes through known Claude Code model IDs', () => {
+		expect(resolveClaudeModel('claude-fable-5')).toBe('claude-fable-5');
 		expect(resolveClaudeModel('claude-opus-4-8')).toBe('claude-opus-4-8');
 		expect(resolveClaudeModel('claude-opus-4-8[1m]')).toBe('claude-opus-4-8[1m]');
 		expect(resolveClaudeModel('claude-opus-4-7')).toBe('claude-opus-4-7');

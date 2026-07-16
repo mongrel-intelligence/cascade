@@ -9,6 +9,11 @@ import type { TokenUsage } from 'llmist';
  * Prices as of January 2026.
  */
 const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput?: number }> = {
+	// Anthropic Claude Fable 5 — 1M context by default (max = default), priced at 2× Opus.
+	// Key matches toPricingKey('claude-fable-5') = 'anthropic:claude-fable-5' (no trailing
+	// date to strip). cachedInput follows the 0.1× convention used by every Anthropic row.
+	'anthropic:claude-fable-5': { input: 10.0, output: 50.0, cachedInput: 1.0 },
+
 	// Anthropic Claude 4 family
 	'anthropic:claude-opus-4-8': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-8[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
@@ -28,6 +33,12 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput
 	// OpenAI — Codex CLI models (per developers.openai.com/codex/pricing, 2026-05-11).
 	// Rates are public metered API prices; we display API-equivalent cost regardless of
 	// subscription plan, consistent with how Anthropic Pro/Max users see costs for claude-code.
+	// GPT-5.6 family (GA 2026-07-09, per developers.openai.com/api/docs/pricing): three
+	// Sol/Terra/Luna tiers, 1M context on all three, cached-input reads at the standard 90%
+	// discount. There is no GPT-5.6 Codex-specific model — Codex runs these same three tiers.
+	'openai:gpt-5.6-sol': { input: 5.0, output: 30.0, cachedInput: 0.5 },
+	'openai:gpt-5.6-terra': { input: 2.5, output: 15.0, cachedInput: 0.25 },
+	'openai:gpt-5.6-luna': { input: 1.0, output: 6.0, cachedInput: 0.1 },
 	'openai:gpt-5.5': { input: 5.0, output: 30.0, cachedInput: 0.5 },
 	'openai:gpt-5.4': { input: 2.5, output: 15.0, cachedInput: 0.25 },
 	// gpt-5.4-mini: rates from developers.openai.com/api/docs/models/gpt-5.4-mini (2026-05-11).
