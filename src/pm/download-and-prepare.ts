@@ -48,6 +48,9 @@ export async function downloadAndPrepareImages(
 	const { jiraClient } = await import('../jira/client.js');
 	const { trelloClient } = await import('../trello/client.js');
 	const { linearClient } = await import('../linear/client.js');
+	const { downloadImage: downloadGitHubProjectsImage } = await import(
+		'../github-projects/client.js'
+	);
 
 	const failures: { url: string; reason: string }[] = [];
 
@@ -59,6 +62,8 @@ export async function downloadAndPrepareImages(
 					downloaded = await jiraClient.downloadAttachment(ref.url);
 				} else if (provider?.type === 'linear') {
 					downloaded = await linearClient.downloadAttachment(ref.url);
+				} else if (provider?.type === 'github-projects') {
+					downloaded = await downloadGitHubProjectsImage(ref.url);
 				} else {
 					downloaded = await trelloClient.downloadAttachment(ref.url);
 				}

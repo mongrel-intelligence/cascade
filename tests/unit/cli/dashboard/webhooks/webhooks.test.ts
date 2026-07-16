@@ -49,6 +49,7 @@ function makeClient(overrides: Record<string, unknown> = {}) {
 					trello: { id: 'trello-wh-1', callbackURL: 'http://localhost:3001/webhook/trello' },
 					github: { id: 123, config: { url: 'http://localhost:3001/webhook/github' } },
 					jira: null,
+					githubProjects: null,
 				}),
 			},
 			delete: {
@@ -56,6 +57,7 @@ function makeClient(overrides: Record<string, unknown> = {}) {
 					trello: ['trello-wh-1'],
 					github: [123],
 					jira: [],
+					githubProjects: [],
 				}),
 			},
 		},
@@ -196,6 +198,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			githubProjectsOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -215,6 +218,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 			callbackBaseUrl: 'https://cascade.example.com',
 			trelloOnly: false,
 			githubOnly: false,
+			githubProjectsOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -234,6 +238,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			githubProjectsOnly: false,
 			oneTimeTokens: { github: 'ghp_testtoken123' },
 		});
 	});
@@ -303,6 +308,7 @@ describe('WebhooksDelete (webhooks delete)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			githubProjectsOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -322,6 +328,7 @@ describe('WebhooksDelete (webhooks delete)', () => {
 			callbackBaseUrl: 'https://cascade.example.com',
 			trelloOnly: false,
 			githubOnly: false,
+			githubProjectsOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -341,6 +348,7 @@ describe('WebhooksDelete (webhooks delete)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			githubProjectsOnly: false,
 			oneTimeTokens: { github: 'ghp_testtoken123' },
 		});
 	});

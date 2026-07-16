@@ -5,7 +5,7 @@
 
 import type { ContainerId, LabelId, StateId } from './ids.js';
 
-export type PMType = 'trello' | 'jira' | 'linear';
+export type PMType = 'trello' | 'jira' | 'linear' | 'github-projects';
 
 // ── Discovery capability type machinery ───────────────────────────────────
 // Plan 009/1 introduces an optional `discover?` method on PMProvider that

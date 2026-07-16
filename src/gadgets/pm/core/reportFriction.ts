@@ -71,6 +71,58 @@ function parseJsonRecord(value: string | undefined): Record<string, string> {
 		: {};
 }
 
+function jiraFromEnv(base: ProjectConfig): ProjectConfig {
+	return {
+		...base,
+		jira: {
+			projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
+			baseUrl: process.env.CASCADE_JIRA_BASE_URL ?? process.env.JIRA_BASE_URL ?? '',
+			authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
+			statuses: parseJsonRecord(process.env.CASCADE_JIRA_STATUSES),
+		},
+	} as ProjectConfig;
+}
+
+function linearFromEnv(base: ProjectConfig): ProjectConfig {
+	return {
+		...base,
+		linear: {
+			teamId: process.env.CASCADE_LINEAR_TEAM_ID ?? '',
+			...(process.env.CASCADE_LINEAR_PROJECT_ID
+				? { projectId: process.env.CASCADE_LINEAR_PROJECT_ID }
+				: {}),
+			statuses: parseJsonRecord(process.env.CASCADE_LINEAR_STATUSES),
+		},
+	} as ProjectConfig;
+}
+
+function githubProjectsFromEnv(base: ProjectConfig): ProjectConfig {
+	return {
+		...base,
+		githubProjects: {
+			projectId: process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID ?? '',
+			owner: process.env.CASCADE_GITHUB_PROJECTS_OWNER ?? '',
+			ownerType:
+				(process.env.CASCADE_GITHUB_PROJECTS_OWNER_TYPE as 'user' | 'organization') ?? 'user',
+			statuses: parseJsonRecord(process.env.CASCADE_GITHUB_PROJECTS_STATUSES),
+			...(process.env.CASCADE_GITHUB_PROJECTS_LABELS
+				? { labels: parseJsonRecord(process.env.CASCADE_GITHUB_PROJECTS_LABELS) }
+				: {}),
+		},
+	} as ProjectConfig;
+}
+
+function trelloFromEnv(base: ProjectConfig): ProjectConfig {
+	return {
+		...base,
+		trello: {
+			boardId: process.env.CASCADE_TRELLO_BOARD_ID ?? '',
+			lists: parseJsonRecord(process.env.CASCADE_TRELLO_LISTS),
+			labels: parseJsonRecord(process.env.CASCADE_TRELLO_LABELS),
+		},
+	} as ProjectConfig;
+}
+
 function projectFromEnv(): ProjectConfig {
 	const pmType = process.env.CASCADE_PM_TYPE as
 		| NonNullable<ProjectConfig['pm']>['type']
@@ -87,37 +139,16 @@ function projectFromEnv(): ProjectConfig {
 		pm: pmType ? { type: pmType } : undefined,
 	} as ProjectConfig;
 
-	if (base.pm?.type === 'jira') {
-		return {
-			...base,
-			jira: {
-				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
-				baseUrl: process.env.CASCADE_JIRA_BASE_URL ?? process.env.JIRA_BASE_URL ?? '',
-				authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
-				statuses: parseJsonRecord(process.env.CASCADE_JIRA_STATUSES),
-			},
-		} as ProjectConfig;
+	switch (base.pm?.type) {
+		case 'jira':
+			return jiraFromEnv(base);
+		case 'linear':
+			return linearFromEnv(base);
+		case 'github-projects':
+			return githubProjectsFromEnv(base);
+		default:
+			return trelloFromEnv(base);
 	}
-	if (base.pm?.type === 'linear') {
-		return {
-			...base,
-			linear: {
-				teamId: process.env.CASCADE_LINEAR_TEAM_ID ?? '',
-				...(process.env.CASCADE_LINEAR_PROJECT_ID
-					? { projectId: process.env.CASCADE_LINEAR_PROJECT_ID }
-					: {}),
-				statuses: parseJsonRecord(process.env.CASCADE_LINEAR_STATUSES),
-			},
-		} as ProjectConfig;
-	}
-	return {
-		...base,
-		trello: {
-			boardId: process.env.CASCADE_TRELLO_BOARD_ID ?? '',
-			lists: parseJsonRecord(process.env.CASCADE_TRELLO_LISTS),
-			labels: parseJsonRecord(process.env.CASCADE_TRELLO_LABELS),
-		},
-	} as ProjectConfig;
 }
 
 function parseOptionalInt(value: string | undefined): number | undefined {

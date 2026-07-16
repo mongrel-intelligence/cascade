@@ -229,6 +229,35 @@ describe('augmentProjectSecrets', () => {
 		expect(secrets.CASCADE_LINEAR_STATUSES).toBe(JSON.stringify(statuses));
 	});
 
+	it('injects CASCADE_GITHUB_PROJECTS_* env vars when project is GitHub-Projects-backed', async () => {
+		const statuses = { todo: 'opt-todo', done: 'opt-done' };
+		const project = makeProject({
+			pm: { type: 'github-projects' },
+			githubProjects: {
+				projectId: 'PVT_project',
+				owner: 'octocat',
+				ownerType: 'user',
+				statuses,
+				labels: { processing: 'label-processing' },
+			},
+		} as Partial<ProjectConfig>);
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+
+		expect(secrets.CASCADE_GITHUB_PROJECTS_PROJECT_ID).toBe('PVT_project');
+		expect(secrets.CASCADE_GITHUB_PROJECTS_OWNER).toBe('octocat');
+		expect(secrets.CASCADE_GITHUB_PROJECTS_OWNER_TYPE).toBe('user');
+		expect(secrets.CASCADE_GITHUB_PROJECTS_STATUSES).toBe(JSON.stringify(statuses));
+		expect(secrets.CASCADE_GITHUB_PROJECTS_LABELS).toBe(
+			JSON.stringify({ processing: 'label-processing' }),
+		);
+		expect(secrets.CASCADE_PM_TYPE).toBe('github-projects');
+	});
+
+	it('does NOT inject CASCADE_GITHUB_PROJECTS_* for Trello projects', async () => {
+		const secrets = await augmentProjectSecrets(makeProject(), 'implementation', {} as AgentInput);
+		expect(secrets).not.toHaveProperty('CASCADE_GITHUB_PROJECTS_PROJECT_ID');
+	});
+
 	it('omits CASCADE_LINEAR_PROJECT_ID when linear.projectId is not set', async () => {
 		const project = makeProject({
 			pm: { type: 'linear' },

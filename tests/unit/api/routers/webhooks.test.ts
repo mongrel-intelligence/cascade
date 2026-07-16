@@ -882,6 +882,7 @@ describe('webhooksRouter', () => {
 				trello: null,
 				github: null,
 				jira: null,
+				githubProjects: null,
 				linear: null,
 			});
 		});

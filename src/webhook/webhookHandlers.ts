@@ -22,6 +22,7 @@ import { handleProcessingError, logSuccessfulWebhook } from './webhookLogging.js
 
 export {
 	parseGitHubPayload,
+	parseGitHubProjectsPayload,
 	parseJiraPayload,
 	parseLinearPayload,
 	parseSentryPayload,

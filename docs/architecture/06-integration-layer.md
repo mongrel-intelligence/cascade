@@ -10,7 +10,7 @@ The base contract for SCM and alerting integrations, and the compatibility surfa
 
 ```typescript
 interface IntegrationModule {
-  readonly type: string;              // 'trello', 'jira', 'linear', 'github', 'sentry'
+  readonly type: string;              // 'trello', 'jira', 'linear', 'github-projects', 'github', 'sentry'
   readonly category: IntegrationCategory; // 'pm' | 'scm' | 'alerting'
 
   withCredentials<T>(projectId: string, fn: () => Promise<T>): Promise<T>;
@@ -52,7 +52,7 @@ const integrationRegistry: IntegrationRegistry;  // singleton
 
 ### PMProviderManifest and PMIntegration
 
-`src/integrations/pm/manifest.ts` — the manifest is the single PM-provider contract. Trello, JIRA, and Linear each declare identity, credential roles, webhook route/signature verification, router adapter, trigger handlers, platform ack client, config schema, discovery capabilities, wizard spec, and lifecycle fixture in one provider-owned object.
+`src/integrations/pm/manifest.ts` — the manifest is the single PM-provider contract. Trello, JIRA, Linear, and GitHub Projects each declare identity, credential roles, webhook route/signature verification, router adapter, trigger handlers, platform ack client, config schema, discovery capabilities, wizard spec, and lifecycle fixture in one provider-owned object.
 
 The PM barrel (`src/integrations/pm/index.ts`) imports each provider once, then mirrors each manifest's `pmIntegration` into `integrationRegistry`. New PM providers add one provider folder plus one import in that barrel; shared router, worker, dashboard, CLI, and config files are guarded against provider-specific edits by conformance tests.
 
@@ -99,6 +99,7 @@ Each provider declares its credential roles — the mapping from logical role na
 | Trello | pm | `api_key` → `TRELLO_API_KEY`, `token` → `TRELLO_TOKEN` | `api_secret` |
 | JIRA | pm | `email` → `JIRA_EMAIL`, `api_token` → `JIRA_API_TOKEN` | `webhook_secret` |
 | Linear | pm | `api_key` → `LINEAR_API_KEY` | `webhook_secret` → `LINEAR_WEBHOOK_SECRET` |
+| GitHub Projects | pm | `token` → `GITHUB_TOKEN` | `webhook_secret` → `GITHUB_WEBHOOK_SECRET` |
 | GitHub | scm | `implementer_token` → `GITHUB_TOKEN_IMPLEMENTER`, `reviewer_token` → `GITHUB_TOKEN_REVIEWER` | `webhook_secret` |
 | Sentry | alerting | `api_token` → `SENTRY_API_TOKEN` | `webhook_secret` |
 
@@ -134,6 +135,32 @@ Each provider declares its credential roles — the mapping from logical role na
 - Status transitions via Linear state ID lookup
 - Issue identifier extraction via regex: `[A-Z][A-Z0-9]*-\d+` (e.g. `TEAM-123`)
 - Work item URL format: `https://linear.app/<org>/issue/<identifier>`
+
+### GitHub Projects (`src/integrations/pm/github-projects/`, `src/pm/github-projects/`, `src/github-projects/`)
+
+- `githubProjectsManifest` declares the PM provider contract and registers with `pmProviderRegistry`
+- `GitHubProjectsIntegration` implements the mirrored `PMIntegration`
+- `GitHubProjectsPMProvider` implements `PMProvider` for **Projects v2** boards
+- `src/github-projects/client.ts` — GraphQL API v4 client with AsyncLocalStorage credential scoping (`withGitHubProjectsCredentials`, distinct from the SCM GitHub token scope)
+- Status = the board's **Status** single-select field; transitions map Cascade lifecycle keys to option IDs. The status-changed trigger reads the item's current Status option ID authoritatively via GraphQL rather than trusting the sparse `projects_v2_item` webhook payload
+- Webhooks: route `/github-projects/webhook`, HMAC-SHA256 verification via the shared verifier. `projects_v2_item` is a valid **organization** webhook event, so for **org-owned** projects the wizard can create the webhook programmatically (`POST /orgs/{org}/hooks`, via the shared `webhooks.create/list/delete` tRPC endpoints with `githubProjectsOnly: true`; needs an `admin:org_hook`-scoped token). **User-owned** projects have no webhook-create API and are configured manually (the wizard copy is scoped by owner type).
+- **Supported `PMProvider` surface**:
+  - `getWorkItem` — with inline-image extraction; resolves the content (Issue/PR) node directly and reads its Status option ID for the configured project
+  - `getWorkItemComments` — issue/PR comments, with inline-image extraction (matches the Trello/JIRA/Linear spec-016 contract)
+  - `updateWorkItem` — issue/PR title/body, routed to the correct `updateIssue` / `updatePullRequest` mutation
+  - `addComment` / `updateComment`
+  - `createWorkItem` — creates a real Issue in the project's **SCM repo** (`project.repo`, threaded from `ProjectConfig`) via `createIssue`, then adds it to the board via `addProjectV2ItemById`; the content (Issue) node ID is the returned identity so comments/labels/checklists/moves work afterward. This is what makes alert/friction **materialization** available for GitHub Projects (the config `statuses.alerts` / `statuses.friction` slots already resolve). Throws with an actionable message when the project has no SCM repo. Draft issues are intentionally not used (they cannot be commented on or labeled).
+  - `moveWorkItem` — Status single-select. Resolves the content (Issue/PR) node ID carried across the path to its `ProjectV2Item` node ID for the configured project before writing the field (a `PVTI_…` ID is used directly)
+  - `listWorkItems` — pages the project's items, filters by Status option ID client-side, keyed by the content node ID (so the pipeline-capacity gate's exclusion filter matches)
+  - `addLabel` / `removeLabel` — config value resolved to a repo-scoped label node ID (`Repository.label(name:)`, treated as a name; `LA_…` node IDs used directly), applied via `addLabelsToLabelable` / `removeLabelsFromLabelable`; skipped with a warn when the repo has no such label
+  - `getChecklists` / `createChecklist` / `createChecklistWithItems` / `addChecklistItem` / `updateChecklistItem` / `deleteChecklistItem` — inline markdown task lists (`### {name}` + `- [ ]` rows) in the issue/PR body via the shared `inline-checklist.ts` engine (spec 008), serialized under `withDescriptionMutationLock`
+- **Not supported (minimal scope)** — the following `PMProvider` methods are intentional no-ops, so the corresponding features are unavailable for GitHub Projects projects:
+
+  | Method | Behavior | Consequence |
+  |--------|----------|-------------|
+  | `getAttachments` / `addAttachment*` | `[]` / no-op | formal attachments unavailable (inline-pasted images **are** delivered via the shared media pipeline) |
+  | `getCustomFieldNumber` / `updateCustomFieldNumber` | `0` / no-op | no cost/budget custom-field tracking (GitHub Projects number fields exist but are not wired — parity with Linear's stub) |
+  | `linkPR` | no-op | PRs link implicitly by being added to the project |
 
 ### GitHub (`src/github/`)
 

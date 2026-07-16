@@ -307,7 +307,36 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"teamId":"TEAM_UUID","statuses":{"todo":"STATE_UUID","inProgress":"STATE_UUID","done":"STATE_UUID"},"labels":{"readyToProcess":"LABEL_UUID","processing":"LABEL_UUID"}}'
 ```
 
-If you enable the alerting agent, configure the optional `alerts` PM slot as well. For Trello this is `lists.alerts`; for Jira and Linear this is `statuses.alerts`. Sentry alerts materialize into that list/status before the alerting agent runs.
+### GitHub Projects
+
+Cascade can drive work from a **GitHub Projects (Projects v2)** board — the modern board, not the classic project board — reacting to changes of the board's **Status** field.
+
+1. Create a fine-grained or classic **GitHub token** with access to the project and its linked issues/PRs (classic PAT: `repo` + `project` scopes; fine-grained: Projects and Issues/Pull requests read & write).
+2. Find your Project node ID (`PVT_…`) and the Status field's single-select **option IDs** — the setup wizard discovers these automatically once the token is entered.
+
+```bash
+# GitHub Projects reuses the GITHUB_TOKEN credential (scoped to a dedicated
+# AsyncLocalStorage store, separate from the SCM GitHub token).
+node bin/cascade.js projects credentials-set my-project --key GITHUB_TOKEN --value ghp_... --name "GitHub Token"
+
+# Optional: webhook secret for HMAC-SHA256 signature verification
+node bin/cascade.js projects credentials-set my-project --key GITHUB_WEBHOOK_SECRET --value ... --name "GitHub Webhook Secret"
+
+# Configure the integration
+# projectId:  the ProjectV2 node ID (PVT_…)
+# owner:      the user or organization login that owns the project
+# ownerType:  "user" or "organization"
+# statuses:   map Cascade lifecycle stages to Status single-select option IDs
+node bin/cascade.js projects integration-set my-project \
+  --category pm --provider github-projects \
+  --config '{"projectId":"PVT_xxx","owner":"your-login","ownerType":"user","statuses":{"todo":"OPTION_ID","inProgress":"OPTION_ID","done":"OPTION_ID"}}'
+```
+
+**Webhook setup.** For an **organization**-owned project, the wizard can create the webhook programmatically (the `projects_v2_item` event is org-webhook-creatable via `POST /orgs/{org}/hooks`) — click **Create Webhook** in the Webhook step; the token needs the `admin:org_hook` scope. A **user**-owned project has no webhook-create API, so events must arrive via an org-owned project or a GitHub App subscribed to `projects_v2_item`; the wizard shows the manual-setup instructions instead. Either way the webhook is for the **`projects_v2_item`** event pointing at `https://your-router-host/github-projects/webhook` (set the secret to match `GITHUB_WEBHOOK_SECRET` if configured).
+
+**Scope.** GitHub Projects is a deliberately **status-focused** provider: only Status field changes dispatch agents. Supported: reading/updating the linked issue/PR, reading/posting comments, moving Status, board listing, add/remove label (config value resolved to a repo-scoped label), checklists (inline markdown task lists in the issue/PR body), and **work-item creation** — which creates a real Issue in the project's SCM repo and adds it to the board, enabling friction/alert card materialization when the `statuses.friction` / `statuses.alerts` slots are configured. It does **not** support attachments (formal attachment records — inline-pasted images *are* delivered) or custom number fields. See the GitHub Projects section of [Integration Layer](./architecture/06-integration-layer.md) for the full method-by-method breakdown.
+
+If you enable the alerting agent, configure the optional `alerts` PM slot as well. For Trello this is `lists.alerts`; for Jira, Linear, and GitHub Projects this is `statuses.alerts`. Sentry alerts materialize into that list/status before the alerting agent runs.
 
 ### Removing an integration
 
@@ -344,13 +373,14 @@ node bin/cascade.js webhooks create my-project \
   --callback-url https://your-tunnel.ngrok.io
 ```
 
-This creates webhooks on GitHub, Trello, and Jira when those integrations are configured, reusing existing hooks when the canonical callback URL already exists. Linear and Sentry are informational/manual setup paths: the dashboard and API show the correct callback URL and whether a signing secret is stored, but you create the webhook in the provider UI. For Sentry, the URL remains `https://your-router-host/sentry/webhook/:projectId`; organization-level deliveries may reach that URL, but Cascade dispatches only payloads whose Sentry project matches the configured `projectSlug`.
+This creates webhooks on GitHub, Trello, Jira, and organization-owned GitHub Projects when those integrations are configured, reusing existing hooks when the canonical callback URL already exists. Linear and Sentry are informational/manual setup paths: the dashboard and API show the correct callback URL and whether a signing secret is stored, but you create the webhook in the provider UI. For Sentry, the URL remains `https://your-router-host/sentry/webhook/:projectId`; organization-level deliveries may reach that URL, but Cascade dispatches only payloads whose Sentry project matches the configured `projectSlug`.
 
 | Provider | Setup behavior | Callback URL |
 |----------|----------------|--------------|
 | GitHub | Programmatic create/list/delete with optional `GITHUB_WEBHOOK_SECRET` for HMAC-SHA256 signature verification | `https://your-router-host/github/webhook` |
 | Trello | Programmatic create/list/delete | `https://your-router-host/trello/webhook` |
 | Jira | Programmatic create/list/delete plus label ensure | `https://your-router-host/jira/webhook` |
+| GitHub Projects | Programmatic create/list/delete for **organization**-owned projects (`admin:org_hook` scope); **user**-owned projects are manual | `https://your-router-host/github-projects/webhook` |
 | Linear | Manual setup with optional `LINEAR_WEBHOOK_SECRET` | `https://your-router-host/linear/webhook` |
 | Sentry | Manual setup with optional Sentry webhook secret; paired with configured `organizationSlug`/`projectSlug` and filtered by payload project matching `projectSlug` | `https://your-router-host/sentry/webhook/my-project` |
 

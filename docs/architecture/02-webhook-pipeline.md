@@ -1,6 +1,6 @@
 # Webhook Pipeline
 
-Webhooks from external providers (Trello, JIRA, Linear, GitHub, Sentry) are processed through a two-layer system: a **webhook handler factory** that handles HTTP concerns, and a **router platform adapter** that implements the business logic pipeline.
+Webhooks from external providers (Trello, JIRA, Linear, GitHub Projects, GitHub, Sentry) are processed through a two-layer system: a **webhook handler factory** that handles HTTP concerns, and a **router platform adapter** that implements the business logic pipeline.
 
 ## Webhook Handler Factory
 
@@ -16,7 +16,7 @@ Each webhook endpoint provides a `WebhookHandlerConfig`:
 
 ```typescript
 interface WebhookHandlerConfig {
-  source: string;                    // 'trello' | 'github' | 'jira' | 'linear' | 'sentry'
+  source: string;                    // 'trello' | 'github' | 'jira' | 'linear' | 'github-projects' | 'sentry'
   parsePayload: (c: Context) => ParseResult;
   verifySignature?: (ctx, rawBody, projectId?) => VerificationResult | null;
   processWebhook: (payload, eventType?, headers?) => Promise<WebhookLogOverrides>;
@@ -38,6 +38,7 @@ The factory handles:
 | `parseTrelloPayload()` | JSON body | `action.type` field |
 | `parseJiraPayload()` | JSON body | `webhookEvent` field |
 | `parseLinearPayload()` | JSON body | `type` field |
+| `parseGitHubProjectsPayload()` | JSON body | `projects_v2_item.action` field |
 | `parseSentryPayload()` | JSON body | `Sentry-Hook-Resource` header |
 
 ## Platform Adapters
@@ -83,6 +84,7 @@ interface ParsedWebhookEvent {
 | `GitHubRouterAdapter` | `src/router/adapters/github.ts` | `repoFullName` |
 | `JiraRouterAdapter` | `src/router/adapters/jira.ts` | JIRA project key |
 | `LinearRouterAdapter` | `src/router/adapters/linear.ts` | Linear team ID |
+| `GitHubProjectsRouterAdapter` | `src/router/adapters/github-projects.ts` | Project node ID (`project_node_id`) |
 | `SentryRouterAdapter` | `src/router/adapters/sentry.ts` | CASCADE `projectId` (from URL) |
 
 Sentry keeps the route shape `/sentry/webhook/:projectId`. The project ID selects the Cascade project, whose Sentry config includes a paired `organizationSlug`/`projectSlug`. The adapter filters payloads by matching Sentry project identifiers against the configured `projectSlug`; organization-level deliveries whose payload project does not match are acknowledged but do not dispatch agents.

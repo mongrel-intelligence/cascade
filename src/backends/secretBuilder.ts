@@ -6,7 +6,12 @@ import {
 	resolveReviewEventPolicy,
 } from '../config/reviewEventPolicy.js';
 import { getPersonaToken } from '../github/personas.js';
-import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
+import {
+	getGitHubProjectsConfig,
+	getJiraConfig,
+	getLinearConfig,
+	getTrelloConfig,
+} from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import { ENV_VAR_NAME } from './progressState.js';
@@ -53,6 +58,22 @@ function injectTrelloConfig(projectSecrets: Record<string, string>, project: Pro
 	projectSecrets.CASCADE_TRELLO_LABELS = JSON.stringify(trelloConfig.labels);
 }
 
+function injectGitHubProjectsConfig(
+	projectSecrets: Record<string, string>,
+	project: ProjectConfig,
+): void {
+	const config = getGitHubProjectsConfig(project);
+	if (!config) return;
+
+	projectSecrets.CASCADE_GITHUB_PROJECTS_PROJECT_ID = config.projectId;
+	projectSecrets.CASCADE_GITHUB_PROJECTS_OWNER = config.owner;
+	projectSecrets.CASCADE_GITHUB_PROJECTS_OWNER_TYPE = config.ownerType;
+	projectSecrets.CASCADE_GITHUB_PROJECTS_STATUSES = JSON.stringify(config.statuses ?? {});
+	if (config.labels) {
+		projectSecrets.CASCADE_GITHUB_PROJECTS_LABELS = JSON.stringify(config.labels);
+	}
+}
+
 function injectAgentInputContext(projectSecrets: Record<string, string>, input: AgentInput): void {
 	const stringFields: Array<[keyof AgentInput, string]> = [
 		['workItemId', 'CASCADE_WORK_ITEM_ID'],
@@ -90,6 +111,12 @@ export async function augmentProjectSecrets(
 
 	// Inject Trello integration config so friction reports can resolve optional PM slots.
 	injectTrelloConfig(projectSecrets, project);
+
+	// Inject GitHub Projects integration config so cascade-tools can construct
+	// GitHubProjectsPMProvider. Without this, every `cascade-tools pm <cmd>` from
+	// inside a GitHub-Projects-backed worker throws "GitHub Projects integration
+	// requires projectId in config". Mirrors the JIRA/Linear injection below.
+	injectGitHubProjectsConfig(projectSecrets, project);
 
 	// Inject JIRA integration config so cascade-tools can construct JiraPMProvider
 	const jiraConfig = getJiraConfig(project);

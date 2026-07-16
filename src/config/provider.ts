@@ -5,6 +5,7 @@ import {
 	findProjectByLinearTeamIdFromDb,
 	findProjectByRepoFromDb,
 	findProjectWithConfigByBoardId,
+	findProjectWithConfigByGitHubProjectsProjectId,
 	findProjectWithConfigById,
 	findProjectWithConfigByJiraProjectKey,
 	findProjectWithConfigByLinearTeamId,
@@ -99,6 +100,12 @@ export async function loadProjectConfigByLinearTeamId(
 	teamId: string,
 ): Promise<ProjectWithConfig | undefined> {
 	return findProjectWithConfigByLinearTeamId(teamId);
+}
+
+export async function loadProjectConfigByGitHubProjectsProjectId(
+	projectId: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectWithConfigByGitHubProjectsProjectId(projectId);
 }
 
 export async function loadProjectConfigById(id: string): Promise<ProjectWithConfig | undefined> {

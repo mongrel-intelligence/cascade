@@ -4,6 +4,14 @@
  */
 import type { Reducer } from 'react';
 import {
+	createInitialGitHubProjectsState,
+	type GitHubProjectsProjectOption,
+	type GitHubProjectsStatusOption,
+	type GitHubProjectsWizardAction,
+	githubProjectsWizardReducer,
+	isGitHubProjectsWizardAction,
+} from './pm-providers/github-projects/state.js';
+import {
 	createInitialJiraState,
 	INITIAL_JIRA_LABELS,
 	isJiraWizardAction,
@@ -33,6 +41,8 @@ import {
 } from './pm-providers/trello/state.js';
 
 export type {
+	GitHubProjectsProjectOption,
+	GitHubProjectsStatusOption,
 	JiraProjectDetails,
 	JiraProjectOption,
 	LinearProjectOption,
@@ -73,6 +83,9 @@ export interface WizardState {
 	jiraBaseUrl: string;
 	jiraAuthType: JiraWizardAuthType;
 	linearApiKey: string;
+	githubProjectsToken: string;
+	githubProjectsOwner: string;
+	githubProjectsOwnerType: 'user' | 'organization';
 	verificationResult: { provider: Provider; display: string } | null;
 	verifyError: string | null;
 	// Step 3: Board/Project
@@ -84,6 +97,10 @@ export interface WizardState {
 	linearTeams: LinearTeamOption[];
 	linearProjectId: string;
 	linearProjects: LinearProjectOption[];
+	githubProjectsOwners: Array<{ login: string; type: 'user' | 'organization' }>;
+	githubProjectsProjects: GitHubProjectsProjectOption[];
+	githubProjectsProjectId: string;
+	githubProjectsStatusOptions: GitHubProjectsStatusOption[];
 	// Step 4: Field mapping
 	trelloBoardDetails: TrelloBoardDetails | null;
 	jiraProjectDetails: JiraProjectDetails | null;
@@ -100,6 +117,8 @@ export interface WizardState {
 	// Linear mappings
 	linearStatusMappings: Record<string, string>;
 	linearLabels: Record<string, string>;
+	// GitHub Projects mappings
+	githubProjectsStatusMappings: Record<string, string>;
 	// Editing mode
 	isEditing: boolean;
 	hasStoredCredentials: boolean; // true in edit mode when provider credentials exist in project_credentials
@@ -121,7 +140,8 @@ export type WizardAction =
 	| { type: 'INIT_EDIT'; state: Partial<WizardState> }
 	| TrelloWizardAction
 	| JiraWizardAction
-	| LinearWizardAction;
+	| LinearWizardAction
+	| GitHubProjectsWizardAction;
 
 // ============================================================================
 // Initial state and constants
@@ -135,6 +155,7 @@ export function createInitialState(): WizardState {
 		...createInitialTrelloState(),
 		...createInitialJiraState(),
 		...createInitialLinearState(),
+		...createInitialGitHubProjectsState(),
 		isEditing: false,
 		hasStoredCredentials: false,
 	};
@@ -167,6 +188,7 @@ export const wizardReducer: Reducer<WizardState, WizardAction> = (state, action)
 			if (isTrelloWizardAction(action)) return trelloWizardReducer(state, action);
 			if (isJiraWizardAction(action)) return jiraWizardReducer(state, action);
 			if (isLinearWizardAction(action)) return linearWizardReducer(state, action);
+			if (isGitHubProjectsWizardAction(action)) return githubProjectsWizardReducer(state, action);
 			return state;
 	}
 };
@@ -197,5 +219,6 @@ export function shouldUseStoredCredentials(state: WizardState): boolean {
 	if (!state.isEditing || !state.hasStoredCredentials) return false;
 	if (state.provider === 'trello') return !state.trelloApiKey;
 	if (state.provider === 'jira') return !state.jiraApiToken;
+	if (state.provider === 'github-projects') return !state.githubProjectsToken;
 	return !state.linearApiKey;
 }

@@ -10,11 +10,13 @@
 
 export {
 	resolveGitHubHeaders,
+	resolveGitHubProjectsCredentials,
 	resolveJiraCredentials,
 	resolveLinearCredentials,
 	resolveTrelloCredentials,
 } from './credentials.js';
 export { GitHubPlatformClient } from './github.js';
+export { GitHubProjectsPlatformClient } from './github-projects.js';
 export { _resetJiraCloudIdCache, JiraPlatformClient } from './jira.js';
 export { LinearPlatformClient } from './linear.js';
 export { TrelloPlatformClient } from './trello.js';

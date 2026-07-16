@@ -113,7 +113,33 @@ export interface LinearJob {
 	ackContextHint?: string;
 }
 
-export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob | LinearJob;
+export interface GitHubProjectsJob {
+	type: 'github-projects';
+	source: 'github-projects';
+	payload: unknown;
+	projectId: string;
+	workItemId?: string;
+	eventType: string;
+	receivedAt: string;
+	ackCommentId?: string;
+	triggerResult?: TriggerResult;
+	/** When true, the worker must post the ack comment before processing (deferred ack). */
+	pendingAck?: boolean;
+	/**
+	 * Work-item title stored as a context hint, passed to `generateAckMessage`
+	 * at deferred-ack fire time. NOT the literal comment text — the worker
+	 * generates the actual ack message via the role-aware LLM path.
+	 */
+	ackContextHint?: string;
+}
+
+export type CascadeJob =
+	| TrelloJob
+	| GitHubJob
+	| JiraJob
+	| SentryJob
+	| LinearJob
+	| GitHubProjectsJob;
 
 // Create the job queue
 export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {

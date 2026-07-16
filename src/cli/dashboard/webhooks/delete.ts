@@ -15,8 +15,15 @@ export default class WebhooksDelete extends DashboardCommand {
 		}),
 		'trello-only': Flags.boolean({ description: 'Only delete Trello webhooks', default: false }),
 		'github-only': Flags.boolean({ description: 'Only delete GitHub webhooks', default: false }),
+		'github-projects-only': Flags.boolean({
+			description: 'Only delete the GitHub Projects org webhook',
+			default: false,
+		}),
 		'github-token': Flags.string({
 			description: 'One-time GitHub PAT with admin:repo_hook scope',
+		}),
+		'github-projects-token': Flags.string({
+			description: 'One-time GitHub PAT with admin:org_hook scope (GitHub Projects org webhook)',
 		}),
 		'trello-api-key': Flags.string({ description: 'One-time Trello API key' }),
 		'trello-token': Flags.string({ description: 'One-time Trello token' }),
@@ -24,6 +31,7 @@ export default class WebhooksDelete extends DashboardCommand {
 		'jira-api-token': Flags.string({ description: 'One-time JIRA API token' }),
 	};
 
+	// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: multi-provider output formatting
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(WebhooksDelete);
 
@@ -36,6 +44,8 @@ export default class WebhooksDelete extends DashboardCommand {
 			if (flags['trello-token']) oneTimeTokens.trelloToken = flags['trello-token'];
 			if (flags['jira-email']) oneTimeTokens.jiraEmail = flags['jira-email'];
 			if (flags['jira-api-token']) oneTimeTokens.jiraApiToken = flags['jira-api-token'];
+			if (flags['github-projects-token'])
+				oneTimeTokens.githubProjectsToken = flags['github-projects-token'];
 
 			const result = await this.withSpinner('Deleting webhooks...', () =>
 				this.client.webhooks.delete.mutate({
@@ -43,6 +53,7 @@ export default class WebhooksDelete extends DashboardCommand {
 					callbackBaseUrl,
 					trelloOnly: flags['trello-only'],
 					githubOnly: flags['github-only'],
+					githubProjectsOnly: flags['github-projects-only'],
 					oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
 				}),
 			);
@@ -72,6 +83,14 @@ export default class WebhooksDelete extends DashboardCommand {
 				this.success(`Deleted ${result.jira.length} JIRA webhook(s): ${result.jira.join(', ')}`);
 			} else {
 				this.log('No matching JIRA webhooks found.');
+			}
+
+			if (result.githubProjects.length > 0) {
+				this.success(
+					`Deleted ${result.githubProjects.length} GitHub Projects webhook(s): ${result.githubProjects.join(', ')}`,
+				);
+			} else {
+				this.log('No matching GitHub Projects webhooks found.');
 			}
 		} catch (err) {
 			this.handleError(err);

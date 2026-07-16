@@ -71,6 +71,21 @@ export async function resolveLinearCredentials(
 }
 
 /**
+ * Resolve GitHub Projects credentials for a project.
+ * Returns `{ token }` or `null` if credentials are missing.
+ */
+export async function resolveGitHubProjectsCredentials(
+	projectId: string,
+): Promise<{ token: string } | null> {
+	try {
+		const token = await getIntegrationCredential(projectId, 'pm', 'github-projects', 'token');
+		return { token };
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Resolve the webhook secret for a given provider and project.
  *
  * - `'github'`: resolves the `webhook_secret` credential from the SCM integration.
@@ -79,12 +94,13 @@ export async function resolveLinearCredentials(
  *   API Key at https://trello.com/power-ups/admin/), not the public API Key.
  * - `'jira'`: resolves the `webhook_secret` credential from the PM integration.
  * - `'linear'`: resolves the `webhook_secret` credential from the PM integration.
+ * - `'github-projects'`: resolves the `webhook_secret` credential from the PM integration.
  *
  * Returns `null` if the credential is not configured.
  */
 export async function resolveWebhookSecret(
 	projectId: string,
-	provider: 'github' | 'trello' | 'jira' | 'sentry' | 'linear',
+	provider: 'github' | 'trello' | 'jira' | 'sentry' | 'linear' | 'github-projects',
 ): Promise<string | null> {
 	if (provider === 'github') {
 		return getIntegrationCredentialOrNull(projectId, 'scm', 'github', 'webhook_secret');
@@ -97,6 +113,9 @@ export async function resolveWebhookSecret(
 	}
 	if (provider === 'linear') {
 		return getIntegrationCredentialOrNull(projectId, 'pm', 'linear', 'webhook_secret');
+	}
+	if (provider === 'github-projects') {
+		return getIntegrationCredentialOrNull(projectId, 'pm', 'github-projects', 'webhook_secret');
 	}
 	// Trello signs webhook payloads with the API Secret, not the public API Key.
 	return getIntegrationCredentialOrNull(projectId, 'pm', 'trello', 'api_secret');

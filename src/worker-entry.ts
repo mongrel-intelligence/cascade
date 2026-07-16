@@ -24,6 +24,7 @@ import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
 import {
+	extractGitHubProjectsContext,
 	extractJiraContext,
 	extractLinearContext,
 	extractTrelloContext,
@@ -32,6 +33,7 @@ import {
 import { buildJobDataRedisKey, readOffloadedJobData } from './router/job-data-offload.js';
 import { dispatchPMAck } from './router/pm-ack-dispatch.js';
 import { captureException, flush, setTag } from './sentry.js';
+import { processGitHubProjectsWebhook } from './triggers/github-projects/webhook-handler.js';
 import {
 	createTriggerRegistry,
 	processGitHubWebhook,
@@ -140,6 +142,27 @@ export interface LinearJobData {
 	ackContextHint?: string;
 }
 
+export interface GitHubProjectsJobData {
+	type: 'github-projects';
+	source: 'github-projects';
+	payload: unknown;
+	projectId: string;
+	workItemId?: string;
+	/** GitHub Projects event type: e.g. 'projects_v2_item/edited' */
+	eventType: string;
+	receivedAt: string;
+	ackCommentId?: string;
+	triggerResult?: TriggerResult;
+	/** When true, the worker must post the ack comment before processing (deferred ack). */
+	pendingAck?: boolean;
+	/**
+	 * Work-item title stored as a context hint, passed to `generateAckMessage`
+	 * at deferred-ack fire time. NOT the literal comment text — the worker
+	 * generates the actual ack message via the role-aware LLM path.
+	 */
+	ackContextHint?: string;
+}
+
 export interface ManualRunJobData {
 	type: 'manual-run';
 	projectId: string;
@@ -183,6 +206,7 @@ export type JobData =
 	| JiraJobData
 	| SentryJobData
 	| LinearJobData
+	| GitHubProjectsJobData
 	| DashboardJobData;
 
 export async function processDashboardJob(jobId: string, jobData: DashboardJobData): Promise<void> {
@@ -268,18 +292,22 @@ export async function processDashboardJob(jobId: string, jobData: DashboardJobDa
 async function postDeferredAck(
 	projectId: string,
 	workItemId: string,
-	pmType: 'trello' | 'jira' | 'linear',
+	pmType: 'trello' | 'jira' | 'linear' | 'github-projects',
 	payload: unknown,
 	agentType: string | undefined,
 	contextHint: string | undefined,
 ): Promise<string | undefined> {
 	// Extract context from the raw payload (same source as the non-coalesced postAck path).
-	let contextSnippet =
-		pmType === 'jira'
-			? extractJiraContext(payload)
-			: pmType === 'linear'
-				? extractLinearContext(payload)
-				: extractTrelloContext(payload);
+	let contextSnippet: string;
+	if (pmType === 'jira') {
+		contextSnippet = extractJiraContext(payload);
+	} else if (pmType === 'linear') {
+		contextSnippet = extractLinearContext(payload);
+	} else if (pmType === 'github-projects') {
+		contextSnippet = extractGitHubProjectsContext(payload);
+	} else {
+		contextSnippet = extractTrelloContext(payload);
+	}
 
 	// Fall back to the stored workItemTitle hint when the extractor yields nothing.
 	if (!contextSnippet && contextHint) {
@@ -430,6 +458,38 @@ export async function dispatchJob(
 				jobData.payload,
 				triggerRegistry,
 				linearAckCommentId,
+				jobData.triggerResult,
+				jobData.projectId,
+			);
+			break;
+		}
+		case 'github-projects': {
+			logger.info('[Worker] Processing GitHub Projects job', {
+				jobId,
+				projectId: jobData.projectId,
+				workItemId: jobData.workItemId,
+				eventType: jobData.eventType,
+				ackCommentId: jobData.ackCommentId,
+				pendingAck: jobData.pendingAck,
+				hasTriggerResult: !!jobData.triggerResult,
+			});
+			// Deferred ack: post the ack comment that was skipped at schedule time.
+			let githubProjectsAckCommentId = jobData.ackCommentId;
+			if (jobData.pendingAck && jobData.workItemId) {
+				githubProjectsAckCommentId =
+					(await postDeferredAck(
+						jobData.projectId,
+						jobData.workItemId,
+						'github-projects',
+						jobData.payload,
+						jobData.triggerResult?.agentType ?? undefined,
+						jobData.ackContextHint,
+					)) ?? githubProjectsAckCommentId;
+			}
+			await processGitHubProjectsWebhook(
+				jobData.payload,
+				triggerRegistry,
+				githubProjectsAckCommentId,
 				jobData.triggerResult,
 				jobData.projectId,
 			);

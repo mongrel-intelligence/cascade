@@ -47,6 +47,17 @@ export interface LinearIntegrationConfig {
 	customFields?: { cost?: string };
 }
 
+export interface GitHubProjectsIntegrationConfig {
+	projectId: string;
+	owner: string;
+	ownerType: 'user' | 'organization';
+	statuses: Record<string, string>;
+	labels?: {
+		processing?: string;
+		readyToProcess?: string;
+	};
+}
+
 // biome-ignore lint/complexity/noBannedTypes: GitHub config has no fields (credentials are in integration_credentials)
 export type GitHubIntegrationConfig = {};
 
@@ -84,6 +95,7 @@ export interface MapProjectInput {
 	trelloConfig?: TrelloIntegrationConfig;
 	jiraConfig?: JiraIntegrationConfig;
 	linearConfig?: LinearIntegrationConfig;
+	githubProjectsConfig?: GitHubProjectsIntegrationConfig;
 	githubConfig?: GitHubIntegrationConfig;
 }
 
@@ -160,6 +172,16 @@ export interface ProjectConfigRaw {
 			auto?: string;
 		};
 		customFields?: { cost?: string };
+	};
+	githubProjects?: {
+		projectId: string;
+		owner: string;
+		ownerType: 'user' | 'organization';
+		statuses: Record<string, string>;
+		labels?: {
+			processing?: string;
+			readyToProcess?: string;
+		};
 	};
 	agentEngine?: {
 		default?: string;
@@ -290,6 +312,18 @@ function buildLinearConfig(config: LinearIntegrationConfig): ProjectConfigRaw['l
 	};
 }
 
+function buildGitHubProjectsConfig(
+	config: GitHubProjectsIntegrationConfig,
+): ProjectConfigRaw['githubProjects'] {
+	return {
+		projectId: config.projectId,
+		owner: config.owner,
+		ownerType: config.ownerType,
+		statuses: config.statuses,
+		labels: config.labels,
+	};
+}
+
 function buildAgentEngineConfig(
 	row: ProjectRow,
 	engines: Record<string, string>,
@@ -303,7 +337,7 @@ function buildAgentEngineConfig(
 
 function buildBaseProjectFields(
 	row: ProjectRow,
-	pmType: 'trello' | 'jira' | 'linear' | undefined,
+	pmType: 'trello' | 'jira' | 'linear' | 'github-projects' | undefined,
 ): ProjectConfigRaw {
 	return {
 		id: row.id,
@@ -359,17 +393,20 @@ export function extractIntegrationConfigs(integrations: IntegrationRow[]): {
 	trelloConfig?: TrelloIntegrationConfig;
 	jiraConfig?: JiraIntegrationConfig;
 	linearConfig?: LinearIntegrationConfig;
+	githubProjectsConfig?: GitHubProjectsIntegrationConfig;
 	githubConfig?: GitHubIntegrationConfig;
 } {
 	const trelloRow = integrations.find((i) => i.provider === 'trello');
 	const jiraRow = integrations.find((i) => i.provider === 'jira');
 	const linearRow = integrations.find((i) => i.provider === 'linear');
+	const githubProjectsRow = integrations.find((i) => i.provider === 'github-projects');
 	const githubRow = integrations.find((i) => i.provider === 'github');
 
 	return {
 		trelloConfig: trelloRow?.config as TrelloIntegrationConfig | undefined,
 		jiraConfig: jiraRow?.config as JiraIntegrationConfig | undefined,
 		linearConfig: linearRow?.config as LinearIntegrationConfig | undefined,
+		githubProjectsConfig: githubProjectsRow?.config as GitHubProjectsIntegrationConfig | undefined,
 		githubConfig: githubRow?.config as GitHubIntegrationConfig | undefined,
 	};
 }
@@ -380,6 +417,7 @@ export function mapProjectRow({
 	trelloConfig,
 	jiraConfig,
 	linearConfig,
+	githubProjectsConfig,
 }: MapProjectInput): ProjectConfigRaw {
 	const {
 		models,
@@ -398,7 +436,9 @@ export function mapProjectRow({
 			? 'jira'
 			: linearConfig
 				? 'linear'
-				: undefined;
+				: githubProjectsConfig
+					? 'github-projects'
+					: undefined;
 
 	const project: ProjectConfigRaw = {
 		...buildBaseProjectFields(row, pmType),
@@ -420,6 +460,10 @@ export function mapProjectRow({
 
 	if (linearConfig) {
 		project.linear = buildLinearConfig(linearConfig);
+	}
+
+	if (githubProjectsConfig) {
+		project.githubProjects = buildGitHubProjectsConfig(githubProjectsConfig);
 	}
 
 	const agentEngine = buildAgentEngineConfig(row, engines);

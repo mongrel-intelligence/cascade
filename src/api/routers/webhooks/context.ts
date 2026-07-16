@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { getAllProjectCredentials } from '../../../config/provider.js';
 import { findProjectByIdFromDb } from '../../../db/repositories/configRepository.js';
-import { getJiraConfig, getTrelloConfig } from '../../../pm/config.js';
+import { getGitHubProjectsConfig, getJiraConfig, getTrelloConfig } from '../../../pm/config.js';
 import { getSentryIntegrationConfig } from '../../../sentry/integration.js';
 import { verifyProjectOrgAccess } from '../_shared/projectAccess.js';
 import type { ProjectContext } from './types.js';
@@ -35,6 +35,8 @@ export async function resolveProjectContext(
 			]
 		: undefined;
 
+	const githubProjectsConfig = getGitHubProjectsConfig(project);
+
 	const sentryConfig = await getSentryIntegrationConfig(projectId);
 	const sentryConfigured = !!creds.SENTRY_API_TOKEN && sentryConfig !== null;
 
@@ -54,6 +56,9 @@ export async function resolveProjectContext(
 		jiraEmail: creds.JIRA_EMAIL ?? '',
 		jiraApiToken: creds.JIRA_API_TOKEN ?? '',
 		webhookSecret: creds.GITHUB_WEBHOOK_SECRET ?? undefined,
+		githubProjectsOwner: githubProjectsConfig?.owner,
+		githubProjectsOwnerType: githubProjectsConfig?.ownerType,
+		githubProjectsToken: creds.GITHUB_TOKEN ?? undefined,
 		sentryConfigured,
 		sentryOrganizationSlug: sentryConfig?.organizationSlug,
 		sentryProjectSlug: sentryConfig?.projectSlug,
@@ -71,6 +76,7 @@ export const oneTimeTokensSchema = z
 		jiraEmail: z.string().optional(),
 		jiraApiToken: z.string().optional(),
 		linearApiKey: z.string().optional(),
+		githubProjectsToken: z.string().optional(),
 	})
 	.optional();
 
@@ -84,4 +90,5 @@ export function applyOneTimeTokens(pctx: ProjectContext, tokens: OneTimeTokens):
 	if (tokens.jiraEmail) pctx.jiraEmail = tokens.jiraEmail;
 	if (tokens.jiraApiToken) pctx.jiraApiToken = tokens.jiraApiToken;
 	if (tokens.linearApiKey) pctx.linearApiKey = tokens.linearApiKey;
+	if (tokens.githubProjectsToken) pctx.githubProjectsToken = tokens.githubProjectsToken;
 }

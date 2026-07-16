@@ -186,6 +186,37 @@ export function extractLinearContext(payload: unknown): string {
 	return truncate(parts.join('\n'));
 }
 
+/**
+ * Extract context from a GitHub Projects v2 webhook payload.
+ * Pulls the item content type and, when available, the new status name.
+ */
+export function extractGitHubProjectsContext(payload: unknown): string {
+	if (!payload || typeof payload !== 'object') return '';
+
+	const p = payload as Record<string, unknown>;
+	const parts: string[] = [];
+
+	const item = p.projects_v2_item as Record<string, unknown> | undefined;
+	if (item) {
+		const contentType = item.content_type as string | undefined;
+		if (contentType) {
+			parts.push(`Item: ${contentType}`);
+		}
+	}
+
+	const changes = p.changes as Record<string, unknown> | undefined;
+	const fieldValue = changes?.field_value as Record<string, unknown> | undefined;
+	const to = fieldValue?.to as Record<string, unknown> | undefined;
+	if (fieldValue?.field_name) {
+		parts.push(`Field: ${fieldValue.field_name as string}`);
+	}
+	if (to?.name) {
+		parts.push(`New value: ${to.name as string}`);
+	}
+
+	return truncate(parts.join('\n'));
+}
+
 // ---------------------------------------------------------------------------
 // Core generator
 // ---------------------------------------------------------------------------

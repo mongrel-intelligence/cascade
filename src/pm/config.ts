@@ -93,6 +93,27 @@ export function getLinearConfig(project: ProjectConfig): LinearConfig | undefine
 	return project.linear as LinearConfig | undefined;
 }
 
+/** GitHub Projects v2-specific configuration (from project_integrations JSONB) */
+export interface GitHubProjectsConfig {
+	projectId: string;
+	owner: string;
+	ownerType: 'user' | 'organization';
+	statuses: Record<string, string>;
+	labels?: {
+		processing?: string;
+		readyToProcess?: string;
+	};
+}
+
+/**
+ * Get the GitHub Projects config for a project.
+ * Returns the config or undefined if this is not a GitHub Projects project.
+ */
+export function getGitHubProjectsConfig(project: ProjectConfig): GitHubProjectsConfig | undefined {
+	if (project.pm?.type !== 'github-projects') return undefined;
+	return project.githubProjects as GitHubProjectsConfig | undefined;
+}
+
 /**
  * Get the cost custom field ID for a project, regardless of PM type.
  */
@@ -102,6 +123,9 @@ export function getCostFieldId(project: ProjectConfig): string | undefined {
 	}
 	if (project.pm?.type === 'linear') {
 		return getLinearConfig(project)?.customFields?.cost;
+	}
+	if (project.pm?.type === 'github-projects') {
+		return undefined;
 	}
 	return getTrelloConfig(project)?.customFields?.cost;
 }
@@ -142,6 +166,13 @@ export function getAlertsContainerId(project: ProjectConfig): string | undefined
 		if (!linearConfig?.statuses?.alerts) return undefined;
 		return linearConfig.teamId;
 	}
+	if (pmType === 'github-projects') {
+		const githubProjectsConfig = getGitHubProjectsConfig(project);
+		// GitHub Projects items are created by adding existing issues to the project.
+		// Minimal integration does not support alert item creation.
+		if (!githubProjectsConfig?.statuses?.alerts) return undefined;
+		return githubProjectsConfig.projectId;
+	}
 	return undefined;
 }
 
@@ -170,6 +201,11 @@ export function getFrictionContainerId(project: ProjectConfig): string | undefin
 		if (!linearConfig?.statuses?.friction) return undefined;
 		return linearConfig.teamId;
 	}
+	if (pmType === 'github-projects') {
+		const githubProjectsConfig = getGitHubProjectsConfig(project);
+		if (!githubProjectsConfig?.statuses?.friction) return undefined;
+		return githubProjectsConfig.projectId;
+	}
 	return undefined;
 }
 
@@ -191,6 +227,9 @@ export function getAlertLabelId(project: ProjectConfig): string | undefined {
 	}
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.labels?.cascadeAlert;
+	}
+	if (pmType === 'github-projects') {
+		return undefined;
 	}
 	return undefined;
 }
@@ -217,6 +256,9 @@ export function getFrictionLabelId(project: ProjectConfig): string | undefined {
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.labels?.cascadeFriction;
 	}
+	if (pmType === 'github-projects') {
+		return undefined;
+	}
 	return undefined;
 }
 
@@ -240,6 +282,9 @@ export function getAlertsStatusKey(project: ProjectConfig): 'alerts' | undefined
 	}
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.statuses?.alerts ? 'alerts' : undefined;
+	}
+	if (pmType === 'github-projects') {
+		return getGitHubProjectsConfig(project)?.statuses?.alerts ? 'alerts' : undefined;
 	}
 	return undefined;
 }
@@ -265,6 +310,9 @@ export function getAlertsStatusDestination(project: ProjectConfig): string | und
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.statuses?.alerts;
 	}
+	if (pmType === 'github-projects') {
+		return getGitHubProjectsConfig(project)?.statuses?.alerts;
+	}
 	return undefined;
 }
 
@@ -287,6 +335,9 @@ export function getFrictionStatusDestination(project: ProjectConfig): string | u
 	}
 	if (pmType === 'linear') {
 		return getLinearConfig(project)?.statuses?.friction;
+	}
+	if (pmType === 'github-projects') {
+		return getGitHubProjectsConfig(project)?.statuses?.friction;
 	}
 	return undefined;
 }

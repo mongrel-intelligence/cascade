@@ -136,3 +136,25 @@ export async function parseLinearPayload(c: Context): Promise<ParseResult> {
 		return { ok: false, error: String(err) };
 	}
 }
+
+/**
+ * Parse a GitHub Projects v2 webhook request (plain JSON).
+ * Extracts `projects_v2_item.action` as the event type.
+ */
+export async function parseGitHubProjectsPayload(c: Context): Promise<ParseResult> {
+	try {
+		const rawBody = await c.req.text();
+		const payload = JSON.parse(rawBody);
+		const p = payload as Record<string, unknown>;
+		const action = p?.action as string | undefined;
+		const eventType = action ? `projects_v2_item/${action}` : 'unknown';
+		logger.info('Received GitHub Projects webhook', {
+			action,
+			eventType,
+			projectId: (p?.projects_v2_item as Record<string, unknown> | undefined)?.project_node_id,
+		});
+		return { ok: true, payload, eventType, rawBody };
+	} catch (err) {
+		return { ok: false, error: String(err) };
+	}
+}

@@ -38,7 +38,7 @@ function buildRawConfig({
 	return {
 		projects: projectRows.map((row) => {
 			const integrations = integrationsByProject.get(row.id) ?? [];
-			const { trelloConfig, jiraConfig, linearConfig, githubConfig } =
+			const { trelloConfig, jiraConfig, linearConfig, githubProjectsConfig, githubConfig } =
 				extractIntegrationConfigs(integrations);
 			return mapProjectRow({
 				row,
@@ -46,6 +46,7 @@ function buildRawConfig({
 				trelloConfig,
 				jiraConfig,
 				linearConfig,
+				githubProjectsConfig,
 				githubConfig,
 			});
 		}),
@@ -135,6 +136,13 @@ const linearTeamIdWhereClause = (teamId: string) =>
 		AND ${projectIntegrations.config}->>'teamId' = ${teamId}
 	)`;
 
+const githubProjectsProjectIdWhereClause = (projectId: string) =>
+	sql`${projects.id} IN (
+		SELECT ${projectIntegrations.projectId} FROM ${projectIntegrations}
+		WHERE ${projectIntegrations.provider} = 'github-projects'
+		AND ${projectIntegrations.config}->>'projectId' = ${projectId}
+	)`;
+
 export function findProjectByBoardIdFromDb(boardId: string): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(boardIdWhereClause(boardId));
 }
@@ -157,6 +165,12 @@ export function findProjectByLinearTeamIdFromDb(
 	teamId: string,
 ): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(linearTeamIdWhereClause(teamId));
+}
+
+export function findProjectByGitHubProjectsProjectIdFromDb(
+	projectId: string,
+): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(githubProjectsProjectIdWhereClause(projectId));
 }
 
 // WithConfig variants — return both the project and its org-scoped CascadeConfig
@@ -185,4 +199,10 @@ export function findProjectWithConfigByLinearTeamId(
 	teamId: string,
 ): Promise<ProjectWithConfig | undefined> {
 	return findProjectConfigFromDb(linearTeamIdWhereClause(teamId));
+}
+
+export function findProjectWithConfigByGitHubProjectsProjectId(
+	projectId: string,
+): Promise<ProjectWithConfig | undefined> {
+	return findProjectConfigFromDb(githubProjectsProjectIdWhereClause(projectId));
 }
