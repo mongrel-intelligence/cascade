@@ -44,6 +44,10 @@ vi.mock('../../src/triggers/linear/webhook-handler.js', () => ({
 	processLinearWebhook: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../src/triggers/github-projects/webhook-handler.js', () => ({
+	processGitHubProjectsWebhook: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../src/router/pm-ack-dispatch.js', () => ({
 	dispatchPMAck: vi.fn(),
 }));
@@ -59,6 +63,7 @@ vi.mock('../../src/router/ackMessageGenerator.js', () => ({
 	extractTrelloContext: vi.fn().mockReturnValue(''),
 	extractJiraContext: vi.fn().mockReturnValue(''),
 	extractLinearContext: vi.fn().mockReturnValue(''),
+	extractGitHubProjectsContext: vi.fn().mockReturnValue(''),
 	generateAckMessage: vi.fn().mockResolvedValue('🔨 Generated ack message'),
 }));
 
@@ -108,6 +113,7 @@ import { BootFailureError } from '../../src/agents/shared/bootFailureError.js';
 import { loadProjectConfigById } from '../../src/config/provider.js';
 import { getRunById, markDebugAnalysisFailed } from '../../src/db/repositories/runsRepository.js';
 import {
+	extractGitHubProjectsContext,
 	extractJiraContext,
 	extractLinearContext,
 	extractTrelloContext,
@@ -116,6 +122,7 @@ import {
 import { readOffloadedJobData } from '../../src/router/job-data-offload.js';
 import { dispatchPMAck } from '../../src/router/pm-ack-dispatch.js';
 import { captureException, flush } from '../../src/sentry.js';
+import { processGitHubProjectsWebhook } from '../../src/triggers/github-projects/webhook-handler.js';
 import { processGitHubWebhook, processJiraWebhook } from '../../src/triggers/index.js';
 import { processLinearWebhook } from '../../src/triggers/linear/webhook-handler.js';
 import { processSentryWebhook } from '../../src/triggers/sentry/webhook-handler.js';
@@ -126,6 +133,7 @@ import {
 	type DebugAnalysisJobData,
 	dispatchJob,
 	type GitHubJobData,
+	type GitHubProjectsJobData,
 	type JiraJobData,
 	type LinearJobData,
 	type ManualRunJobData,
@@ -380,6 +388,36 @@ describe('dispatchJob routing', () => {
 		expect(dispatchPMAck).not.toHaveBeenCalled();
 	});
 
+	it('routes github-projects job to processGitHubProjectsWebhook with payload, registry, ackCommentId, triggerResult', async () => {
+		const mockRegistry = {};
+		const jobPayload = { action: 'edited', projects_v2_item: { id: 'PVTI_1' } };
+		const triggerResult = { matched: true, agentType: 'implementation' } as never;
+
+		const jobData: GitHubProjectsJobData = {
+			type: 'github-projects',
+			source: 'github-projects',
+			payload: jobPayload,
+			projectId: 'proj-1',
+			workItemId: 'gh-item-1',
+			eventType: 'projects_v2_item/edited',
+			receivedAt: '2024-01-01T00:00:00Z',
+			ackCommentId: 'gh-comment-789',
+			triggerResult,
+		};
+
+		await dispatchJob('job-github-projects-1', jobData, mockRegistry as never);
+
+		expect(processGitHubProjectsWebhook).toHaveBeenCalledWith(
+			jobPayload,
+			mockRegistry,
+			'gh-comment-789',
+			triggerResult,
+			'proj-1',
+		);
+		// Without pendingAck, the deferred-ack path is NOT taken
+		expect(dispatchPMAck).not.toHaveBeenCalled();
+	});
+
 	it('handles unknown job type by calling captureException with worker_unknown_job tag', async () => {
 		const exitSpy = vi.spyOn(process, 'exit').mockImplementation((code?) => {
 			throw new Error(`process.exit(${code})`);
@@ -411,6 +449,7 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 		vi.mocked(extractJiraContext).mockReset().mockReturnValue('');
 		vi.mocked(extractLinearContext).mockReset().mockReturnValue('');
 		vi.mocked(extractTrelloContext).mockReset().mockReturnValue('');
+		vi.mocked(extractGitHubProjectsContext).mockReset().mockReturnValue('');
 		vi.mocked(generateAckMessage).mockReset().mockResolvedValue('🔨 Generated ack');
 	});
 
@@ -658,6 +697,71 @@ describe('dispatchJob - deferred ack (pendingAck=true)', () => {
 			jobData.triggerResult,
 			'proj-1',
 		);
+	});
+
+	it('github-projects pendingAck: extracts context, generates ack, posts via dispatchPMAck, passes new commentId to processGitHubProjectsWebhook', async () => {
+		vi.mocked(extractGitHubProjectsContext).mockReturnValueOnce('Item: PVTI_1 — Fix flaky test');
+		vi.mocked(generateAckMessage).mockResolvedValueOnce('🔨 Fixing the flaky test');
+		vi.mocked(dispatchPMAck).mockResolvedValueOnce({
+			commentId: 'gh-deferred-1',
+			message: '🔨 Fixing the flaky test',
+		});
+
+		const jobData: GitHubProjectsJobData = {
+			type: 'github-projects',
+			source: 'github-projects',
+			payload: { action: 'edited', projects_v2_item: { id: 'PVTI_1' } },
+			projectId: 'proj-1',
+			workItemId: 'PVTI_1',
+			eventType: 'projects_v2_item/edited',
+			receivedAt: '2024-01-01T00:00:00Z',
+			pendingAck: true,
+			ackContextHint: 'Fix flaky test',
+			triggerResult: { agentType: 'implementation' } as never,
+		};
+
+		await dispatchJob('job-github-projects-deferred', jobData, {} as never);
+
+		expect(extractGitHubProjectsContext).toHaveBeenCalledWith(jobData.payload);
+		expect(generateAckMessage).toHaveBeenCalledWith(
+			'implementation',
+			'Item: PVTI_1 — Fix flaky test',
+			'proj-1',
+		);
+		expect(dispatchPMAck).toHaveBeenCalledWith({
+			projectId: 'proj-1',
+			workItemId: 'PVTI_1',
+			pmType: 'github-projects',
+			message: '🔨 Fixing the flaky test',
+			agentType: 'implementation',
+		});
+		expect(processGitHubProjectsWebhook).toHaveBeenCalledWith(
+			jobData.payload,
+			expect.anything(),
+			'gh-deferred-1',
+			jobData.triggerResult,
+			'proj-1',
+		);
+	});
+
+	it('github-projects pendingAck without workItemId: skips deferred ack entirely', async () => {
+		const jobData: GitHubProjectsJobData = {
+			type: 'github-projects',
+			source: 'github-projects',
+			payload: {},
+			projectId: 'proj-1',
+			// workItemId is missing
+			eventType: 'projects_v2_item/created',
+			receivedAt: '2024-01-01T00:00:00Z',
+			pendingAck: true,
+			triggerResult: { agentType: 'implementation' } as never,
+		};
+
+		await dispatchJob('job-github-projects-no-id', jobData, {} as never);
+
+		// Without workItemId, the deferred-ack branch is skipped
+		expect(dispatchPMAck).not.toHaveBeenCalled();
+		expect(processGitHubProjectsWebhook).toHaveBeenCalled();
 	});
 
 	it('linear pendingAck without workItemId: skips deferred ack entirely', async () => {
@@ -1232,6 +1336,30 @@ describe('main() - environment variable validation', () => {
 			undefined,
 			expect.objectContaining({ agentType: 'implementation' }),
 			'proj-1',
+		);
+		expect(flush).toHaveBeenCalled();
+	});
+
+	// ── defensive fallback: mismatched key, no inline value ─────────────────────
+	//
+	// main()'s upfront check only requires JOB_DATA *or* JOB_DATA_REDIS_KEY to be
+	// present — it does not know whether a present key actually names this job.
+	// If a stale baked key (see the two tests above) doesn't match JOB_ID *and*
+	// there's no fresh inline JOB_DATA to fall back on, resolveRawJobData() has no
+	// channel left to read from. This is the defensive branch that turns that into
+	// a clear, grep-able exit instead of undefined behavior.
+	it('exits 1 with worker_env tag when JOB_DATA_REDIS_KEY is stale (mismatched) and no inline JOB_DATA fallback exists', async () => {
+		process.env.JOB_ID = 'job-no-fallback';
+		process.env.JOB_TYPE = 'linear';
+		process.env.JOB_DATA_REDIS_KEY = 'cascade:jobdata:some-other-job';
+		// JOB_DATA intentionally absent — no channel names this job's payload.
+
+		await expect(main()).rejects.toThrow('process.exit(1)');
+
+		expect(readOffloadedJobData).not.toHaveBeenCalled();
+		expect(captureException).toHaveBeenCalledWith(
+			expect.objectContaining({ message: 'JOB_DATA could not be resolved from env or Redis' }),
+			expect.objectContaining({ tags: { source: 'worker_env' } }),
 		);
 		expect(flush).toHaveBeenCalled();
 	});

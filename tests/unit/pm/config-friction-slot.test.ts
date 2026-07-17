@@ -48,6 +48,20 @@ function makeLinearProject(overrides: Record<string, unknown> = {}): ProjectConf
 	} as unknown as ProjectConfig;
 }
 
+function makeGitHubProjectsProject(overrides: Record<string, unknown> = {}): ProjectConfig {
+	return {
+		id: 'p1',
+		pm: { type: 'github-projects' },
+		githubProjects: {
+			projectId: 'PVT_kwABC',
+			owner: 'acme-org',
+			ownerType: 'organization',
+			statuses: { todo: 'Todo', friction: 'Friction' },
+		},
+		...overrides,
+	} as unknown as ProjectConfig;
+}
+
 describe('getFrictionContainerId', () => {
 	it('returns Trello list ID from project.trello.lists.friction', () => {
 		expect(getFrictionContainerId(makeTrelloProject())).toBe('list-friction');
@@ -76,6 +90,20 @@ describe('getFrictionContainerId', () => {
 		expect(getFrictionContainerId(project)).toBeUndefined();
 	});
 
+	it('returns GitHub Projects project ID only when statuses.friction is configured', () => {
+		expect(getFrictionContainerId(makeGitHubProjectsProject())).toBe('PVT_kwABC');
+
+		const project = makeGitHubProjectsProject({
+			githubProjects: {
+				projectId: 'PVT_kwABC',
+				owner: 'acme-org',
+				ownerType: 'organization',
+				statuses: { todo: 'Todo' },
+			},
+		});
+		expect(getFrictionContainerId(project)).toBeUndefined();
+	});
+
 	it('returns undefined when no PM config or Trello friction list is present', () => {
 		expect(
 			getFrictionContainerId({ id: 'p1', pm: undefined } as unknown as ProjectConfig),
@@ -93,6 +121,7 @@ describe('getFrictionStatusDestination', () => {
 		expect(getFrictionStatusDestination(makeTrelloProject())).toBe('list-friction');
 		expect(getFrictionStatusDestination(makeJiraProject())).toBe('Friction');
 		expect(getFrictionStatusDestination(makeLinearProject())).toBe('state-friction');
+		expect(getFrictionStatusDestination(makeGitHubProjectsProject())).toBe('Friction');
 	});
 
 	it('returns undefined when friction is unconfigured', () => {
@@ -110,10 +139,25 @@ describe('getFrictionStatusDestination', () => {
 		const linearProject = makeLinearProject({
 			linear: { teamId: 'team-1', statuses: { todo: 'state-todo' } },
 		});
+		const githubProjectsProject = makeGitHubProjectsProject({
+			githubProjects: {
+				projectId: 'PVT_kwABC',
+				owner: 'acme-org',
+				ownerType: 'organization',
+				statuses: { todo: 'Todo' },
+			},
+		});
 
 		expect(getFrictionStatusDestination(trelloProject)).toBeUndefined();
 		expect(getFrictionStatusDestination(jiraProject)).toBeUndefined();
 		expect(getFrictionStatusDestination(linearProject)).toBeUndefined();
+		expect(getFrictionStatusDestination(githubProjectsProject)).toBeUndefined();
+	});
+
+	it('returns undefined for unknown PM provider types', () => {
+		expect(
+			getFrictionStatusDestination({ id: 'p1', pm: undefined } as unknown as ProjectConfig),
+		).toBeUndefined();
 	});
 });
 

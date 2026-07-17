@@ -5,18 +5,31 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 }));
 
 import {
+	addCommentToIssue,
 	addContentToProject,
 	addLabelsToContent,
 	createRepositoryIssue,
+	deleteComment,
 	downloadImage,
 	getContentNode,
+	getGitHubProjectsCredentials,
 	getIssueComments,
+	getOrganizationProjects,
+	getProject,
+	getProjectFields,
 	getProjectItem,
 	getRepositoryId,
+	getStatusField,
+	getUserProjects,
+	getViewer,
 	listAllProjectItems,
+	moveProjectItemToStatus,
 	removeLabelsFromContent,
 	resolveContentRepoLabelId,
 	resolveProjectItemId,
+	resolveStatusOptionName,
+	updateComment,
+	updateProjectItemField,
 	withGitHubProjectsCredentials,
 } from '../../../../src/github-projects/client.js';
 import { logger } from '../../../../src/utils/logging.js';
@@ -427,6 +440,439 @@ describe('github-projects client', () => {
 			);
 
 			expect(result).toBeNull();
+		});
+	});
+
+	describe('getGitHubProjectsCredentials', () => {
+		it('throws when called outside withGitHubProjectsCredentials scope', () => {
+			expect(() => getGitHubProjectsCredentials()).toThrow(
+				/No GitHub Projects credentials in scope\. Wrap the call with withGitHubProjectsCredentials\(\)\./,
+			);
+		});
+	});
+
+	describe('githubGraphQL — error branches', () => {
+		it('throws with the response body on a non-ok HTTP status', async () => {
+			fetchMock.mockResolvedValue({
+				ok: false,
+				status: 500,
+				text: async () => 'internal server error',
+			} as unknown as Response);
+
+			await expect(
+				withGitHubProjectsCredentials({ token: 't' }, () => getViewer()),
+			).rejects.toThrow(/GitHub GraphQL HTTP error 500: internal server error/);
+		});
+
+		it('falls back to "<no body>" when reading the error body itself fails', async () => {
+			fetchMock.mockResolvedValue({
+				ok: false,
+				status: 502,
+				text: async () => {
+					throw new Error('stream closed');
+				},
+			} as unknown as Response);
+
+			await expect(
+				withGitHubProjectsCredentials({ token: 't' }, () => getViewer()),
+			).rejects.toThrow(/GitHub GraphQL HTTP error 502: <no body>/);
+		});
+
+		it('throws with joined messages when the GraphQL errors array is present', async () => {
+			fetchMock.mockResolvedValue({
+				ok: true,
+				json: async () => ({
+					errors: [{ message: 'field not found' }, { message: 'not authorized' }],
+				}),
+				text: async () => '',
+			} as unknown as Response);
+
+			await expect(
+				withGitHubProjectsCredentials({ token: 't' }, () => getViewer()),
+			).rejects.toThrow(/GitHub GraphQL error: field not found; not authorized/);
+		});
+
+		it('throws when the response has neither errors nor data', async () => {
+			fetchMock.mockResolvedValue({
+				ok: true,
+				json: async () => ({}),
+				text: async () => '',
+			} as unknown as Response);
+
+			await expect(
+				withGitHubProjectsCredentials({ token: 't' }, () => getViewer()),
+			).rejects.toThrow(/GitHub GraphQL returned no data/);
+		});
+	});
+
+	describe('getProject / getProjectFields', () => {
+		it('getProject returns the node with its fields', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({
+					node: {
+						id: 'PVT_project',
+						number: 3,
+						title: 'Roadmap',
+						url: 'https://github.com/orgs/o/projects/3',
+						fields: {
+							nodes: [
+								{ id: 'F_1', name: 'Title' },
+								{
+									id: 'F_2',
+									name: 'Status',
+									options: [{ id: 'opt-1', name: 'Todo', color: 'GREEN' }],
+								},
+							],
+						},
+					},
+				}),
+			);
+
+			const project = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getProject('PVT_project'),
+			);
+
+			expect(project.title).toBe('Roadmap');
+			expect(project.fields?.nodes).toHaveLength(2);
+			const [, init] = fetchMock.mock.calls[0];
+			expect(JSON.parse((init as { body: string }).body).variables).toEqual({
+				projectId: 'PVT_project',
+			});
+		});
+
+		it('getProjectFields returns the fields.nodes array', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({
+					node: {
+						id: 'PVT_project',
+						number: 3,
+						title: 'Roadmap',
+						url: 'u',
+						fields: { nodes: [{ id: 'F_1', name: 'Status', options: [] }] },
+					},
+				}),
+			);
+
+			const fields = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getProjectFields('PVT_project'),
+			);
+
+			expect(fields).toEqual([{ id: 'F_1', name: 'Status', options: [] }]);
+		});
+
+		it('getProjectFields falls back to [] when the project has no fields connection', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({ node: { id: 'PVT_project', number: 3, title: 't', url: 'u' } }),
+			);
+
+			const fields = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getProjectFields('PVT_project'),
+			);
+
+			expect(fields).toEqual([]);
+		});
+	});
+
+	describe('listAllProjectItems — additional edge cases', () => {
+		it('returns [] without calling fetch when maxItems is 0', async () => {
+			const items = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				listAllProjectItems('PVT_project', { maxItems: 0 }),
+			);
+
+			expect(items).toEqual([]);
+			expect(fetchMock).not.toHaveBeenCalled();
+		});
+
+		it('stops paginating when hasNextPage is true but endCursor is null', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({
+					node: {
+						items: {
+							nodes: [
+								{
+									id: 'PVTI_1',
+									content: {
+										__typename: 'Issue',
+										id: 'content-1',
+										number: 1,
+										title: 't',
+										body: '',
+										url: 'u',
+										state: 'OPEN',
+									},
+									fieldValues: { nodes: [] },
+								},
+							],
+							pageInfo: { hasNextPage: true, endCursor: null },
+						},
+					},
+				}),
+			);
+
+			const items = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				listAllProjectItems('PVT_project'),
+			);
+
+			expect(items).toHaveLength(1);
+			expect(fetchMock).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('updateProjectItemField', () => {
+		it('posts updateProjectV2ItemFieldValue with the singleSelectOptionId value', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({ updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_1' } } }),
+			);
+
+			await withGitHubProjectsCredentials({ token: 't' }, () =>
+				updateProjectItemField('PVT_project', 'PVTI_1', 'F_status', 'opt-done'),
+			);
+
+			const [, init] = fetchMock.mock.calls[0];
+			const parsed = JSON.parse((init as { body: string }).body);
+			expect(parsed.query).toContain('updateProjectV2ItemFieldValue');
+			expect(parsed.variables).toEqual({
+				projectId: 'PVT_project',
+				itemId: 'PVTI_1',
+				fieldId: 'F_status',
+				optionId: 'opt-done',
+			});
+		});
+	});
+
+	describe('comment mutations', () => {
+		it('addCommentToIssue returns the new comment node id', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({ addComment: { commentEdge: { node: { id: 'IC_new' } } } }),
+			);
+
+			const id = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				addCommentToIssue('I_1', 'hello'),
+			);
+
+			expect(id).toBe('IC_new');
+			const [, init] = fetchMock.mock.calls[0];
+			const parsed = JSON.parse((init as { body: string }).body);
+			expect(parsed.query).toContain('addComment');
+			expect(parsed.variables).toEqual({ subjectId: 'I_1', body: 'hello' });
+		});
+
+		it('updateComment posts updateIssueComment with the new body', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({ updateIssueComment: { issueComment: { id: 'IC_1' } } }),
+			);
+
+			await withGitHubProjectsCredentials({ token: 't' }, () => updateComment('IC_1', 'edited'));
+
+			const [, init] = fetchMock.mock.calls[0];
+			const parsed = JSON.parse((init as { body: string }).body);
+			expect(parsed.query).toContain('updateIssueComment');
+			expect(parsed.variables).toEqual({ commentId: 'IC_1', body: 'edited' });
+		});
+
+		it('deleteComment posts deleteIssueComment with the comment id', async () => {
+			fetchMock.mockResolvedValue(graphqlResponse({ deleteIssueComment: {} }));
+
+			await withGitHubProjectsCredentials({ token: 't' }, () => deleteComment('IC_1'));
+
+			const [, init] = fetchMock.mock.calls[0];
+			const parsed = JSON.parse((init as { body: string }).body);
+			expect(parsed.query).toContain('deleteIssueComment');
+			expect(parsed.variables).toEqual({ commentId: 'IC_1' });
+		});
+	});
+
+	describe('discovery queries', () => {
+		it('getUserProjects returns the user projectsV2 nodes', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({
+					user: {
+						projectsV2: {
+							nodes: [{ id: 'PVT_1', number: 1, title: 'Personal', url: 'u' }],
+						},
+					},
+				}),
+			);
+
+			const projects = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getUserProjects('octocat'),
+			);
+
+			expect(projects).toEqual([{ id: 'PVT_1', number: 1, title: 'Personal', url: 'u' }]);
+			const [, init] = fetchMock.mock.calls[0];
+			expect(JSON.parse((init as { body: string }).body).variables).toEqual({ login: 'octocat' });
+		});
+
+		it('getOrganizationProjects returns the organization projectsV2 nodes', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({
+					organization: {
+						projectsV2: {
+							nodes: [{ id: 'PVT_2', number: 2, title: 'Org Board', url: 'u' }],
+						},
+					},
+				}),
+			);
+
+			const projects = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getOrganizationProjects('acme'),
+			);
+
+			expect(projects).toEqual([{ id: 'PVT_2', number: 2, title: 'Org Board', url: 'u' }]);
+			const [, init] = fetchMock.mock.calls[0];
+			expect(JSON.parse((init as { body: string }).body).variables).toEqual({ org: 'acme' });
+		});
+
+		it('getViewer returns the viewer identity', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({ viewer: { id: 'U_1', login: 'octocat', name: 'The Octocat' } }),
+			);
+
+			const viewer = await withGitHubProjectsCredentials({ token: 't' }, () => getViewer());
+
+			expect(viewer).toEqual({ id: 'U_1', login: 'octocat', name: 'The Octocat' });
+		});
+	});
+
+	describe('status field helpers', () => {
+		function projectWithFields(fields: Array<{ id: string; name: string; options?: unknown }>) {
+			return graphqlResponse({
+				node: { id: 'PVT_project', number: 1, title: 't', url: 'u', fields: { nodes: fields } },
+			});
+		}
+
+		it('getStatusField returns the Status field id + options when present', async () => {
+			fetchMock.mockResolvedValue(
+				projectWithFields([
+					{ id: 'F_1', name: 'Title' },
+					{
+						id: 'F_status',
+						name: 'Status',
+						options: [
+							{ id: 'opt-todo', name: 'Todo' },
+							{ id: 'opt-done', name: 'Done' },
+						],
+					},
+				]),
+			);
+
+			const statusField = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getStatusField('PVT_project'),
+			);
+
+			expect(statusField).toEqual({
+				id: 'F_status',
+				options: [
+					{ id: 'opt-todo', name: 'Todo' },
+					{ id: 'opt-done', name: 'Done' },
+				],
+			});
+		});
+
+		it('getStatusField returns null when there is no Status field', async () => {
+			fetchMock.mockResolvedValue(projectWithFields([{ id: 'F_1', name: 'Title' }]));
+
+			const statusField = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getStatusField('PVT_project'),
+			);
+
+			expect(statusField).toBeNull();
+		});
+
+		it('getStatusField returns null when the Status field has no options', async () => {
+			fetchMock.mockResolvedValue(projectWithFields([{ id: 'F_status', name: 'Status' }]));
+
+			const statusField = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getStatusField('PVT_project'),
+			);
+
+			expect(statusField).toBeNull();
+		});
+
+		it('resolveStatusOptionName returns the matching option name', async () => {
+			fetchMock.mockResolvedValue(
+				projectWithFields([
+					{ id: 'F_status', name: 'Status', options: [{ id: 'opt-done', name: 'Done' }] },
+				]),
+			);
+
+			const name = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				resolveStatusOptionName('PVT_project', 'opt-done'),
+			);
+
+			expect(name).toBe('Done');
+		});
+
+		it('resolveStatusOptionName returns null when the option id is not found', async () => {
+			fetchMock.mockResolvedValue(
+				projectWithFields([
+					{ id: 'F_status', name: 'Status', options: [{ id: 'opt-done', name: 'Done' }] },
+				]),
+			);
+
+			const name = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				resolveStatusOptionName('PVT_project', 'opt-missing'),
+			);
+
+			expect(name).toBeNull();
+		});
+
+		it('resolveStatusOptionName returns null when there is no Status field at all', async () => {
+			fetchMock.mockResolvedValue(projectWithFields([{ id: 'F_1', name: 'Title' }]));
+
+			const name = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				resolveStatusOptionName('PVT_project', 'opt-done'),
+			);
+
+			expect(name).toBeNull();
+		});
+
+		it('moveProjectItemToStatus throws when the project has no Status field', async () => {
+			fetchMock.mockResolvedValue(projectWithFields([{ id: 'F_1', name: 'Title' }]));
+
+			await expect(
+				withGitHubProjectsCredentials({ token: 't' }, () =>
+					moveProjectItemToStatus('PVT_project', 'PVTI_1', 'opt-done'),
+				),
+			).rejects.toThrow(/Project PVT_project does not have a Status field/);
+		});
+
+		it('moveProjectItemToStatus resolves the Status field then writes the option and logs', async () => {
+			fetchMock
+				.mockResolvedValueOnce(
+					projectWithFields([
+						{
+							id: 'F_status',
+							name: 'Status',
+							options: [{ id: 'opt-done', name: 'Done' }],
+						},
+					]),
+				)
+				.mockResolvedValueOnce(
+					graphqlResponse({ updateProjectV2ItemFieldValue: { projectV2Item: { id: 'PVTI_1' } } }),
+				);
+
+			await withGitHubProjectsCredentials({ token: 't' }, () =>
+				moveProjectItemToStatus('PVT_project', 'PVTI_1', 'opt-done'),
+			);
+
+			expect(fetchMock).toHaveBeenCalledTimes(2);
+			const [, secondInit] = fetchMock.mock.calls[1];
+			const parsed = JSON.parse((secondInit as { body: string }).body);
+			expect(parsed.variables).toEqual({
+				projectId: 'PVT_project',
+				itemId: 'PVTI_1',
+				fieldId: 'F_status',
+				optionId: 'opt-done',
+			});
+			expect(logger.debug).toHaveBeenCalledWith(
+				'[GitHubProjects] Moved item to status',
+				expect.objectContaining({
+					projectId: 'PVT_project',
+					itemId: 'PVTI_1',
+					statusOptionId: 'opt-done',
+				}),
+			);
 		});
 	});
 });

@@ -82,6 +82,21 @@ const linearIntegrationRow: IntegrationRow = {
 	config: linearConfig,
 };
 
+const githubProjectsConfig = {
+	projectId: 'PVT_kwABC',
+	owner: 'acme-org',
+	ownerType: 'organization' as const,
+	statuses: { todo: 'Todo', inProgress: 'In Progress' },
+	labels: { processing: 'label-processing', readyToProcess: 'label-ready' },
+};
+
+const githubProjectsIntegrationRow: IntegrationRow = {
+	projectId: 'proj1',
+	category: 'pm',
+	provider: 'github-projects',
+	config: githubProjectsConfig,
+};
+
 // ---------------------------------------------------------------------------
 // orUndefined
 // ---------------------------------------------------------------------------
@@ -423,6 +438,13 @@ describe('extractIntegrationConfigs', () => {
 		expect(result.jiraConfig).toBeUndefined();
 	});
 
+	it('extracts github-projects config from integration rows', () => {
+		const result = extractIntegrationConfigs([githubProjectsIntegrationRow]);
+		expect(result.githubProjectsConfig).toEqual(githubProjectsConfig);
+		expect(result.trelloConfig).toBeUndefined();
+		expect(result.linearConfig).toBeUndefined();
+	});
+
 	it('handles empty integration list', () => {
 		const result = extractIntegrationConfigs([]);
 		expect(result.trelloConfig).toBeUndefined();
@@ -562,6 +584,27 @@ describe('mapProjectRow', () => {
 	it('does not include linear field when linearConfig is not provided', () => {
 		const result = mapProjectRow(makeInput());
 		expect(result.linear).toBeUndefined();
+	});
+
+	it('sets pm.type to github-projects when githubProjectsConfig is provided', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, githubProjectsConfig }));
+		expect(result.pm.type).toBe('github-projects');
+	});
+
+	it('builds github-projects config with projectId, owner, ownerType, statuses, and labels', () => {
+		const result = mapProjectRow(makeInput({ trelloConfig: undefined, githubProjectsConfig }));
+		expect(result.githubProjects).toEqual({
+			projectId: 'PVT_kwABC',
+			owner: 'acme-org',
+			ownerType: 'organization',
+			statuses: { todo: 'Todo', inProgress: 'In Progress' },
+			labels: { processing: 'label-processing', readyToProcess: 'label-ready' },
+		});
+	});
+
+	it('does not include githubProjects field when githubProjectsConfig is not provided', () => {
+		const result = mapProjectRow(makeInput());
+		expect(result.githubProjects).toBeUndefined();
 	});
 
 	it('omits agentEngine when neither row.agentEngine nor agent overrides are set', () => {

@@ -46,6 +46,7 @@ vi.mock('../../../src/config/agentMessages.js', () => ({
 import { getOrgCredential, loadConfig } from '../../../src/config/provider.js';
 import {
 	extractGitHubContext,
+	extractGitHubProjectsContext,
 	extractJiraContext,
 	extractTrelloContext,
 	generateAckMessage,
@@ -253,6 +254,63 @@ describe('extractJiraContext', () => {
 			issue: { key: 'PROJ-1', fields: { summary: longSummary } },
 		};
 		const result = extractJiraContext(payload);
+		expect(result.length).toBeLessThanOrEqual(501);
+		expect(result.endsWith('…')).toBe(true);
+	});
+});
+
+describe('extractGitHubProjectsContext', () => {
+	it('extracts item content type and field change', () => {
+		const payload = {
+			projects_v2_item: { content_type: 'Issue' },
+			changes: {
+				field_value: {
+					field_name: 'Status',
+					to: { name: 'In Progress' },
+				},
+			},
+		};
+		const result = extractGitHubProjectsContext(payload);
+		expect(result).toContain('Item: Issue');
+		expect(result).toContain('Field: Status');
+		expect(result).toContain('New value: In Progress');
+	});
+
+	it('extracts only item content type when changes are absent', () => {
+		const payload = { projects_v2_item: { content_type: 'PullRequest' } };
+		const result = extractGitHubProjectsContext(payload);
+		expect(result).toBe('Item: PullRequest');
+	});
+
+	it('extracts only field change when projects_v2_item is absent', () => {
+		const payload = {
+			changes: { field_value: { field_name: 'Status', to: { name: 'Done' } } },
+		};
+		const result = extractGitHubProjectsContext(payload);
+		expect(result).toBe('Field: Status\nNew value: Done');
+	});
+
+	it('returns empty string for null payload', () => {
+		expect(extractGitHubProjectsContext(null)).toBe('');
+	});
+
+	it('returns empty string for payload without projects_v2_item or changes', () => {
+		expect(extractGitHubProjectsContext({})).toBe('');
+	});
+
+	it('omits field name when field_value has no field_name', () => {
+		const payload = {
+			projects_v2_item: { content_type: 'Issue' },
+			changes: { field_value: { to: { name: 'Done' } } },
+		};
+		const result = extractGitHubProjectsContext(payload);
+		expect(result).toBe('Item: Issue\nNew value: Done');
+	});
+
+	it('truncates long context', () => {
+		const longName = 'D'.repeat(600);
+		const payload = { projects_v2_item: { content_type: longName } };
+		const result = extractGitHubProjectsContext(payload);
 		expect(result.length).toBeLessThanOrEqual(501);
 		expect(result.endsWith('…')).toBe(true);
 	});

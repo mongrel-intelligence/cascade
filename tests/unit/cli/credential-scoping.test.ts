@@ -33,6 +33,10 @@ vi.mock('../../../src/linear/client.js', () => ({
 	linearClient: {},
 }));
 
+vi.mock('../../../src/github-projects/client.js', () => ({
+	withGitHubProjectsCredentials: vi.fn((_creds: { token: string }, fn: () => unknown) => fn()),
+}));
+
 vi.mock('../../../src/sentry/integration.js', () => ({
 	getSentryIntegrationConfig: vi.fn().mockResolvedValue(null),
 	hasAlertingIntegration: vi.fn().mockResolvedValue(false),
@@ -58,6 +62,7 @@ import '../../../src/sentry/register.js';
 
 import { CredentialScopedCommand, resolveJiraBaseUrl } from '../../../src/cli/base.js';
 import { withGitHubToken } from '../../../src/github/client.js';
+import { withGitHubProjectsCredentials } from '../../../src/github-projects/client.js';
 import { withJiraCredentials } from '../../../src/jira/client.js';
 import { withLinearCredentials } from '../../../src/linear/client.js';
 import { getPMProvider } from '../../../src/pm/context.js';
@@ -108,8 +113,14 @@ describe('CredentialScopedCommand', () => {
 		delete process.env.CASCADE_JIRA_PROJECT_KEY;
 		delete process.env.CASCADE_JIRA_STATUSES;
 		delete process.env.CASCADE_JIRA_AUTH_TYPE;
+		delete process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID;
+		delete process.env.CASCADE_GITHUB_PROJECTS_OWNER;
+		delete process.env.CASCADE_GITHUB_PROJECTS_OWNER_TYPE;
+		delete process.env.CASCADE_GITHUB_PROJECTS_STATUSES;
+		delete process.env.CASCADE_GITHUB_PROJECTS_LABELS;
 		vi.mocked(withJiraCredentials).mockClear();
 		vi.mocked(withLinearCredentials).mockClear();
+		vi.mocked(withGitHubProjectsCredentials).mockClear();
 	});
 
 	afterEach(() => {
@@ -338,6 +349,88 @@ describe('CredentialScopedCommand', () => {
 			projectKey: 'CASCADE',
 			baseUrl: 'https://acme.atlassian.net',
 			authType: 'basic',
+		});
+	});
+
+	// GitHub Projects scope — mirrors the Trello/JIRA/Linear pattern. GitHub
+	// Projects reuses GITHUB_TOKEN but only establishes its dedicated
+	// AsyncLocalStorage scope when CASCADE_PM_TYPE=github-projects, since the
+	// same token is also used (unscoped) by the SCM `withGitHubToken` wrapper.
+
+	it('wraps execute() with withGitHubProjectsCredentials when CASCADE_PM_TYPE=github-projects and GITHUB_TOKEN is set', async () => {
+		process.env.GITHUB_TOKEN = 'ghp_test123';
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_test';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.executeCalled).toBe(true);
+		expect(withGitHubProjectsCredentials).toHaveBeenCalledWith(
+			{ token: 'ghp_test123' },
+			expect.any(Function),
+		);
+		// Also establishes the plain SCM scope with the same underlying token.
+		expect(withGitHubToken).toHaveBeenCalledWith('ghp_test123', expect.any(Function));
+	});
+
+	it('does not wrap with withGitHubProjectsCredentials when GITHUB_TOKEN is set but CASCADE_PM_TYPE is not github-projects', async () => {
+		process.env.GITHUB_TOKEN = 'ghp_test123';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.executeCalled).toBe(true);
+		expect(withGitHubProjectsCredentials).not.toHaveBeenCalled();
+	});
+
+	it('does not wrap with withGitHubProjectsCredentials when CASCADE_PM_TYPE=github-projects but GITHUB_TOKEN is unset', async () => {
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_test';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.executeCalled).toBe(true);
+		expect(withGitHubProjectsCredentials).not.toHaveBeenCalled();
+	});
+
+	it('synthesises GitHub Projects config from env vars for scoped PM commands', async () => {
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_kwABC';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme-org';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER_TYPE = 'organization';
+		process.env.CASCADE_GITHUB_PROJECTS_STATUSES = JSON.stringify({ todo: 'Todo' });
+		process.env.CASCADE_GITHUB_PROJECTS_LABELS = JSON.stringify({ auto: 'label-auto' });
+
+		const cmd = new InspectPMProviderCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.providerConfig).toEqual({
+			projectId: 'PVT_kwABC',
+			owner: 'acme-org',
+			ownerType: 'organization',
+			statuses: { todo: 'Todo' },
+			labels: { auto: 'label-auto' },
+		});
+	});
+
+	it('defaults ownerType to "user" and omits labels when not set in env', async () => {
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_kwABC';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'someuser';
+		// CASCADE_GITHUB_PROJECTS_OWNER_TYPE and CASCADE_GITHUB_PROJECTS_LABELS intentionally unset.
+
+		const cmd = new InspectPMProviderCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.providerConfig).toEqual({
+			projectId: 'PVT_kwABC',
+			owner: 'someuser',
+			ownerType: 'user',
+			statuses: {},
 		});
 	});
 });

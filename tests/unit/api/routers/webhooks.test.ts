@@ -16,6 +16,9 @@ const {
 	mockListWebhooks,
 	mockCreateWebhook,
 	mockDeleteWebhook,
+	mockOrgListWebhooks,
+	mockOrgCreateWebhook,
+	mockOrgDeleteWebhook,
 	mockFetch,
 } = vi.hoisted(() => ({
 	mockFindProjectByIdFromDb: vi.fn(),
@@ -24,6 +27,9 @@ const {
 	mockListWebhooks: vi.fn(),
 	mockCreateWebhook: vi.fn(),
 	mockDeleteWebhook: vi.fn(),
+	mockOrgListWebhooks: vi.fn(),
+	mockOrgCreateWebhook: vi.fn(),
+	mockOrgDeleteWebhook: vi.fn(),
 	mockFetch: vi.fn(),
 }));
 
@@ -68,13 +74,18 @@ vi.mock('../../../../src/jira/api-host.js', () => ({
 // Mock global fetch for Trello API calls
 vi.stubGlobal('fetch', mockFetch);
 
-// Mock Octokit for GitHub API calls
+// Mock Octokit for GitHub API calls (repo-scoped) and GitHub Projects (org-scoped)
 vi.mock('@octokit/rest', () => ({
 	Octokit: vi.fn(() => ({
 		repos: {
 			listWebhooks: mockListWebhooks,
 			createWebhook: mockCreateWebhook,
 			deleteWebhook: mockDeleteWebhook,
+		},
+		orgs: {
+			listWebhooks: mockOrgListWebhooks,
+			createWebhook: mockOrgCreateWebhook,
+			deleteWebhook: mockOrgDeleteWebhook,
 		},
 	})),
 }));
@@ -131,6 +142,43 @@ const mockSentryProject = {
 		statuses: { todo: 'Todo' },
 	},
 };
+
+const mockGithubProjectsProject = {
+	id: 'gh-projects-project',
+	orgId: 'org-1',
+	repo: 'owner/gh-projects-repo',
+	pm: { type: 'github-projects' },
+	githubProjects: {
+		projectId: 'PVT_kwabc',
+		owner: 'acme-org',
+		ownerType: 'organization' as const,
+		statuses: { todo: 'opt-1' },
+	},
+};
+
+function setupGithubProjectsProjectContext(opts?: {
+	ownerType?: 'user' | 'organization';
+	noOwner?: boolean;
+	noToken?: boolean;
+}) {
+	mockDbSelect.mockReturnValue({ from: mockDbFrom });
+	mockDbFrom.mockReturnValue({ where: mockDbWhere });
+	mockDbWhere.mockResolvedValue([{ orgId: 'org-1' }]);
+	mockFindProjectByIdFromDb.mockResolvedValue({
+		...mockGithubProjectsProject,
+		githubProjects: {
+			...mockGithubProjectsProject.githubProjects,
+			owner: opts?.noOwner ? undefined : mockGithubProjectsProject.githubProjects.owner,
+			ownerType: opts?.ownerType ?? mockGithubProjectsProject.githubProjects.ownerType,
+		},
+	});
+	mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
+	const creds: Record<string, string> = {};
+	if (!opts?.noToken) {
+		creds.GITHUB_TOKEN = 'ghp_projects_test';
+	}
+	mockGetAllProjectCredentials.mockResolvedValue(creds);
+}
 
 function setupJiraProjectContext() {
 	mockDbSelect.mockReturnValue({ from: mockDbFrom });
@@ -679,6 +727,45 @@ describe('webhooksRouter', () => {
 			expect(result.labelsEnsured).toEqual([]);
 		});
 
+		it('returns duplicate message when a JIRA webhook already exists at the callback URL', async () => {
+			setupJiraProjectContext();
+
+			// Fetch calls in order:
+			// 1. jiraListWebhooks (router duplicate check) - returns a match, so
+			//    jiraCreateWebhook (and its own internal dedup list) never runs.
+			// 2. jiraEnsureLabels search (returns no issues, so no further label calls)
+			mockFetch
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () =>
+						Promise.resolve({
+							values: [
+								{
+									id: 200,
+									name: 'cascade-webhook',
+									url: 'http://example.com/jira/webhook',
+									events: [],
+									enabled: true,
+								},
+							],
+						}),
+				})
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () => Promise.resolve({ issues: [] }),
+				});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.create({
+				projectId: 'jira-project',
+				callbackBaseUrl: 'http://example.com',
+				jiraOnly: true,
+			});
+
+			expect(result.jira).toBe('Already exists: 200');
+			expect(mockFetch).toHaveBeenCalledTimes(2);
+		});
+
 		it('surfaces the create actionable error when the router-level dedup list is denied (scoped token)', async () => {
 			setupJiraProjectContext();
 
@@ -862,6 +949,216 @@ describe('webhooksRouter', () => {
 			// GitHub was called because oneTimeTokens overrode the missing credential
 			expect(mockListWebhooks).toHaveBeenCalled();
 			expect(result.github).toEqual([]);
+		});
+
+		it('deletes a matching JIRA webhook', async () => {
+			setupJiraProjectContext();
+
+			mockFetch
+				// jiraListWebhooks
+				.mockResolvedValueOnce({
+					ok: true,
+					json: () =>
+						Promise.resolve({
+							values: [
+								{
+									id: 300,
+									name: 'cascade-webhook',
+									url: 'http://example.com/jira/webhook',
+									events: [],
+									enabled: true,
+								},
+							],
+						}),
+				})
+				// jiraDeleteWebhook
+				.mockResolvedValueOnce({ ok: true });
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.delete({
+				projectId: 'jira-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+
+			expect(result.jira).toEqual([300]);
+		});
+
+		it('does not delete JIRA webhooks with a non-matching URL', async () => {
+			setupJiraProjectContext();
+
+			mockFetch.mockResolvedValueOnce({
+				ok: true,
+				json: () =>
+					Promise.resolve({
+						values: [
+							{
+								id: 301,
+								name: 'other-webhook',
+								url: 'http://other.example.com/jira/webhook',
+								events: [],
+								enabled: true,
+							},
+						],
+					}),
+			});
+
+			const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+			const result = await caller.delete({
+				projectId: 'jira-project',
+				callbackBaseUrl: 'http://example.com',
+			});
+
+			expect(result.jira).toEqual([]);
+			// Only the list call — no DELETE issued for the non-matching webhook.
+			expect(mockFetch).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('GitHub Projects webhooks', () => {
+		describe('create', () => {
+			it('skips when ownerType is not organization', async () => {
+				setupGithubProjectsProjectContext({ ownerType: 'user' });
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.create({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+				});
+
+				expect(result.githubProjects).toBeUndefined();
+				expect(mockOrgListWebhooks).not.toHaveBeenCalled();
+				expect(mockOrgCreateWebhook).not.toHaveBeenCalled();
+			});
+
+			it('skips when the GitHub Projects token is not configured', async () => {
+				setupGithubProjectsProjectContext({ noToken: true });
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.create({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+				});
+
+				expect(result.githubProjects).toBeUndefined();
+				expect(mockOrgListWebhooks).not.toHaveBeenCalled();
+				expect(mockOrgCreateWebhook).not.toHaveBeenCalled();
+			});
+
+			it('skips when another provider-only flag is set', async () => {
+				setupGithubProjectsProjectContext();
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.create({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+					trelloOnly: true,
+				});
+
+				expect(result.githubProjects).toBeUndefined();
+				expect(mockOrgListWebhooks).not.toHaveBeenCalled();
+			});
+
+			it('returns duplicate message when a GitHub Projects webhook already exists', async () => {
+				setupGithubProjectsProjectContext();
+
+				mockOrgListWebhooks.mockResolvedValue({
+					data: [
+						{
+							id: 400,
+							name: 'web',
+							active: true,
+							events: ['projects_v2_item'],
+							config: { url: 'http://example.com/github-projects/webhook' },
+						},
+					],
+				});
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.create({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+					githubProjectsOnly: true,
+				});
+
+				expect(result.githubProjects).toBe('Already exists: 400');
+				expect(mockOrgCreateWebhook).not.toHaveBeenCalled();
+			});
+
+			it('creates the org webhook on success', async () => {
+				setupGithubProjectsProjectContext();
+
+				mockOrgListWebhooks.mockResolvedValue({ data: [] });
+				mockOrgCreateWebhook.mockResolvedValue({
+					data: {
+						id: 401,
+						name: 'web',
+						active: true,
+						events: ['projects_v2_item'],
+						config: { url: 'http://example.com/github-projects/webhook' },
+					},
+				});
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.create({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+					githubProjectsOnly: true,
+				});
+
+				expect(result.githubProjects).toMatchObject({ id: 401 });
+				expect(mockOrgCreateWebhook).toHaveBeenCalledWith(
+					expect.objectContaining({ org: 'acme-org' }),
+				);
+			});
+		});
+
+		describe('delete', () => {
+			it('skips when the GitHub Projects token is not configured', async () => {
+				setupGithubProjectsProjectContext({ noToken: true });
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.delete({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+				});
+
+				expect(result.githubProjects).toEqual([]);
+				expect(mockOrgListWebhooks).not.toHaveBeenCalled();
+			});
+
+			it('deletes matching org webhooks', async () => {
+				setupGithubProjectsProjectContext();
+
+				mockOrgListWebhooks.mockResolvedValue({
+					data: [
+						{
+							id: 402,
+							name: 'web',
+							active: true,
+							events: ['projects_v2_item'],
+							config: { url: 'http://example.com/github-projects/webhook' },
+						},
+						{
+							id: 403,
+							name: 'web',
+							active: true,
+							events: ['projects_v2_item'],
+							config: { url: 'http://other.example.com/github-projects/webhook' },
+						},
+					],
+				});
+				mockOrgDeleteWebhook.mockResolvedValue({});
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				const result = await caller.delete({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+				});
+
+				expect(result.githubProjects).toEqual([402]);
+				expect(mockOrgDeleteWebhook).toHaveBeenCalledWith({ org: 'acme-org', hook_id: 402 });
+				expect(mockOrgDeleteWebhook).toHaveBeenCalledTimes(1);
+			});
 		});
 	});
 

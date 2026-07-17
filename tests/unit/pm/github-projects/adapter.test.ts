@@ -33,6 +33,7 @@ vi.mock('../../../../src/utils/logging.js', () => ({
 import { hashChecklistItemId } from '../../../../src/pm/_shared/inline-checklist.js';
 import type { GitHubProjectsConfig } from '../../../../src/pm/config.js';
 import { GitHubProjectsPMProvider } from '../../../../src/pm/github-projects/adapter.js';
+import { logger } from '../../../../src/utils/logging.js';
 
 const config: GitHubProjectsConfig = {
 	projectId: 'PVT_project',
@@ -606,6 +607,81 @@ describe('GitHubProjectsPMProvider', () => {
 			const orgProvider = new GitHubProjectsPMProvider({ ...config, ownerType: 'organization' });
 			expect(orgProvider.getWorkItemUrl('I_content')).toBe(
 				'https://github.com/orgs/octocat/projects',
+			);
+		});
+	});
+
+	describe('updateComment', () => {
+		it('delegates directly to the client updateComment call', async () => {
+			await provider.updateComment('I_1', 'IC_1', 'edited text');
+
+			expect(mockClient.updateComment).toHaveBeenCalledWith('IC_1', 'edited text');
+		});
+	});
+
+	describe('addChecklistItem — checklist section not found', () => {
+		it('throws when the parsed checklist ID no longer matches a section in the body', async () => {
+			const { buildChecklistId } = await import('../../../../src/pm/_shared/inline-checklist.js');
+			const checklistId = buildChecklistId('I_1', 'Missing Section');
+			mockClient.getContentNode.mockResolvedValue(
+				makeContentNode({ body: '### Some Other Section\n- [ ] unrelated' }),
+			);
+
+			await expect(provider.addChecklistItem(checklistId, 'new item')).rejects.toThrow(
+				`Checklist not found in description: ${checklistId}`,
+			);
+		});
+	});
+
+	describe('getAttachments', () => {
+		it('returns an empty list (inline pastes are handled by extractMarkdownImages, not attachments)', async () => {
+			await expect(provider.getAttachments('I_1')).resolves.toEqual([]);
+		});
+	});
+
+	describe('addAttachment', () => {
+		it('logs a not-implemented warning and does not throw', async () => {
+			await expect(
+				provider.addAttachment('I_1', 'https://example.com/a.png', 'a.png'),
+			).resolves.toBeUndefined();
+			expect(logger.warn).toHaveBeenCalledWith('[GitHubProjects] addAttachment not implemented');
+		});
+	});
+
+	describe('addAttachmentFile', () => {
+		it('logs a not-implemented warning and does not throw', async () => {
+			await expect(
+				provider.addAttachmentFile('I_1', Buffer.from('data'), 'a.png', 'image/png'),
+			).resolves.toBeUndefined();
+			expect(logger.warn).toHaveBeenCalledWith(
+				'[GitHubProjects] addAttachmentFile not implemented',
+			);
+		});
+	});
+
+	describe('getCustomFieldNumber', () => {
+		it('returns 0 (custom fields are not implemented)', async () => {
+			await expect(provider.getCustomFieldNumber('I_1', 'field-1')).resolves.toBe(0);
+		});
+	});
+
+	describe('updateCustomFieldNumber', () => {
+		it('logs a not-implemented warning with the field ID and does not throw', async () => {
+			await expect(provider.updateCustomFieldNumber('I_1', 'field-1', 42)).resolves.toBeUndefined();
+			expect(logger.warn).toHaveBeenCalledWith(
+				'[GitHubProjects] updateCustomFieldNumber not implemented',
+				{ fieldId: 'field-1' },
+			);
+		});
+	});
+
+	describe('linkPR', () => {
+		it('is a no-op that logs at debug level', async () => {
+			await expect(
+				provider.linkPR('I_1', 'https://github.com/octocat/repo/pull/1', 'A PR'),
+			).resolves.toBeUndefined();
+			expect(logger.debug).toHaveBeenCalledWith(
+				'[GitHubProjects] linkPR is a no-op; PRs are linked by being in the project',
 			);
 		});
 	});

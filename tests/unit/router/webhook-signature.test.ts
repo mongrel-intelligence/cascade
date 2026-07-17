@@ -124,9 +124,11 @@ import { resolveWebhookSecret } from '../../../src/router/platformClients/creden
 import {
 	buildTrelloCallbackUrl,
 	createWebhookVerifier,
+	extractGitHubProjectsProjectId,
 	extractJiraProjectKey,
 	extractLinearTeamId,
 	extractTrelloBoardId,
+	verifyGitHubProjectsWebhookSignature,
 	verifyGitHubWebhookSignature,
 	verifyJiraWebhookSignature,
 	verifyLinearWebhookSignature,
@@ -191,10 +193,22 @@ const LINEAR_PROJECT = {
 	},
 };
 
+const GITHUB_PROJECTS_PROJECT = {
+	id: 'proj-github-projects',
+	repo: 'owner/repo',
+	pmType: 'github-projects' as const,
+	githubProjects: {
+		projectId: 'PVT_kwABC',
+		owner: 'acme-org',
+		ownerType: 'organization' as const,
+	},
+};
+
 const GITHUB_SECRET = 'my-github-webhook-secret';
 const TRELLO_SECRET = 'my-trello-api-secret';
 const JIRA_SECRET = 'my-jira-webhook-secret';
 const LINEAR_SECRET = 'my-linear-webhook-secret';
+const GITHUB_PROJECTS_SECRET = 'my-github-projects-webhook-secret';
 const TRELLO_CALLBACK_URL = 'https://example.com/trello/webhook';
 
 // ---------------------------------------------------------------------------
@@ -553,6 +567,109 @@ describe('verifyLinearWebhookSignature — direct function tests', () => {
 	it('returns null (skip) when teamId is missing from payload', async () => {
 		const body = JSON.stringify({ action: 'create', type: 'Issue', data: {} });
 		const result = await verifyLinearWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: extractGitHubProjectsProjectId
+// ---------------------------------------------------------------------------
+
+describe('extractGitHubProjectsProjectId', () => {
+	it('extracts project node ID from projects_v2_item.project_node_id', () => {
+		const body = JSON.stringify({
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_kwABC' },
+		});
+		expect(extractGitHubProjectsProjectId(body)).toBe('PVT_kwABC');
+	});
+
+	it('returns undefined when projects_v2_item is missing', () => {
+		const body = JSON.stringify({ action: 'edited' });
+		expect(extractGitHubProjectsProjectId(body)).toBeUndefined();
+	});
+
+	it('returns undefined for invalid JSON', () => {
+		expect(extractGitHubProjectsProjectId('not json')).toBeUndefined();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Unit tests: verifyGitHubProjectsWebhookSignature (function directly)
+// ---------------------------------------------------------------------------
+
+describe('verifyGitHubProjectsWebhookSignature — direct function tests', () => {
+	beforeEach(() => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [GITHUB_PROJECTS_PROJECT] });
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(GITHUB_PROJECTS_SECRET);
+	});
+
+	function makeContext(headers: Record<string, string> = {}) {
+		return {
+			req: {
+				header: (name: string) => headers[name.toLowerCase()] ?? headers[name],
+			},
+		} as unknown as import('hono').Context;
+	}
+
+	it('returns { valid: true } when signature is correct', async () => {
+		const body = JSON.stringify({
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_kwABC' },
+		});
+		const sig = githubSignature(body, GITHUB_PROJECTS_SECRET);
+		const result = await verifyGitHubProjectsWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': sig }),
+			body,
+		);
+		expect(result).toEqual({ valid: true, reason: 'Signature valid' });
+	});
+
+	it('returns { valid: false } when signature is wrong', async () => {
+		const body = JSON.stringify({
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_kwABC' },
+		});
+		const badSig = githubSignature(body, 'wrong-secret');
+		const result = await verifyGitHubProjectsWebhookSignature(
+			makeContext({ 'X-Hub-Signature-256': badSig }),
+			body,
+		);
+		expect(result).toEqual({ valid: false, reason: 'GitHub Projects signature mismatch' });
+	});
+
+	it('returns { valid: false, reason: "Missing signature header" } when header absent but secret configured', async () => {
+		const body = JSON.stringify({
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_kwABC' },
+		});
+		const result = await verifyGitHubProjectsWebhookSignature(makeContext({}), body);
+		expect(result).toEqual({ valid: false, reason: 'Missing signature header' });
+	});
+
+	it('returns null (skip) when no secret configured', async () => {
+		vi.mocked(resolveWebhookSecret).mockResolvedValue(null);
+		const body = JSON.stringify({
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_kwABC' },
+		});
+		const result = await verifyGitHubProjectsWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project not found for project node ID', async () => {
+		vi.mocked(loadProjectConfig).mockResolvedValue({ projects: [] });
+		const body = JSON.stringify({
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_unknown' },
+		});
+		const result = await verifyGitHubProjectsWebhookSignature(makeContext({}), body);
+		expect(result).toBeNull();
+	});
+
+	it('returns null (skip) when project node ID is missing from payload', async () => {
+		const body = JSON.stringify({ action: 'edited' });
+		const result = await verifyGitHubProjectsWebhookSignature(makeContext({}), body);
 		expect(result).toBeNull();
 	});
 });

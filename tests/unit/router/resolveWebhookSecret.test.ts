@@ -13,6 +13,23 @@ vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 }));
 
 const { resolveWebhookSecret } = await import('../../../src/router/platformClients/credentials.js');
+const { registerCredentialRoles } = await import('../../../src/config/integrationRoles.js');
+
+// github-projects self-registers its credential roles at module load time
+// (src/pm/github-projects/integration.ts) rather than via the static
+// PROVIDER_CREDENTIAL_ROLES map. Mirror that registration here so the
+// 'github-projects' branch of resolveWebhookSecret resolves a real envVarKey
+// without needing to import the full integration module (and its DB/client
+// transitive imports) into this isolated unit test.
+registerCredentialRoles('github-projects', 'pm', [
+	{ role: 'token', label: 'Personal Access Token', envVarKey: 'GITHUB_TOKEN' },
+	{
+		role: 'webhook_secret',
+		label: 'Webhook Secret',
+		envVarKey: 'GITHUB_WEBHOOK_SECRET',
+		optional: true,
+	},
+]);
 
 describe('resolveWebhookSecret', () => {
 	beforeEach(() => {
@@ -61,6 +78,27 @@ describe('resolveWebhookSecret', () => {
 		const got = await resolveWebhookSecret('proj', 'sentry');
 		expect(got).toBe('sentry-secret');
 		expect(resolveSpy).toHaveBeenCalledWith('proj', 'SENTRY_WEBHOOK_SECRET');
+	});
+
+	it("returns GITHUB_WEBHOOK_SECRET for provider='github-projects'", async () => {
+		// Note: this envVarKey is literally identical to the `github` (SCM) provider's
+		// webhook_secret role above — see src/pm/github-projects/integration.ts. Since
+		// credential rows are keyed only by (projectId, envVarKey) with no
+		// category/provider disambiguation (src/db/repositories/credentialsRepository.ts),
+		// a project with both GitHub SCM and GitHub Projects PM configured shares a
+		// single webhook-secret credential row between the two integrations.
+		resolveSpy.mockImplementation(async (_, key) =>
+			key === 'GITHUB_WEBHOOK_SECRET' ? 'gh-projects-secret' : null,
+		);
+		const got = await resolveWebhookSecret('proj', 'github-projects');
+		expect(got).toBe('gh-projects-secret');
+		expect(resolveSpy).toHaveBeenCalledWith('proj', 'GITHUB_WEBHOOK_SECRET');
+	});
+
+	it("returns null for provider='github-projects' when no secret is configured", async () => {
+		resolveSpy.mockImplementation(async () => null);
+		const got = await resolveWebhookSecret('proj', 'github-projects');
+		expect(got).toBeNull();
 	});
 
 	it("returns TRELLO_API_SECRET for provider='trello' (Trello HMAC uses api_secret)", async () => {
