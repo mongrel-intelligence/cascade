@@ -278,6 +278,36 @@ describe('GitHubProjectsPMProvider', () => {
 			expect(items).toHaveLength(1);
 			expect(items[0].id).toBe('I_1');
 		});
+
+		it('coalesces a concurrent capacity-gate burst into a single board pagination', async () => {
+			mockClient.listAllProjectItems.mockResolvedValue([
+				makeProjectItem({ statusName: 'Todo', statusOptionId: 'opt-todo' }),
+				makeProjectItem({ statusName: 'In Progress', statusOptionId: 'opt-inprogress' }),
+			]);
+
+			// Mirror `isActivePipelineOverCapacity`: three concurrent status queries.
+			const [todo, inProgress, inReview] = await Promise.all([
+				provider.listWorkItems(undefined, { status: 'todo' }),
+				provider.listWorkItems(undefined, { status: 'inProgress' }),
+				provider.listWorkItems(undefined, { status: 'inReview' }),
+			]);
+
+			// A single pagination served both mapped concurrent calls (down from 3).
+			expect(mockClient.listAllProjectItems).toHaveBeenCalledTimes(1);
+			expect(todo).toHaveLength(1);
+			expect(inProgress).toHaveLength(1);
+			// 'inReview' is unmapped in config.statuses → resolves to null → [] with no fetch.
+			expect(inReview).toHaveLength(0);
+		});
+
+		it('re-fetches on a later non-concurrent call (in-flight coalescing, not a stale cache)', async () => {
+			mockClient.listAllProjectItems.mockResolvedValue([
+				makeProjectItem({ statusOptionId: 'opt-todo' }),
+			]);
+			await provider.listWorkItems(undefined, { status: 'todo' });
+			await provider.listWorkItems(undefined, { status: 'todo' });
+			expect(mockClient.listAllProjectItems).toHaveBeenCalledTimes(2);
+		});
 	});
 
 	describe('getWorkItemComments', () => {
@@ -560,6 +590,23 @@ describe('GitHubProjectsPMProvider', () => {
 			mockClient.getViewer.mockResolvedValue({ id: 'U_1', login: 'octocat' });
 			const user = await provider.getAuthenticatedUser();
 			expect(user.name).toBe('octocat');
+		});
+	});
+
+	describe('getWorkItemUrl', () => {
+		it('returns a resolving user-scoped Projects URL (correct users/ segment, no PVT_ node id)', () => {
+			// The content node ID can't be turned into an item-specific URL
+			// synchronously; the fallback must at least resolve and be well-shaped.
+			expect(provider.getWorkItemUrl('I_content')).toBe(
+				'https://github.com/users/octocat/projects',
+			);
+		});
+
+		it('uses the orgs/ segment for organization-owned projects', () => {
+			const orgProvider = new GitHubProjectsPMProvider({ ...config, ownerType: 'organization' });
+			expect(orgProvider.getWorkItemUrl('I_content')).toBe(
+				'https://github.com/orgs/octocat/projects',
+			);
 		});
 	});
 });

@@ -17,7 +17,9 @@ export const githubProjectsConfigSchema = z
 
 		/**
 		 * Mapping from CASCADE status keys (todo/inProgress/done/etc.) to
-		 * GitHub Projects Status single-select option node IDs (PVTSSF_xxx).
+		 * GitHub Projects Status single-select *option* IDs. Option IDs are short
+		 * opaque hashes (e.g. `47fc9ee4`), NOT the `PVTSSF_…`-prefixed value —
+		 * that prefix identifies the single-select *field*, not its options.
 		 */
 		statuses: z.record(z.string(), z.string()),
 

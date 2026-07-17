@@ -167,15 +167,21 @@ export const githubProjectsManifest: PMProviderManifest = {
 		],
 	},
 
+	// Opt into the behavioral conformance harness's full lifecycle scenario,
+	// giving github-projects parity with Trello/JIRA/Linear. The fixture keyed
+	// by 'github-projects' lives in the test-only LIFECYCLE_FIXTURES registry.
+	lifecycle: { enabled: true, fixtureKey: 'github-projects' },
+
 	configSchema: githubProjectsConfigSchema,
 	configFixture: {
 		projectId: 'PVT_xxx',
 		owner: 'username',
 		ownerType: 'user',
+		// Status *option* IDs are short opaque hashes, not the `PVTSSF_…` field ID.
 		statuses: {
-			todo: 'PVTSSF_xxx',
-			inProgress: 'PVTSSF_yyy',
-			done: 'PVTSSF_zzz',
+			todo: '47fc9ee4',
+			inProgress: '98236657',
+			done: 'f75ad846',
 		},
 	},
 

@@ -20,6 +20,7 @@ import {
 	resolveProjectItemId,
 	updateComment,
 } from '../../github-projects/client.js';
+import type { GitHubProjectItem } from '../../github-projects/types.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
@@ -48,22 +49,6 @@ import type {
 	WorkItemComment,
 } from '../types.js';
 
-const CASCADE_STATUS_KEYS = new Set([
-	'backlog',
-	'todo',
-	'inProgress',
-	'inReview',
-	'done',
-	'merged',
-	'cancelled',
-	'canceled',
-	'splitting',
-	'planning',
-	'debug',
-	'friction',
-	'alerts',
-]);
-
 function resolveGitHubProjectsStatusFilter(
 	status: string | undefined,
 	configStatuses: GitHubProjectsConfig['statuses'] | undefined,
@@ -71,8 +56,13 @@ function resolveGitHubProjectsStatusFilter(
 	if (!status) return undefined;
 	const mapped = configStatuses?.[status];
 	if (mapped) return mapped;
-	if (CASCADE_STATUS_KEYS.has(status)) return null;
-	return status.startsWith('PVTSSF_') ? status : null;
+	// Any status without a configured mapping lists nothing (`null`) — a known
+	// CASCADE key with no mapping, or an unknown/custom key. GitHub Projects
+	// Status *option* IDs are short opaque hashes with no stable prefix (the
+	// `PVTSSF_` prefix identifies the single-select *field*, not its options), so
+	// a raw option ID can't be distinguished from an unmapped key here — and every
+	// caller passes a CASCADE status key, so raw-option-id passthrough is unneeded.
+	return null;
 }
 
 export class GitHubProjectsPMProvider implements PMProvider {
@@ -89,6 +79,29 @@ export class GitHubProjectsPMProvider implements PMProvider {
 		private config: GitHubProjectsConfig,
 		private repoFullName?: string,
 	) {}
+
+	/**
+	 * In-flight de-duplication of full-board fetches, keyed by project node ID.
+	 *
+	 * GitHub Projects v2 has no server-side field filter, so `listWorkItems({status})`
+	 * must page the entire board. The pipeline-capacity gate fires three concurrent
+	 * `listWorkItems` calls (todo/inProgress/inReview) per dispatch — without
+	 * coalescing that is three full board paginations. Memoizing the in-flight
+	 * `listAllProjectItems` promise collapses the concurrent burst into a single
+	 * pagination, then clears the entry the moment it settles, so separate
+	 * (non-concurrent) capacity checks always re-fetch and never observe a stale board.
+	 */
+	private readonly inFlightListAll = new Map<string, Promise<GitHubProjectItem[]>>();
+
+	private listAllProjectItemsCoalesced(projectId: string): Promise<GitHubProjectItem[]> {
+		const inFlight = this.inFlightListAll.get(projectId);
+		if (inFlight) return inFlight;
+		const promise = listAllProjectItems(projectId).finally(() => {
+			this.inFlightListAll.delete(projectId);
+		});
+		this.inFlightListAll.set(projectId, promise);
+		return promise;
+	}
 
 	async getWorkItem(id: string): Promise<WorkItem> {
 		// `id` is the content (Issue/PR) node ID used across the github-projects
@@ -260,14 +273,16 @@ export class GitHubProjectsPMProvider implements PMProvider {
 
 		// Maps a CASCADE status key to the GitHub Status *option* ID:
 		//  - a string → keep only items whose Status field value has that optionId
-		//  - null     → known CASCADE key with no configured mapping → nothing to list
+		//  - null     → status has no configured mapping → nothing to list
 		//  - undefined → no status filter → list every item
 		const statusOptionId = resolveGitHubProjectsStatusFilter(filter?.status, this.config.statuses);
 		if (statusOptionId === null) return [];
 
 		// GitHub Projects v2 exposes no server-side field filter, so we fetch the
-		// project's items and filter by Status option ID client-side.
-		const items = await listAllProjectItems(projectId);
+		// project's items and filter by Status option ID client-side. The fetch is
+		// coalesced so the capacity gate's concurrent todo/inProgress/inReview burst
+		// pages the board once instead of three times (see listAllProjectItemsCoalesced).
+		const items = await this.listAllProjectItemsCoalesced(projectId);
 
 		const result: WorkItem[] = [];
 		for (const item of items) {
@@ -502,8 +517,19 @@ export class GitHubProjectsPMProvider implements PMProvider {
 		logger.debug('[GitHubProjects] linkPR is a no-op; PRs are linked by being in the project');
 	}
 
-	getWorkItemUrl(id: string): string {
-		return `https://github.com/${this.config.owner}/projects/${this.config.projectId}?pane=issue&item_id=${id}`;
+	getWorkItemUrl(_id: string): string {
+		// The work-item identity carried across the github-projects path is the
+		// opaque *content* (Issue/PR) node ID, which cannot be turned into an
+		// item-specific URL synchronously; the project's numeric `number` (needed
+		// for a `/projects/<n>` deep link) is not persisted in config either.
+		// Every WorkItem-producing method (getWorkItem / listWorkItems /
+		// createWorkItem) already carries the accurate Issue/PR `content.url`, and
+		// every fallback-style caller prefers it (`workItem.url || getWorkItemUrl`).
+		// So this fallback returns a correctly-shaped, resolving owner Projects URL
+		// (with the required `users`/`orgs` segment) instead of the previous
+		// non-resolving `github.com/<owner>/projects/<PVT_ node id>` string.
+		const ownerSegment = this.config.ownerType === 'organization' ? 'orgs' : 'users';
+		return `https://github.com/${ownerSegment}/${this.config.owner}/projects`;
 	}
 
 	async getAuthenticatedUser(): Promise<{ id: string; name: string; username: string }> {

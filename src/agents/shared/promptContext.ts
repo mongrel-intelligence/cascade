@@ -66,7 +66,10 @@ function getListIds(project: ProjectConfig) {
 			trelloConfig?.labels?.auto ??
 			jiraConfig?.labels?.auto ??
 			linearConfig?.labels?.auto ??
-			githubProjectsConfig?.labels?.processing,
+			// GitHub Projects has no dedicated `auto` label; `readyToProcess`
+			// (cascade-ready) is the closest analog to the other providers' auto
+			// label. `processing` means "an agent is already working" — the opposite.
+			githubProjectsConfig?.labels?.readyToProcess,
 	};
 }
 

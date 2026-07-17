@@ -19,6 +19,7 @@ import {
 	createFakePMProvider,
 	runLifecycleScenario,
 } from '../../helpers/fakePMProvider.js';
+import { githubProjectsLifecycleFixture } from '../../helpers/githubProjectsLifecycleFixture.js';
 import { jiraLifecycleFixture } from '../../helpers/jiraLifecycleFixture.js';
 import { linearLifecycleFixture } from '../../helpers/linearLifecycleFixture.js';
 import { registerTestProvider } from '../../helpers/testPMProvider.js';
@@ -40,6 +41,7 @@ const LIFECYCLE_FIXTURES: Record<
 	trello: trelloLifecycleFixture,
 	jira: jiraLifecycleFixture,
 	linear: linearLifecycleFixture,
+	'github-projects': githubProjectsLifecycleFixture,
 };
 
 // Import every real PM provider so the harness exercises each of them
@@ -47,6 +49,7 @@ const LIFECYCLE_FIXTURES: Record<
 import '../../../src/integrations/pm/trello/index.js';
 import '../../../src/integrations/pm/jira/index.js';
 import '../../../src/integrations/pm/linear/index.js';
+import '../../../src/integrations/pm/github-projects/index.js';
 
 // describe.each evaluates at collection time, before beforeAll. Register
 // the TestProvider + FakePMProvider at module load so the iteration sees

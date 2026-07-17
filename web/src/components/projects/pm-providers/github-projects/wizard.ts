@@ -180,7 +180,7 @@ export const githubProjectsProviderWizard: ProviderWizardDefinition = {
 	id: 'github-projects',
 	label: 'GitHub Projects',
 	auth: githubProjectsAuthMetadata,
-	formatVerificationDisplay: (me) => me.name || me.login,
+	formatVerificationDisplay: (me) => me.displayName || me.name,
 	credentialPersistence: githubProjectsCredentialPersistence,
 
 	steps: [
@@ -313,7 +313,7 @@ export const githubProjectsProviderWizard: ProviderWizardDefinition = {
 		});
 
 		return {
-			projectOptions: state.githubProjectsProjects.map((p) => ({ id: p.id, name: p.title })),
+			projectOptions: state.githubProjectsProjects.map((p) => ({ id: p.id, name: p.name })),
 			projectsLoading: discovery.githubProjectsProjectsMutation.isPending,
 			projectsError: discovery.githubProjectsProjectsMutation.isError
 				? (discovery.githubProjectsProjectsMutation.error as Error).message

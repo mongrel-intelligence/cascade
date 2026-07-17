@@ -5,7 +5,7 @@ export interface GitHubProjectsOwnerOption {
 
 export interface GitHubProjectsProjectOption {
 	id: string;
-	title: string;
+	name: string;
 	url: string;
 }
 

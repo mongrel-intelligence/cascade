@@ -160,6 +160,7 @@ Each provider declares its credential roles — the mapping from logical role na
   |--------|----------|-------------|
   | `getAttachments` / `addAttachment*` | `[]` / no-op | formal attachments unavailable (inline-pasted images **are** delivered via the shared media pipeline) |
   | `getCustomFieldNumber` / `updateCustomFieldNumber` | `0` / no-op | no cost/budget custom-field tracking (GitHub Projects number fields exist but are not wired — parity with Linear's stub) |
+  | `getWorkItem` / `listWorkItems` label **reads** | always `labels: []` | label **writes** (`addLabel` / `removeLabel`) work, but reads never surface current labels — label-conditioned logic can't observe GitHub Projects label state |
   | `linkPR` | no-op | PRs link implicitly by being added to the project |
 
 ### GitHub (`src/github/`)

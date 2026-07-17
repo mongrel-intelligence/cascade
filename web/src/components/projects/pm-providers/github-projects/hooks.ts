@@ -3,7 +3,6 @@ import type { Dispatch } from 'react';
 import { useEffect, useMemo } from 'react';
 import { trpcClient } from '@/lib/trpc.js';
 import type {
-	GitHubProjectsProjectOption,
 	GitHubProjectsStatusOption,
 	WizardAction,
 	WizardState,
@@ -78,7 +77,10 @@ export function useGitHubProjectsDiscovery(
 		onSuccess: (projects) =>
 			dispatch({
 				type: 'SET_GITHUB_PROJECTS_PROJECTS',
-				projects: projects as GitHubProjectsProjectOption[],
+				// Discovery returns `{ id, name, url }` — structurally identical to
+				// GitHubProjectsProjectOption, so no cast is needed (the `name` field
+				// now lines up; the previous `as` cast masked a `title` mismatch).
+				projects,
 			}),
 	});
 
