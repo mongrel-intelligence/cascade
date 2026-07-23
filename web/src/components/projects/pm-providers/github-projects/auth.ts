@@ -9,7 +9,7 @@ export const githubProjectsAuthMetadata: ProviderAuthMetadata = {
 export const githubProjectsCredentialPersistence: readonly ProviderCredentialPersistenceMapping[] =
 	[
 		{
-			envVarKey: 'GITHUB_TOKEN',
+			envVarKey: 'GITHUB_PROJECTS_TOKEN',
 			stateField: 'githubProjectsToken',
 			label: 'GitHub Personal Access Token',
 		},

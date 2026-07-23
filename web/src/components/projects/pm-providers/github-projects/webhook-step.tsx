@@ -291,7 +291,7 @@ export function GitHubProjectsWebhookAdapter({
 		h.projectIdForSecret
 			? createElement(ProjectSecretField, {
 					projectId: h.projectIdForSecret,
-					envVarKey: 'GITHUB_WEBHOOK_SECRET',
+					envVarKey: 'GITHUB_PROJECTS_WEBHOOK_SECRET',
 					label: 'Webhook Signing Secret (optional)',
 					description:
 						'Paste the signing secret from your GitHub webhook. CASCADE verifies HMAC-SHA256 on every incoming GitHub Projects webhook request when this is set; verification is skipped if left blank.',

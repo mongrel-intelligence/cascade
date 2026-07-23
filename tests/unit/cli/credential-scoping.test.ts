@@ -94,6 +94,7 @@ describe('CredentialScopedCommand', () => {
 	beforeEach(() => {
 		process.env = { ...originalEnv };
 		delete process.env.GITHUB_TOKEN;
+		delete process.env.GITHUB_PROJECTS_TOKEN;
 		delete process.env.TRELLO_API_KEY;
 		delete process.env.TRELLO_TOKEN;
 		delete process.env.LINEAR_API_KEY;
@@ -353,12 +354,17 @@ describe('CredentialScopedCommand', () => {
 	});
 
 	// GitHub Projects scope — mirrors the Trello/JIRA/Linear pattern. GitHub
-	// Projects reuses GITHUB_TOKEN but only establishes its dedicated
-	// AsyncLocalStorage scope when CASCADE_PM_TYPE=github-projects, since the
-	// same token is also used (unscoped) by the SCM `withGitHubToken` wrapper.
+	// Projects uses its own credential (GITHUB_PROJECTS_TOKEN) and only establishes
+	// its dedicated AsyncLocalStorage scope when CASCADE_PM_TYPE=github-projects.
+	// It intentionally does NOT read GITHUB_TOKEN (the SCM persona token), so the
+	// configured PM PAT survives the worker's persona-token override and the two
+	// scopes stay decoupled.
 
-	it('wraps execute() with withGitHubProjectsCredentials when CASCADE_PM_TYPE=github-projects and GITHUB_TOKEN is set', async () => {
-		process.env.GITHUB_TOKEN = 'ghp_test123';
+	it('wraps execute() with withGitHubProjectsCredentials from GITHUB_PROJECTS_TOKEN (decoupled from the SCM GITHUB_TOKEN)', async () => {
+		// Both are set in a real worker: GITHUB_TOKEN carries the SCM persona token,
+		// GITHUB_PROJECTS_TOKEN carries the configured PM PAT. They must NOT collide.
+		process.env.GITHUB_TOKEN = 'ghp_persona';
+		process.env.GITHUB_PROJECTS_TOKEN = 'ghp_pmpat';
 		process.env.CASCADE_PM_TYPE = 'github-projects';
 		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_test';
 		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme';
@@ -367,16 +373,17 @@ describe('CredentialScopedCommand', () => {
 		await cmd.run();
 
 		expect(cmd.executeCalled).toBe(true);
+		// PM scope uses the dedicated PM PAT, not the SCM persona token.
 		expect(withGitHubProjectsCredentials).toHaveBeenCalledWith(
-			{ token: 'ghp_test123' },
+			{ token: 'ghp_pmpat' },
 			expect.any(Function),
 		);
-		// Also establishes the plain SCM scope with the same underlying token.
-		expect(withGitHubToken).toHaveBeenCalledWith('ghp_test123', expect.any(Function));
+		// SCM scope still uses the persona token — independently.
+		expect(withGitHubToken).toHaveBeenCalledWith('ghp_persona', expect.any(Function));
 	});
 
-	it('does not wrap with withGitHubProjectsCredentials when GITHUB_TOKEN is set but CASCADE_PM_TYPE is not github-projects', async () => {
-		process.env.GITHUB_TOKEN = 'ghp_test123';
+	it('does not wrap with withGitHubProjectsCredentials when GITHUB_PROJECTS_TOKEN is set but CASCADE_PM_TYPE is not github-projects', async () => {
+		process.env.GITHUB_PROJECTS_TOKEN = 'ghp_pmpat';
 
 		const cmd = new TestCommand([], {} as never);
 		await cmd.run();
@@ -385,7 +392,21 @@ describe('CredentialScopedCommand', () => {
 		expect(withGitHubProjectsCredentials).not.toHaveBeenCalled();
 	});
 
-	it('does not wrap with withGitHubProjectsCredentials when CASCADE_PM_TYPE=github-projects but GITHUB_TOKEN is unset', async () => {
+	it('does not wrap with withGitHubProjectsCredentials when only the SCM GITHUB_TOKEN is set (no GITHUB_PROJECTS_TOKEN)', async () => {
+		// The SCM persona token must never be used to scope PM calls.
+		process.env.GITHUB_TOKEN = 'ghp_persona';
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_test';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme';
+
+		const cmd = new TestCommand([], {} as never);
+		await cmd.run();
+
+		expect(cmd.executeCalled).toBe(true);
+		expect(withGitHubProjectsCredentials).not.toHaveBeenCalled();
+	});
+
+	it('does not wrap with withGitHubProjectsCredentials when CASCADE_PM_TYPE=github-projects but GITHUB_PROJECTS_TOKEN is unset', async () => {
 		process.env.CASCADE_PM_TYPE = 'github-projects';
 		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_test';
 		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme';

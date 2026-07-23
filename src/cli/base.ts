@@ -70,12 +70,15 @@ function wrapWithCredentialScopes(fn: () => Promise<void>): () => Promise<void> 
 		const prev = fn;
 		fn = () => withLinearCredentials({ apiKey: linearApiKey }, prev);
 	}
-	// GitHub Projects reuses the GITHUB_TOKEN credential but scopes it through a
-	// dedicated AsyncLocalStorage (getGitHubProjectsCredentials()), distinct from
-	// the SCM `withGitHubToken` scope. Establish it only for GitHub-Projects PM
-	// workers so `cascade-tools pm` calls don't throw "No GitHub Projects
-	// credentials in scope".
-	const githubProjectsToken = process.env.GITHUB_TOKEN;
+	// GitHub Projects uses its own credential (GITHUB_PROJECTS_TOKEN) scoped through
+	// a dedicated AsyncLocalStorage (getGitHubProjectsCredentials()), distinct from
+	// the SCM `withGitHubToken` scope. It intentionally does NOT read GITHUB_TOKEN:
+	// the worker's secretOrchestrator overwrites GITHUB_TOKEN with the SCM persona
+	// token, which would run agent `cascade-tools pm` calls as the SCM identity.
+	// The dedicated key preserves the configured PM PAT. Established only for
+	// GitHub-Projects PM workers so `cascade-tools pm` calls don't throw "No GitHub
+	// Projects credentials in scope".
+	const githubProjectsToken = process.env.GITHUB_PROJECTS_TOKEN;
 	if (process.env.CASCADE_PM_TYPE === 'github-projects' && githubProjectsToken) {
 		const prev = fn;
 		fn = () => withGitHubProjectsCredentials({ token: githubProjectsToken }, prev);

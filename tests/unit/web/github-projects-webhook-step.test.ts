@@ -86,9 +86,9 @@ describe('GitHubProjectsWebhookAdapter', () => {
 		expect(html).toContain('https://router.example.com/github-projects/webhook');
 	});
 
-	it('renders a ProjectSecretField bound to GITHUB_WEBHOOK_SECRET', () => {
+	it('renders a ProjectSecretField bound to GITHUB_PROJECTS_WEBHOOK_SECRET', () => {
 		const html = render('organization');
-		expect(html).toContain('data-env-var-key="GITHUB_WEBHOOK_SECRET"');
+		expect(html).toContain('data-env-var-key="GITHUB_PROJECTS_WEBHOOK_SECRET"');
 		expect(html).toContain('Webhook Signing Secret');
 	});
 

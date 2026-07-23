@@ -113,16 +113,21 @@ export const githubProjectsManifest: PMProviderManifest = {
 	label: 'GitHub Projects',
 	category: 'pm',
 
+	// Provider-specific env-var keys (not the SCM `GITHUB_TOKEN` /
+	// `GITHUB_WEBHOOK_SECRET`) so the configured PM PAT survives the worker's SCM
+	// persona-token override and does not collide with a co-configured GitHub SCM
+	// integration in the (projectId, envVarKey)-keyed credential store. See
+	// src/pm/github-projects/integration.ts for the full rationale.
 	credentialRoles: [
 		{
 			role: 'token',
 			label: 'Personal Access Token',
-			envVarKey: 'GITHUB_TOKEN',
+			envVarKey: 'GITHUB_PROJECTS_TOKEN',
 		},
 		{
 			role: 'webhook_secret',
 			label: 'Webhook Secret',
-			envVarKey: 'GITHUB_WEBHOOK_SECRET',
+			envVarKey: 'GITHUB_PROJECTS_WEBHOOK_SECRET',
 			optional: true,
 		},
 	],

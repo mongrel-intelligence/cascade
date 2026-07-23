@@ -18,12 +18,24 @@ import type { PMProvider } from '../types.js';
 import { GitHubProjectsPMProvider } from './adapter.js';
 
 // Self-register credential roles at module load time.
+//
+// The `token` role uses a provider-specific env-var key (GITHUB_PROJECTS_TOKEN)
+// rather than the SCM `GITHUB_TOKEN` for two reasons:
+//   1. The worker's `secretOrchestrator` overwrites `GITHUB_TOKEN` with the SCM
+//      persona token (implementer/reviewer) for every agent whose profile
+//      `needsGitHubToken`. Sharing the key would clobber the configured PM PAT,
+//      so agent-invoked `cascade-tools pm` calls would run as the SCM identity
+//      (GitHub Projects v2 has a permission model separate from repo scope, so
+//      that silently 403s). A dedicated key survives the persona override.
+//   2. Credential rows are keyed only by (projectId, envVarKey), so `GITHUB_TOKEN`
+//      / `GITHUB_WEBHOOK_SECRET` would collide with a co-configured GitHub SCM
+//      integration. Provider-specific keys keep the two integrations distinct.
 registerCredentialRoles('github-projects', 'pm', [
-	{ role: 'token', label: 'Personal Access Token', envVarKey: 'GITHUB_TOKEN' },
+	{ role: 'token', label: 'Personal Access Token', envVarKey: 'GITHUB_PROJECTS_TOKEN' },
 	{
 		role: 'webhook_secret',
 		label: 'Webhook Secret',
-		envVarKey: 'GITHUB_WEBHOOK_SECRET',
+		envVarKey: 'GITHUB_PROJECTS_WEBHOOK_SECRET',
 		optional: true,
 	},
 ]);

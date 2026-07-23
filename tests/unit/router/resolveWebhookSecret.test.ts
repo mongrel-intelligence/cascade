@@ -22,11 +22,11 @@ const { registerCredentialRoles } = await import('../../../src/config/integratio
 // without needing to import the full integration module (and its DB/client
 // transitive imports) into this isolated unit test.
 registerCredentialRoles('github-projects', 'pm', [
-	{ role: 'token', label: 'Personal Access Token', envVarKey: 'GITHUB_TOKEN' },
+	{ role: 'token', label: 'Personal Access Token', envVarKey: 'GITHUB_PROJECTS_TOKEN' },
 	{
 		role: 'webhook_secret',
 		label: 'Webhook Secret',
-		envVarKey: 'GITHUB_WEBHOOK_SECRET',
+		envVarKey: 'GITHUB_PROJECTS_WEBHOOK_SECRET',
 		optional: true,
 	},
 ]);
@@ -80,19 +80,19 @@ describe('resolveWebhookSecret', () => {
 		expect(resolveSpy).toHaveBeenCalledWith('proj', 'SENTRY_WEBHOOK_SECRET');
 	});
 
-	it("returns GITHUB_WEBHOOK_SECRET for provider='github-projects'", async () => {
-		// Note: this envVarKey is literally identical to the `github` (SCM) provider's
-		// webhook_secret role above — see src/pm/github-projects/integration.ts. Since
-		// credential rows are keyed only by (projectId, envVarKey) with no
-		// category/provider disambiguation (src/db/repositories/credentialsRepository.ts),
-		// a project with both GitHub SCM and GitHub Projects PM configured shares a
-		// single webhook-secret credential row between the two integrations.
+	it("returns GITHUB_PROJECTS_WEBHOOK_SECRET for provider='github-projects'", async () => {
+		// GitHub Projects uses a provider-specific webhook-secret env-var key
+		// (GITHUB_PROJECTS_WEBHOOK_SECRET) rather than the SCM `github` provider's
+		// GITHUB_WEBHOOK_SECRET — see src/pm/github-projects/integration.ts. Since
+		// credential rows are keyed only by (projectId, envVarKey), the distinct key
+		// lets a project with both GitHub SCM and GitHub Projects PM configured store
+		// separate webhook secrets for the repo-hook and the projects_v2_item hook.
 		resolveSpy.mockImplementation(async (_, key) =>
-			key === 'GITHUB_WEBHOOK_SECRET' ? 'gh-projects-secret' : null,
+			key === 'GITHUB_PROJECTS_WEBHOOK_SECRET' ? 'gh-projects-secret' : null,
 		);
 		const got = await resolveWebhookSecret('proj', 'github-projects');
 		expect(got).toBe('gh-projects-secret');
-		expect(resolveSpy).toHaveBeenCalledWith('proj', 'GITHUB_WEBHOOK_SECRET');
+		expect(resolveSpy).toHaveBeenCalledWith('proj', 'GITHUB_PROJECTS_WEBHOOK_SECRET');
 	});
 
 	it("returns null for provider='github-projects' when no secret is configured", async () => {

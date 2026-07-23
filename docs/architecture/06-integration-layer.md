@@ -99,7 +99,7 @@ Each provider declares its credential roles — the mapping from logical role na
 | Trello | pm | `api_key` → `TRELLO_API_KEY`, `token` → `TRELLO_TOKEN` | `api_secret` |
 | JIRA | pm | `email` → `JIRA_EMAIL`, `api_token` → `JIRA_API_TOKEN` | `webhook_secret` |
 | Linear | pm | `api_key` → `LINEAR_API_KEY` | `webhook_secret` → `LINEAR_WEBHOOK_SECRET` |
-| GitHub Projects | pm | `token` → `GITHUB_TOKEN` | `webhook_secret` → `GITHUB_WEBHOOK_SECRET` |
+| GitHub Projects | pm | `token` → `GITHUB_PROJECTS_TOKEN` | `webhook_secret` → `GITHUB_PROJECTS_WEBHOOK_SECRET` |
 | GitHub | scm | `implementer_token` → `GITHUB_TOKEN_IMPLEMENTER`, `reviewer_token` → `GITHUB_TOKEN_REVIEWER` | `webhook_secret` |
 | Sentry | alerting | `api_token` → `SENTRY_API_TOKEN` | `webhook_secret` |
 

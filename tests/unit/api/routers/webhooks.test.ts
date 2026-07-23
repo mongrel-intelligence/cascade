@@ -175,7 +175,7 @@ function setupGithubProjectsProjectContext(opts?: {
 	mockGetIntegrationByProjectAndCategory.mockResolvedValue(null);
 	const creds: Record<string, string> = {};
 	if (!opts?.noToken) {
-		creds.GITHUB_TOKEN = 'ghp_projects_test';
+		creds.GITHUB_PROJECTS_TOKEN = 'ghp_projects_test';
 	}
 	mockGetAllProjectCredentials.mockResolvedValue(creds);
 }

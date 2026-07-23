@@ -58,7 +58,7 @@ export async function resolveProjectContext(
 		webhookSecret: creds.GITHUB_WEBHOOK_SECRET ?? undefined,
 		githubProjectsOwner: githubProjectsConfig?.owner,
 		githubProjectsOwnerType: githubProjectsConfig?.ownerType,
-		githubProjectsToken: creds.GITHUB_TOKEN ?? undefined,
+		githubProjectsToken: creds.GITHUB_PROJECTS_TOKEN ?? undefined,
 		sentryConfigured,
 		sentryOrganizationSlug: sentryConfig?.organizationSlug,
 		sentryProjectSlug: sentryConfig?.projectSlug,

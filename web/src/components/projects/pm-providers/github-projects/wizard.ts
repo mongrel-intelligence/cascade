@@ -243,7 +243,7 @@ export const githubProjectsProviderWizard: ProviderWizardDefinition = {
 			githubProjectsOwner: config.owner ?? '',
 			githubProjectsOwnerType: config.ownerType ?? 'user',
 			...(config.statuses ? { githubProjectsStatusMappings: config.statuses } : {}),
-			hasStoredCredentials: configuredKeys.has('GITHUB_TOKEN'),
+			hasStoredCredentials: configuredKeys.has('GITHUB_PROJECTS_TOKEN'),
 		};
 	},
 
@@ -267,7 +267,7 @@ export const githubProjectsProviderWizard: ProviderWizardDefinition = {
 		);
 		const workflowStatusesQuery = useQuery(trpc.workflowStatuses.list.queryOptions());
 		const webhookSecretCredential = credentialsQuery.data?.find(
-			(c) => c.envVarKey === 'GITHUB_WEBHOOK_SECRET',
+			(c) => c.envVarKey === 'GITHUB_PROJECTS_WEBHOOK_SECRET',
 		);
 
 		const routerOrigin =
