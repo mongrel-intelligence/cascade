@@ -446,6 +446,8 @@ export function buildArgs(
 		'exec',
 		'--json',
 		'--ephemeral',
+		'--ignore-user-config',
+		'--ignore-rules',
 		'--skip-git-repo-check',
 		'-C',
 		input.repoDir,
@@ -472,44 +474,45 @@ export function buildArgs(
 	return args;
 }
 
-/**
- * Build the auth.json contents that `codex login --with-api-key` writes for a
- * bare OpenAI API key. Codex authenticates ONLY from ~/.codex/auth.json — it does
- * NOT read OPENAI_API_KEY from the environment — so a bare API key must be
- * materialised into this file for codex to send a bearer token.
- */
-function synthesizeApiKeyAuthJson(apiKey: string): string {
-	return JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: apiKey });
+function isValidJson(value: string | undefined): value is string {
+	if (!value) return false;
+	try {
+		JSON.parse(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function buildCodexSubprocessSecrets(
+	projectSecrets: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	if (!projectSecrets) return undefined;
+
+	const subprocessSecrets = Object.fromEntries(
+		Object.entries(projectSecrets).filter(
+			([key]) => key !== 'CODEX_AUTH_JSON' && key !== 'OPENAI_API_KEY',
+		),
+	);
+	if (!isValidJson(projectSecrets.CODEX_AUTH_JSON) && projectSecrets.OPENAI_API_KEY) {
+		subprocessSecrets.CODEX_API_KEY = projectSecrets.OPENAI_API_KEY;
+	}
+	return subprocessSecrets;
 }
 
 /**
- * Write ~/.codex/auth.json so Codex can authenticate. Supports BOTH auth modes,
- * mirroring claude-code's ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN duality:
- *   - subscription token via CODEX_AUTH_JSON (ChatGPT Plus/Pro), written verbatim;
- *   - bare API key via OPENAI_API_KEY, synthesized into the apikey auth.json shape.
- *
- * Returns the written JSON string ONLY for the subscription path, so the caller
- * (captureRefreshedToken) can persist a token the Codex CLI rotated mid-run. The
- * API-key path returns undefined: API keys never rotate, and returning undefined
- * guarantees the synthesized blob is never written back into the CODEX_AUTH_JSON
- * credential slot. CODEX_AUTH_JSON takes precedence when both are configured.
+ * Write ~/.codex/auth.json for ChatGPT subscription auth. API-key runs use the
+ * Codex CLI's single-run CODEX_API_KEY environment variable instead and never
+ * touch the persistent auth file.
  */
 async function writeCodexAuthFile(
 	projectSecrets: Record<string, string> | undefined,
 	logWriter: LogWriter,
 ): Promise<string | undefined> {
 	const authJson = projectSecrets?.CODEX_AUTH_JSON;
-	const apiKey = projectSecrets?.OPENAI_API_KEY;
 
-	// 1. Subscription token wins when present and valid JSON.
 	if (authJson) {
-		let valid = true;
-		try {
-			JSON.parse(authJson);
-		} catch {
-			valid = false;
-		}
-		if (valid) {
+		if (isValidJson(authJson)) {
 			await mkdir(CODEX_AUTH_DIR, { recursive: true });
 			await writeFile(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
 			logWriter('INFO', 'Writing ~/.codex/auth.json for subscription auth', {});
@@ -522,18 +525,9 @@ async function writeCodexAuthFile(
 		);
 	}
 
-	// 2. Bare OpenAI API key — synthesize the apikey auth.json codex requires.
-	if (apiKey) {
-		await mkdir(CODEX_AUTH_DIR, { recursive: true });
-		await writeFile(CODEX_AUTH_FILE, synthesizeApiKeyAuthJson(apiKey), { mode: 0o600 });
-		logWriter('INFO', 'Writing ~/.codex/auth.json for API key auth', {});
-		return undefined; // API keys do not rotate — nothing to capture
-	}
-
-	// 3. Neither configured.
 	logWriter(
 		'DEBUG',
-		'No CODEX_AUTH_JSON or OPENAI_API_KEY credential — codex auth not configured',
+		'No valid CODEX_AUTH_JSON credential — subscription auth file not written',
 		{},
 	);
 	return undefined;
@@ -548,10 +542,7 @@ async function captureRefreshedToken(
 	originalJson: string | undefined,
 	logWriter: LogWriter,
 ): Promise<void> {
-	// originalJson is undefined on the API-key path (writeCodexAuthFile returns
-	// undefined there) and when no auth was configured — so a synthesized apikey
-	// auth.json is never persisted back into the CODEX_AUTH_JSON credential slot.
-	// Only a rotated subscription token is captured.
+	// Only subscription auth has an original file to compare and capture.
 	if (!originalJson) return;
 
 	let newJson: string;
@@ -675,7 +666,7 @@ export class CodexEngine extends NativeToolEngine {
 		return new Set([
 			...SHARED_ALLOWED_ENV_EXACT,
 			// Codex auth
-			'OPENAI_API_KEY',
+			'CODEX_API_KEY',
 		]);
 	}
 
@@ -765,12 +756,9 @@ export class CodexEngine extends NativeToolEngine {
 			? this._originalAuthJson
 			: await writeCodexAuthFile(input.projectSecrets, input.logWriter);
 
-		// Strip CODEX_AUTH_JSON from env — it's written to disk, not passed to the subprocess
-		const strippedSecrets: Record<string, string> | undefined = input.projectSecrets
-			? Object.fromEntries(
-					Object.entries(input.projectSecrets).filter(([k]) => k !== 'CODEX_AUTH_JSON'),
-				)
-			: undefined;
+		// Subscription auth stays file-backed. API-key auth is scoped to this
+		// subprocess via CODEX_API_KEY and does not persist in ~/.codex/auth.json.
+		const subprocessSecrets = buildCodexSubprocessSecrets(input.projectSecrets);
 
 		const lastMessagePath = join(
 			tmpdir(),
@@ -785,7 +773,7 @@ export class CodexEngine extends NativeToolEngine {
 			mode: 0o600,
 		});
 		const prompt = buildPrompt(systemPrompt, taskPrompt);
-		const env = this.buildEnv(strippedSecrets, input.cliToolsDir, input.nativeToolShimDir);
+		const env = this.buildEnv(subprocessSecrets, input.cliToolsDir, input.nativeToolShimDir);
 		const args = buildArgs(input, settings, model, lastMessagePath, outputSchemaPath);
 
 		input.logWriter('INFO', 'Starting Codex execution', {

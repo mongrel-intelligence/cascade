@@ -16,7 +16,7 @@ const ALLOWED_ENV_EXACT = new Set([
 	...SHARED_ALLOWED_ENV_EXACT,
 
 	// Codex auth
-	'OPENAI_API_KEY',
+	'CODEX_API_KEY',
 ]);
 
 export function buildEnv(

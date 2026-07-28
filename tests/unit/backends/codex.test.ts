@@ -512,6 +512,18 @@ describe('buildArgs', () => {
 		);
 		expect(args[args.indexOf('--output-schema') + 1]).toBe('/tmp/output-schema.json');
 	});
+
+	it('ignores user config and execpolicy rules for hermetic execution', () => {
+		const args = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		expect(args).toContain('--ignore-user-config');
+		expect(args).toContain('--ignore-rules');
+	});
 });
 
 describe('structured completion output', () => {
@@ -546,10 +558,12 @@ describe('structured completion output', () => {
 });
 
 describe('buildEnv', () => {
-	it('passes through OPENAI_API_KEY and project secrets', () => {
+	it('allows Codex auth variables and project secrets', () => {
 		process.env.OPENAI_API_KEY = 'host-key';
+		process.env.CODEX_API_KEY = 'codex-host-key';
 		const env = buildEnv({ CASCADE_AGENT_TYPE: 'implementation' });
-		expect(env.OPENAI_API_KEY).toBe('host-key');
+		expect(env.OPENAI_API_KEY).toBeUndefined();
+		expect(env.CODEX_API_KEY).toBe('codex-host-key');
 		expect(env.CASCADE_AGENT_TYPE).toBe('implementation');
 	});
 });
@@ -569,6 +583,7 @@ describe('CodexEngine', () => {
 	afterEach(() => {
 		rmSync(workspaceDir, { recursive: true, force: true });
 		Reflect.deleteProperty(process.env, 'OPENAI_API_KEY');
+		Reflect.deleteProperty(process.env, 'CODEX_API_KEY');
 	});
 
 	it('executes codex CLI and parses JSONL activity', async () => {
@@ -1336,7 +1351,8 @@ describe('Codex subscription auth', () => {
 		await engine.execute(input);
 
 		expect(capturedEnv?.CODEX_AUTH_JSON).toBeUndefined();
-		expect(capturedEnv?.OPENAI_API_KEY).toBe('sk-test');
+		expect(capturedEnv?.OPENAI_API_KEY).toBeUndefined();
+		expect(capturedEnv?.CODEX_API_KEY).toBeUndefined();
 	});
 
 	it('writes refreshed token to project_credentials when auth.json is updated by Codex CLI', async () => {
@@ -1391,14 +1407,17 @@ describe('Codex subscription auth', () => {
 		);
 	});
 
-	// --- Bare OpenAI API key auth (synthesized auth.json) ---
-	// Codex does NOT read OPENAI_API_KEY from the environment; it authenticates
-	// only from ~/.codex/auth.json. cascade must synthesize the apikey auth.json
-	// shape that `codex login --with-api-key` writes so a bare key authenticates.
+	// --- Bare OpenAI API key auth (single-run CODEX_API_KEY) ---
 	const API_KEY = 'sk-proj-test-key-123';
-	const SYNTHESIZED_AUTH = JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: API_KEY });
 
-	it('synthesizes apikey auth.json from OPENAI_API_KEY when CODEX_AUTH_JSON is absent', async () => {
+	it('injects CODEX_API_KEY without writing auth.json when CODEX_AUTH_JSON is absent', async () => {
+		let capturedEnv: Record<string, string | undefined> | undefined;
+		mockSpawn.mockImplementation(
+			(_cmd: string, _args: string[], options: { env?: Record<string, string | undefined> }) => {
+				capturedEnv = options.env;
+				return createMockChild({ exitCode: 0 });
+			},
+		);
 		const engine = new CodexEngine();
 		const input = makeInput({
 			repoDir: workspaceDir,
@@ -1407,16 +1426,16 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockWriteFile).toHaveBeenCalledWith(
+		expect(mockWriteFile).not.toHaveBeenCalledWith(
 			expect.stringContaining('auth.json'),
-			SYNTHESIZED_AUTH,
-			{ mode: 0o600 },
+			expect.anything(),
+			expect.anything(),
 		);
+		expect(capturedEnv?.OPENAI_API_KEY).toBeUndefined();
+		expect(capturedEnv?.CODEX_API_KEY).toBe(API_KEY);
 	});
 
-	it('never persists the synthesized API-key auth.json back into CODEX_AUTH_JSON', async () => {
-		// Even if the on-disk auth.json "changes" after the run, the API-key path
-		// must never write it into the subscription credential slot.
+	it('never persists API-key auth back into CODEX_AUTH_JSON', async () => {
 		mockReadFile.mockResolvedValue(
 			JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-proj-rotated' }),
 		);
@@ -1444,11 +1463,6 @@ describe('Codex subscription auth', () => {
 		expect(mockWriteFile).toHaveBeenCalledWith(expect.stringContaining('auth.json'), AUTH_JSON, {
 			mode: 0o600,
 		});
-		expect(mockWriteFile).not.toHaveBeenCalledWith(
-			expect.stringContaining('auth.json'),
-			SYNTHESIZED_AUTH,
-			{ mode: 0o600 },
-		);
 	});
 
 	it('writes no auth.json when neither CODEX_AUTH_JSON nor OPENAI_API_KEY is set', async () => {
@@ -1464,7 +1478,14 @@ describe('Codex subscription auth', () => {
 		);
 	});
 
-	it('falls back to the synthesized API-key auth.json when CODEX_AUTH_JSON is invalid JSON', async () => {
+	it('falls back to CODEX_API_KEY when CODEX_AUTH_JSON is invalid JSON', async () => {
+		let capturedEnv: Record<string, string | undefined> | undefined;
+		mockSpawn.mockImplementation(
+			(_cmd: string, _args: string[], options: { env?: Record<string, string | undefined> }) => {
+				capturedEnv = options.env;
+				return createMockChild({ exitCode: 0 });
+			},
+		);
 		const engine = new CodexEngine();
 		const input = makeInput({
 			repoDir: workspaceDir,
@@ -1473,11 +1494,12 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockWriteFile).toHaveBeenCalledWith(
+		expect(mockWriteFile).not.toHaveBeenCalledWith(
 			expect.stringContaining('auth.json'),
-			SYNTHESIZED_AUTH,
-			{ mode: 0o600 },
+			expect.anything(),
+			expect.anything(),
 		);
+		expect(capturedEnv?.CODEX_API_KEY).toBe(API_KEY);
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'WARN',
 			expect.stringContaining('not valid JSON'),
