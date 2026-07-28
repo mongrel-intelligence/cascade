@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -27,6 +27,62 @@ import {
 
 const CODEX_AUTH_DIR = join(homedir(), '.codex');
 const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
+const CODEX_HOOKS_FILE = join(CODEX_AUTH_DIR, 'hooks.json');
+const CODEX_BLOCK_GIT_PUSH_HOOK_FILE = join(CODEX_AUTH_DIR, 'cascade-block-git-push.cjs');
+
+const BLOCK_GIT_PUSH_REASON =
+	'Push is blocked for this agent; use the cascade-tools scm create-pr flow.';
+
+const BLOCK_GIT_PUSH_HOOK = `let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+	const payload = JSON.parse(input);
+	const command = payload?.tool_input?.command ?? '';
+	if (/\\bgit\\s+push\\b/.test(command)) {
+		process.stdout.write(JSON.stringify({
+			hookSpecificOutput: {
+				hookEventName: 'PreToolUse',
+				permissionDecision: 'deny',
+				permissionDecisionReason: ${JSON.stringify(BLOCK_GIT_PUSH_REASON)}
+			}
+		}));
+	}
+});
+`;
+
+async function writeCodexHooksFile(blockGitPush: boolean | undefined): Promise<void> {
+	if (!blockGitPush) return;
+
+	await mkdir(CODEX_AUTH_DIR, { recursive: true });
+	await writeFile(CODEX_BLOCK_GIT_PUSH_HOOK_FILE, BLOCK_GIT_PUSH_HOOK, { mode: 0o700 });
+	await writeFile(
+		CODEX_HOOKS_FILE,
+		JSON.stringify({
+			hooks: {
+				PreToolUse: [
+					{
+						matcher: 'Bash',
+						hooks: [
+							{
+								type: 'command',
+								command: `node ${JSON.stringify(CODEX_BLOCK_GIT_PUSH_HOOK_FILE)}`,
+							},
+						],
+					},
+				],
+			},
+		}),
+		{ mode: 0o600 },
+	);
+}
+
+async function cleanupCodexHooksFiles(): Promise<void> {
+	await Promise.all([
+		rm(CODEX_HOOKS_FILE, { force: true }),
+		rm(CODEX_BLOCK_GIT_PUSH_HOOK_FILE, { force: true }),
+	]);
+}
 
 /**
  * Codex's persistent-bash-session corruption signal. When this stderr message
@@ -463,6 +519,11 @@ export function buildArgs(
 	if (settings.webSearch) {
 		args.push('--enable', 'web_search');
 	}
+	if (input.blockGitPush) {
+		// CASCADE owns and rewrites this per-run hook, so no interactive trust prompt is possible
+		// or necessary in the headless worker.
+		args.push('--dangerously-bypass-hook-trust');
+	}
 	args.push('-');
 
 	return args;
@@ -672,6 +733,7 @@ export class CodexEngine extends NativeToolEngine {
 	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
 		this._adapterLifecycleActive = true;
 		this._originalAuthJson = await writeCodexAuthFile(plan.projectSecrets, plan.logWriter);
+		await writeCodexHooksFile(plan.blockGitPush);
 	}
 
 	/**
@@ -679,10 +741,14 @@ export class CodexEngine extends NativeToolEngine {
 	 * refreshed Codex auth token back to the project credentials.
 	 */
 	async afterExecute(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void> {
-		await super.afterExecute(plan, result);
-		await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
-		this._originalAuthJson = undefined;
-		this._adapterLifecycleActive = false;
+		try {
+			await super.afterExecute(plan, result);
+			await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
+		} finally {
+			await cleanupCodexHooksFiles();
+			this._originalAuthJson = undefined;
+			this._adapterLifecycleActive = false;
+		}
 	}
 
 	/** Remove temp file created by execute() — best-effort, ignores errors. */

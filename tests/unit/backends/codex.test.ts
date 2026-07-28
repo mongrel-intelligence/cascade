@@ -11,6 +11,7 @@ const mockWriteProjectCredential = vi.fn<() => Promise<void>>();
 const mockWriteFile = vi.fn<() => Promise<void>>();
 const mockMkdir = vi.fn<() => Promise<void>>();
 const mockReadFile = vi.fn<() => Promise<string>>();
+const mockRm = vi.fn<() => Promise<void>>();
 
 vi.mock('node:child_process', () => ({
 	spawn: (...args: unknown[]) => mockSpawn(...args),
@@ -20,6 +21,7 @@ vi.mock('node:fs/promises', () => ({
 	mkdir: (...args: unknown[]) => mockMkdir(...args),
 	writeFile: (...args: unknown[]) => mockWriteFile(...args),
 	readFile: (...args: unknown[]) => mockReadFile(...args),
+	rm: (...args: unknown[]) => mockRm(...args),
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
@@ -495,6 +497,24 @@ describe('buildArgs', () => {
 		expect(args).toContain('--enable');
 		expect(args).toContain('web_search');
 	});
+
+	it('bypasses interactive hook trust only when blockGitPush enables the per-run hook', () => {
+		const enabledArgs = buildArgs(
+			makeInput({ blockGitPush: true }),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+		);
+		const disabledArgs = buildArgs(
+			makeInput({ blockGitPush: false }),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+		);
+
+		expect(enabledArgs).toContain('--dangerously-bypass-hook-trust');
+		expect(disabledArgs).not.toContain('--dangerously-bypass-hook-trust');
+	});
 });
 
 describe('buildEnv', () => {
@@ -515,6 +535,7 @@ describe('CodexEngine', () => {
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+		mockRm.mockResolvedValue(undefined);
 		mockWriteProjectCredential.mockResolvedValue(undefined);
 	});
 
@@ -1586,6 +1607,104 @@ describe('CodexEngine lifecycle hooks', () => {
 		});
 	});
 
+	it('beforeExecute writes a PreToolUse git-push deny hook when blockGitPush is enabled', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			blockGitPush: true,
+		});
+
+		await engine.beforeExecute(input);
+
+		const hooksWrite = mockWriteFile.mock.calls.find(([path]) =>
+			String(path).endsWith('hooks.json'),
+		);
+		expect(hooksWrite).toBeDefined();
+		expect(JSON.parse(String(hooksWrite?.[1]))).toEqual({
+			hooks: {
+				PreToolUse: [
+					{
+						matcher: 'Bash',
+						hooks: [
+							{
+								type: 'command',
+								command: expect.stringContaining('cascade-block-git-push.cjs'),
+							},
+						],
+					},
+				],
+			},
+		});
+
+		const hookScriptWrite = mockWriteFile.mock.calls.find(([path]) =>
+			String(path).endsWith('cascade-block-git-push.cjs'),
+		);
+		expect(hookScriptWrite?.[1]).toContain('/\\bgit\\s+push\\b/');
+		expect(hookScriptWrite?.[1]).toContain('cascade-tools scm create-pr flow');
+	});
+
+	it.each([
+		'git push',
+		'git push origin HEAD',
+		'cd /tmp/repo && git push origin feature/x',
+	])('generated PreToolUse hook denies compound push command: %s', async (command) => {
+		const engine = new CodexEngine();
+		await engine.beforeExecute(makeInput({ repoDir: workspaceDir, blockGitPush: true }));
+		const script = String(
+			mockWriteFile.mock.calls.find(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			)?.[1],
+		);
+		const stdin = new EventEmitter() as EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+		stdin.setEncoding = vi.fn();
+		const write = vi.fn();
+
+		new Function('process', script)({ stdin, stdout: { write } });
+		stdin.emit('data', JSON.stringify({ tool_input: { command } }));
+		stdin.emit('end');
+
+		expect(JSON.parse(String(write.mock.calls[0]?.[0]))).toEqual({
+			hookSpecificOutput: {
+				hookEventName: 'PreToolUse',
+				permissionDecision: 'deny',
+				permissionDecisionReason: expect.stringContaining('cascade-tools scm create-pr'),
+			},
+		});
+	});
+
+	it('generated PreToolUse hook allows non-push git commands', async () => {
+		const engine = new CodexEngine();
+		await engine.beforeExecute(makeInput({ repoDir: workspaceDir, blockGitPush: true }));
+		const script = String(
+			mockWriteFile.mock.calls.find(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			)?.[1],
+		);
+		const stdin = new EventEmitter() as EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+		stdin.setEncoding = vi.fn();
+		const write = vi.fn();
+
+		new Function('process', script)({ stdin, stdout: { write } });
+		stdin.emit('data', JSON.stringify({ tool_input: { command: 'git status' } }));
+		stdin.emit('end');
+
+		expect(write).not.toHaveBeenCalled();
+	});
+
+	it('beforeExecute does not write hooks when blockGitPush is disabled', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			blockGitPush: false,
+		});
+
+		await engine.beforeExecute(input);
+
+		expect(mockWriteFile.mock.calls.some(([path]) => String(path).endsWith('hooks.json'))).toBe(
+			false,
+		);
+	});
+
 	it('afterExecute writes refreshed token to project_credentials', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
@@ -1612,6 +1731,10 @@ describe('CodexEngine lifecycle hooks', () => {
 		const plan = makeInput({ repoDir: workspaceDir });
 
 		await expect(engine.afterExecute(plan, { success: true, output: '' })).resolves.not.toThrow();
+		expect(mockRm).toHaveBeenCalledWith(expect.stringContaining('hooks.json'), { force: true });
+		expect(mockRm).toHaveBeenCalledWith(expect.stringContaining('cascade-block-git-push.cjs'), {
+			force: true,
+		});
 	});
 
 	it('adapter lifecycle: execute does not double-capture token when adapter calls afterExecute', async () => {
