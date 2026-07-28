@@ -72,6 +72,8 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Install agent CLIs used by headless engines in worker jobs.
 # All three are explicitly pinned so worker image rebuilds are reproducible —
 # upstream CLI changes can introduce subtle behavioural drift in headless mode.
+# When bumping Codex, regenerate tests/fixtures/codex/<version>/ with
+# `codex app-server generate-json-schema --out <dir>` and record an exec JSONL stream.
 RUN npm install -g \
     @anthropic-ai/claude-code@2.1.185 \
     @openai/codex@0.145.0 \
