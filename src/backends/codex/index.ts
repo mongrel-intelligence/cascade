@@ -9,6 +9,7 @@ import { writeProjectCredential } from '../../db/repositories/credentialsReposit
 import { calculateCost } from '../../utils/llmMetrics.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { SHARED_ALLOWED_ENV_EXACT } from '../shared/envFilter.js';
@@ -72,6 +73,14 @@ type CodexCumulativeUsage = {
 	reasoningTokens: number;
 };
 
+type CodexRunState = {
+	iterationCount: number;
+	llmCallCount: number;
+	cost?: number;
+	sessionId?: string;
+	cumulativeUsage: CodexCumulativeUsage;
+};
+
 type CodexLineContext = {
 	input: AgentExecutionPlan;
 	model: string;
@@ -85,6 +94,8 @@ type CodexLineContext = {
 	currentTurn: CodexTurnAccumulator;
 	/** Previous turn's cumulative usage — used to compute per-turn deltas. */
 	cumulativeUsage: CodexCumulativeUsage;
+	/** Shared across subprocesses so continuation turns can resume this rollout. */
+	runState: CodexRunState;
 };
 
 function tomlString(value: string): string {
@@ -309,6 +320,10 @@ async function handleStructuralEvent(
 		return true;
 	}
 	if (eventType === 'turn.started' || eventType === 'thread.started') {
+		if (eventType === 'thread.started') {
+			const { threadId } = parseCodexEvent(parsed);
+			if (threadId) context.runState.sessionId = threadId;
+		}
 		// Reset turn accumulator at the start of each new turn
 		context.currentTurn = { textSummary: [], usage: null };
 		return true;
@@ -435,17 +450,106 @@ function buildPrompt(systemPrompt: string, taskPrompt: string): string {
 	return `## System Instructions\n${systemPrompt}\n\n## Task\n${taskPrompt}`;
 }
 
+function buildCodexTurnResult(options: {
+	input: AgentExecutionPlan;
+	runState: CodexRunState;
+	startTime: number;
+	exitCode: number;
+	lastMessagePath: string;
+	rawTextParts: string[];
+	stderrChunks: string[];
+	finalError?: string;
+	turnCost?: number;
+	toolCallCount: number;
+}): { result: AgentEngineResult; toolCallCount: number } {
+	const {
+		input,
+		runState,
+		startTime,
+		exitCode,
+		lastMessagePath,
+		rawTextParts,
+		stderrChunks,
+		finalError,
+		turnCost,
+		toolCallCount,
+	} = options;
+	const fileOutput =
+		existsSync(lastMessagePath) && readFileSync(lastMessagePath, 'utf-8').trim()
+			? readFileSync(lastMessagePath, 'utf-8').trim()
+			: rawTextParts.join('\n').trim();
+	const { finalOutput, prUrl, prEvidence, structuredPrClaim } = resolveCompletionOutput(
+		fileOutput,
+		rawTextParts.join('\n'),
+	);
+	const stderrOutput = stderrChunks.join('').trim();
+
+	if (structuredPrClaim) {
+		input.logWriter('INFO', 'Codex structured completion claimed PR creation', {
+			prUrl: structuredPrClaim,
+			authoritative: false,
+			hint: 'The native-tool PR sidecar remains the sole authority for completion gating',
+		});
+	}
+	input.logWriter('DEBUG', 'Codex process exited', {
+		exitCode,
+		iterationCount: runState.iterationCount,
+		llmCallCount: runState.llmCallCount,
+		finalOutputLength: finalOutput.length,
+	});
+	if (stderrOutput) input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
+
+	const shellCorruptionResult = classifyShellCorruption(
+		stderrOutput,
+		exitCode,
+		prUrl,
+		prEvidence,
+		finalOutput,
+		turnCost,
+		input.logWriter,
+	);
+	if (shellCorruptionResult) return { result: shellCorruptionResult, toolCallCount };
+
+	const result =
+		exitCode !== 0
+			? buildEngineResult({
+					success: false,
+					output: finalOutput,
+					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
+					cost: turnCost,
+					prUrl,
+					prEvidence,
+				})
+			: buildEngineResult({
+					success: true,
+					output: finalOutput,
+					cost: turnCost,
+					prUrl,
+					prEvidence,
+				});
+	if (result.success) {
+		input.logWriter('INFO', 'Codex execution completed', {
+			turns: runState.iterationCount,
+			cost: runState.cost ?? null,
+			prUrl: prUrl ?? null,
+			durationMs: Date.now() - startTime,
+		});
+	}
+	return { result, toolCallCount };
+}
+
 export function buildArgs(
 	input: AgentExecutionPlan,
 	settings: ReturnType<typeof resolveCodexSettings>,
 	model: string,
 	lastMessagePath: string,
 	outputSchemaPath: string,
+	sessionId?: string,
 ): string[] {
 	const args = [
 		'exec',
+		...(sessionId ? ['resume', sessionId] : []),
 		'--json',
-		'--ephemeral',
 		'--ignore-user-config',
 		'--ignore-rules',
 		'--skip-git-repo-check',
@@ -760,21 +864,18 @@ export class CodexEngine extends NativeToolEngine {
 		// subprocess via CODEX_API_KEY and does not persist in ~/.codex/auth.json.
 		const subprocessSecrets = buildCodexSubprocessSecrets(input.projectSecrets);
 
-		const lastMessagePath = join(
-			tmpdir(),
-			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
-		);
-		const outputSchemaPath = join(
-			tmpdir(),
-			`cascade-codex-output-schema-${process.pid}-${Date.now()}.json`,
-		);
-		writeFileSync(outputSchemaPath, JSON.stringify(CODEX_COMPLETION_OUTPUT_SCHEMA), {
-			encoding: 'utf-8',
-			mode: 0o600,
-		});
-		const prompt = buildPrompt(systemPrompt, taskPrompt);
 		const env = this.buildEnv(subprocessSecrets, input.cliToolsDir, input.nativeToolShimDir);
-		const args = buildArgs(input, settings, model, lastMessagePath, outputSchemaPath);
+		const initialPrompt = buildPrompt(systemPrompt, taskPrompt);
+		const runState: CodexRunState = {
+			iterationCount: 0,
+			llmCallCount: 0,
+			cumulativeUsage: {
+				inputTokens: 0,
+				outputTokens: 0,
+				cachedTokens: 0,
+				reasoningTokens: 0,
+			},
+		};
 
 		input.logWriter('INFO', 'Starting Codex execution', {
 			agentType: input.agentType,
@@ -786,180 +887,135 @@ export class CodexEngine extends NativeToolEngine {
 			hasOffloadedContext,
 		});
 
-		appendEngineLog(
-			input.engineLogPath,
-			`$ codex ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`,
-		);
-
-		let iterationCount = 0;
-		let llmCallCount = 0;
-		let cost: number | undefined;
-		const rawTextParts: string[] = [];
-		const stderrChunks: string[] = [];
-		let finalError: string | undefined;
-
 		try {
-			const exitCode = await new Promise<number>((resolve, reject) => {
-				const child = spawn('codex', args, {
-					cwd: input.repoDir,
-					env,
-					stdio: ['pipe', 'pipe', 'pipe'],
-				});
-				let lineQueue = Promise.resolve();
-				let streamFailed = false;
-				const lineContext: CodexLineContext = {
-					input,
-					model,
-					maxIterations: input.maxIterations,
-					rawTextParts,
-					iterationCount,
-					llmCallCount,
-					cost,
-					finalError,
-					currentTurn: { textSummary: [], usage: null },
-					cumulativeUsage: {
-						inputTokens: 0,
-						outputTokens: 0,
-						cachedTokens: 0,
-						reasoningTokens: 0,
-					},
-				};
-
-				child.once('error', (error) => {
-					reject(
-						error instanceof Error && 'code' in error && error.code === 'ENOENT'
-							? new Error(
-									'Codex CLI not found in PATH. Install `@openai/codex` in the worker image.',
-								)
-							: error,
+			return await runContinuationLoop({
+				initialPrompt,
+				completionRequirements: input.completionRequirements,
+				logWriter: input.logWriter,
+				engineLabel: 'Codex',
+				executeTurn: async ({ promptText }) => {
+					const lastMessagePath = join(
+						tmpdir(),
+						`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
 					);
-				});
+					const outputSchemaPath = join(
+						tmpdir(),
+						`cascade-codex-output-schema-${process.pid}-${Date.now()}.json`,
+					);
+					writeFileSync(outputSchemaPath, JSON.stringify(CODEX_COMPLETION_OUTPUT_SCHEMA), {
+						encoding: 'utf-8',
+						mode: 0o600,
+					});
+					const args = buildArgs(
+						input,
+						settings,
+						model,
+						lastMessagePath,
+						outputSchemaPath,
+						runState.sessionId,
+					);
+					const rawTextParts: string[] = [];
+					const stderrChunks: string[] = [];
+					let finalError: string | undefined;
+					const costBeforeTurn = runState.cost ?? 0;
+					const llmCallsBeforeTurn = runState.llmCallCount;
+					let turnToolCallCount = 0;
 
-				const stdout = createInterface({ input: child.stdout });
-				stdout.on('line', (line) => {
-					lineQueue = lineQueue
-						.then(() => processStdoutLine(lineContext, line))
-						.catch((error) => {
-							streamFailed = true;
-							reject(error);
+					appendEngineLog(
+						input.engineLogPath,
+						`$ codex ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`,
+					);
+
+					try {
+						const exitCode = await new Promise<number>((resolve, reject) => {
+							const child = spawn('codex', args, {
+								cwd: input.repoDir,
+								env,
+								stdio: ['pipe', 'pipe', 'pipe'],
+							});
+							let lineQueue = Promise.resolve();
+							let streamFailed = false;
+							const lineContext: CodexLineContext = {
+								input,
+								model,
+								maxIterations: input.maxIterations,
+								rawTextParts,
+								iterationCount: runState.iterationCount,
+								llmCallCount: runState.llmCallCount,
+								cost: runState.cost,
+								finalError,
+								currentTurn: { textSummary: [], usage: null },
+								cumulativeUsage: runState.cumulativeUsage,
+								runState,
+							};
+
+							child.once('error', (error) => {
+								reject(
+									error instanceof Error && 'code' in error && error.code === 'ENOENT'
+										? new Error(
+												'Codex CLI not found in PATH. Install `@openai/codex` in the worker image.',
+											)
+										: error,
+								);
+							});
+
+							const stdout = createInterface({ input: child.stdout });
+							stdout.on('line', (line) => {
+								lineQueue = lineQueue
+									.then(() => processStdoutLine(lineContext, line))
+									.catch((error) => {
+										streamFailed = true;
+										reject(error);
+									});
+							});
+
+							child.stderr.on('data', (chunk: Buffer | string) => {
+								const text = chunk.toString();
+								stderrChunks.push(text);
+								appendEngineLog(input.engineLogPath, text);
+								const trimmed = text.trim();
+								if (trimmed) input.logWriter('DEBUG', 'Codex stderr', { stderr: trimmed });
+							});
+
+							child.stdin.write(promptText);
+							child.stdin.end();
+
+							child.once('close', (code) => {
+								void lineQueue
+									.then(() => {
+										runState.iterationCount = lineContext.iterationCount;
+										runState.llmCallCount = lineContext.llmCallCount;
+										runState.cost = lineContext.cost;
+										runState.cumulativeUsage = lineContext.cumulativeUsage;
+										finalError = lineContext.finalError;
+										turnToolCallCount = lineContext.llmCallCount - llmCallsBeforeTurn;
+										if (!streamFailed) resolve(code ?? 1);
+									})
+									.catch(reject);
+							});
 						});
-				});
 
-				child.stderr.on('data', (chunk: Buffer | string) => {
-					const text = chunk.toString();
-					stderrChunks.push(text);
-					appendEngineLog(input.engineLogPath, text);
-					const trimmed = text.trim();
-					if (trimmed) input.logWriter('DEBUG', 'Codex stderr', { stderr: trimmed });
-				});
-
-				child.stdin.write(prompt);
-				child.stdin.end();
-
-				child.once('close', (code) => {
-					void lineQueue
-						.then(() => {
-							iterationCount = lineContext.iterationCount;
-							llmCallCount = lineContext.llmCallCount;
-							cost = lineContext.cost;
-							finalError = lineContext.finalError;
-							if (!streamFailed) {
-								resolve(code ?? 1);
-							}
-						})
-						.catch(reject);
-				});
-			});
-
-			const rawFinalOutput =
-				existsSync(lastMessagePath) && readFileSync(lastMessagePath, 'utf-8').trim()
-					? readFileSync(lastMessagePath, 'utf-8').trim()
-					: rawTextParts.join('\n').trim();
-			const streamedOutput = rawTextParts.join('\n');
-			const { finalOutput, prUrl, prEvidence, structuredPrClaim } = resolveCompletionOutput(
-				rawFinalOutput,
-				streamedOutput,
-			);
-			const stderrOutput = stderrChunks.join('').trim();
-
-			if (structuredPrClaim) {
-				input.logWriter('INFO', 'Codex structured completion claimed PR creation', {
-					prUrl: structuredPrClaim,
-					authoritative: false,
-					hint: 'The native-tool PR sidecar remains the sole authority for completion gating',
-				});
-			}
-
-			input.logWriter('DEBUG', 'Codex process exited', {
-				exitCode,
-				iterationCount,
-				llmCallCount,
-				finalOutputLength: finalOutput.length,
-			});
-
-			if (stderrOutput) {
-				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
-			}
-
-			// Prod regression 2026-05-09 (runs 8b000cd6, d8e31665): codex's
-			// persistent bash session breaks with `ERROR
-			// codex_core::tools::router: error=write_stdin failed: stdin is
-			// closed for this session`. Once that signal fires, every
-			// subsequent command in the session inherits a corrupted stdout
-			// buffer (lint output from one command bleeding into the next,
-			// sidecar writes racing). We observed this leading to silent run
-			// failures with PR-creation evidence missing despite a real PR
-			// existing on GitHub. Codex itself exits cleanly (exit=0) — the
-			// stderr signal is the only evidence the session was corrupted.
-			//
-			// MNG-718 follow-up (run f801342b, 2026-05-11): the signal can
-			// also fire LATE, at session-close, after all real work has been
-			// captured. That run opened PR #1350, ran the full verification
-			// suite, and filed a follow-up friction ticket — yet was marked
-			// failed, costing cascade the post-completion review dispatch
-			// and surfacing a misleading "agent failed" comment. Split the
-			// two cases by whether success evidence (prUrl + finalOutput)
-			// was captured before the signal: late → WARN + success, early
-			// → ERROR + fail.
-			const shellCorruptionResult = classifyShellCorruption(
-				stderrOutput,
-				exitCode,
-				prUrl,
-				prEvidence,
-				finalOutput,
-				cost,
-				input.logWriter,
-			);
-			if (shellCorruptionResult) return shellCorruptionResult;
-
-			if (exitCode !== 0) {
-				return buildEngineResult({
-					success: false,
-					output: finalOutput,
-					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
-					cost,
-					prUrl,
-					prEvidence,
-				});
-			}
-
-			input.logWriter('INFO', 'Codex execution completed', {
-				turns: iterationCount,
-				cost: cost ?? null,
-				prUrl: prUrl ?? null,
-				durationMs: Date.now() - startTime,
-			});
-
-			return buildEngineResult({
-				success: true,
-				output: finalOutput,
-				cost,
-				prUrl,
-				prEvidence,
+						const turnCost =
+							runState.cost === undefined ? undefined : runState.cost - costBeforeTurn;
+						return buildCodexTurnResult({
+							input,
+							runState,
+							startTime,
+							exitCode,
+							lastMessagePath,
+							rawTextParts,
+							stderrChunks,
+							finalError,
+							turnCost,
+							toolCallCount: turnToolCallCount,
+						});
+					} finally {
+						CodexEngine._cleanupLastMessagePath(lastMessagePath);
+						CodexEngine._cleanupLastMessagePath(outputSchemaPath);
+					}
+				},
 			});
 		} finally {
-			CodexEngine._cleanupLastMessagePath(lastMessagePath);
-			CodexEngine._cleanupLastMessagePath(outputSchemaPath);
 			// When called directly (not via adapter), afterExecute won't be invoked.
 			// Perform cleanup here so direct callers (e.g. tests) still behave correctly.
 			if (!this._adapterLifecycleActive) {
@@ -978,6 +1034,7 @@ export class CodexEngine extends NativeToolEngine {
 export {
 	extractErrorMessage,
 	extractTextParts,
+	extractThreadId,
 	extractToolCall,
 	extractUsage,
 } from './jsonlParser.js';

@@ -47,7 +47,13 @@ function expectSchemaMatch(validate: ValidateFunction, value: unknown, context: 
 describe('Codex exec JSONL schema drift', () => {
 	it('replays the pinned CLI stream through jsonlParser', () => {
 		expect(events.map((event) => parseCodexEvent(event))).toEqual([
-			{ textParts: [], toolCall: null, usage: null, error: undefined },
+			{
+				textParts: [],
+				toolCall: null,
+				usage: null,
+				threadId: events[0].thread_id,
+				error: undefined,
+			},
 			{ textParts: [], toolCall: null, usage: null, error: undefined },
 			{
 				textParts: ['schema fixture'],

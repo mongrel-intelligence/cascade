@@ -45,6 +45,7 @@ import {
 	CodexEngine,
 	extractErrorMessage,
 	extractTextParts,
+	extractThreadId,
 	extractToolCall,
 	extractUsage,
 	resolveCodexModel,
@@ -207,6 +208,13 @@ describe('extractErrorMessage', () => {
 
 	it('returns undefined for empty string error', () => {
 		expect(extractErrorMessage({ error: '' })).toBeUndefined();
+	});
+});
+
+describe('extractThreadId', () => {
+	it('extracts a resumable id only from thread.started', () => {
+		expect(extractThreadId({ type: 'thread.started', thread_id: 'th_abc' })).toBe('th_abc');
+		expect(extractThreadId({ type: 'turn.started', thread_id: 'th_abc' })).toBeUndefined();
 	});
 });
 
@@ -524,6 +532,27 @@ describe('buildArgs', () => {
 		expect(args).toContain('--ignore-user-config');
 		expect(args).toContain('--ignore-rules');
 	});
+
+	it('persists the initial rollout and resumes it on continuation turns', () => {
+		const initialArgs = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		const resumeArgs = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+			'th_abc',
+		);
+
+		expect(initialArgs).not.toContain('--ephemeral');
+		expect(resumeArgs.slice(0, 4)).toEqual(['exec', 'resume', 'th_abc', '--json']);
+	});
 });
 
 describe('structured completion output', () => {
@@ -638,6 +667,70 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Thinking...');
 		expect(mockStoreLlmCall).toHaveBeenCalled();
 		expect(readFileSync(join(workspaceDir, 'codex.log'), 'utf-8')).toContain('codex');
+	});
+
+	it('resumes the captured thread and preserves cumulative usage accounting', async () => {
+		const prSidecarPath = join(workspaceDir, 'pr-sidecar.json');
+		mockSpawn
+			.mockImplementationOnce((_cmd: string, args: string[]) => {
+				expect(args).not.toContain('resume');
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({ type: 'thread.started', thread_id: 'th_resume_123' }),
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 100, output_tokens: 50 },
+						}),
+					],
+					onBeforeClose: () => writeFileSync(outputPath, 'Initial turn done', 'utf-8'),
+				});
+			})
+			.mockImplementationOnce((_cmd: string, args: string[]) => {
+				expect(args.slice(0, 4)).toEqual(['exec', 'resume', 'th_resume_123', '--json']);
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 150, output_tokens: 70 },
+						}),
+					],
+					onBeforeClose: () => {
+						writeFileSync(outputPath, 'Continuation done', 'utf-8');
+						writeFileSync(
+							prSidecarPath,
+							JSON.stringify({ prUrl: 'https://github.com/owner/repo/pull/789' }),
+							'utf-8',
+						);
+					},
+				});
+			});
+
+		const result = await new CodexEngine().execute(
+			makeInput({
+				repoDir: workspaceDir,
+				runId: 'run-resume',
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 1,
+				},
+			}),
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/789');
+		expect(mockSpawn).toHaveBeenCalledTimes(2);
+		const costRows = mockStoreLlmCall.mock.calls.map(
+			([call]) => JSON.parse((call as { response: string }).response) as Record<string, unknown>,
+		);
+		expect(costRows[0]).toMatchObject({
+			delta: { inputTokens: 100, outputTokens: 50 },
+		});
+		expect(costRows[1]).toMatchObject({
+			delta: { inputTokens: 50, outputTokens: 20 },
+		});
 	});
 
 	it('uses the structured summary and treats its PR URL as non-authoritative text evidence', async () => {
