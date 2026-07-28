@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,6 +9,18 @@ import {
 	parseFunctionCallItem,
 	resolveUsageRecord,
 } from '../../../src/backends/codex/jsonlParser.js';
+
+const RECORDED_EXEC_FIXTURES = ['0.141.0', '0.145.0'] as const;
+
+function readRecordedExecFixture(version: (typeof RECORDED_EXEC_FIXTURES)[number]) {
+	return readFileSync(
+		new URL(`../../fixtures/codex/exec-${version}.jsonl`, import.meta.url),
+		'utf8',
+	)
+		.trim()
+		.split('\n')
+		.map((line) => JSON.parse(line) as Record<string, unknown>);
+}
 
 // ─── extractTextFromContentParts ────────────────────────────────────────────
 
@@ -272,6 +285,56 @@ describe('resolveUsageRecord', () => {
 // ─── parseCodexEvent ─────────────────────────────────────────────────────────
 
 describe('parseCodexEvent', () => {
+	it.each(
+		RECORDED_EXEC_FIXTURES,
+	)('replays the Codex CLI %s exec stream without parser drift', (version) => {
+		const events = readRecordedExecFixture(version);
+		const parsed = events.map(parseCodexEvent);
+
+		expect(events.map((event) => event.type)).toEqual([
+			'thread.started',
+			'turn.started',
+			'item.completed',
+			'turn.completed',
+			...(version === '0.145.0'
+				? ['thread.started', 'turn.started', 'item.completed', 'turn.completed']
+				: []),
+		]);
+		expect(parsed[2]).toMatchObject({
+			textParts: ['fixture-ok'],
+			toolCall: null,
+			usage: null,
+		});
+		expect(parsed[3].usage).toEqual(
+			version === '0.141.0'
+				? {
+						inputTokens: 10859,
+						outputTokens: 16,
+						cachedTokens: 2432,
+						reasoningTokens: 8,
+					}
+				: {
+						inputTokens: 15428,
+						outputTokens: 6,
+						cachedTokens: 0,
+						reasoningTokens: 0,
+					},
+		);
+		if (version === '0.145.0') {
+			expect(parsed[6]).toMatchObject({
+				textParts: ['fixture-resumed'],
+				toolCall: null,
+				usage: null,
+			});
+			expect(parsed[7].usage).toEqual({
+				inputTokens: 30875,
+				outputTokens: 13,
+				cachedTokens: 15104,
+				reasoningTokens: 0,
+			});
+		}
+	});
+
 	it('parses a complete text event correctly', () => {
 		const result = parseCodexEvent({ type: 'text', text: 'Hello, world!' });
 		expect(result.textParts).toContain('Hello, world!');
