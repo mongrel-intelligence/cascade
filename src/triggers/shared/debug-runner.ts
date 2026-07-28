@@ -174,6 +174,7 @@ export async function triggerDebugAnalysis(
 			originalWorkItemId: workItemId,
 			originalWorkItemName: workItemId ? `Card ${workItemId}` : 'Unknown card',
 			originalWorkItemUrl: workItemId ? resolveWorkItemUrl(workItemId) : '',
+			prNumber: run.prNumber ?? undefined,
 			detectedAgentType: run.agentType,
 			project,
 			config,
