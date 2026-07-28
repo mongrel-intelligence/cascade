@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +19,7 @@ import type { AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.
 import type { UsageSummary } from './jsonlParser.js';
 import { extractUsage, parseCodexEvent } from './jsonlParser.js';
 import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
+import { CODEX_COMPLETION_OUTPUT_SCHEMA, parseCodexCompletionReport } from './outputSchema.js';
 import {
 	assertHeadlessCodexSettings,
 	CodexSettingsSchema,
@@ -439,6 +440,7 @@ export function buildArgs(
 	settings: ReturnType<typeof resolveCodexSettings>,
 	model: string,
 	lastMessagePath: string,
+	outputSchemaPath: string,
 ): string[] {
 	const args = [
 		'exec',
@@ -453,6 +455,8 @@ export function buildArgs(
 		settings.sandboxMode,
 		'-o',
 		lastMessagePath,
+		'--output-schema',
+		outputSchemaPath,
 		'-c',
 		`approval_policy=${tomlString(settings.approvalPolicy)}`,
 	];
@@ -620,6 +624,31 @@ function classifyShellCorruption(
 	});
 }
 
+function resolveCompletionOutput(
+	rawOutput: string,
+	streamedOutput: string,
+): {
+	finalOutput: string;
+	prUrl: string | undefined;
+	prEvidence: ReturnType<typeof extractAndBuildPrEvidence>['prEvidence'];
+	structuredPrClaim: string | undefined;
+} {
+	const completionReport = parseCodexCompletionReport(rawOutput);
+	const finalOutput = completionReport?.summary ?? rawOutput;
+	let { prUrl, prEvidence } = completionReport?.prUrl
+		? extractAndBuildPrEvidence(completionReport.prUrl)
+		: extractAndBuildPrEvidence(finalOutput);
+	if (!prUrl) {
+		({ prUrl, prEvidence } = extractAndBuildPrEvidence(streamedOutput));
+	}
+	return {
+		finalOutput,
+		prUrl,
+		prEvidence,
+		structuredPrClaim: completionReport?.prUrl ?? undefined,
+	};
+}
+
 /**
  * Codex CLI backend for CASCADE.
  *
@@ -747,9 +776,17 @@ export class CodexEngine extends NativeToolEngine {
 			tmpdir(),
 			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
 		);
+		const outputSchemaPath = join(
+			tmpdir(),
+			`cascade-codex-output-schema-${process.pid}-${Date.now()}.json`,
+		);
+		writeFileSync(outputSchemaPath, JSON.stringify(CODEX_COMPLETION_OUTPUT_SCHEMA), {
+			encoding: 'utf-8',
+			mode: 0o600,
+		});
 		const prompt = buildPrompt(systemPrompt, taskPrompt);
 		const env = this.buildEnv(strippedSecrets, input.cliToolsDir, input.nativeToolShimDir);
-		const args = buildArgs(input, settings, model, lastMessagePath);
+		const args = buildArgs(input, settings, model, lastMessagePath, outputSchemaPath);
 
 		input.logWriter('INFO', 'Starting Codex execution', {
 			agentType: input.agentType,
@@ -846,14 +883,23 @@ export class CodexEngine extends NativeToolEngine {
 				});
 			});
 
-			const finalOutput =
+			const rawFinalOutput =
 				existsSync(lastMessagePath) && readFileSync(lastMessagePath, 'utf-8').trim()
 					? readFileSync(lastMessagePath, 'utf-8').trim()
 					: rawTextParts.join('\n').trim();
+			const streamedOutput = rawTextParts.join('\n');
+			const { finalOutput, prUrl, prEvidence, structuredPrClaim } = resolveCompletionOutput(
+				rawFinalOutput,
+				streamedOutput,
+			);
 			const stderrOutput = stderrChunks.join('').trim();
-			let { prUrl, prEvidence } = extractAndBuildPrEvidence(finalOutput);
-			if (!prUrl) {
-				({ prUrl, prEvidence } = extractAndBuildPrEvidence(rawTextParts.join('\n')));
+
+			if (structuredPrClaim) {
+				input.logWriter('INFO', 'Codex structured completion claimed PR creation', {
+					prUrl: structuredPrClaim,
+					authoritative: false,
+					hint: 'The native-tool PR sidecar remains the sole authority for completion gating',
+				});
 			}
 
 			input.logWriter('DEBUG', 'Codex process exited', {
@@ -925,6 +971,7 @@ export class CodexEngine extends NativeToolEngine {
 			});
 		} finally {
 			CodexEngine._cleanupLastMessagePath(lastMessagePath);
+			CodexEngine._cleanupLastMessagePath(outputSchemaPath);
 			// When called directly (not via adapter), afterExecute won't be invoked.
 			// Perform cleanup here so direct callers (e.g. tests) still behave correctly.
 			if (!this._adapterLifecycleActive) {

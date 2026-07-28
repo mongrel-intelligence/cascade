@@ -51,6 +51,10 @@ import {
 } from '../../../src/backends/codex/index.js';
 import { DEFAULT_CODEX_MODEL } from '../../../src/backends/codex/models.js';
 import {
+	CODEX_COMPLETION_OUTPUT_SCHEMA,
+	parseCodexCompletionReport,
+} from '../../../src/backends/codex/outputSchema.js';
+import {
 	assertHeadlessCodexSettings,
 	resolveCodexSettings,
 } from '../../../src/backends/codex/settings.js';
@@ -480,6 +484,7 @@ describe('buildArgs', () => {
 			{ ...baseSettings, webSearch: false },
 			'model-x',
 			'/tmp/last.json',
+			'/tmp/output-schema.json',
 		);
 		expect(args).not.toContain('--search');
 		expect(args).not.toContain('search=true');
@@ -491,9 +496,52 @@ describe('buildArgs', () => {
 			{ ...baseSettings, webSearch: true },
 			'model-x',
 			'/tmp/last.json',
+			'/tmp/output-schema.json',
 		);
 		expect(args).toContain('--enable');
 		expect(args).toContain('web_search');
+	});
+
+	it('passes the structured completion schema to codex exec', () => {
+		const args = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		expect(args[args.indexOf('--output-schema') + 1]).toBe('/tmp/output-schema.json');
+	});
+});
+
+describe('structured completion output', () => {
+	it('defines a strict schema for status, PR claim, and prose summary', () => {
+		expect(CODEX_COMPLETION_OUTPUT_SCHEMA).toMatchObject({
+			type: 'object',
+			additionalProperties: false,
+			required: ['status', 'prUrl', 'summary'],
+		});
+	});
+
+	it('parses a schema-conforming report', () => {
+		expect(
+			parseCodexCompletionReport(
+				JSON.stringify({
+					status: 'completed',
+					prUrl: 'https://github.com/owner/repo/pull/123',
+					summary: 'Implemented and tested the change.',
+				}),
+			),
+		).toEqual({
+			status: 'completed',
+			prUrl: 'https://github.com/owner/repo/pull/123',
+			summary: 'Implemented and tested the change.',
+		});
+	});
+
+	it('returns undefined for malformed or invalid reports', () => {
+		expect(parseCodexCompletionReport('not json')).toBeUndefined();
+		expect(parseCodexCompletionReport('{"status":"completed","prUrl":null}')).toBeUndefined();
 	});
 });
 
@@ -575,6 +623,39 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Thinking...');
 		expect(mockStoreLlmCall).toHaveBeenCalled();
 		expect(readFileSync(join(workspaceDir, 'codex.log'), 'utf-8')).toContain('codex');
+	});
+
+	it('uses the structured summary and treats its PR URL as non-authoritative text evidence', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			const schemaPath = args[args.indexOf('--output-schema') + 1];
+			expect(JSON.parse(readFileSync(schemaPath, 'utf-8'))).toEqual(CODEX_COMPLETION_OUTPUT_SCHEMA);
+			return createMockChild({
+				onBeforeClose: () => {
+					writeFileSync(
+						outputPath,
+						JSON.stringify({
+							status: 'completed',
+							prUrl: 'https://github.com/owner/repo/pull/456',
+							summary: 'Implemented the structured completion report.',
+						}),
+						'utf-8',
+					);
+				},
+			});
+		});
+
+		const input = makeInput({ repoDir: workspaceDir });
+		const result = await new CodexEngine().execute(input);
+
+		expect(result.output).toBe('Implemented the structured completion report.');
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/456');
+		expect(result.prEvidence).toEqual({ source: 'text', authoritative: false });
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Codex structured completion claimed PR creation',
+			expect.objectContaining({ authoritative: false }),
+		);
 	});
 
 	it('fails fast when approval policy is not automation-safe', async () => {
