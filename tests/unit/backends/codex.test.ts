@@ -498,7 +498,7 @@ describe('buildArgs', () => {
 		expect(args).toContain('web_search');
 	});
 
-	it('bypasses interactive hook trust only when blockGitPush enables the per-run hook', () => {
+	it('bypasses interactive hook trust unless blockGitPush is explicitly false (claude-code parity)', () => {
 		const enabledArgs = buildArgs(
 			makeInput({ blockGitPush: true }),
 			{ ...baseSettings, webSearch: false },
@@ -511,9 +511,18 @@ describe('buildArgs', () => {
 			'model-x',
 			'/tmp/last.json',
 		);
+		// Undefined must resolve to block (`input.blockGitPush ?? true`) — mirrors claude-code's
+		// `options?.blockGitPush ?? true`, so implementation / review still bypass hook trust.
+		const defaultArgs = buildArgs(
+			makeInput({ blockGitPush: undefined }),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+		);
 
 		expect(enabledArgs).toContain('--dangerously-bypass-hook-trust');
 		expect(disabledArgs).not.toContain('--dangerously-bypass-hook-trust');
+		expect(defaultArgs).toContain('--dangerously-bypass-hook-trust');
 	});
 });
 
@@ -1689,6 +1698,50 @@ describe('CodexEngine lifecycle hooks', () => {
 		stdin.emit('end');
 
 		expect(write).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		'',
+		'not json{',
+		'{"tool_input": ',
+	])('generated PreToolUse hook fails open without throwing on unparseable stdin: %j', async (rawInput) => {
+		const engine = new CodexEngine();
+		await engine.beforeExecute(makeInput({ repoDir: workspaceDir, blockGitPush: true }));
+		const script = String(
+			mockWriteFile.mock.calls.find(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			)?.[1],
+		);
+		const stdin = new EventEmitter() as EventEmitter & {
+			setEncoding: ReturnType<typeof vi.fn>;
+		};
+		stdin.setEncoding = vi.fn();
+		const write = vi.fn();
+
+		new Function('process', script)({ stdin, stdout: { write } });
+		stdin.emit('data', rawInput);
+		// The guard must swallow the JSON.parse error — emitting 'end' must not throw
+		// (an unguarded parse would exit the hook non-zero and produce undefined behavior).
+		expect(() => stdin.emit('end')).not.toThrow();
+		expect(write).not.toHaveBeenCalled();
+	});
+
+	it('beforeExecute writes the git-push deny hook by default when blockGitPush is unset (claude-code parity)', async () => {
+		const engine = new CodexEngine();
+		// implementation / review leave blockGitPush undefined; the codex path must default to
+		// block (`blockGitPush ?? true`) just like claude-code, so the deny hook is materialized.
+		const input = makeInput({ repoDir: workspaceDir, blockGitPush: undefined });
+
+		await engine.beforeExecute(input);
+
+		expect(mockWriteFile.mock.calls.some(([path]) => String(path).endsWith('hooks.json'))).toBe(
+			true,
+		);
+		expect(
+			mockWriteFile.mock.calls.some(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			),
+		).toBe(true);
 	});
 
 	it('beforeExecute does not write hooks when blockGitPush is disabled', async () => {

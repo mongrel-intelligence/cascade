@@ -37,7 +37,18 @@ const BLOCK_GIT_PUSH_HOOK = `let input = '';
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => { input += chunk; });
 process.stdin.on('end', () => {
-	const payload = JSON.parse(input);
+	let payload;
+	try {
+		payload = JSON.parse(input);
+	} catch {
+		// Empty / non-JSON stdin means we cannot read the command. Codex serializes this
+		// envelope itself, so the agent cannot forge a malformed payload to smuggle a push;
+		// a parse failure signals a codex payload-format mismatch, not an evasion attempt.
+		// Fail open (allow) rather than deny-blocking every Bash call and bricking the run —
+		// git-push blocking resumes on the next well-formed payload. This is a deliberate
+		// decision so the process never throws / exits non-zero on unexpected input.
+		return;
+	}
 	const command = payload?.tool_input?.command ?? '';
 	if (/\\bgit\\s+push\\b/.test(command)) {
 		process.stdout.write(JSON.stringify({
@@ -52,7 +63,12 @@ process.stdin.on('end', () => {
 `;
 
 async function writeCodexHooksFile(blockGitPush: boolean | undefined): Promise<void> {
-	if (!blockGitPush) return;
+	// Mirror claude-code's default (buildPreToolUseHooks: `options?.blockGitPush ?? true`):
+	// an undefined blockGitPush blocks by default, so the deny hook is materialized for
+	// implementation / review (the MNG-1755 targets) and every other agent. Only the four
+	// PR-branch agents opt out with an explicit `blockGitPush: false`.
+	const shouldBlock = blockGitPush ?? true;
+	if (!shouldBlock) return;
 
 	await mkdir(CODEX_AUTH_DIR, { recursive: true });
 	await writeFile(CODEX_BLOCK_GIT_PUSH_HOOK_FILE, BLOCK_GIT_PUSH_HOOK, { mode: 0o700 });
@@ -519,9 +535,11 @@ export function buildArgs(
 	if (settings.webSearch) {
 		args.push('--enable', 'web_search');
 	}
-	if (input.blockGitPush) {
+	if (input.blockGitPush ?? true) {
 		// CASCADE owns and rewrites this per-run hook, so no interactive trust prompt is possible
-		// or necessary in the headless worker.
+		// or necessary in the headless worker. Mirror claude-code's default-block semantics: an
+		// undefined blockGitPush blocks (so the per-run hook is written and its trust must be
+		// bypassed) for every agent except the four PR-branch opt-outs that set blockGitPush: false.
 		args.push('--dangerously-bypass-hook-trust');
 	}
 	args.push('-');
