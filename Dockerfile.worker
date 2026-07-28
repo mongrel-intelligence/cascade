@@ -74,7 +74,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # upstream CLI changes can introduce subtle behavioural drift in headless mode.
 RUN npm install -g \
     @anthropic-ai/claude-code@2.1.185 \
-    @openai/codex@0.141.0 \
+    @openai/codex@0.145.0 \
     opencode-ai@1.14.25
 
 # Playwright browser cache.
