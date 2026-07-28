@@ -788,6 +788,43 @@ export async function getViewer(): Promise<{ id: string; login: string; name?: s
 	return data.viewer;
 }
 
+/**
+ * List the organizations the authenticated viewer belongs to (login only).
+ *
+ * Used by the wizard's owner picker so operators can configure an
+ * organization-owned project (whose `projects_v2_item` webhook can be created
+ * programmatically). Listing org memberships needs the `read:org` scope, which
+ * a token scoped only for personal Projects may lack — so this is deliberately
+ * error-tolerant: on any failure it logs a warn and returns `[]` rather than
+ * throwing, keeping the critical `getViewer`/login resolution (and thus the
+ * user-owner path) working even without org visibility.
+ */
+export async function getViewerOrganizations(): Promise<Array<{ login: string }>> {
+	const query = `
+		query GetViewerOrganizations {
+			viewer {
+				organizations(first: 100) {
+					nodes {
+						login
+					}
+				}
+			}
+		}
+	`;
+
+	try {
+		const data = await githubGraphQL<{
+			viewer: { organizations: { nodes: Array<{ login: string }> } };
+		}>(query);
+		return data.viewer.organizations.nodes.filter((o) => Boolean(o?.login));
+	} catch (err) {
+		logger.warn('[GitHubProjects] Could not list viewer organizations (read:org scope?)', {
+			error: err instanceof Error ? err.message : String(err),
+		});
+		return [];
+	}
+}
+
 // ============================================================================
 // Status field helpers
 // ============================================================================

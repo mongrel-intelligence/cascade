@@ -8,16 +8,53 @@ import type {
 	WizardState,
 } from '../../pm-wizard-state.js';
 import type { ProviderAuthMetadata } from '../types.js';
+import type { GitHubProjectsOwnerOption } from './state.js';
+
+/** Shape returned by the `currentUser` discovery capability for github-projects. */
+type CurrentUserDiscovery = {
+	id: string;
+	name: string;
+	displayName?: string;
+	login?: string;
+	organizations?: Array<{ login: string }>;
+};
+
+/** The viewer identity + selectable org owners derived from a discovery result. */
+interface OwnerViewer {
+	login: string;
+	organizations: string[];
+}
 
 /**
- * Fetches the current GitHub user to populate the owner selection.
- * Uses the 'currentUser' discovery capability which returns the authenticated viewer.
+ * Reduce a `currentUser` discovery result to the owner login + the viewer's
+ * organizations.
+ *
+ * The owner value MUST be the GitHub *login* (handle), never the display
+ * `name`: owner/project discovery calls `user(login: …)`, which resolves to
+ * `null` for any account whose profile name differs from its login (e.g. "Jane
+ * Smith" vs `janesmith`) — breaking discovery. `name` is only a defensive
+ * fallback for an older backend that predates the `login` field.
+ */
+export function toOwnerViewer(result: CurrentUserDiscovery): OwnerViewer | null {
+	const login = result.login || result.name;
+	if (!login) return null;
+	return {
+		login,
+		organizations: (result.organizations ?? [])
+			.map((o) => o.login)
+			.filter((l): l is string => Boolean(l)),
+	};
+}
+
+/**
+ * Fetches the current GitHub user (and the organizations it belongs to) to
+ * populate the owner selection. Uses the 'currentUser' discovery capability.
  */
 async function fetchCurrentUser(
 	token: string | undefined,
 	projectId: string,
 	hasStoredCredentials: boolean,
-): Promise<{ login: string; type: 'user' } | null> {
+): Promise<OwnerViewer | null> {
 	// In edit mode with stored credentials but no token, use project-scoped discovery
 	if (!token && hasStoredCredentials) {
 		try {
@@ -26,8 +63,8 @@ async function fetchCurrentUser(
 				capability: 'currentUser',
 				args: {},
 				projectId,
-			})) as { id: string; name: string; displayName: string };
-			return { login: result.displayName || result.name, type: 'user' };
+			})) as CurrentUserDiscovery;
+			return toOwnerViewer(result);
 		} catch {
 			return null;
 		}
@@ -41,8 +78,8 @@ async function fetchCurrentUser(
 			capability: 'currentUser',
 			args: {},
 			credentials: { token },
-		})) as { id: string; name: string; displayName: string };
-		return { login: result.displayName || result.name, type: 'user' };
+		})) as CurrentUserDiscovery;
+		return toOwnerViewer(result);
 	} catch {
 		return null;
 	}
@@ -179,15 +216,29 @@ export function useGitHubProjectsOwnerManagement(
 			(Boolean(state.githubProjectsToken) || state.hasStoredCredentials),
 	});
 
-	const ownerOptions = useMemo(() => {
+	const ownerOptions = useMemo<GitHubProjectsOwnerOption[]>(() => {
+		const options: GitHubProjectsOwnerOption[] = [];
 		if (currentUser) {
-			return [{ login: currentUser.login, type: currentUser.type }];
+			// The viewer's personal account…
+			options.push({ login: currentUser.login, type: 'user' });
+			// …plus every organization they belong to, so org-owned projects
+			// (whose webhook can be created programmatically) are selectable.
+			for (const org of currentUser.organizations) {
+				options.push({ login: org, type: 'organization' });
+			}
 		}
-		// Fallback: if we have an owner already set in state, use that
-		if (state.githubProjectsOwner) {
-			return [{ login: state.githubProjectsOwner, type: state.githubProjectsOwnerType }];
+		// Fallback: preserve an owner already set in state (e.g. edit mode
+		// hydrated from saved config, or an org not returned by discovery) so the
+		// current selection still renders.
+		if (
+			state.githubProjectsOwner &&
+			!options.some(
+				(o) => o.login === state.githubProjectsOwner && o.type === state.githubProjectsOwnerType,
+			)
+		) {
+			options.push({ login: state.githubProjectsOwner, type: state.githubProjectsOwnerType });
 		}
-		return [];
+		return options;
 	}, [currentUser, state.githubProjectsOwner, state.githubProjectsOwnerType]);
 
 	const setOwner = (login: string, ownerType: 'user' | 'organization') => {

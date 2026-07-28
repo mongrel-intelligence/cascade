@@ -22,6 +22,7 @@ import {
 	getStatusField,
 	getUserProjects,
 	getViewer,
+	getViewerOrganizations,
 	listAllProjectItems,
 	moveProjectItemToStatus,
 	removeLabelsFromContent,
@@ -731,6 +732,41 @@ describe('github-projects client', () => {
 			const viewer = await withGitHubProjectsCredentials({ token: 't' }, () => getViewer());
 
 			expect(viewer).toEqual({ id: 'U_1', login: 'octocat', name: 'The Octocat' });
+		});
+
+		it('getViewerOrganizations returns the viewer org logins (filtering blanks)', async () => {
+			fetchMock.mockResolvedValue(
+				graphqlResponse({
+					viewer: {
+						organizations: { nodes: [{ login: 'acme' }, { login: '' }, { login: 'globex' }] },
+					},
+				}),
+			);
+
+			const orgs = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getViewerOrganizations(),
+			);
+
+			expect(orgs).toEqual([{ login: 'acme' }, { login: 'globex' }]);
+		});
+
+		it('getViewerOrganizations returns [] and warns when the query fails (e.g. missing read:org scope)', async () => {
+			fetchMock.mockResolvedValue({
+				ok: true,
+				json: async () => ({ errors: [{ message: 'insufficient scope: read:org' }] }),
+				text: async () => '',
+			} as unknown as Response);
+
+			const orgs = await withGitHubProjectsCredentials({ token: 't' }, () =>
+				getViewerOrganizations(),
+			);
+
+			// Error-tolerant: never throws, so the user-owner discovery path keeps working.
+			expect(orgs).toEqual([]);
+			expect(logger.warn).toHaveBeenCalledWith(
+				expect.stringContaining('Could not list viewer organizations'),
+				expect.objectContaining({ error: expect.stringContaining('read:org') }),
+			);
 		});
 	});
 

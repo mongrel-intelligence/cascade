@@ -11,6 +11,7 @@ import {
 	getStatusField,
 	getUserProjects,
 	getViewer,
+	getViewerOrganizations,
 	withGitHubProjectsCredentials,
 } from '../../../github-projects/client.js';
 import { GitHubProjectsIntegration } from '../../../pm/github-projects/integration.js';
@@ -92,17 +93,32 @@ async function handleStatesDiscovery(
 }
 
 /**
- * Discover the current authenticated user.
+ * Discover the current authenticated user (plus the organizations they can act
+ * within, for the wizard's owner picker).
+ *
+ * `login` is surfaced separately from `name`/`displayName`: owner + project
+ * discovery key off the GitHub *login* (`user(login: …)`), but the profile
+ * `name` ("Jane Smith") is frequently NOT the login ("janesmith"). Returning
+ * only the display name — as this did before — resolves `user(login: …)` to
+ * `null` and breaks discovery for every account with a profile name set. The
+ * `name`/`displayName` fields remain for the verification display.
+ *
+ * `organizations` is fetched separately and error-tolerantly (missing
+ * `read:org` scope ⇒ `[]`) so the user-owner path keeps working regardless.
  */
 async function handleCurrentUserDiscovery(
 	_args: DiscoveryArgs<'currentUser'>,
 	runWithCreds: <T>(fn: () => Promise<T>) => Promise<T>,
 ): Promise<DiscoveryResult<'currentUser'>> {
-	const me = await runWithCreds(() => getViewer());
+	const [me, organizations] = await runWithCreds(() =>
+		Promise.all([getViewer(), getViewerOrganizations()]),
+	);
 	return {
 		id: me.id,
 		name: me.name ?? me.login,
 		displayName: me.name ?? me.login,
+		login: me.login,
+		organizations,
 	};
 }
 

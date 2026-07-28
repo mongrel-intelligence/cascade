@@ -38,6 +38,7 @@ vi.mock('../../../../src/github-projects/client.js', () => {
 			],
 		})),
 		getViewer: vi.fn(async () => ({ id: 'U_1', login: 'octocat', name: 'The Octocat' })),
+		getViewerOrganizations: vi.fn(async () => [{ login: 'acme' }, { login: 'globex' }]),
 	};
 });
 
@@ -103,9 +104,24 @@ describe('githubProjectsManifest.discover via createDiscoveryProvider', () => {
 		);
 	});
 
-	it('discover("currentUser") returns { id, name, displayName }', async () => {
-		const result = await makeProvider().discover?.('currentUser', {} as never);
-		expect(result).toEqual({ id: 'U_1', name: 'The Octocat', displayName: 'The Octocat' });
+	it('discover("currentUser") returns the real login separately from the display name, plus organizations', async () => {
+		const result = (await makeProvider().discover?.('currentUser', {} as never)) as {
+			id: string;
+			name: string;
+			displayName: string;
+			login: string;
+			organizations: Array<{ login: string }>;
+		};
+		// `login` MUST be the GitHub handle ('octocat'), NOT the display name
+		// ('The Octocat') — owner/project discovery keys off the login.
+		expect(result).toEqual({
+			id: 'U_1',
+			name: 'The Octocat',
+			displayName: 'The Octocat',
+			login: 'octocat',
+			organizations: [{ login: 'acme' }, { login: 'globex' }],
+		});
+		expect(result.login).not.toBe(result.displayName);
 	});
 
 	it('discover("containers") throws (capability removed)', async () => {

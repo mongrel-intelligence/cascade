@@ -126,6 +126,11 @@ export class GitHubProjectsPMProvider implements PMProvider {
 			// `optionId`; that is what maps to configured status IDs.
 			status: content.statusName,
 			statusId: content.statusOptionId,
+			// Label *reads* are intentionally unimplemented for github-projects:
+			// this is always `[]` even when the backing Issue/PR carries labels.
+			// Label *writes* (addLabel / removeLabel) do work. Any agent/lifecycle
+			// code that inspects `workItem.labels` will therefore see none here.
+			// Tracked in the parity table in docs/architecture/06-integration-layer.md.
 			labels: [],
 			inlineMedia: inlineMedia.length > 0 ? inlineMedia : undefined,
 		};
@@ -306,6 +311,7 @@ export class GitHubProjectsPMProvider implements PMProvider {
 				url: content.url,
 				status: statusField?.name,
 				statusId: statusField?.optionId,
+				// Label reads are unimplemented (always `[]`); see getWorkItem.
 				labels: [],
 			});
 		}
