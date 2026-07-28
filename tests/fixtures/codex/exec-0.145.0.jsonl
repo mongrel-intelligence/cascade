@@ -1,0 +1,8 @@
+{"type":"thread.started","thread_id":"fixture-thread-0.145.0"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"fixture-ok"}}
+{"type":"turn.completed","usage":{"input_tokens":15428,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":6,"reasoning_output_tokens":0}}
+{"type":"thread.started","thread_id":"fixture-thread-0.145.0"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"fixture-resumed"}}
+{"type":"turn.completed","usage":{"input_tokens":30875,"cached_input_tokens":15104,"cache_write_input_tokens":0,"output_tokens":13,"reasoning_output_tokens":0}}

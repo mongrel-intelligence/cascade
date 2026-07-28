@@ -56,6 +56,17 @@ import {
 } from '../../../src/backends/codex/settings.js';
 import type { AgentExecutionPlan } from '../../../src/backends/types.js';
 
+const RECORDED_EXEC_FIXTURES = ['0.141.0', '0.145.0'] as const;
+
+function recordedExecLines(version: (typeof RECORDED_EXEC_FIXTURES)[number]): string[] {
+	return readFileSync(
+		new URL(`../../fixtures/codex/exec-${version}.jsonl`, import.meta.url),
+		'utf8',
+	)
+		.trim()
+		.split('\n');
+}
+
 function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionPlan {
 	return {
 		agentType: 'implementation',
@@ -670,6 +681,45 @@ describe('CodexEngine', () => {
 			'Unrecognized Codex event type — no fields extracted',
 			{ type: 'thinking', item: null, delta: null, event: rawEvent },
 		);
+	});
+
+	it.each(
+		RECORDED_EXEC_FIXTURES,
+	)('replays the Codex CLI %s exec stream without unrecognized events', async (version) => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			return createMockChild({
+				stdoutLines: recordedExecLines(version),
+				onBeforeClose: () => writeFileSync(outputPath, 'fixture-ok', 'utf-8'),
+			});
+		});
+
+		const engine = new CodexEngine();
+		const input = makeInput({ repoDir: workspaceDir, runId: `fixture-${version}` });
+		const result = await engine.execute(input);
+
+		expect(result.success).toBe(true);
+		expect(input.progressReporter.onText).toHaveBeenCalledWith('fixture-ok');
+		expect(input.logWriter).not.toHaveBeenCalledWith(
+			'DEBUG',
+			'Unrecognized Codex event type — no fields extracted',
+			expect.anything(),
+		);
+		expect(mockStoreLlmCall).toHaveBeenCalledWith(
+			expect.objectContaining({
+				inputTokens: version === '0.141.0' ? 10859 : 15428,
+				outputTokens: version === '0.141.0' ? 16 : 6,
+			}),
+		);
+		if (version === '0.145.0') {
+			expect(mockStoreLlmCall).toHaveBeenLastCalledWith(
+				expect.objectContaining({
+					inputTokens: 15447,
+					outputTokens: 7,
+					cachedTokens: 15104,
+				}),
+			);
+		}
 	});
 
 	it('logs full event payload including item and delta on unrecognized events', async () => {
