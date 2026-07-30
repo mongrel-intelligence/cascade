@@ -151,11 +151,15 @@ export async function augmentProjectSecrets(
 		projectSecrets.CASCADE_PM_TYPE = project.pm.type;
 	}
 
-	// Inject the update channel so cascade-tools CLI commands (pm post-comment,
-	// scm post-pr-comment, etc.) can enforce the channel gate even when called
-	// via bash, bypassing the in-process filterPostingGadgetNames filter. The
-	// orchestrator also writes this value to UPDATE_CHANNEL_FILE as a fallback for
-	// the claude-code subprocess-env-stripping case (see secretOrchestrator.ts).
+	// Inject the resolved update channel so the `cascade-tools pm post-comment`
+	// CLI can enforce the PM-posting gate even when invoked via bash, bypassing
+	// the in-process filterPostingGadgetNames filter. The orchestrator also writes
+	// this value to UPDATE_CHANNEL_FILE as a fallback for the claude-code
+	// subprocess-env-stripping case (see secretOrchestrator.ts). NOTE: only
+	// `pm post-comment` consults this today — the SCM posting commands
+	// (scm post-pr-comment, create-pr-review, update-pr-comment,
+	// reply-to-review-comment) do not yet read it; gating them via bash is a
+	// follow-up.
 	projectSecrets[UPDATE_CHANNEL_ENV_VAR] = resolveUpdateChannel(project, agentType);
 
 	return projectSecrets;
