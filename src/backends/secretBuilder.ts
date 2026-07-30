@@ -155,11 +155,14 @@ export async function augmentProjectSecrets(
 	// CLI can enforce the PM-posting gate even when invoked via bash, bypassing
 	// the in-process filterPostingGadgetNames filter. The orchestrator also writes
 	// this value to UPDATE_CHANNEL_FILE as a fallback for the claude-code
-	// subprocess-env-stripping case (see secretOrchestrator.ts). NOTE: only
-	// `pm post-comment` consults this today — the SCM posting commands
-	// (scm post-pr-comment, create-pr-review, update-pr-comment,
-	// reply-to-review-comment) do not yet read it; gating them via bash is a
-	// follow-up.
+	// subprocess-env-stripping case (see secretOrchestrator.ts).
+	//
+	// Scope: `pm post-comment` is the ONLY cascade-tools command that reads this
+	// var. The SCM posting commands (`scm post-pr-comment`, `update-pr-comment`,
+	// `reply-to-review-comment`, `create-pr-review`) do NOT gate on it, so the
+	// symmetric bash bypass still exists on the SCM side for `pm-only`/`none`
+	// agents. Adding the equivalent SCM CLI gate is a tracked follow-up, out of
+	// scope for this PM-focused change.
 	projectSecrets[UPDATE_CHANNEL_ENV_VAR] = resolveUpdateChannel(project, agentType);
 
 	return projectSecrets;
