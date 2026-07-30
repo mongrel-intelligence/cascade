@@ -5,7 +5,7 @@ import {
 	REVIEW_EVENT_POLICY_ENV_VAR,
 	resolveReviewEventPolicy,
 } from '../config/reviewEventPolicy.js';
-import { resolveUpdateChannel } from '../config/updateChannel.js';
+import { resolveUpdateChannel, UPDATE_CHANNEL_ENV_VAR } from '../config/updateChannel.js';
 import { getPersonaToken } from '../github/personas.js';
 import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
@@ -153,8 +153,10 @@ export async function augmentProjectSecrets(
 
 	// Inject the update channel so cascade-tools CLI commands (pm post-comment,
 	// scm post-pr-comment, etc.) can enforce the channel gate even when called
-	// via bash, bypassing the in-process filterPostingGadgetNames filter.
-	projectSecrets.CASCADE_UPDATE_CHANNEL = resolveUpdateChannel(project, agentType);
+	// via bash, bypassing the in-process filterPostingGadgetNames filter. The
+	// orchestrator also writes this value to UPDATE_CHANNEL_FILE as a fallback for
+	// the claude-code subprocess-env-stripping case (see secretOrchestrator.ts).
+	projectSecrets[UPDATE_CHANNEL_ENV_VAR] = resolveUpdateChannel(project, agentType);
 
 	return projectSecrets;
 }

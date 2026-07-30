@@ -22,6 +22,7 @@ import {
 	filterPostingGadgetNames,
 	isPmPostingEnabled,
 	resolveUpdateChannel,
+	UPDATE_CHANNEL_FILE,
 } from '../config/updateChannel.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
@@ -177,6 +178,19 @@ export async function buildExecutionPlan(
 	// The CLI's env > file > default precedence is unchanged.
 	try {
 		writeFileSync(REVIEW_EVENT_POLICY_FILE, resolveReviewEventPolicy(project, agentType), 'utf-8');
+	} catch {
+		// Non-fatal — env-var mechanism remains the primary path
+	}
+
+	// Write the resolved update channel to a well-known file for the same reason:
+	// cascade-tools posting commands (e.g. `pm post-comment`) must be able to read
+	// the channel even when CASCADE_UPDATE_CHANNEL is stripped from the bash
+	// subprocess env by the claude-code binary. Written UNCONDITIONALLY with the
+	// run's resolved channel (`updateChannel`, resolved above) so the file always
+	// reflects the current run and self-corrects on /tmp reuse. The CLI's
+	// env > file > default precedence is unchanged.
+	try {
+		writeFileSync(UPDATE_CHANNEL_FILE, updateChannel, 'utf-8');
 	} catch {
 		// Non-fatal — env-var mechanism remains the primary path
 	}
