@@ -18,7 +18,11 @@ import {
 	REVIEW_EVENT_POLICY_FILE,
 	resolveReviewEventPolicy,
 } from '../config/reviewEventPolicy.js';
-import { filterPostingGadgetNames, resolveUpdateChannel } from '../config/updateChannel.js';
+import {
+	filterPostingGadgetNames,
+	isPmPostingEnabled,
+	resolveUpdateChannel,
+} from '../config/updateChannel.js';
 import { loadPartials } from '../db/repositories/partialsRepository.js';
 import { withGitHubToken } from '../github/client.js';
 import { getSentryIntegrationConfig } from '../sentry/integration.js';
@@ -100,6 +104,14 @@ export async function buildExecutionPlan(
 	promptContext.commentOnlyReview = isCommentOnlyReview(
 		resolveReviewEventPolicy(project, agentType),
 	);
+
+	// Resolve the update channel early so the task-prompt template can suppress
+	// PM-posting instructions when PM posting is disabled. Without this, native-tool
+	// agents (Codex / Claude Code) read "Use PostComment to post a summary" from the
+	// task prompt and call `cascade-tools pm post-comment` via bash even though the
+	// PostComment tool manifest has been filtered out of availableTools.
+	const updateChannel = resolveUpdateChannel(project, agentType);
+	promptContext.pmPostingEnabled = isPmPostingEnabled(updateChannel);
 
 	// Load DB partials for template include resolution
 	let dbPartials: Map<string, string> | undefined;
@@ -224,7 +236,7 @@ export async function buildExecutionPlan(
 	// integration-availability filtering already done by profile.filterTools():
 	// an enabled channel against an absent tool simply has nothing to drop.
 	const availableTools = profile.filterTools(getToolManifests(), integrationChecker);
-	const updateChannel = resolveUpdateChannel(project, agentType);
+	// updateChannel was already resolved above for promptContext injection; reuse it here.
 	const allowedToolNames = new Set(
 		filterPostingGadgetNames(
 			availableTools.map((tool) => tool.name),

@@ -66,6 +66,7 @@ Use `UpdateChecklistItem` to mark each completed acceptance criterion:
 1. Read the <%= it.workItemNoun || 'card' %> again to get checklist item IDs
 2. For each criterion you've implemented, call `UpdateChecklistItem` with state="complete"
 
+<% if (it.pmPostingEnabled !== false) { %>
 ### 2. Post Summary Comment
 
 Use `PostComment` to post a summary on the <%= it.workItemNoun || 'card' %> once you know the real PR url/number from CreatePR output:
@@ -90,6 +91,7 @@ Use `PostComment` to post a summary on the <%= it.workItemNoun || 'card' %> once
 ### Notes
 - [Any issues encountered or things to be aware of]
 ```
+<% } %>
 
 ## Rules
 

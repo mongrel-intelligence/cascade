@@ -761,6 +761,7 @@ describe('executeWithEngine', () => {
 			CASCADE_TRELLO_LABELS: '{}',
 			CASCADE_AGENT_TYPE: 'implementation',
 			CASCADE_PM_TYPE: 'trello',
+			CASCADE_UPDATE_CHANNEL: 'both',
 			CASCADE_FRICTION_SIDECAR_PATH: expect.stringMatching(
 				/cascade-friction-sidecar-\d+-\d+\.jsonl$/,
 			),
@@ -820,6 +821,7 @@ describe('executeWithEngine', () => {
 			CASCADE_TRELLO_LABELS: '{}',
 			CASCADE_AGENT_TYPE: 'implementation',
 			CASCADE_PM_TYPE: 'trello',
+			CASCADE_UPDATE_CHANNEL: 'both',
 			CASCADE_FRICTION_SIDECAR_PATH: expect.stringMatching(
 				/cascade-friction-sidecar-\d+-\d+\.jsonl$/,
 			),
