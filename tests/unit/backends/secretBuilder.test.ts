@@ -111,6 +111,28 @@ describe('augmentProjectSecrets', () => {
 		expect(secrets.CASCADE_REVIEW_EVENT_POLICY).toBeUndefined();
 	});
 
+	it('injects CASCADE_UPDATE_CHANNEL with the default channel (both) when none is configured', async () => {
+		const project = makeProject();
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_UPDATE_CHANNEL).toBe('both');
+	});
+
+	it('injects CASCADE_UPDATE_CHANNEL=scm-only when the agent channel disables PM posting', async () => {
+		const project = makeProject({ agentUpdateChannels: { implementation: 'scm-only' } });
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_UPDATE_CHANNEL).toBe('scm-only');
+	});
+
+	it('resolves CASCADE_UPDATE_CHANNEL for the agent type being built', async () => {
+		// review is disabled but implementation is pm-only — building 'implementation'
+		// must read the implementation entry, not review's.
+		const project = makeProject({
+			agentUpdateChannels: { review: 'none', implementation: 'pm-only' },
+		});
+		const secrets = await augmentProjectSecrets(project, 'implementation', {} as AgentInput);
+		expect(secrets.CASCADE_UPDATE_CHANNEL).toBe('pm-only');
+	});
+
 	it('injects work item and PR runtime metadata from agent input', async () => {
 		const project = makeProject();
 		const secrets = await augmentProjectSecrets(project, 'review', {

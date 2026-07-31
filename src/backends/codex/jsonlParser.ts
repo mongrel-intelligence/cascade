@@ -13,6 +13,7 @@ export type ParsedCodexEvent = {
 	textParts: string[];
 	toolCall: ToolCall | null;
 	usage: UsageSummary | null;
+	threadId?: string;
 	error?: string;
 };
 export type UsageSummary = {
@@ -196,11 +197,22 @@ export function extractErrorMessage(event: JsonRecord): string | undefined {
 	return undefined;
 }
 
+/** Extracts the resumable session id emitted by the thread.started event. */
+export function extractThreadId(event: JsonRecord): string | undefined {
+	return event.type === 'thread.started' &&
+		typeof event.thread_id === 'string' &&
+		event.thread_id.trim()
+		? event.thread_id
+		: undefined;
+}
+
 export function parseCodexEvent(event: JsonRecord): ParsedCodexEvent {
+	const threadId = extractThreadId(event);
 	return {
 		textParts: extractTextParts(event),
 		toolCall: extractToolCall(event),
 		usage: extractUsage(event),
+		...(threadId ? { threadId } : {}),
 		error: extractErrorMessage(event),
 	};
 }

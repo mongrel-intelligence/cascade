@@ -5,6 +5,7 @@ import {
 	REVIEW_EVENT_POLICY_ENV_VAR,
 	resolveReviewEventPolicy,
 } from '../config/reviewEventPolicy.js';
+import { resolveUpdateChannel, UPDATE_CHANNEL_ENV_VAR } from '../config/updateChannel.js';
 import { getPersonaToken } from '../github/personas.js';
 import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
 import type { AgentInput, ProjectConfig } from '../types/index.js';
@@ -149,6 +150,20 @@ export async function augmentProjectSecrets(
 	if (project.pm?.type) {
 		projectSecrets.CASCADE_PM_TYPE = project.pm.type;
 	}
+
+	// Inject the resolved update channel so the `cascade-tools pm post-comment`
+	// CLI can enforce the PM-posting gate even when invoked via bash, bypassing
+	// the in-process filterPostingGadgetNames filter. The orchestrator also writes
+	// this value to UPDATE_CHANNEL_FILE as a fallback for the claude-code
+	// subprocess-env-stripping case (see secretOrchestrator.ts).
+	//
+	// Scope: `pm post-comment` is the ONLY cascade-tools command that reads this
+	// var. The SCM posting commands (`scm post-pr-comment`, `update-pr-comment`,
+	// `reply-to-review-comment`, `create-pr-review`) do NOT gate on it, so the
+	// symmetric bash bypass still exists on the SCM side for `pm-only`/`none`
+	// agents. Adding the equivalent SCM CLI gate is a tracked follow-up, out of
+	// scope for this PM-focused change.
+	projectSecrets[UPDATE_CHANNEL_ENV_VAR] = resolveUpdateChannel(project, agentType);
 
 	return projectSecrets;
 }
