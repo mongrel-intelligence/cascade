@@ -269,19 +269,33 @@ export class JiraPMProvider implements PMProvider {
 
 	async moveWorkItem(id: string, destination: ContainerId): Promise<void> {
 		// `destination` is a JIRA status ID (MNG-1768: locale-invariant) or,
-		// for legacy name-based configs, a status name. Find the matching
-		// transition.
+		// for legacy name-based configs, a status name. Find the transition
+		// whose *target status* matches.
 		const transitions = await jiraClient.getTransitions(id);
 		const transition = transitions.find(
 			(t: JiraTransition) =>
-				// Prefer the locale-invariant target status ID (`to.id`). Note
-				// `t.id` is the *transition* ID, distinct from `t.to.id`.
+				// Prefer the locale-invariant target status ID (`t.to.id`, distinct
+				// from `t.id` which is the *transition* ID no caller passes here).
 				t.to?.id === destination ||
+				// Legacy name-based configs: match the transition's own name or its
+				// target status name (both localized, case-insensitive).
 				t.name?.toLowerCase() === destination.toLowerCase() ||
-				t.to?.name?.toLowerCase() === destination.toLowerCase() ||
-				t.id === destination,
+				t.to?.name?.toLowerCase() === destination.toLowerCase(),
 		);
 		if (!transition) {
+			// A missing transition is benign when the issue is *already* in the
+			// destination status: JIRA exposes no self-transition, so best-effort
+			// callers (createWorkItem's backlog move at ~L214, lifecycle
+			// moveOnPrepare/moveOnSuccess) legitimately reach here on a no-op.
+			// Only a genuine locale/misconfig miss should be surfaced loudly, so
+			// the `jira_transition_not_found` Sentry signal stays meaningful.
+			if (await this.isAlreadyInStatus(id, destination)) {
+				logger.debug('JIRA issue already in destination status; move is a no-op', {
+					issueKey: id,
+					destination,
+				});
+				return;
+			}
 			const available = transitions.map(
 				(t: JiraTransition) => `${t.id}:${t.name} (to ${t.to?.id}:${t.to?.name})`,
 			);
@@ -301,6 +315,34 @@ export class JiraPMProvider implements PMProvider {
 			return;
 		}
 		await jiraClient.transitionIssue(id, transition.id ?? '');
+	}
+
+	/**
+	 * MNG-1768: report whether an issue is already in `destination` so a missing
+	 * transition can be treated as a benign no-op rather than a genuine
+	 * locale/misconfig miss worth a Sentry capture. Best-effort callers
+	 * (`createWorkItem`'s backlog move, lifecycle `moveOnPrepare`/`moveOnSuccess`)
+	 * move unconditionally without first checking the current status, and JIRA
+	 * offers no self-transition, so an already-there issue is the common way a
+	 * legitimate move reaches the miss path. Matches the current status by
+	 * locale-invariant ID first, then case-insensitive name (mirroring the
+	 * transition matcher). Any read failure returns `false` so a real miss is
+	 * never suppressed.
+	 */
+	private async isAlreadyInStatus(id: string, destination: string): Promise<boolean> {
+		try {
+			const issue = await jiraClient.getIssue(id);
+			const status = issue?.fields?.status as { id?: string; name?: string } | undefined;
+			return (
+				status?.id === destination || status?.name?.toLowerCase() === destination.toLowerCase()
+			);
+		} catch (err) {
+			logger.debug('Could not read current JIRA status for no-op check', {
+				issueKey: id,
+				error: String(err),
+			});
+			return false;
+		}
 	}
 
 	async addLabel(id: string, labelName: LabelId): Promise<void> {

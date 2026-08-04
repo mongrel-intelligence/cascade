@@ -616,6 +616,11 @@ describe('JiraPMProvider', () => {
 			mockJiraClient.getTransitions.mockResolvedValue([
 				{ id: 't-1', name: 'Done', to: { id: '10011', name: 'Done' } },
 			]);
+			// The issue is NOT already in the destination — a real miss.
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-1',
+				fields: { status: { id: '10011', name: 'Done' } },
+			});
 
 			await provider.moveWorkItem('PROJ-1', '99999');
 
@@ -627,6 +632,42 @@ describe('JiraPMProvider', () => {
 					extra: expect.objectContaining({ issueKey: 'PROJ-1', destination: '99999' }),
 				}),
 			);
+		});
+
+		it('does not capture Sentry when the issue is already in the destination status (benign no-op) (MNG-1768)', async () => {
+			// No transition matches the destination because JIRA offers no
+			// self-transition — but the issue is *already* in the destination. This
+			// is the common best-effort path (createWorkItem's backlog move, lifecycle
+			// moveOnPrepare/moveOnSuccess) and must not pollute the genuine-miss signal.
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Start Progress', to: { id: '10005', name: 'In Progress' } },
+			]);
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-1',
+				fields: { status: { id: '10000', name: 'Backlog' } },
+			});
+
+			await provider.moveWorkItem('PROJ-1', '10000');
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
+			expect(mockCaptureException).not.toHaveBeenCalled();
+		});
+
+		it('treats an already-in-destination match by status name as a benign no-op (back-compat) (MNG-1768)', async () => {
+			// Legacy name-based config: destination is a status name and the issue is
+			// already in it. Still a benign no-op, so no Sentry capture.
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Start Progress', to: { id: '10005', name: 'In Progress' } },
+			]);
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-1',
+				fields: { status: { id: '10000', name: 'Backlog' } },
+			});
+
+			await provider.moveWorkItem('PROJ-1', 'backlog');
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
+			expect(mockCaptureException).not.toHaveBeenCalled();
 		});
 
 		it('does not capture Sentry when a name-based transition still resolves (back-compat)', async () => {

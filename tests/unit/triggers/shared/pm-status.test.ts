@@ -174,14 +174,19 @@ describe('PM status helpers', () => {
 			).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
 		});
 
-		it('prefers the ID match when both id and name are supplied', async () => {
+		it('checks the ID branch before the name branch within a single configured entry', async () => {
 			await expect(
 				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
 					statusId: '10010',
 					statusName: 'To Do',
 					configuredStatuses: {
-						// planning stores the ID, todo stores the name — the ID match
-						// on planning wins because it is checked first per entry.
+						// Both entries are matchable: `planning` by ID, `todo` by name.
+						// The winner is the first entry that matches during iteration
+						// (here `planning`), NOT a global id-over-name preference —
+						// reversing the entry order would let `todo` win on the name.
+						// What this asserts is only that the ID branch is evaluated
+						// for `planning` before the name branch, so an ID-valued entry
+						// resolves without needing a name.
 						planning: '10010',
 						todo: 'To Do',
 					},

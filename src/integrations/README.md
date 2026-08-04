@@ -295,7 +295,7 @@ This means the operator never has to manually run `cascade projects trigger-set 
 Custom-status dispatch reuses the same `pm:status-changed` trigger registry that built-in statuses use:
 
 - **Trello** (`src/triggers/trello/status-changed.ts`) — `TrelloCustomStatusChangedTrigger` claims `createCard` / `updateCard` events whose destination list ID maps to a custom (non-built-in) key in `trello.lists`. Built-in keys are still handled by the per-list triggers (`TrelloStatusChangedTodoTrigger`, etc.).
-- **JIRA** (`src/triggers/jira/status-changed.ts`) — `JiraStatusChangedTrigger` resolves the new status name against `jira.statuses` via `resolvePMStatusAgentByNameFromWorkflowDefinitions`, picking up custom keys alongside built-ins in a single handler.
+- **JIRA** (`src/triggers/jira/status-changed.ts`) — `JiraStatusChangedTrigger` resolves the new status against `jira.statuses` via `resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions` (locale-invariant status **ID** first, case-insensitive **name** fallback — MNG-1768), picking up custom keys alongside built-ins in a single handler.
 - **Linear** (`src/triggers/linear/status-changed.ts`) — `LinearStatusChangedTrigger` resolves the new state UUID against `linear.statuses` via `resolvePMStatusAgentByIdFromWorkflowDefinitions`, also a single handler.
 
 All three resolve through the shared `resolvePMStatusAgentFromWorkflowDefinitions` in `src/triggers/shared/pm-status.ts` and obey one dispatch precondition: a status only dispatches an agent when **both** of the following hold:
