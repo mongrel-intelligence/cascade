@@ -35,7 +35,7 @@ export const CLAUDE_CODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 	],
 	modelSelection: {
 		type: 'select',
-		defaultValueLabel: 'Default (Sonnet 4.5)',
+		defaultValueLabel: 'Default (Sonnet 5)',
 		options: CLAUDE_CODE_MODELS,
 	},
 	logLabel: 'Claude Code Log',

@@ -228,8 +228,11 @@ export function countToolCalls(assistantMsg: SDKAssistantMessage): number {
 /**
  * Convert a raw Anthropic model ID (e.g. 'claude-sonnet-4-5-20250929') to the
  * pricing key format used by calculateCost() (e.g. 'anthropic:claude-sonnet-4-5').
+ *
+ * Exported so the pricing-coverage drift-guard test can assert every dropdown model ID
+ * maps to a MODEL_PRICING row using the exact runtime transform (no regex re-implementation).
  */
-function toPricingKey(model: string): string {
+export function toPricingKey(model: string): string {
 	return `anthropic:${model}`.replace(/-\d{8}$/, '');
 }
 
