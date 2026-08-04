@@ -50,3 +50,21 @@ describe('Combobox — disabled-item CSS regression guard', () => {
 		);
 	});
 });
+
+describe('Combobox — name-search regression guard', () => {
+	it('passes cmdk keywords (label + detail) on each CommandItem so name typing matches', () => {
+		const source = readFileSync(COMBOBOX_PATH, 'utf8');
+		// cmdk's default filter scores against the item's `value` PLUS `keywords`.
+		// Without keywords, only `value` (e.g. the JIRA project key) is matched, so
+		// operators typing a project *name* find nothing. This guard locks in the
+		// keywords prop so a future refactor can't silently drop name-search.
+		expect(
+			source,
+			'CommandItem must set keywords={...} so cmdk matches on label/detail, not just value',
+		).toMatch(/keywords=\{/);
+		expect(
+			source,
+			'keywords should include the visible label so typing the name matches',
+		).toContain('option.label');
+	});
+});
