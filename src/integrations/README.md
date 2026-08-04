@@ -75,6 +75,8 @@ See [`src/integrations/pm/manifest.ts`](./pm/manifest.ts) for the authoritative 
 | `wizardSpec?` | `{ steps: Array<StandardStep \| CustomStep> }`. Declarative step list the shared wizard generator renders. Standard kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`. |
 | `lifecycle?` | `{ enabled: true, fixtureKey: string }`. Opts into the behavioral conformance harness's full lifecycle scenario. `fixtureKey` is looked up in the test-local `LIFECYCLE_FIXTURES` registry — the manifest doesn't import from `tests/helpers/`. |
 
+> **Discovery must return the _complete_ provider list.** A discovery capability that backs a wizard picker (e.g. `container-pick` for `projects` / `boards` / `teams`) must return **every** item from the provider, not just the first page. The dashboard picker filters **client-side** (the shared `Combobox` does the search locally), so a provider adapter that returns a truncated first page silently hides everything past it — the operator can neither see nor search for the missing entries. Provider adapters must therefore **paginate the underlying API** until it reports the last page. The reference case is JIRA's `jiraClient.searchProjects()` (`src/jira/client.ts`): JIRA's `/rest/api/3/project/search` endpoint is paginated, so the method loops on `isLast` / `startAt` (with a `MAX_PROJECT_PAGES` safety cap) to collect all projects before returning. (A server-side `query` param + async debounced picker is the scalable follow-up for orgs with thousands of items, but full pagination is the correct baseline.)
+
 ---
 
 ## The ProviderWizardDefinition contract
