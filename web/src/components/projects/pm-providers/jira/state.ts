@@ -128,7 +128,19 @@ export function jiraWizardReducer<T extends JiraWizardStateSlice & VerificationS
 				...resetJiraProjectState(action.key),
 			};
 		case 'SET_JIRA_PROJECT_DETAILS':
-			return { ...state, jiraProjectDetails: action.details };
+			// MNG-1768: when project details load, auto-upgrade any legacy
+			// name-valued status mappings to the locale-invariant status ID. This
+			// backfills IDs when an operator edits a name-based config and keeps
+			// the dropdown showing the correct current selection (the select now
+			// keys on status IDs) instead of "— Select —".
+			return {
+				...state,
+				jiraProjectDetails: action.details,
+				jiraStatusMappings: normalizeJiraStatusMappingsToIds(
+					state.jiraStatusMappings,
+					action.details?.statuses ?? [],
+				),
+			};
 		case 'SET_JIRA_STATUS_MAPPING':
 			return {
 				...state,
@@ -156,6 +168,42 @@ export function jiraWizardReducer<T extends JiraWizardStateSlice & VerificationS
 				},
 			};
 	}
+}
+
+/**
+ * MNG-1768: upgrade legacy name-valued JIRA status mappings to locale-invariant
+ * status IDs.
+ *
+ * For each mapping value, if it case-insensitively equals a discovered status
+ * **name**, rewrite it to that status's **id**. Values that already equal a
+ * status ID, or that match no discovered status (e.g. an unrecognized custom
+ * status), are left untouched so we never destroy a value we can't confidently
+ * re-map.
+ */
+export function normalizeJiraStatusMappingsToIds(
+	mappings: Record<string, string>,
+	statuses: Array<{ id: string; name: string }>,
+): Record<string, string> {
+	if (statuses.length === 0) return mappings;
+
+	const idSet = new Set(statuses.map((s) => s.id));
+	const nameToId = new Map(statuses.map((s) => [s.name.toLowerCase(), s.id]));
+
+	let changed = false;
+	const next: Record<string, string> = {};
+	for (const [key, value] of Object.entries(mappings)) {
+		if (value && !idSet.has(value)) {
+			const mappedId = nameToId.get(value.toLowerCase());
+			if (mappedId) {
+				next[key] = mappedId;
+				changed = true;
+				continue;
+			}
+		}
+		next[key] = value;
+	}
+
+	return changed ? next : mappings;
 }
 
 export function resetJiraProjectState(

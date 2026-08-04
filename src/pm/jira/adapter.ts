@@ -5,6 +5,7 @@
  */
 
 import { jiraClient } from '../../jira/client.js';
+import { captureException } from '../../sentry.js';
 import { logger } from '../../utils/logging.js';
 import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
@@ -101,9 +102,15 @@ interface JiraAttachment {
 
 /** Partial shape of a JIRA transition */
 interface JiraTransition {
+	/** The *transition* ID (distinct from `to.id`, the target status ID). */
 	id?: string;
 	name?: string;
-	to?: { name?: string };
+	/**
+	 * The target status object. `to.id` is the locale-invariant status ID —
+	 * the JIRA REST transitions endpoint returns a full status object here.
+	 * `to.name` is the localized status name.
+	 */
+	to?: { id?: string; name?: string };
 }
 
 export class JiraPMProvider implements PMProvider {
@@ -232,10 +239,15 @@ export class JiraPMProvider implements PMProvider {
 		if (!projectKey) return [];
 		let jql = `project = "${projectKey}"`;
 		if (filter?.status) {
-			// Map CASCADE status key (e.g. 'todo') to native JIRA status name
-			// via config.statuses. Falls through to the literal value when no
-			// mapping exists, preserving backwards compat with callers that
+			// Map CASCADE status key (e.g. 'todo') to the native JIRA status
+			// value via config.statuses. Falls through to the literal value when
+			// no mapping exists, preserving backwards compat with callers that
 			// pass status names directly.
+			//
+			// MNG-1768: config.statuses values are now status IDs (locale-proof),
+			// with names accepted as a legacy fallback. JQL accepts a quoted
+			// status ID (`status = "10010"`) just as it accepts a quoted name, so
+			// ID-based config values continue to resolve here with no change.
 			const native = this.config.statuses?.[filter.status] ?? filter.status;
 			jql += ` AND status = "${native}"`;
 		}
@@ -256,19 +268,35 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async moveWorkItem(id: string, destination: ContainerId): Promise<void> {
-		// destination is a JIRA status name — find the transition ID
+		// `destination` is a JIRA status ID (MNG-1768: locale-invariant) or,
+		// for legacy name-based configs, a status name. Find the matching
+		// transition.
 		const transitions = await jiraClient.getTransitions(id);
 		const transition = transitions.find(
 			(t: JiraTransition) =>
+				// Prefer the locale-invariant target status ID (`to.id`). Note
+				// `t.id` is the *transition* ID, distinct from `t.to.id`.
+				t.to?.id === destination ||
 				t.name?.toLowerCase() === destination.toLowerCase() ||
 				t.to?.name?.toLowerCase() === destination.toLowerCase() ||
 				t.id === destination,
 		);
 		if (!transition) {
+			const available = transitions.map(
+				(t: JiraTransition) => `${t.id}:${t.name} (to ${t.to?.id}:${t.to?.name})`,
+			);
 			logger.warn('No JIRA transition found for destination', {
 				issueKey: id,
 				destination,
-				available: transitions.map((t: JiraTransition) => `${t.id}:${t.name}`),
+				available,
+			});
+			// MNG-1768: make the silent miss loud. A localized / misconfigured
+			// account whose transitions never match `destination` is otherwise
+			// invisible — this capture surfaces it on the first run. No-op when
+			// SENTRY_DSN is unset.
+			captureException(new Error('No JIRA transition found for destination'), {
+				tags: { jira_transition_not_found: 'true' },
+				extra: { issueKey: id, destination, available },
 			});
 			return;
 		}

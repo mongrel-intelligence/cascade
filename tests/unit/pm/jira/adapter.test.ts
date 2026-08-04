@@ -7,6 +7,7 @@ const {
 	mockMarkdownToAdf,
 	mockExtractAdfMediaNodes,
 	mockResolveJiraMediaUrls,
+	mockCaptureException,
 } = vi.hoisted(() => ({
 	mockJiraClient: {
 		getIssue: vi.fn(),
@@ -32,10 +33,15 @@ const {
 	mockMarkdownToAdf: vi.fn(),
 	mockExtractAdfMediaNodes: vi.fn(),
 	mockResolveJiraMediaUrls: vi.fn(),
+	mockCaptureException: vi.fn(),
 }));
 
 vi.mock('../../../../src/jira/client.js', () => ({
 	jiraClient: mockJiraClient,
+}));
+
+vi.mock('../../../../src/sentry.js', () => ({
+	captureException: mockCaptureException,
 }));
 
 vi.mock('../../../../src/pm/jira/adf.js', () => ({
@@ -591,6 +597,48 @@ describe('JiraPMProvider', () => {
 			]);
 
 			await expect(provider.moveWorkItem('PROJ-1', 'unknown-status')).resolves.toBeUndefined();
+		});
+
+		it('matches by target status ID (to.id) when destination is an ID, ignoring foreign-language names (MNG-1768)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				// Localized (French) name; only `to.id` matches the ID destination.
+				{ id: 't-9', name: 'Terminer', to: { id: '10011', name: 'Terminé' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.moveWorkItem('PROJ-1', '10011');
+
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't-9');
+			expect(mockCaptureException).not.toHaveBeenCalled();
+		});
+
+		it('captures a Sentry event tagged jira_transition_not_found on a genuine miss (MNG-1768)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Done', to: { id: '10011', name: 'Done' } },
+			]);
+
+			await provider.moveWorkItem('PROJ-1', '99999');
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
+			expect(mockCaptureException).toHaveBeenCalledWith(
+				expect.any(Error),
+				expect.objectContaining({
+					tags: { jira_transition_not_found: 'true' },
+					extra: expect.objectContaining({ issueKey: 'PROJ-1', destination: '99999' }),
+				}),
+			);
+		});
+
+		it('does not capture Sentry when a name-based transition still resolves (back-compat)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-2', name: 'Done', to: { id: '10011', name: 'Done' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.moveWorkItem('PROJ-1', 'Done');
+
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't-2');
+			expect(mockCaptureException).not.toHaveBeenCalled();
 		});
 	});
 

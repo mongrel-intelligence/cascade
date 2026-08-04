@@ -13,13 +13,20 @@ export interface JiraWebhookPayload {
 		key: string;
 		fields?: {
 			project?: { key?: string };
-			status?: { name?: string };
+			// MNG-1768: `status.id` is the locale-invariant status identity JIRA
+			// always sends alongside the localized `status.name`.
+			status?: { id?: string; name?: string };
 			summary?: string;
 		};
 	};
 	changelog?: {
 		items?: Array<{
 			field?: string;
+			// MNG-1768: `from`/`to` carry the locale-invariant status IDs;
+			// `fromString`/`toString` carry the localized status names. JIRA
+			// includes all four on a status changelog item.
+			from?: string;
+			to?: string;
 			fromString?: string;
 			toString?: string;
 		}>;

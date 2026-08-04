@@ -259,10 +259,21 @@ CASCADE supports custom workflow statuses (e.g. `prd`, `story`, `phased-plan`) o
 | Status definition (`key`, `label`, dispatch `agentType`, `sortOrder`) | `workflow_status_definitions` table; managed via `cascade workflow-statuses *` or `workflowStatuses.create/update/delete` (superadmin tRPC) | `src/db/repositories/workflowStatusDefinitionsRepository.ts`, `src/api/routers/workflowStatuses.ts` |
 | Provider-native mapping for each custom key | `project_integrations.config` JSON, under the same key shape as built-in slots | per-provider |
 | Trello provider-native value | `lists.<customKey>` → Trello list ID | `src/pm/trello/integration.ts` |
-| JIRA provider-native value | `statuses.<customKey>` → JIRA status name | `src/pm/jira/integration.ts` |
+| JIRA provider-native value | `statuses.<customKey>` → JIRA status **ID** (locale-proof; name accepted as a legacy fallback — see below) | `src/pm/jira/integration.ts` |
 | Linear provider-native value | `statuses.<customKey>` → Linear workflow state UUID | `src/pm/linear/integration.ts` |
 
 The lifecycle config resolver on each `PMIntegration` (`resolveLifecycleConfig`) **must** spread the full `lists` / `statuses` record so custom keys survive normalization and are available to `moveOnPrepare` / `moveOnSuccess` lifecycle hooks for custom agents. Look at `LinearIntegration.resolveLifecycleConfig` for the canonical shape — `statuses: { ...(linearConfig?.statuses ?? {}) }` rather than handpicked built-in keys.
+
+#### JIRA status matching is ID-based, not locale-fragile (MNG-1768)
+
+JIRA status **names** are rendered in the language of whichever account a request is scoped to: the dispatch webhook carries `changelog.items[].toString` / `issue.fields.status.name` in the **site** language, while the move side (`moveWorkItem`) matches `getTransitions()` names in the **credential account's** language. When those two languages differ for *system* statuses, the old name-on-both-ends matching silently no-op'd the move.
+
+The fix matches on the **locale-invariant JIRA status ID** on both ends, with name matching kept as a fallback (zero forced migration):
+
+- **Dispatch** — `JiraStatusChangedTrigger` reads `changelog.items[].to` (update path) / `issue.fields.status.id` (create path) and resolves via `resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({ statusId, statusName, configuredStatuses })` in `src/triggers/shared/pm-status.ts` (ID match first, case-insensitive name fallback).
+- **Move** — `JiraPMProvider.moveWorkItem` matches `transitions[].to.id === destination` first (distinct from the *transition* `t.id`), then falls back to the name branches. A genuine no-transition-found miss now emits `logger.warn` **and** a Sentry `captureException` tagged `jira_transition_not_found` so a localized/misconfigured account is caught on the first run.
+- **Wizard** — the status-mapping select now persists the status **ID** (`{ id: s.id, name: s.name }`) while still displaying the name. `normalizeJiraStatusMappingsToIds` auto-upgrades legacy name-valued mappings → IDs in the `SET_JIRA_PROJECT_DETAILS` reducer when project details load, so re-saving any project backfills IDs. Values already-ID or unrecognized (custom) are left untouched.
+- **JQL** — `listWorkItems` quotes the status value; JIRA resolves a quoted numeric value against status IDs, so ID-based config values remain valid with no behavior change.
 
 ### Wizard path — metadata-driven, shared between providers
 
