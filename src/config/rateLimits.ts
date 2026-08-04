@@ -26,6 +26,24 @@ export const MODEL_RATE_LIMITS: ModelRateLimits = {
 		safetyMargin: 0.85,
 	},
 
+	// Claude Opus 5 (Tier 1: 50 RPM, 10K TPM — Opus is throttle-sensitive). Needs its own row:
+	// Opus 5 draws on a rate-limit pool separate from the combined Opus 4.x pool, and the
+	// prefix matching in getRateLimitForModel would not reach an Opus 4.x row anyway. These
+	// bind on the LLMist path (getRateLimitForModel); the claude-code SDK path self-throttles.
+	'anthropic:claude-opus-5': {
+		requestsPerMinute: 50,
+		tokensPerMinute: 10_000,
+		safetyMargin: 0.85,
+	},
+
+	// Claude Sonnet 5 (Tier 1: 50 RPM, 40K TPM). Binds on the LLMist path only; the
+	// claude-code SDK path self-throttles.
+	'anthropic:claude-sonnet-5': {
+		requestsPerMinute: 50,
+		tokensPerMinute: 40_000,
+		safetyMargin: 0.9,
+	},
+
 	// Claude Opus 4.8 (Tier 1: 50 RPM, 10K TPM — Opus is throttle-sensitive)
 	'anthropic:claude-opus-4-8': {
 		requestsPerMinute: 50,
