@@ -29,6 +29,7 @@ import {
 	resolveClaudeCodeExecutablePath,
 	resolveClaudeModel,
 } from '../../../src/backends/claude-code/index.js';
+import { toPricingKey } from '../../../src/backends/claude-code/messageProcessing.js';
 import {
 	CLAUDE_CODE_MODEL_IDS,
 	CLAUDE_CODE_MODELS,
@@ -36,6 +37,7 @@ import {
 } from '../../../src/backends/claude-code/models.js';
 import { resolveClaudeCodeSettings } from '../../../src/backends/claude-code/settings.js';
 import type { AgentExecutionPlan, ToolManifest } from '../../../src/backends/types.js';
+import { MODEL_PRICING } from '../../../src/utils/llmMetrics.js';
 
 const mockQuery = vi.mocked(query);
 
@@ -295,7 +297,15 @@ describe('buildSystemPrompt', () => {
 
 describe('CLAUDE_CODE_MODELS constants', () => {
 	it('contains the expected models', () => {
-		expect(CLAUDE_CODE_MODELS).toHaveLength(11);
+		expect(CLAUDE_CODE_MODELS).toHaveLength(13);
+	});
+
+	it('includes Opus 5 and Sonnet 5 (1M context by default — no [1m] variant)', () => {
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-opus-5');
+		expect(CLAUDE_CODE_MODEL_IDS).toContain('claude-sonnet-5');
+		// Opus 5 / Sonnet 5 are 1M-context by default, so a [1m] suffix would be redundant.
+		expect(CLAUDE_CODE_MODEL_IDS).not.toContain('claude-opus-5[1m]');
+		expect(CLAUDE_CODE_MODEL_IDS).not.toContain('claude-sonnet-5[1m]');
 	});
 
 	it('includes Opus 4.8, Opus 4.7, and the 1M context variants', () => {
@@ -329,9 +339,26 @@ describe('CLAUDE_CODE_MODELS constants', () => {
 	});
 });
 
+describe('MODEL_PRICING coverage (drift guard)', () => {
+	// This single assertion would have caught the pre-existing bare claude-opus-4-6 and
+	// claude-haiku-4-5 pricing gaps, and will catch the next one. A missing MODEL_PRICING
+	// row makes calculateCost return $0, which silently disables workItemBudget enforcement.
+	it('every CLAUDE_CODE_MODEL_IDS entry maps to a MODEL_PRICING row', () => {
+		for (const id of CLAUDE_CODE_MODEL_IDS) {
+			const pricingKey = toPricingKey(id);
+			expect(
+				MODEL_PRICING[pricingKey],
+				`${id} → ${pricingKey} has no MODEL_PRICING row`,
+			).toBeDefined();
+		}
+	});
+});
+
 describe('resolveClaudeModel', () => {
 	it('passes through known Claude Code model IDs', () => {
 		expect(resolveClaudeModel('claude-fable-5')).toBe('claude-fable-5');
+		expect(resolveClaudeModel('claude-opus-5')).toBe('claude-opus-5');
+		expect(resolveClaudeModel('claude-sonnet-5')).toBe('claude-sonnet-5');
 		expect(resolveClaudeModel('claude-opus-4-8')).toBe('claude-opus-4-8');
 		expect(resolveClaudeModel('claude-opus-4-8[1m]')).toBe('claude-opus-4-8[1m]');
 		expect(resolveClaudeModel('claude-opus-4-7')).toBe('claude-opus-4-7');
