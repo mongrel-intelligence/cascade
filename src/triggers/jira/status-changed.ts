@@ -15,7 +15,7 @@ import { logger } from '../../utils/logging.js';
 import { shouldBlockForPipelineCapacity } from '../shared/pipeline-capacity-gate.js';
 import {
 	buildPMStatusDispatchResult,
-	resolvePMStatusAgentByNameFromWorkflowDefinitions,
+	resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions,
 	shouldFirePMStatusEvent,
 } from '../shared/pm-status.js';
 import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
@@ -27,19 +27,35 @@ function isCreateEvent(payload: JiraWebhookPayload): boolean {
 
 function findStatusChange(
 	payload: JiraWebhookPayload,
-): { fromString?: string; toString?: string } | undefined {
+): { from?: string; to?: string; fromString?: string; toString?: string } | undefined {
 	return payload.changelog?.items?.find((item) => item.field === 'status');
 }
 
 /**
- * Resolve the new status name from a JIRA webhook payload.
- * Returns `undefined` when the status cannot be determined.
+ * The new status a JIRA webhook is transitioning into.
+ *
+ * MNG-1768: `id` is the locale-invariant status ID (matched first); `name`
+ * is the localized status name (matched as a fallback). At least one must be
+ * present for the trigger to attempt a resolution.
  */
-function resolveNewStatus(payload: JiraWebhookPayload): string | undefined {
+interface ResolvedNewStatus {
+	id?: string;
+	name?: string;
+}
+
+/**
+ * Resolve the new status (id + name) from a JIRA webhook payload.
+ * Returns `undefined` when neither identity can be determined.
+ */
+function resolveNewStatus(payload: JiraWebhookPayload): ResolvedNewStatus | undefined {
 	if (isCreateEvent(payload)) {
-		return payload.issue?.fields?.status?.name;
+		const status = payload.issue?.fields?.status;
+		if (!status?.id && !status?.name) return undefined;
+		return { id: status.id, name: status.name };
 	}
-	return findStatusChange(payload)?.toString;
+	const change = findStatusChange(payload);
+	if (!change?.to && !change?.toString) return undefined;
+	return { id: change.to, name: change.toString };
 }
 
 export class JiraStatusChangedTrigger implements TriggerHandler {
@@ -51,9 +67,12 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 
 		const payload = ctx.payload as JiraWebhookPayload;
 
-		// Create path: require resolvable status so handle() has something to map
+		// Create path: require a resolvable status (id or name) so handle() has
+		// something to map. JIRA always sends both, but accepting either keeps
+		// the match path consistent with the id-or-name read path.
 		if (isCreateEvent(payload)) {
-			return typeof payload.issue?.fields?.status?.name === 'string';
+			const status = payload.issue?.fields?.status;
+			return typeof status?.id === 'string' || typeof status?.name === 'string';
 		}
 
 		if (!payload.webhookEvent?.startsWith('jira:issue_updated')) return false;
@@ -83,14 +102,19 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const resolved = await resolvePMStatusAgentByNameFromWorkflowDefinitions({
-			statusName: newStatus,
+		// MNG-1768: match on the locale-invariant status ID first, falling back
+		// to the localized status name so existing name-based configs keep
+		// dispatching untouched.
+		const resolved = await resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+			statusId: newStatus.id,
+			statusName: newStatus.name,
 			configuredStatuses: jiraConfig.statuses,
 		});
 		if (!resolved) {
 			logger.debug('JIRA status transition does not map to any agent', {
 				issueKey,
-				newStatus,
+				newStatusId: newStatus.id,
+				newStatusName: newStatus.name,
 				configuredStatuses: jiraConfig.statuses,
 			});
 			return null;
@@ -132,7 +156,10 @@ export class JiraStatusChangedTrigger implements TriggerHandler {
 			issueKey,
 			eventKind: isCreate ? 'create' : 'move',
 			...(isCreate ? {} : { fromStatus: statusChange?.fromString }),
-			toStatus: newStatus,
+			toStatus: newStatus.name,
+			// MNG-1768: surface the locale-invariant status ID so triage can see
+			// which side (id vs name) the match resolved against.
+			toStatusId: newStatus.id,
 			cascadeStatus: matchedCascadeStatus,
 			agentType,
 		});

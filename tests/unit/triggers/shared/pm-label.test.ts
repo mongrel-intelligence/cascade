@@ -14,6 +14,7 @@ import {
 	resolvePMLabelAgentByList,
 	resolvePMLabelAgentByStatusId,
 	resolvePMLabelAgentByStatusIdFromWorkflowDefinitions,
+	resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions,
 	resolvePMLabelAgentByStatusName,
 	resolvePMLabelAgentByStatusNameFromWorkflowDefinitions,
 } from '../../../../src/triggers/shared/pm-label.js';
@@ -111,6 +112,45 @@ describe('PM label helpers', () => {
 				},
 			}),
 		).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+	});
+
+	describe('resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions (MNG-1768)', () => {
+		it('matches on a locale-invariant JIRA status ID (foreign-language name)', async () => {
+			await expect(
+				resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions({
+					statusId: '10010',
+					// Foreign-language name that would never match by name.
+					statusName: 'En cours',
+					configuredStatuses: {
+						todo: '10010',
+					},
+				}),
+			).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+		});
+
+		it('falls back to case-insensitive name matching for legacy name-based configs', async () => {
+			await expect(
+				resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions({
+					statusId: '10010',
+					statusName: 'to do',
+					configuredStatuses: {
+						todo: 'To Do',
+					},
+				}),
+			).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+		});
+
+		it('returns undefined when neither id nor name matches', async () => {
+			await expect(
+				resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions({
+					statusId: '99999',
+					statusName: 'Unknown',
+					configuredStatuses: {
+						todo: '10010',
+					},
+				}),
+			).resolves.toBeUndefined();
+		});
 	});
 
 	it('builds canonical label-added dispatch results', () => {

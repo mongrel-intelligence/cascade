@@ -78,6 +78,8 @@ function buildCtx(overrides: {
 	webhookEvent?: string;
 	issueKey?: string;
 	statusName?: string;
+	/** Status ID in issue.fields.status.id (MNG-1768 id-based configs) */
+	statusId?: string;
 	changelogItems?: Array<{ field?: string; fromString?: string; toString?: string }>;
 	project?: TriggerContext['project'];
 }): TriggerContext {
@@ -90,7 +92,10 @@ function buildCtx(overrides: {
 				key: overrides.issueKey ?? 'TEST-42',
 				fields: {
 					project: { key: 'TEST' },
-					status: { name: overrides.statusName ?? 'Splitting' },
+					status: {
+						name: overrides.statusName ?? 'Splitting',
+						...(overrides.statusId !== undefined ? { id: overrides.statusId } : {}),
+					},
 					summary: 'Test issue',
 				},
 			},
@@ -452,6 +457,51 @@ describe('JiraReadyToProcessLabelTrigger', () => {
 			const result = await trigger.handle(
 				buildCtx({ project: customProject, statusName: 'PRD Review' }),
 			);
+			expect(result).toBeNull();
+		});
+	});
+
+	describe('ID-based status config (MNG-1768)', () => {
+		// Config maps CASCADE stage keys → locale-invariant JIRA status IDs, the
+		// shape every new (or re-saved) project now persists via the wizard.
+		const idBasedProject = {
+			...baseProject,
+			jira: {
+				...baseJiraConfig,
+				statuses: {
+					splitting: '10005',
+					planning: '10001',
+					todo: '10010',
+					inProgress: '10020',
+					inReview: '10030',
+					done: '10011',
+				},
+			},
+		} as TriggerContext['project'];
+
+		it('dispatches via status ID when config stores IDs and the name is a foreign language', async () => {
+			// Only `status.id` ("10010") matches; the localized French name would
+			// never match the configured value by name.
+			const result = await trigger.handle(
+				buildCtx({ project: idBasedProject, statusName: 'En cours', statusId: '10010' }),
+			);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('implementation');
+			expect(result?.workItemId).toBe('TEST-42');
+			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+				'test-project',
+				'implementation',
+				'pm:label-added',
+				'jira-ready-to-process-label-added',
+			);
+		});
+
+		it('returns null when the issue status ID maps to no configured stage', async () => {
+			const result = await trigger.handle(
+				buildCtx({ project: idBasedProject, statusName: 'Terminé', statusId: '99999' }),
+			);
+
 			expect(result).toBeNull();
 		});
 	});

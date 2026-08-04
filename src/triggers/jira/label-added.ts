@@ -16,7 +16,7 @@ import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/
 import { logger } from '../../utils/logging.js';
 import {
 	buildPMLabelDispatchResult,
-	resolvePMLabelAgentByStatusNameFromWorkflowDefinitions,
+	resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions,
 } from '../shared/pm-label.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import type { JiraWebhookPayload } from './types.js';
@@ -74,8 +74,11 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const currentStatus = payload.issue?.fields?.status?.name;
-		if (!currentStatus) {
+		// MNG-1768: read both the locale-invariant status ID and the localized
+		// status name so the resolver can match either. JIRA always sends both.
+		const currentStatusId = payload.issue?.fields?.status?.id;
+		const currentStatusName = payload.issue?.fields?.status?.name;
+		if (!currentStatusId && !currentStatusName) {
 			logger.debug('No status on JIRA issue, cannot determine agent type', { issueKey });
 			return null;
 		}
@@ -88,15 +91,21 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 			return null;
 		}
 
-		const resolved = await resolvePMLabelAgentByStatusNameFromWorkflowDefinitions({
-			statusName: currentStatus,
+		// MNG-1768: match on the locale-invariant status ID first, falling back
+		// to the localized status name so existing name-based configs keep
+		// dispatching untouched. Without this, ID-based configs (all new projects,
+		// plus any re-saved project) would silently stop firing the label flow.
+		const resolved = await resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions({
+			statusId: currentStatusId,
+			statusName: currentStatusName,
 			configuredStatuses: jiraConfig.statuses,
 		});
 
 		if (!resolved) {
 			logger.debug('JIRA issue status does not map to any agent', {
 				issueKey,
-				currentStatus,
+				currentStatusId,
+				currentStatusName,
 				configuredStatuses: jiraConfig.statuses,
 			});
 			return null;
@@ -110,7 +119,8 @@ export class JiraReadyToProcessLabelTrigger implements TriggerHandler {
 
 		logger.info('JIRA "Ready to Process" label added, triggering agent', {
 			issueKey,
-			currentStatus,
+			currentStatusId,
+			currentStatusName,
 			cascadeStatus: matchedCascadeStatus,
 			agentType,
 		});

@@ -36,8 +36,11 @@ import { IssueTypeMappingStep } from './issue-type-step.js';
 import type { JiraWizardAuthType } from './state.js';
 import { JiraWebhookAdapter, normalizeJiraActiveWebhooks } from './webhook-step.js';
 
-// CASCADE stage keys that map to JIRA statuses (name-based, not id-based
-// — JIRA statuses are configured per project, name is the stable identity).
+// CASCADE stage keys that map to JIRA statuses. MNG-1768: the mapping value
+// persisted per slot is the locale-invariant JIRA status ID (name matching is
+// retained only as a legacy fallback in the trigger/adapter), so status moves
+// no longer silently no-op when the credential account's language differs from
+// the site language.
 export const JIRA_STATUS_SLOTS = [
 	{ key: 'backlog', label: 'Backlog' },
 	{ key: 'splitting', label: 'Splitting' },
@@ -500,9 +503,11 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 				: undefined,
 			onProjectSelect: discovery.handleProjectSelect,
 			projectDetailsLoading: discovery.jiraDetailsMutation.isPending,
-			// JIRA statuses carry a `name` used as the id in mappings (JIRA's
-			// status-name is the stable identity the adapter writes back).
-			providerStates: (details?.statuses ?? []).map((s) => ({ id: s.name, name: s.name })),
+			// MNG-1768: the mapping value is the locale-invariant JIRA status ID
+			// (`s.id`), while the human-readable `s.name` is what the select
+			// displays. Previously both were `s.name`, which made status moves
+			// locale-fragile.
+			providerStates: (details?.statuses ?? []).map((s) => ({ id: s.id, name: s.name })),
 			// JIRA's discovery returns `{id, name, custom}` for custom fields;
 			// map `custom: boolean` to a string `type` to satisfy the shared
 			// `providerCustomFields` prop contract.

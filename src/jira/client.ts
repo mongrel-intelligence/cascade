@@ -13,6 +13,17 @@ import type { JiraCredentials } from './types.js';
 
 const jiraCredentialStore = new AsyncLocalStorage<JiraCredentials>();
 
+/** Page size used when paginating JIRA's `/rest/api/3/project/search` endpoint. */
+const PROJECT_PAGE_SIZE = 50;
+
+/**
+ * Safety cap on the number of project-search pages fetched in one
+ * `searchProjects()` call. At {@link PROJECT_PAGE_SIZE} per page this allows up
+ * to 10k projects; it exists purely to guarantee loop termination if the API
+ * never reports the last page.
+ */
+const MAX_PROJECT_PAGES = 200;
+
 export function withJiraCredentials<T>(creds: JiraCredentials, fn: () => Promise<T>): Promise<T> {
 	return jiraCredentialStore.run(creds, fn);
 }
@@ -150,12 +161,46 @@ export const jiraClient = {
 
 	async searchProjects(): Promise<Array<{ key: string; name: string }>> {
 		logger.debug('Searching JIRA projects');
-		const result = await (await getClientForRequest()).projects.searchProjects({ maxResults: 100 });
-		const values = (result.values ?? []) as Array<{ key?: string; name?: string }>;
-		return values.map((p) => ({
-			key: p.key ?? '',
-			name: p.name ?? '',
-		}));
+		// JIRA's /rest/api/3/project/search endpoint is paginated. A single
+		// request only returns the first page (historically capped at 100), so
+		// orgs with more projects than fit on one page silently lost the rest.
+		// Loop until the API reports the last page (`isLast`), returns an empty
+		// page, or `startAt` has reached `total`. A safety cap guarantees the
+		// loop terminates even if the API misbehaves.
+		const client = await getClientForRequest();
+		const projects: Array<{ key: string; name: string }> = [];
+		let startAt = 0;
+		let page = 0;
+
+		while (page < MAX_PROJECT_PAGES) {
+			const result = await client.projects.searchProjects({
+				startAt,
+				maxResults: PROJECT_PAGE_SIZE,
+				orderBy: 'name',
+			});
+			const values = (result.values ?? []) as Array<{ key?: string; name?: string }>;
+			for (const p of values) {
+				projects.push({ key: p.key ?? '', name: p.name ?? '' });
+			}
+
+			page += 1;
+			startAt += values.length;
+
+			const isLast = (result as { isLast?: boolean }).isLast === true;
+			const total = (result as { total?: number }).total;
+			if (isLast || values.length === 0 || (typeof total === 'number' && startAt >= total)) {
+				break;
+			}
+
+			if (page >= MAX_PROJECT_PAGES) {
+				logger.warn('JIRA project pagination hit safety cap', {
+					maxPages: MAX_PROJECT_PAGES,
+					collected: projects.length,
+				});
+			}
+		}
+
+		return projects;
 	},
 
 	async getProjectStatuses(projectKey: string): Promise<Array<{ name: string; id: string }>> {
