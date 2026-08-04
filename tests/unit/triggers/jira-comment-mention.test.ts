@@ -33,7 +33,7 @@ const OTHER_ACCOUNT_ID = 'user-account-456';
 const ISSUE_KEY = 'PROJ-123';
 const PLANNING_STATUS = 'Planning';
 
-function makeProject() {
+function makeProject(configuredPlanningStatus: string = PLANNING_STATUS) {
 	return {
 		id: 'project-1',
 		name: 'Test Project',
@@ -41,7 +41,7 @@ function makeProject() {
 		baseBranch: 'main',
 		jira: {
 			projectKey: 'PROJ',
-			statuses: { planning: PLANNING_STATUS },
+			statuses: { planning: configuredPlanningStatus },
 		},
 	} as TriggerContext['project'];
 }
@@ -52,6 +52,10 @@ function makeCtx(
 		webhookEvent?: string;
 		issueKey?: string;
 		issueStatusName?: string;
+		/** Status ID in issue.fields.status.id (MNG-1768 id-based configs) */
+		issueStatusId?: string;
+		/** Override the configured jira.statuses.planning value (id-based repros) */
+		configuredPlanningStatus?: string;
 		commentBody?: unknown;
 		commentAuthorAccountId?: string;
 		commentAuthorDisplayName?: string;
@@ -62,7 +66,10 @@ function makeCtx(
 		issue: {
 			key: overrides.issueKey ?? ISSUE_KEY,
 			fields: {
-				status: { name: overrides.issueStatusName ?? PLANNING_STATUS },
+				status: {
+					name: overrides.issueStatusName ?? PLANNING_STATUS,
+					...(overrides.issueStatusId !== undefined ? { id: overrides.issueStatusId } : {}),
+				},
 				summary: 'Test Issue Summary',
 			},
 		},
@@ -76,7 +83,7 @@ function makeCtx(
 	};
 
 	return {
-		project: makeProject(),
+		project: makeProject(overrides.configuredPlanningStatus),
 		source: overrides.source ?? 'jira',
 		payload,
 	};
@@ -229,6 +236,35 @@ describe('JiraCommentMentionTrigger', () => {
 			};
 
 			const result = await trigger.handle(ctx);
+
+			expect(result).toBeNull();
+		});
+
+		it('gates on planning status by ID when config stores a status ID (MNG-1768)', async () => {
+			// Config planning slot holds a locale-invariant status ID; the localized
+			// name ("En planification") would never match the ID by name, but the
+			// issue's status.id does. Without id-based matching this silently no-ops.
+			const result = await trigger.handle(
+				makeCtx({
+					configuredPlanningStatus: '10001',
+					issueStatusId: '10001',
+					issueStatusName: 'En planification',
+				}),
+			);
+
+			expect(result).not.toBeNull();
+			expect(result?.agentType).toBe('respond-to-planning-comment');
+			expect(result?.workItemId).toBe(ISSUE_KEY);
+		});
+
+		it('returns null when the issue status ID differs from the configured planning ID (MNG-1768)', async () => {
+			const result = await trigger.handle(
+				makeCtx({
+					configuredPlanningStatus: '10001',
+					issueStatusId: '10020',
+					issueStatusName: 'In Progress',
+				}),
+			);
 
 			expect(result).toBeNull();
 		});

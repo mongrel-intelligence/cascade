@@ -259,10 +259,22 @@ CASCADE supports custom workflow statuses (e.g. `prd`, `story`, `phased-plan`) o
 | Status definition (`key`, `label`, dispatch `agentType`, `sortOrder`) | `workflow_status_definitions` table; managed via `cascade workflow-statuses *` or `workflowStatuses.create/update/delete` (superadmin tRPC) | `src/db/repositories/workflowStatusDefinitionsRepository.ts`, `src/api/routers/workflowStatuses.ts` |
 | Provider-native mapping for each custom key | `project_integrations.config` JSON, under the same key shape as built-in slots | per-provider |
 | Trello provider-native value | `lists.<customKey>` → Trello list ID | `src/pm/trello/integration.ts` |
-| JIRA provider-native value | `statuses.<customKey>` → JIRA status name | `src/pm/jira/integration.ts` |
+| JIRA provider-native value | `statuses.<customKey>` → JIRA status **ID** (locale-proof; name accepted as a legacy fallback — see below) | `src/pm/jira/integration.ts` |
 | Linear provider-native value | `statuses.<customKey>` → Linear workflow state UUID | `src/pm/linear/integration.ts` |
 
 The lifecycle config resolver on each `PMIntegration` (`resolveLifecycleConfig`) **must** spread the full `lists` / `statuses` record so custom keys survive normalization and are available to `moveOnPrepare` / `moveOnSuccess` lifecycle hooks for custom agents. Look at `LinearIntegration.resolveLifecycleConfig` for the canonical shape — `statuses: { ...(linearConfig?.statuses ?? {}) }` rather than handpicked built-in keys.
+
+#### JIRA status matching is ID-based, not locale-fragile (MNG-1768)
+
+JIRA status **names** are rendered in the language of whichever account a request is scoped to: the dispatch webhook carries `changelog.items[].toString` / `issue.fields.status.name` in the **site** language, while the move side (`moveWorkItem`) matches `getTransitions()` names in the **credential account's** language. When those two languages differ for *system* statuses, the old name-on-both-ends matching silently no-op'd the move.
+
+The fix matches on the **locale-invariant JIRA status ID** on both ends, with name matching kept as a fallback (zero forced migration):
+
+- **Dispatch** — `JiraStatusChangedTrigger` reads `changelog.items[].to` (update path) / `issue.fields.status.id` (create path) and resolves via `resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({ statusId, statusName, configuredStatuses })` in `src/triggers/shared/pm-status.ts` (ID match first, case-insensitive name fallback).
+- **Move** — `JiraPMProvider.moveWorkItem` matches `transitions[].to.id === destination` first (distinct from the *transition* `t.id`), then falls back to the name branches. A genuine no-transition-found miss now emits `logger.warn` **and** a Sentry `captureException` tagged `jira_transition_not_found` so a localized/misconfigured account is caught on the first run.
+- **Other `jira.statuses` readers** — every consumer of the (now ID-valued) `jira.statuses` map matches ID-first with a name fallback, so none silently no-op on ID-based configs. `JiraReadyToProcessLabelTrigger` (the `cascade-ready` label flow) reads the issue's `status.id`/`status.name` and resolves via `resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions`; `JiraCommentMentionTrigger`'s `isInPlanningStatus` gate compares the configured `planning` value against the issue's status ID first, then its name.
+- **Wizard** — the status-mapping select now persists the status **ID** (`{ id: s.id, name: s.name }`) while still displaying the name. `normalizeJiraStatusMappingsToIds` auto-upgrades legacy name-valued mappings → IDs in the `SET_JIRA_PROJECT_DETAILS` reducer when project details load, so re-saving any project backfills IDs. Values already-ID or unrecognized (custom) are left untouched.
+- **JQL** — `listWorkItems` quotes the status value; JIRA resolves a quoted numeric value against status IDs, so ID-based config values remain valid with no behavior change.
 
 ### Wizard path — metadata-driven, shared between providers
 
@@ -284,7 +296,7 @@ This means the operator never has to manually run `cascade projects trigger-set 
 Custom-status dispatch reuses the same `pm:status-changed` trigger registry that built-in statuses use:
 
 - **Trello** (`src/triggers/trello/status-changed.ts`) — `TrelloCustomStatusChangedTrigger` claims `createCard` / `updateCard` events whose destination list ID maps to a custom (non-built-in) key in `trello.lists`. Built-in keys are still handled by the per-list triggers (`TrelloStatusChangedTodoTrigger`, etc.).
-- **JIRA** (`src/triggers/jira/status-changed.ts`) — `JiraStatusChangedTrigger` resolves the new status name against `jira.statuses` via `resolvePMStatusAgentByNameFromWorkflowDefinitions`, picking up custom keys alongside built-ins in a single handler.
+- **JIRA** (`src/triggers/jira/status-changed.ts`) — `JiraStatusChangedTrigger` resolves the new status against `jira.statuses` via `resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions` (locale-invariant status **ID** first, case-insensitive **name** fallback — MNG-1768), picking up custom keys alongside built-ins in a single handler.
 - **Linear** (`src/triggers/linear/status-changed.ts`) — `LinearStatusChangedTrigger` resolves the new state UUID against `linear.statuses` via `resolvePMStatusAgentByIdFromWorkflowDefinitions`, also a single handler.
 
 All three resolve through the shared `resolvePMStatusAgentFromWorkflowDefinitions` in `src/triggers/shared/pm-status.ts` and obey one dispatch precondition: a status only dispatches an agent when **both** of the following hold:
