@@ -2,10 +2,13 @@
  * Tests for the JIRA-specific IssueTypeMappingStep (plan 011/3 task 2).
  *
  * Rendered as `kind: 'custom'` in `jiraManifest.wizardSpec`. Maps the
- * CASCADE 'task' / 'subtask' roles to JIRA issue types. Only JIRA uses
- * this concept — Trello has no equivalent, Linear uses workflow states.
- * Stays a custom step rather than an 8th StandardStepKind to avoid
- * speculative abstraction for a single consumer.
+ * CASCADE 'task' role to a JIRA issue type. Only JIRA uses this concept —
+ * Trello has no equivalent, Linear uses workflow states. Stays a custom
+ * step rather than an 8th StandardStepKind to avoid speculative abstraction
+ * for a single consumer.
+ *
+ * MNG-1769: the subtask row was removed — nothing consumes
+ * `issueTypes.subtask`, so only the task mapping is offered/asserted here.
  */
 
 import { createElement } from 'react';
@@ -35,7 +38,7 @@ describe('IssueTypeMappingStep', () => {
 		expect(html).toContain('data-role="task"');
 	});
 
-	it('renders a row for the subtask issue type', () => {
+	it('does NOT render a subtask row (MNG-1769: dead row removed)', () => {
 		const html = renderToStaticMarkup(
 			createElement(IssueTypeMappingStep, {
 				step,
@@ -45,7 +48,7 @@ describe('IssueTypeMappingStep', () => {
 				onMappingChange: () => {},
 			}),
 		);
-		expect(html).toContain('data-role="subtask"');
+		expect(html).not.toContain('data-role="subtask"');
 	});
 
 	it('populates task dropdown from issueTypes where subtask is false', () => {
@@ -66,7 +69,7 @@ describe('IssueTypeMappingStep', () => {
 		expect(taskSelect).not.toContain('Sub-task');
 	});
 
-	it('populates subtask dropdown from issueTypes where subtask is true', () => {
+	it('does NOT render a subtask dropdown (MNG-1769: dead row removed)', () => {
 		const html = renderToStaticMarkup(
 			createElement(IssueTypeMappingStep, {
 				step,
@@ -76,26 +79,20 @@ describe('IssueTypeMappingStep', () => {
 				onMappingChange: () => {},
 			}),
 		);
-		const subtaskSelect = html.match(
-			/<select[^>]*id="issue-type-subtask"[^>]*>[\s\S]*?<\/select>/,
-		)?.[0];
-		expect(subtaskSelect).toBeDefined();
-		expect(subtaskSelect).toContain('Sub-task');
-		expect(subtaskSelect).not.toContain('Story');
+		expect(html).not.toMatch(/id="issue-type-subtask"/);
 	});
 
-	it('preselects current mappings', () => {
+	it('preselects the current task mapping', () => {
 		const html = renderToStaticMarkup(
 			createElement(IssueTypeMappingStep, {
 				step,
 				providerId: 'jira',
 				issueTypes,
-				mappings: { task: 'Story', subtask: 'Sub-task' },
+				mappings: { task: 'Story' },
 				onMappingChange: () => {},
 			}),
 		);
 		expect(html).toMatch(/<option[^>]*value="Story"[^>]*selected/);
-		expect(html).toMatch(/<option[^>]*value="Sub-task"[^>]*selected/);
 	});
 
 	it('renders loading state', () => {
