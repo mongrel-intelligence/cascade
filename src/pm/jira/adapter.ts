@@ -46,6 +46,16 @@ import { adfToPlainText, extractAdfMediaNodes, markdownToAdf } from './adf.js';
  * enforces invariance on object-property types. Internally the adapter
  * uses `config.containerId` as a JIRA project key — the project-scoped
  * entry point.
+ *
+ * MNG-1769: `createWorkItem` reads the operator's Task mapping from
+ * `issueTypes.task` — the exact key the wizard's `IssueTypeMappingStep`
+ * writes (`web/src/components/projects/pm-providers/jira/issue-type-step.tsx`).
+ * The `'Task'` string is the last-resort fallback for configs that never set
+ * a mapping. The legacy `issueTypes.default` key is intentionally NOT read —
+ * nothing ever wrote it, so honoring it would resurrect the bug where every
+ * JIRA issue was hardcoded to type `"Task"`. `subtask` is intentionally not
+ * consumed: there is no subtask-creation path. This is the "wizard writes X →
+ * runtime reads X" contract, mirroring MNG-1768's parity guard.
  */
 
 interface JiraConfig {
@@ -194,14 +204,23 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem> {
-		const issueType = this.config.issueTypes?.default ?? 'Task';
-		const result = await jiraClient.createIssue({
-			project: { key: config.containerId || this.config.projectKey },
-			summary: config.title,
-			description: config.description ? markdownToAdf(config.description) : undefined,
-			issuetype: { name: issueType },
-			...(config.labels?.length ? { labels: config.labels } : {}),
-		});
+		// MNG-1769: read the key the wizard actually writes (`issueTypes.task`),
+		// not the never-written legacy `issueTypes.default`. `'Task'` remains the
+		// last-resort fallback for configs that never set a mapping.
+		const issueType = this.config.issueTypes?.task ?? 'Task';
+		const projectKey = config.containerId || this.config.projectKey;
+		let result: Awaited<ReturnType<typeof jiraClient.createIssue>>;
+		try {
+			result = await jiraClient.createIssue({
+				project: { key: projectKey },
+				summary: config.title,
+				description: config.description ? markdownToAdf(config.description) : undefined,
+				issuetype: { name: issueType },
+				...(config.labels?.length ? { labels: config.labels } : {}),
+			});
+		} catch (err) {
+			throw await this.enrichCreateIssueError(err, projectKey, issueType);
+		}
 		const key = result.key ?? '';
 
 		// Transition to backlog status if configured
@@ -228,6 +247,45 @@ export class JiraPMProvider implements PMProvider {
 			url: this.getWorkItemUrl(key),
 			labels: [],
 		};
+	}
+
+	/**
+	 * MNG-1769: when `jiraClient.createIssue` fails (commonly a JIRA 400 because
+	 * the configured/fallback issue type does not exist on the project), best-effort
+	 * fetch the project's discovered issue types and re-throw an Error naming the
+	 * attempted type and the available non-subtask types. This turns an opaque JIRA
+	 * 400 into an actionable message pointing the operator at the wizard mapping.
+	 *
+	 * The diagnostic fetch is guarded in its own try/catch so a discovery failure
+	 * never masks the original creation error — if discovery also fails, the
+	 * original error surfaces unchanged.
+	 */
+	private async enrichCreateIssueError(
+		originalError: unknown,
+		projectKey: string,
+		attemptedType: string,
+	): Promise<unknown> {
+		try {
+			const types = await jiraClient.getIssueTypesForProject(projectKey);
+			const available = types
+				.filter((t) => !t.subtask)
+				.map((t) => t.name)
+				.filter((name) => name.length > 0);
+			return new Error(
+				`Failed to create JIRA issue in project "${projectKey}" with issue type "${attemptedType}". ` +
+					`Available issue types for this project: ${
+						available.length > 0 ? available.join(', ') : '(none discovered)'
+					}. ` +
+					`Map the Task role to one of these in the JIRA wizard's issue-type step. ` +
+					`Original error: ${String(originalError)}`,
+			);
+		} catch (discoveryErr) {
+			logger.warn('[JIRA] Could not fetch issue types while enriching createIssue error', {
+				projectKey,
+				error: String(discoveryErr),
+			});
+			return originalError;
+		}
 	}
 
 	async listWorkItems(

@@ -276,6 +276,14 @@ The fix matches on the **locale-invariant JIRA status ID** on both ends, with na
 - **Wizard** — the status-mapping select now persists the status **ID** (`{ id: s.id, name: s.name }`) while still displaying the name. `normalizeJiraStatusMappingsToIds` auto-upgrades legacy name-valued mappings → IDs in the `SET_JIRA_PROJECT_DETAILS` reducer when project details load, so re-saving any project backfills IDs. Values already-ID or unrecognized (custom) are left untouched.
 - **JQL** — `listWorkItems` quotes the status value; JIRA resolves a quoted numeric value against status IDs, so ID-based config values remain valid with no behavior change.
 
+#### JIRA issue-type mapping is read from `issueTypes.task` (MNG-1769)
+
+Same "wizard writes X → runtime reads X" failure shape as the locale-fragile status bug above ([MNG-1768](https://linear.app/mongrel/issue/MNG-1768/jira-status-matching-is-locale-fragile-status-moves-silently-no-op)). The JIRA wizard's `IssueTypeMappingStep` (`web/src/components/projects/pm-providers/jira/issue-type-step.tsx`) persists the operator's Task mapping under `jira.issueTypes.task`, but `JiraPMProvider.createWorkItem` used to read `issueTypes.default` — a key nothing ever wrote — so the optional chain always yielded `undefined` and **every** JIRA issue was hardcoded to type `"Task"`, silently ignoring the operator's mapping.
+
+- **Runtime reads `issueTypes.task`.** `createWorkItem` reads `this.config.issueTypes?.task ?? 'Task'`. The `'Task'` fallback is retained for configs that never set a mapping (backward compatible). The legacy `issueTypes.default` key is intentionally **not** read — honoring it would resurrect the bug — and a regression test in `tests/unit/pm/jira/adapter.test.ts` proves `default` is no longer honored.
+- **Actionable failure.** When `jiraClient.createIssue` fails (commonly a JIRA 400 when the mapped/fallback type does not exist on the project), the adapter best-effort calls `jiraClient.getIssueTypesForProject(projectKey)` and re-throws an error naming the attempted type and the project's discovered non-subtask issue types. The diagnostic fetch is guarded so a discovery failure re-throws the original creation error unchanged.
+- **`subtask` is intentionally not consumed.** There is no subtask-creation path, so the wizard's subtask row was removed rather than persist config nothing reads. A previously-saved `issueTypes.subtask` value is harmless — it simply stays in config, unread.
+
 ### Wizard path — metadata-driven, shared between providers
 
 The PM wizards consume the workflow status definition list through a single tRPC query (`trpc.workflowStatuses.list`) and render mapping rows for every key — built-in and custom alike. The provider's `useProviderHooks` resolves the list and forwards it as `workflowStatuses` on the hook return; the shared `StatusMappingStep` renders rows in the returned order. Reference implementations:

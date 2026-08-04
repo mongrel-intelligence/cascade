@@ -74,9 +74,12 @@ const mockConfig = {
 		todo: 'To Do',
 		done: 'Done',
 	},
+	// MNG-1769: the wizard's IssueTypeMappingStep persists the operator's Task
+	// mapping under `issueTypes.task` — the exact key createWorkItem now reads.
+	// The old `default` key was never written by anything and is intentionally
+	// no longer honored.
 	issueTypes: {
-		default: 'Task',
-		subtask: 'Sub-task',
+		task: 'Story',
 	},
 };
 
@@ -397,12 +400,98 @@ describe('JiraPMProvider', () => {
 				expect.objectContaining({
 					project: { key: 'PROJ' },
 					summary: 'New Task',
-					issuetype: { name: 'Task' },
+					// MNG-1769: mockConfig maps Task → 'Story' under `issueTypes.task`;
+					// createWorkItem must honor that mapping (previously it read the
+					// never-written `default` key and always sent 'Task').
+					issuetype: { name: 'Story' },
 					labels: ['backend'],
 				}),
 			);
 			expect(result.id).toBe('PROJ-456');
 			expect(result.url).toBe('https://mycompany.atlassian.net/browse/PROJ-456');
+		});
+
+		it('honors the wizard-written issueTypes.task mapping (parity guard, MNG-1769)', async () => {
+			const mappedProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: { task: 'Story' },
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-500' });
+
+			await mappedProvider.createWorkItem({ containerId: 'PROJ', title: 'Mapped task' });
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issuetype: { name: 'Story' } }),
+			);
+		});
+
+		it('falls back to "Task" when issueTypes is empty/absent (MNG-1769)', async () => {
+			const noMappingProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: {},
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-501' });
+
+			await noMappingProvider.createWorkItem({ containerId: 'PROJ', title: 'Unmapped task' });
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issuetype: { name: 'Task' } }),
+			);
+		});
+
+		it('does NOT honor the legacy issueTypes.default key (regression guard, MNG-1769)', async () => {
+			const legacyProvider = new JiraPMProvider({
+				...mockConfig,
+				// The old, never-written key. It must be ignored — falling back to 'Task'.
+				issueTypes: { default: 'Story' } as Record<string, string>,
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-502' });
+
+			await legacyProvider.createWorkItem({ containerId: 'PROJ', title: 'Legacy config task' });
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issuetype: { name: 'Task' } }),
+			);
+		});
+
+		it('re-throws an enriched error naming discovered issue types when creation fails (MNG-1769)', async () => {
+			const failingProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: { task: 'Task' },
+			});
+			mockJiraClient.createIssue.mockRejectedValue(new Error('JIRA 400: invalid issue type'));
+			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
+				{ name: 'Zadanie', subtask: false },
+				{ name: 'Story', subtask: false },
+				{ name: 'Podzadanie', subtask: true },
+			]);
+
+			await expect(
+				failingProvider.createWorkItem({ containerId: 'PROJ', title: 'Doomed task' }),
+			).rejects.toThrow(/Zadanie/);
+
+			const thrown = await failingProvider
+				.createWorkItem({ containerId: 'PROJ', title: 'Doomed task' })
+				.catch((e: unknown) => e as Error);
+			// Names the attempted type, the discovered non-subtask types, and never
+			// lists subtask-only types in the "available" set.
+			expect(thrown.message).toContain('Task');
+			expect(thrown.message).toContain('Story');
+			expect(thrown.message).not.toContain('Podzadanie');
+			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalledWith('PROJ');
+		});
+
+		it('surfaces the original creation error when issue-type discovery also fails (MNG-1769)', async () => {
+			const failingProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: { task: 'Task' },
+			});
+			mockJiraClient.createIssue.mockRejectedValue(new Error('original creation failure'));
+			mockJiraClient.getIssueTypesForProject.mockRejectedValue(new Error('discovery failed'));
+
+			await expect(
+				failingProvider.createWorkItem({ containerId: 'PROJ', title: 'Doomed task' }),
+			).rejects.toThrow('original creation failure');
 		});
 
 		it('omits labels when not provided', async () => {
