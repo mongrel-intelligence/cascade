@@ -156,6 +156,14 @@ export interface AgentEngineDefinition {
 				type: 'select';
 				defaultValueLabel: string;
 				options: ReadonlyArray<{ value: string; label: string }>;
+				/**
+				 * Model-ID prefixes this engine accepts in addition to its catalog
+				 * options (e.g. `['claude-', 'anthropic:']`). Must be a plain
+				 * `string[]` so it serializes across the `agentConfigs.engines` tRPC
+				 * query — the frontend mirrors the runtime compatibility check via
+				 * `isModelCompatibleWithEngine` without duplicating logic.
+				 */
+				acceptedModelPrefixes?: readonly string[];
 		  };
 	readonly logLabel: string;
 	readonly settings?: AgentEngineSettingsDefinition;

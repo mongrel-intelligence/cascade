@@ -20,3 +20,11 @@ export const CLAUDE_CODE_MODELS = [
 export const CLAUDE_CODE_MODEL_IDS: string[] = CLAUDE_CODE_MODELS.map((m) => m.value);
 
 export const DEFAULT_CLAUDE_CODE_MODEL = 'claude-sonnet-5';
+
+/**
+ * Model-ID prefixes the Claude Code engine accepts in addition to catalog IDs.
+ * Single source of truth consumed by `resolveClaudeModel` (runtime acceptance)
+ * and surfaced on the engine definition as `acceptedModelPrefixes` so the
+ * dashboard can mirror the compatibility check without duplicating logic.
+ */
+export const CLAUDE_CODE_ACCEPTED_PREFIXES = ['claude-', 'anthropic:'] as const;

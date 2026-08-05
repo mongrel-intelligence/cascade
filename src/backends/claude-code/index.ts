@@ -21,7 +21,11 @@ import {
 	consumeStream,
 	filterContextImages,
 } from './messageProcessing.js';
-import { CLAUDE_CODE_MODEL_IDS, DEFAULT_CLAUDE_CODE_MODEL } from './models.js';
+import {
+	CLAUDE_CODE_ACCEPTED_PREFIXES,
+	CLAUDE_CODE_MODEL_IDS,
+	DEFAULT_CLAUDE_CODE_MODEL,
+} from './models.js';
 import { ClaudeCodeSettingsSchema, resolveClaudeCodeSettings } from './settings.js';
 
 export {
@@ -40,8 +44,11 @@ export { buildPromptWithImages, formatErrorMessage } from './messageProcessing.j
  */
 export function resolveClaudeModel(cascadeModel: string): string {
 	if (CLAUDE_CODE_MODEL_IDS.includes(cascadeModel)) return cascadeModel;
-	if (cascadeModel.startsWith('claude-')) return cascadeModel;
-	if (cascadeModel.startsWith('anthropic:')) return cascadeModel.replace('anthropic:', '');
+	if (CLAUDE_CODE_ACCEPTED_PREFIXES.some((prefix) => cascadeModel.startsWith(prefix))) {
+		return cascadeModel.startsWith('anthropic:')
+			? cascadeModel.replace('anthropic:', '')
+			: cascadeModel;
+	}
 
 	throw new Error(
 		`Model "${cascadeModel}" is not compatible with the Claude Code engine. Configure a Claude-compatible model (e.g. "${DEFAULT_CLAUDE_CODE_MODEL}") or switch to a different engine.`,

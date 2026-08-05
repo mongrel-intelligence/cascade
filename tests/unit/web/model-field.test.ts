@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { resolveSelectEmptyLabel } from '../../../web/src/components/settings/model-field.js';
 import {
 	addPrefix,
 	formatContext,
@@ -6,6 +7,34 @@ import {
 	modelGroup,
 	stripPrefix,
 } from '../../../web/src/lib/openrouter-utils.js';
+
+// ────────────────────────────────────────────────────────────────────────────
+// resolveSelectEmptyLabel — honors the caller's inheritance-aware defaultLabel
+// on the ModelField `select` branch (MNG-1772). The runtime chain is
+// override → per-agent → project.model with no engine-default step, so the
+// empty option must describe inheritance, not a fictional engine default.
+// ────────────────────────────────────────────────────────────────────────────
+describe('resolveSelectEmptyLabel', () => {
+	it('returns the caller defaultLabel when provided', () => {
+		expect(
+			resolveSelectEmptyLabel(
+				'Inherit from project (openrouter:google/gemini-3-flash-preview)',
+				'Default (Claude Sonnet 5)',
+			),
+		).toBe('Inherit from project (openrouter:google/gemini-3-flash-preview)');
+	});
+
+	it('falls back to the engine defaultValueLabel when defaultLabel is undefined', () => {
+		expect(resolveSelectEmptyLabel(undefined, 'Default (Claude Sonnet 5)')).toBe(
+			'Default (Claude Sonnet 5)',
+		);
+	});
+
+	it('prefers an empty-string defaultLabel only when it is nullish (uses ?? semantics)', () => {
+		// Empty string is a real value under ?? — kept for callers that pass ''.
+		expect(resolveSelectEmptyLabel('', 'Default (GPT-5.4)')).toBe('');
+	});
+});
 
 // Tests import directly from the shared utility module used by the production
 // component, so implementation drift between tests and production is impossible.
