@@ -13,3 +13,14 @@ export const CODEX_MODELS = [
 export const CODEX_MODEL_IDS: string[] = CODEX_MODELS.map((model) => model.value);
 
 export const DEFAULT_CODEX_MODEL = 'gpt-5.4';
+
+/**
+ * Model-ID prefixes the Codex engine accepts in addition to catalog IDs.
+ * Single source of truth consumed by `resolveCodexModel` (runtime acceptance)
+ * and surfaced on the engine definition as `acceptedModelPrefixes` so the
+ * dashboard can mirror the compatibility check without duplicating logic.
+ *
+ * Note: an `openai:`-prefixed model still only resolves when its bare ID is a
+ * known catalog ID (see `resolveCodexModel`); the prefix alone is not enough.
+ */
+export const CODEX_ACCEPTED_PREFIXES = ['openai:'] as const;

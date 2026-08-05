@@ -19,7 +19,7 @@ import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.
 import type { AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import type { UsageSummary } from './jsonlParser.js';
 import { extractUsage, parseCodexEvent } from './jsonlParser.js';
-import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
+import { CODEX_ACCEPTED_PREFIXES, CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
 import { CODEX_COMPLETION_OUTPUT_SCHEMA, parseCodexCompletionReport } from './outputSchema.js';
 import {
 	assertHeadlessCodexSettings,
@@ -508,7 +508,7 @@ function resolveCodexModel(cascadeModel: string): string {
 	// and would silently persist zero cost. Add new models to CODEX_MODEL_IDS in
 	// src/backends/codex/models.ts AND add a pricing row to MODEL_PRICING in
 	// src/utils/llmMetrics.ts before accepting them here.
-	if (cascadeModel.startsWith('openai:')) {
+	if (CODEX_ACCEPTED_PREFIXES.some((prefix) => cascadeModel.startsWith(prefix))) {
 		const bareId = cascadeModel.replace('openai:', '');
 		if (CODEX_MODEL_IDS.includes(bareId)) return bareId;
 	}

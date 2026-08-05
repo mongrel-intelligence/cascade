@@ -2,7 +2,7 @@
  * Agent detail view components: DefinitionAgentSection and AgentDetailView.
  * Renders the tabbed detail panel (Engine / Prompts / Triggers) for a single agent.
  */
-import { ArrowLeft } from 'lucide-react';
+import { AlertTriangle, ArrowLeft } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
 import { ModelField } from '@/components/settings/model-field.js';
@@ -22,6 +22,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.js';
 import { AGENT_LABELS, CATEGORY_LABELS } from '@/lib/trigger-agent-mapping.js';
 import type { AgentDetailViewProps, DefinitionAgentSectionProps } from './agent-config-types.js';
+import { isModelCompatibleWithEngine } from './agent-config-utils.js';
 import { AgentPromptOverrides } from './agent-prompt-overrides.js';
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: tabbed detail panel managing Engine/Prompts/Triggers tabs with per-tab state, mutations, and trigger category grouping
@@ -83,6 +84,18 @@ function DefinitionAgentSection({
 	// Resolved inherited model and iterations (walk the chain: project → system)
 	const inheritedModel = projectModel ?? systemDefaults?.model;
 	const inheritedMaxIterations = projectMaxIterations ?? systemDefaults?.maxIterations;
+
+	// Effective engine + model for the compatibility check (walk inheritance).
+	// The runtime resolves model as override → per-agent → project.model with no
+	// engine-default step, so a `select`-type engine inheriting an incompatible
+	// model (e.g. claude-code + openrouter:...) crashes mid-run. Surface it here.
+	const effectiveModelEngineId = agentEngine || inheritedEngine;
+	const effectiveModelEngine = engines.find((engine) => engine.id === effectiveModelEngineId);
+	const effectiveModel = model || inheritedModel || '';
+	const showModelIncompatibilityWarning =
+		effectiveModelEngine?.modelSelection?.type === 'select' &&
+		effectiveModel.length > 0 &&
+		!isModelCompatibleWithEngine(effectiveModel, effectiveModelEngine);
 
 	// Sync form state when config changes (e.g. after invalidateQueries refetch)
 	// Skip clearing "Saved" if we just saved — the nonce effect will handle the timer
@@ -232,6 +245,16 @@ function DefinitionAgentSection({
 							defaultLabel={inheritedModel ? `Inherit from project (${inheritedModel})` : undefined}
 							projectId={projectId}
 						/>
+						{showModelIncompatibilityWarning && (
+							<p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+								<AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+								<span>
+									Inherited model <strong>{effectiveModel}</strong> will fail on the{' '}
+									{effectiveModelEngine?.label ?? effectiveModelEngineId} engine — pick a compatible
+									model.
+								</span>
+							</p>
+						)}
 					</div>
 					{effectiveEngine && (
 						<EngineSettingsFields

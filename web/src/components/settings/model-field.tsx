@@ -26,6 +26,24 @@ interface ModelFieldProps {
 	projectId?: string;
 }
 
+/**
+ * Resolve the label rendered for the empty ("_none") option of a `select`-type
+ * engine's model picker.
+ *
+ * The runtime resolution chain is `override → per-agent → project.model` with no
+ * engine-default step (see `src/agents/shared/modelResolution.ts`), so when a
+ * caller supplies an inheritance-aware `defaultLabel` (e.g. "Inherit from project
+ * (X)") it must win over the engine catalog's hardcoded `defaultValueLabel`
+ * (e.g. "Default (Sonnet 5)"). Only when no caller label is provided do we fall
+ * back to the engine default. Exported so it can be unit-tested directly.
+ */
+export function resolveSelectEmptyLabel(
+	defaultLabel: string | undefined,
+	engineDefaultValueLabel: string,
+): string {
+	return defaultLabel ?? engineDefaultValueLabel;
+}
+
 export function ModelField({
 	value,
 	onChange,
@@ -44,7 +62,12 @@ export function ModelField({
 					<SelectValue placeholder="Select model" />
 				</SelectTrigger>
 				<SelectContent>
-					<SelectItem value="_none">{engineDefinition.modelSelection.defaultValueLabel}</SelectItem>
+					<SelectItem value="_none">
+						{resolveSelectEmptyLabel(
+							defaultLabel,
+							engineDefinition.modelSelection.defaultValueLabel,
+						)}
+					</SelectItem>
 					{engineDefinition.modelSelection.options.map((m) => (
 						<SelectItem key={m.value} value={m.value}>
 							{m.label}

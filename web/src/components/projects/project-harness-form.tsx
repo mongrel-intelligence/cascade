@@ -226,7 +226,7 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 															value={model}
 															onChange={setModel}
 															engine={engine.id}
-															defaultLabel={defaults ? defaults.model : undefined}
+															defaultLabel={defaults ? `Default (${defaults.model})` : undefined}
 															projectId={project.id}
 														/>
 														<p className="text-xs text-muted-foreground">
