@@ -1,6 +1,24 @@
-import { CLAUDE_CODE_MODELS } from './claude-code/models.js';
-import { CODEX_MODELS } from './codex/models.js';
+import {
+	CLAUDE_CODE_ACCEPTED_PREFIXES,
+	CLAUDE_CODE_MODELS,
+	DEFAULT_CLAUDE_CODE_MODEL,
+} from './claude-code/models.js';
+import { CODEX_ACCEPTED_PREFIXES, CODEX_MODELS, DEFAULT_CODEX_MODEL } from './codex/models.js';
 import type { AgentEngineDefinition } from './types.js';
+
+/**
+ * Derive the `select`-engine empty-option label from the engine's default model
+ * constant, looking the display label up in the model catalog. This kills the
+ * hand-synced-literal drift class (MNG-1772/MNG-1770): the displayed default
+ * always matches the actually-resolved `DEFAULT_*_MODEL` on the next model bump.
+ */
+export function defaultModelLabel(
+	models: ReadonlyArray<{ value: string; label: string }>,
+	defaultId: string,
+): string {
+	const match = models.find((m) => m.value === defaultId);
+	return `Default (${match?.label ?? defaultId})`;
+}
 
 export const LLMIST_ENGINE_DEFINITION: AgentEngineDefinition = {
 	id: 'llmist',
@@ -35,8 +53,9 @@ export const CLAUDE_CODE_ENGINE_DEFINITION: AgentEngineDefinition = {
 	],
 	modelSelection: {
 		type: 'select',
-		defaultValueLabel: 'Default (Sonnet 5)',
+		defaultValueLabel: defaultModelLabel(CLAUDE_CODE_MODELS, DEFAULT_CLAUDE_CODE_MODEL),
 		options: CLAUDE_CODE_MODELS,
+		acceptedModelPrefixes: CLAUDE_CODE_ACCEPTED_PREFIXES,
 	},
 	logLabel: 'Claude Code Log',
 	settings: {
@@ -94,8 +113,9 @@ export const CODEX_ENGINE_DEFINITION: AgentEngineDefinition = {
 	],
 	modelSelection: {
 		type: 'select',
-		defaultValueLabel: 'Default (GPT-5.4)',
+		defaultValueLabel: defaultModelLabel(CODEX_MODELS, DEFAULT_CODEX_MODEL),
 		options: CODEX_MODELS,
+		acceptedModelPrefixes: CODEX_ACCEPTED_PREFIXES,
 	},
 	logLabel: 'Codex Log',
 	settings: {

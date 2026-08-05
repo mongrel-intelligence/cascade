@@ -4,7 +4,30 @@
  */
 
 import type { ResolvedTrigger } from '../shared/definition-trigger-toggles.js';
+import type { Engine } from './agent-config-types.js';
 import { engineCredentialKeys } from './engine-secrets.js';
+
+/**
+ * Returns true when `model` is compatible with a `select`-type engine — i.e. it
+ * is one of the engine's catalog options OR matches one of the engine's accepted
+ * model prefixes (`acceptedModelPrefixes`). Mirrors the runtime acceptance rules
+ * enforced by `resolveClaudeModel` / `resolveCodexModel` so the dashboard can
+ * warn at configuration time instead of crashing the run mid-flight (MNG-1772).
+ *
+ * `free-text` engines (and engines whose selection shape is unknown) accept any
+ * model string, so this always returns true for them — avoids false positives.
+ */
+export function isModelCompatibleWithEngine(model: string, engine: Engine): boolean {
+	const selection = engine.modelSelection;
+	// Only select-type engines constrain the model set.
+	if (!selection || selection.type !== 'select') return true;
+	// An empty model means "inherit"; compatibility is judged on the resolved
+	// value by the caller — treat empty as compatible here.
+	if (!model) return true;
+	if (selection.options.some((option) => option.value === model)) return true;
+	const prefixes = selection.acceptedModelPrefixes ?? [];
+	return prefixes.some((prefix) => model.startsWith(prefix));
+}
 
 /**
  * Returns true when the given engine has at least one credential key configured.
