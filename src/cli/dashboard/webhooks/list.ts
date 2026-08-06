@@ -2,7 +2,7 @@ import { Args, Flags } from '@oclif/core';
 import { DashboardCommand } from '../_shared/base.js';
 
 export default class WebhooksList extends DashboardCommand {
-	static override description = 'List Trello, GitHub, and JIRA webhooks for a project.';
+	static override description = 'List Trello, GitHub, GitLab, and JIRA webhooks for a project.';
 
 	static override args = {
 		projectId: Args.string({ description: 'Project ID', required: true }),
@@ -70,6 +70,16 @@ export default class WebhooksList extends DashboardCommand {
 					this.log(
 						`  [${w.id}] ${w.config.url} (active: ${w.active}, events: ${w.events.join(', ')})`,
 					);
+				}
+			}
+
+			this.log('');
+			this.log('GitLab webhooks:');
+			if (!result.gitlab || result.gitlab.length === 0) {
+				this.log('  (none)');
+			} else {
+				for (const w of result.gitlab) {
+					this.log(`  [${w.id}] ${w.url} (active: ${w.enableSslVerification !== false})`);
 				}
 			}
 

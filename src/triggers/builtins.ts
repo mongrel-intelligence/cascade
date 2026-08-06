@@ -20,6 +20,7 @@
 
 import { listPMProviders } from '../integrations/pm/registry.js';
 import { registerGitHubTriggers } from './github/register.js';
+import { registerGitLabTriggers } from './gitlab/register.js';
 import type { TriggerRegistry } from './registry.js';
 import { registerSentryTriggers } from './sentry/register.js';
 
@@ -33,5 +34,6 @@ export function registerBuiltInTriggers(registry: TriggerRegistry): void {
 		}
 	}
 	registerGitHubTriggers(registry);
+	registerGitLabTriggers(registry);
 	registerSentryTriggers(registry);
 }

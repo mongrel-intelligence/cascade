@@ -11,6 +11,19 @@ import {
 	updatePRCommentDef,
 } from '../../gadgets/github/definitions.js';
 import {
+	approveMRDef,
+	createMRDef,
+	createMRReviewDef,
+	getFailedPipelineJobsDef,
+	getMRDetailsDef,
+	getMRDiffDef,
+	getMRNotesDef,
+	getPipelineStatusDef,
+	mergeMRDef,
+	postMRNoteDef,
+	updateMRNoteDef,
+} from '../../gadgets/gitlab/definitions.js';
+import {
 	addChecklistDef,
 	createWorkItemDef,
 	listWorkItemsDef,
@@ -24,14 +37,11 @@ import {
 } from '../../gadgets/pm/definitions.js';
 import { finishDef } from '../../gadgets/session/definitions.js';
 import { generateToolManifest } from '../../gadgets/shared/manifestGenerator.js';
+import type { ToolDefinition } from '../../gadgets/shared/toolDefinition.js';
 import type { ToolManifest } from '../contracts/index.js';
 
-/**
- * All tool definitions in display order.
- * PM tools → SCM tools → Session tools.
- */
-const ALL_DEFINITIONS = [
-	// PM tools
+/** PM tool definitions (shared across all SCM providers). */
+const PM_DEFINITIONS: ToolDefinition[] = [
 	readWorkItemDef,
 	postCommentDef,
 	updateWorkItemDef,
@@ -42,7 +52,10 @@ const ALL_DEFINITIONS = [
 	moveWorkItemDef,
 	pmUpdateChecklistItemDef,
 	pmDeleteChecklistItemDef,
-	// SCM tools
+];
+
+/** GitHub SCM tool definitions. */
+const GITHUB_SCM_DEFINITIONS: ToolDefinition[] = [
 	createPRDef,
 	getPRDetailsDef,
 	getPRDiffDef,
@@ -53,14 +66,33 @@ const ALL_DEFINITIONS = [
 	replyToReviewCommentDef,
 	createPRReviewDef,
 	getCIRunLogsDef,
-	// Session tools
-	finishDef,
 ];
+
+/** GitLab SCM tool definitions. */
+const GITLAB_SCM_DEFINITIONS: ToolDefinition[] = [
+	createMRDef,
+	getMRDetailsDef,
+	getMRDiffDef,
+	getMRNotesDef,
+	postMRNoteDef,
+	updateMRNoteDef,
+	createMRReviewDef,
+	approveMRDef,
+	getPipelineStatusDef,
+	getFailedPipelineJobsDef,
+	mergeMRDef,
+];
+
+/** Session tool definitions. */
+const SESSION_DEFINITIONS: ToolDefinition[] = [finishDef];
 
 /**
  * Get the CLI tool manifests for CASCADE-specific tools.
- * These describe the tools available via cascade-tools CLI.
+ * Selects GitHub or GitLab SCM tools based on CASCADE_SCM_PROVIDER env var.
  */
 export function getToolManifests(): ToolManifest[] {
-	return ALL_DEFINITIONS.map((def) => generateToolManifest(def));
+	const scmProvider = process.env.CASCADE_SCM_PROVIDER;
+	const scmDefs = scmProvider === 'gitlab' ? GITLAB_SCM_DEFINITIONS : GITHUB_SCM_DEFINITIONS;
+	const allDefs = [...PM_DEFINITIONS, ...scmDefs, ...SESSION_DEFINITIONS];
+	return allDefs.map((def) => generateToolManifest(def));
 }

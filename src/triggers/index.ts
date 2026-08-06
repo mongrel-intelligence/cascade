@@ -1,5 +1,6 @@
 export { registerBuiltInTriggers } from './builtins.js';
 export { processGitHubWebhook } from './github/webhook-handler.js';
+export { processGitLabWebhook } from './gitlab/webhook-handler.js';
 export { processJiraWebhook } from './jira/webhook-handler.js';
 export { createTriggerRegistry, type TriggerRegistry } from './registry.js';
 export { processTrelloWebhook } from './trello/webhook-handler.js';

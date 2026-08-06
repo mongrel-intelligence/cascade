@@ -27,6 +27,9 @@ import './pm/index.js';
 // SCM — GitHub. Registers integrationModule + trigger handlers.
 import '../github/register.js';
 
+// SCM — GitLab. Registers integrationModule + trigger handlers.
+import '../gitlab/register.js';
+
 // Alerting — Sentry. Registers integrationModule + trigger handlers.
 import '../sentry/register.js';
 

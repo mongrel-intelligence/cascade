@@ -134,9 +134,17 @@ function buildManifestParameters(def: ToolDefinition): Record<string, unknown> {
 		(def.cli?.fileInputAlternatives ?? []).map((a) => [a.paramName, a.fileFlag]),
 	);
 
+	// Collect auto-resolved param names so we can exclude them from the manifest.
+	// These are auto-detected at runtime (e.g. owner/repo from git remote) —
+	// showing them to the agent causes it to construct complex shell expressions
+	// to fill values that are already resolved automatically.
+	const autoResolvedNames = new Set((def.cli?.autoResolved ?? []).map((a) => a.paramName));
+
 	for (const [name, paramDef] of Object.entries(def.parameters)) {
 		// Skip gadgetOnly params
 		if (paramDef.gadgetOnly) continue;
+		// Skip auto-resolved params (owner, repo — resolved from git remote)
+		if (autoResolvedNames.has(name)) continue;
 
 		const isRequired = paramDef.required === true;
 		const entry = buildManifestParam(paramDef, isRequired);

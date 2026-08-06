@@ -1,6 +1,7 @@
 /**
- * SCM (GitHub) integration tab components.
- * Contains: GitHubCredentialSlots, GitHubWebhookSection, SCMTab.
+ * SCM (GitHub/GitLab) integration tab components.
+ * Contains: GitHubCredentialSlots, GitLabCredentialSlots,
+ * GitHubWebhookSection, GitLabWebhookSection, SCMTab.
  * `CopyButton` lives at `@/components/ui/copy-button.js` (extracted during
  * PM wizard styling restoration).
  */
@@ -21,6 +22,8 @@ import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { ProjectSecretField } from './project-secret-field.js';
+
+type SCMProvider = 'github' | 'gitlab';
 
 // ============================================================================
 // GitHub Credential Slots (replaces the old CredentialSelector dropdowns)
@@ -90,6 +93,40 @@ function GitHubCredentialSlots({ projectId }: { projectId: string }) {
 				onVerify={(val) => handleVerify('reviewer', val)}
 				isVerifying={verifyingRoles.reviewer}
 				verifyError={verifyErrors.reviewer}
+			/>
+		</div>
+	);
+}
+
+// ============================================================================
+// GitLab Credential Slots
+// ============================================================================
+
+function GitLabCredentialSlots({ projectId }: { projectId: string }) {
+	const credentialsQuery = useQuery(trpc.projects.credentials.list.queryOptions({ projectId }));
+
+	const credentials = credentialsQuery.data ?? [];
+	const implementerCred = credentials.find((c) => c.envVarKey === 'GITLAB_TOKEN_IMPLEMENTER');
+	const reviewerCred = credentials.find((c) => c.envVarKey === 'GITLAB_TOKEN_REVIEWER');
+
+	return (
+		<div className="space-y-4">
+			<Label className="text-sm font-medium">Credentials</Label>
+			<ProjectSecretField
+				projectId={projectId}
+				envVarKey="GITLAB_TOKEN_IMPLEMENTER"
+				label="Implementer Token"
+				description="GitLab PAT for the bot that writes code, creates MRs, and responds to reviews."
+				placeholder="glpat-..."
+				credential={implementerCred}
+			/>
+			<ProjectSecretField
+				projectId={projectId}
+				envVarKey="GITLAB_TOKEN_REVIEWER"
+				label="Reviewer Token"
+				description="GitLab PAT for the bot that reviews MRs. Must be a different account."
+				placeholder="glpat-..."
+				credential={reviewerCred}
 			/>
 		</div>
 	);
@@ -327,7 +364,97 @@ function GitHubWebhookSection({ projectId }: { projectId: string }) {
 }
 
 // ============================================================================
-// SCM Tab (GitHub)
+// GitLab Webhook Management
+// ============================================================================
+
+function GitLabWebhookSection({ projectId }: { projectId: string }) {
+	const callbackBaseUrl =
+		API_URL ||
+		(typeof window !== 'undefined' ? window.location.origin.replace(':5173', ':3000') : '');
+
+	const webhookCallbackUrl = callbackBaseUrl
+		? `${callbackBaseUrl}/gitlab/webhook`
+		: '<YOUR_CALLBACK_URL>/gitlab/webhook';
+
+	return (
+		<div className="space-y-4">
+			<div>
+				<Label>GitLab Webhooks</Label>
+				<p className="text-xs text-muted-foreground mt-1">
+					Configure GitLab webhooks for receiving push events, MR updates, and pipeline
+					notifications.
+				</p>
+			</div>
+
+			<div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-3 dark:border-blue-900/50 dark:bg-blue-900/20">
+				<div className="flex items-start gap-2">
+					<Info className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0 mt-0.5" />
+					<div className="space-y-2">
+						<p className="text-xs text-blue-700 dark:text-blue-300 font-medium">
+							GitLab webhook setup
+						</p>
+						<p className="text-xs text-blue-600 dark:text-blue-400">
+							Configure the webhook in your GitLab project under Settings &gt; Webhooks. Use the URL
+							below and enable the following triggers: Push events, Merge request events, Pipeline
+							events.
+						</p>
+						<div className="flex items-center gap-2">
+							<code className="text-xs font-mono bg-muted px-2 py-1 rounded border break-all">
+								{webhookCallbackUrl}
+							</code>
+							<CopyButton text={webhookCallbackUrl} />
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+	);
+}
+
+// ============================================================================
+// SCM Provider Selector
+// ============================================================================
+
+function SCMProviderSelector({
+	value,
+	onChange,
+}: {
+	value: SCMProvider;
+	onChange: (provider: SCMProvider) => void;
+}) {
+	return (
+		<div className="space-y-2">
+			<Label className="text-sm font-medium">SCM Provider</Label>
+			<div className="flex gap-2">
+				<button
+					type="button"
+					onClick={() => onChange('github')}
+					className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+						value === 'github'
+							? 'border-primary bg-primary/5 text-foreground'
+							: 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+					}`}
+				>
+					GitHub
+				</button>
+				<button
+					type="button"
+					onClick={() => onChange('gitlab')}
+					className={`flex-1 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+						value === 'gitlab'
+							? 'border-primary bg-primary/5 text-foreground'
+							: 'border-input text-muted-foreground hover:text-foreground hover:border-foreground/30'
+					}`}
+				>
+					GitLab
+				</button>
+			</div>
+		</div>
+	);
+}
+
+// ============================================================================
+// SCM Tab (GitHub / GitLab)
 // ============================================================================
 
 interface SCMTabProject {
@@ -336,8 +463,18 @@ interface SCMTabProject {
 	branchPrefix?: string | null;
 }
 
-export function SCMTab({ projectId, project }: { projectId: string; project?: SCMTabProject }) {
+export function SCMTab({
+	projectId,
+	project,
+	initialProvider = 'github',
+}: {
+	projectId: string;
+	project?: SCMTabProject;
+	initialProvider?: SCMProvider;
+}) {
 	const queryClient = useQueryClient();
+
+	const [scmProvider, setScmProvider] = useState<SCMProvider>(initialProvider);
 
 	// Project-level SCM fields
 	const [repo, setRepo] = useState(project?.repo ?? '');
@@ -349,6 +486,10 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 		setBaseBranch(project?.baseBranch ?? 'main');
 		setBranchPrefix(project?.branchPrefix ?? 'feature/');
 	}, [project?.repo, project?.baseBranch, project?.branchPrefix]);
+
+	useEffect(() => {
+		setScmProvider(initialProvider);
+	}, [initialProvider]);
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
@@ -364,7 +505,7 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 			const result = await trpcClient.projects.integrations.upsert.mutate({
 				projectId,
 				category: 'scm',
-				provider: 'github',
+				provider: scmProvider,
 				config: {},
 			});
 
@@ -383,8 +524,15 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 		},
 	});
 
+	const repoPlaceholder = scmProvider === 'gitlab' ? 'group/subgroup/repo' : 'owner/repo';
+	const providerLabel = scmProvider === 'gitlab' ? 'GitLab' : 'GitHub';
+
 	return (
 		<div className="space-y-6">
+			<SCMProviderSelector value={scmProvider} onChange={setScmProvider} />
+
+			<hr className="border-border" />
+
 			{/* Repository Settings */}
 			<div className="space-y-4">
 				<Label className="text-sm font-medium">Repository Settings</Label>
@@ -394,7 +542,7 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 						id="scm-repo"
 						value={repo}
 						onChange={(e) => setRepo(e.target.value)}
-						placeholder="owner/repo"
+						placeholder={repoPlaceholder}
 					/>
 				</div>
 				<div className="grid grid-cols-2 gap-4">
@@ -422,12 +570,17 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 			<hr className="border-border" />
 
 			<p className="text-sm text-muted-foreground">
-				CASCADE uses two separate GitHub bot accounts to prevent feedback loops. The{' '}
-				<strong>implementer</strong> writes code and creates PRs. The <strong>reviewer</strong>{' '}
-				reviews PRs and can approve or request changes.
+				CASCADE uses two separate {providerLabel} bot accounts to prevent feedback loops. The{' '}
+				<strong>implementer</strong> writes code and creates{' '}
+				{scmProvider === 'gitlab' ? 'MRs' : 'PRs'}. The <strong>reviewer</strong> reviews{' '}
+				{scmProvider === 'gitlab' ? 'MRs' : 'PRs'} and can approve or request changes.
 			</p>
 
-			<GitHubCredentialSlots projectId={projectId} />
+			{scmProvider === 'github' ? (
+				<GitHubCredentialSlots projectId={projectId} />
+			) : (
+				<GitLabCredentialSlots projectId={projectId} />
+			)}
 
 			<p className="text-xs text-muted-foreground">
 				Trigger configuration has moved to the <strong>Agents</strong> tab.
@@ -450,7 +603,11 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 
 			<hr className="border-border" />
 
-			<GitHubWebhookSection projectId={projectId} />
+			{scmProvider === 'github' ? (
+				<GitHubWebhookSection projectId={projectId} />
+			) : (
+				<GitLabWebhookSection projectId={projectId} />
+			)}
 		</div>
 	);
 }

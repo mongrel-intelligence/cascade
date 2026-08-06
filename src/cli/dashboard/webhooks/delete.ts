@@ -15,6 +15,7 @@ export default class WebhooksDelete extends DashboardCommand {
 		}),
 		'trello-only': Flags.boolean({ description: 'Only delete Trello webhooks', default: false }),
 		'github-only': Flags.boolean({ description: 'Only delete GitHub webhooks', default: false }),
+		'gitlab-only': Flags.boolean({ description: 'Only delete GitLab webhooks', default: false }),
 		'github-token': Flags.string({
 			description: 'One-time GitHub PAT with admin:repo_hook scope',
 		}),
@@ -43,6 +44,7 @@ export default class WebhooksDelete extends DashboardCommand {
 					callbackBaseUrl,
 					trelloOnly: flags['trello-only'],
 					githubOnly: flags['github-only'],
+					gitlabOnly: flags['gitlab-only'],
 					oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
 				}),
 			);
@@ -66,6 +68,14 @@ export default class WebhooksDelete extends DashboardCommand {
 				);
 			} else {
 				this.log('No matching GitHub webhooks found.');
+			}
+
+			if (result.gitlab && result.gitlab.length > 0) {
+				this.success(
+					`Deleted ${result.gitlab.length} GitLab webhook(s): ${result.gitlab.join(', ')}`,
+				);
+			} else {
+				this.log('No matching GitLab webhooks found.');
 			}
 
 			if (result.jira.length > 0) {

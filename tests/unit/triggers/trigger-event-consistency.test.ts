@@ -189,6 +189,25 @@ const RAW_TRIGGER_LITERAL_EXEMPTIONS = new Set<string>([
 	"src/triggers/sentry/alerting-metric.ts :: triggerEvent: 'alerting:metric-alert',",
 	"src/triggers/sentry/alerting-issue.ts :: 'alerting:issue-alert',",
 	"src/triggers/sentry/alerting-issue.ts :: triggerEvent: 'alerting:issue-alert',",
+	// GitLab SCM triggers mirror the GitHub handlers one-for-one and reuse the
+	// same canonical scm:* event IDs as raw literals. Grandfathered identically
+	// to the GitHub entries above; new GitLab events must use TRIGGER_EVENTS.
+	"src/triggers/gitlab/mr-approval.ts :: 'scm:pr-review-submitted',",
+	"src/triggers/gitlab/mr-approval.ts :: triggerEvent: 'scm:pr-review-submitted',",
+	"src/triggers/gitlab/mr-comment-mention.ts :: 'scm:pr-comment-mention',",
+	"src/triggers/gitlab/mr-comment-mention.ts :: triggerEvent: 'scm:pr-comment-mention',",
+	"src/triggers/gitlab/mr-conflict-detected.ts :: 'scm:pr-conflict-detected',",
+	"src/triggers/gitlab/mr-conflict-detected.ts :: triggerEvent: 'scm:pr-conflict-detected',",
+	"src/triggers/gitlab/mr-merged.ts :: if (await checkTriggerEnabled(ctx.project.id, 'backlog-manager', 'scm:pr-merged', this.name)) {",
+	"src/triggers/gitlab/mr-merged.ts :: agentInput: { triggerEvent: 'scm:pr-merged', workItemId: workItemId },",
+	"src/triggers/gitlab/mr-opened.ts :: 'scm:pr-opened',",
+	"src/triggers/gitlab/mr-opened.ts :: triggerEvent: 'scm:pr-opened',",
+	"src/triggers/gitlab/mr-reviewer-added.ts :: if (!(await checkTriggerEnabled(ctx.project.id, 'review', 'scm:review-requested', this.name))) {",
+	"src/triggers/gitlab/mr-reviewer-added.ts :: triggerEvent: 'scm:review-requested',",
+	"src/triggers/gitlab/pipeline-failure.ts :: 'scm:check-suite-failure',",
+	"src/triggers/gitlab/pipeline-failure.ts :: triggerEvent: 'scm:check-suite-failure',",
+	"src/triggers/gitlab/pipeline-success.ts :: 'scm:check-suite-success',",
+	"src/triggers/gitlab/pipeline-success.ts :: triggerEvent: 'scm:check-suite-success',",
 ]);
 
 function findRawTriggerLiteralOccurrences(files: string[]): RawTriggerLiteralOccurrence[] {

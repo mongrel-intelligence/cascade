@@ -95,6 +95,26 @@ export async function parseSentryPayload(
 }
 
 /**
+ * Parse a GitLab webhook request (plain JSON).
+ * Event type comes from the `X-Gitlab-Event` header.
+ */
+export async function parseGitLabPayload(c: Context): Promise<ParseResult> {
+	try {
+		const rawBody = await c.req.text();
+		const payload = JSON.parse(rawBody);
+		const eventType = c.req.header('X-Gitlab-Event') || 'unknown';
+		logger.info('Received GitLab webhook', {
+			event: eventType,
+			project: ((payload as Record<string, unknown>)?.project as Record<string, unknown>)
+				?.path_with_namespace,
+		});
+		return { ok: true, payload, eventType, rawBody };
+	} catch (err) {
+		return { ok: false, error: String(err) };
+	}
+}
+
+/**
  * Parse a JIRA webhook request (plain JSON).
  * Extracts `webhookEvent` as the event type.
  */

@@ -3,12 +3,12 @@
  *
  * This is the entry point for Cascade worker containers. It:
  * 1. Reads job data from environment variables
- * 2. Processes the job (Trello, GitHub, or JIRA webhook)
+ * 2. Processes the job (Trello, GitHub, GitLab, or JIRA webhook)
  * 3. Exits when complete
  *
  * Environment variables:
  * - JOB_ID: Unique job identifier
- * - JOB_TYPE: 'trello', 'github', or 'jira'
+ * - JOB_TYPE: 'trello', 'github', 'gitlab', or 'jira'
  * - JOB_DATA: JSON-encoded job payload
  * - DATABASE_URL: PostgreSQL connection string for config
  */
@@ -32,6 +32,7 @@ import {
 import { buildJobDataRedisKey, readOffloadedJobData } from './router/job-data-offload.js';
 import { dispatchPMAck } from './router/pm-ack-dispatch.js';
 import { captureException, flush, setTag } from './sentry.js';
+import { processGitLabWebhook } from './triggers/gitlab/webhook-handler.js';
 import {
 	createTriggerRegistry,
 	processGitHubWebhook,
@@ -107,6 +108,18 @@ export interface JiraJobData {
 	ackContextHint?: string;
 }
 
+export interface GitLabJobData {
+	type: 'gitlab';
+	source: 'gitlab';
+	payload: unknown;
+	eventType: string;
+	projectPath: string;
+	receivedAt: string;
+	ackCommentId?: number;
+	ackMessage?: string;
+	triggerResult?: TriggerResult;
+}
+
 export interface SentryJobData {
 	type: 'sentry';
 	source: 'sentry';
@@ -180,6 +193,7 @@ export type DashboardJobData = ManualRunJobData | RetryRunJobData | DebugAnalysi
 export type JobData =
 	| TrelloJobData
 	| GitHubJobData
+	| GitLabJobData
 	| JiraJobData
 	| SentryJobData
 	| LinearJobData
@@ -356,6 +370,23 @@ export async function dispatchJob(
 				jobData.triggerResult,
 				!!jobData.mergeabilityRecheckAttempt,
 				!!jobData.checkSuiteRecheckAttempt,
+			);
+			break;
+		case 'gitlab':
+			logger.info('[Worker] Processing GitLab job', {
+				jobId,
+				eventType: jobData.eventType,
+				projectPath: jobData.projectPath,
+				ackCommentId: jobData.ackCommentId,
+				hasTriggerResult: !!jobData.triggerResult,
+			});
+			await processGitLabWebhook(
+				jobData.payload,
+				jobData.eventType,
+				triggerRegistry,
+				jobData.ackCommentId,
+				jobData.ackMessage,
+				jobData.triggerResult,
 			);
 			break;
 		case 'jira': {

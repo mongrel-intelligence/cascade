@@ -69,6 +69,12 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm /tmp/ast-grep.zip && \
     chmod +x /usr/local/bin/sg
 
+# Install glab (GitLab CLI)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -L "https://gitlab.com/gitlab-org/cli/-/releases/v1.52.0/downloads/glab_1.52.0_linux_${ARCH}.deb" -o /tmp/glab.deb && \
+    dpkg -i /tmp/glab.deb && \
+    rm /tmp/glab.deb
+
 # Install agent CLIs used by headless engines in worker jobs.
 # All three are explicitly pinned so worker image rebuilds are reproducible —
 # upstream CLI changes can introduce subtle behavioural drift in headless mode.

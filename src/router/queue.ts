@@ -113,7 +113,19 @@ export interface LinearJob {
 	ackContextHint?: string;
 }
 
-export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob | LinearJob;
+export interface GitLabJob {
+	type: 'gitlab';
+	source: 'gitlab';
+	payload: unknown;
+	eventType: string;
+	projectPath: string;
+	receivedAt: string;
+	ackCommentId?: number;
+	ackMessage?: string;
+	triggerResult?: TriggerResult;
+}
+
+export type CascadeJob = TrelloJob | GitHubJob | JiraJob | SentryJob | LinearJob | GitLabJob;
 
 // Create the job queue
 export const jobQueue = new Queue<CascadeJob>('cascade-jobs', {

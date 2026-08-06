@@ -28,6 +28,16 @@ export interface JiraWebhookInfo {
 	enabled: boolean;
 }
 
+export interface GitLabWebhookInfo {
+	id: number;
+	url: string;
+	enableSslVerification: boolean;
+	pushEvents: boolean;
+	mergeRequestsEvents: boolean;
+	pipelineEvents: boolean;
+	noteEvents: boolean;
+}
+
 export interface SentryWebhookInfo {
 	url: string;
 	webhookSecretSet: boolean;
@@ -47,6 +57,7 @@ export interface ProjectContext {
 	orgId: string;
 	repo?: string;
 	pmType: 'trello' | 'jira' | 'linear';
+	scmProvider: 'github' | 'gitlab';
 	boardId?: string;
 	jiraBaseUrl?: string;
 	/**
@@ -61,6 +72,9 @@ export interface ProjectContext {
 	trelloApiKey: string;
 	trelloToken: string;
 	githubToken: string;
+	gitlabToken: string;
+	gitlabHost?: string;
+	gitlabWebhookSecret?: string;
 	jiraEmail?: string;
 	jiraApiToken?: string;
 	webhookSecret?: string;

@@ -196,6 +196,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			gitlabOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -215,6 +216,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 			callbackBaseUrl: 'https://cascade.example.com',
 			trelloOnly: false,
 			githubOnly: false,
+			gitlabOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -234,6 +236,7 @@ describe('WebhooksCreate (webhooks create)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			gitlabOnly: false,
 			oneTimeTokens: { github: 'ghp_testtoken123' },
 		});
 	});
@@ -303,6 +306,7 @@ describe('WebhooksDelete (webhooks delete)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			gitlabOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -322,6 +326,7 @@ describe('WebhooksDelete (webhooks delete)', () => {
 			callbackBaseUrl: 'https://cascade.example.com',
 			trelloOnly: false,
 			githubOnly: false,
+			gitlabOnly: false,
 			oneTimeTokens: undefined,
 		});
 	});
@@ -341,6 +346,7 @@ describe('WebhooksDelete (webhooks delete)', () => {
 			callbackBaseUrl: baseConfig.serverUrl,
 			trelloOnly: false,
 			githubOnly: false,
+			gitlabOnly: false,
 			oneTimeTokens: { github: 'ghp_testtoken123' },
 		});
 	});

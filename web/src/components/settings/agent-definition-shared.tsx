@@ -49,7 +49,7 @@ export const CAPABILITY_GROUPS: Record<string, { label: string; caps: Capability
 		caps: ['pm:read', 'pm:write', 'pm:checklist'],
 	},
 	scm: {
-		label: 'SCM Integration (GitHub)',
+		label: 'SCM Integration (GitHub/GitLab)',
 		caps: ['scm:read', 'scm:comment', 'scm:review', 'scm:pr'],
 	},
 };

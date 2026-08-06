@@ -30,7 +30,7 @@ triggers:
     label: PR Review Submitted
     description: Trigger when a review with changes requested or comments is submitted
     defaultEnabled: false
-    providers: [github]
+    providers: [github, gitlab]
     contextPipeline: [prContext, prConversation, directoryListing, contextFiles]
 
 strategies:
@@ -48,7 +48,7 @@ prompts:
     <%= it.commentBody %>
     ---
 
-    Carefully read each review comment and make the requested changes. Commit and push your changes when done. Use the ReplyToReviewComment tool to respond to individual review comments as you address them. Focus on surgical, targeted fixes unless the reviewer clearly asks for broader changes.
+    Carefully read each review comment and make the requested changes. Commit and push your changes when done. Use the comment reply tool (ReplyToReviewComment or PostMRNote, whichever is available) to respond to individual review comments as you address them. Focus on surgical, targeted fixes unless the reviewer clearly asks for broader changes.
 
 hooks:
   trailing:

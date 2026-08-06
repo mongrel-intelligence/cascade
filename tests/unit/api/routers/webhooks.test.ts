@@ -881,6 +881,7 @@ describe('webhooksRouter', () => {
 			expect(result.errors).toEqual({
 				trello: null,
 				github: null,
+				gitlab: null,
 				jira: null,
 				linear: null,
 			});

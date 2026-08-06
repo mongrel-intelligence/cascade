@@ -35,6 +35,8 @@ vi.mock('../../../../src/cli/base.js', () => ({
 		exit = vi.fn();
 	},
 	resolveOwnerRepo: vi.fn((owner: string, repo: string) => ({ owner, repo })),
+	detectSCMProvider: vi.fn(() => 'github'),
+	resolveProjectPath: vi.fn(() => 'owner/repo'),
 }));
 
 import CreatePRCommand from '../../../../src/cli/scm/create-pr.js';

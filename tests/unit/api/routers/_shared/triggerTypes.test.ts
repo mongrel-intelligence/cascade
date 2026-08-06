@@ -152,7 +152,7 @@ describe('triggerTypes', () => {
 		});
 
 		it('all provider values are valid KnownProviders', () => {
-			const validProviders = new Set(['trello', 'jira', 'github']);
+			const validProviders = new Set(['trello', 'jira', 'github', 'gitlab']);
 			const allProviders = Object.values(TRIGGER_REGISTRY)
 				.flat()
 				.flatMap((t) => t.providers ?? []);

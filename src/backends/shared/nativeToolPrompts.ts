@@ -17,7 +17,7 @@ You are operating in a native-tool environment, not a gadget/function-call envir
   - use the shell tool for all \`cascade-tools ...\`, \`git ...\`, \`rg ...\`, \`fd ...\`, test, lint, and build commands
 - When the task instructions mention gadget names like \`CreatePR\`, \`PostComment\`, \`UpdateChecklistItem\`, \`Finish\`, \`ReadWorkItem\`, \`TodoUpsert\`, or \`TodoUpdateStatus\`, treat that as a request to run the equivalent real command or tool action, not to print the gadget name.
 - If you catch yourself composing a pseudo tool call in plain text, stop and use the real tool instead.
-- Trello, JIRA, and GitHub attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.
+- Trello, JIRA, GitHub, and GitLab attachment URLs require backend authentication. NEVER curl, wget, or HTTP-fetch them — they return an authorization error. Work item images are pre-fetched and available either as images in your conversation context or as files under \`.cascade/context/images/\` — use whichever is present; never fetch the original URLs.
 
 ### cascade-tools shell-safety rules
 
@@ -213,17 +213,23 @@ function formatOutputShapeFieldLine(field: ToolManifestOutputShapeField): string
  * Build prompt guidance for CASCADE-specific CLI tools.
  * Native-tool engines invoke these via shell commands.
  */
-export function buildToolGuidance(tools: ToolManifest[]): string {
+export function buildToolGuidance(tools: ToolManifest[], scmProvider?: string): string {
 	if (tools.length === 0) return '';
 
 	let guidance = '## CASCADE Tools\n\n';
 	guidance += 'Use the shell tool to invoke these CASCADE-specific commands.\n';
 	guidance += 'All commands output JSON. Parse the output to extract results.\n\n';
 	guidance +=
-		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), SCM (GitHub), and session operations. ' +
-		'Do NOT use `gh` CLI or other tools directly — native-tool engine runs block `gh`, and cascade-tools handle authentication, push, and ' +
+		'**CRITICAL**: You MUST use these cascade-tools commands for all PM (Trello/JIRA), SCM (GitHub/GitLab), and session operations. ' +
+		'Do NOT use `gh` or `glab` CLI directly — cascade-tools handle authentication, push, and ' +
 		'state tracking that raw CLI tools do not. For example, `cascade-tools scm create-pr` pushes ' +
-		'the branch AND creates the PR atomically.\n\n';
+		'the branch AND creates the PR/MR atomically. The SCM provider (GitHub or GitLab) is auto-detected.\n\n';
+
+	if (scmProvider === 'gitlab') {
+		guidance +=
+			'**GitLab mode**: This project uses GitLab. The `--owner` and `--repo` flags are auto-resolved from the git remote — you do not need to specify them. ' +
+			'PR-related tools work with GitLab Merge Requests (MRs). `prNumber` maps to MR IID.\n\n';
+	}
 
 	for (const tool of tools) {
 		guidance += `### ${tool.name}\n`;
@@ -286,8 +292,12 @@ export async function buildTaskPrompt(
 /**
  * Build the system prompt by combining CASCADE's agent prompt with tool guidance.
  */
-export function buildSystemPrompt(systemPrompt: string, tools: ToolManifest[]): string {
-	const toolGuidance = buildToolGuidance(tools);
+export function buildSystemPrompt(
+	systemPrompt: string,
+	tools: ToolManifest[],
+	scmProvider?: string,
+): string {
+	const toolGuidance = buildToolGuidance(tools, scmProvider);
 	const promptWithRules = `${NATIVE_TOOL_EXECUTION_RULES}\n\n${systemPrompt}`;
 	return toolGuidance ? `${promptWithRules}\n\n${toolGuidance}` : promptWithRules;
 }

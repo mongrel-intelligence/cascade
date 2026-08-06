@@ -220,6 +220,8 @@ export async function sendAcknowledgeReaction(
 			await sendJiraReaction(projectId, payload);
 		} else if (source === 'linear') {
 			await sendLinearReaction(projectId, payload);
+		} else if (source === 'gitlab') {
+			// GitLab emoji reactions not yet implemented
 		}
 	} catch (err) {
 		logger.error('[Reactions] Unexpected error sending reaction:', String(err));

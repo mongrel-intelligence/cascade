@@ -31,7 +31,7 @@ triggers:
     label: Check Suite Failure
     description: Trigger when CI checks fail
     defaultEnabled: false
-    providers: [github]
+    providers: [github, gitlab]
     contextPipeline: [prContext, directoryListing, contextFiles, workItem]
 
 strategies: {}

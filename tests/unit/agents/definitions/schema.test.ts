@@ -228,8 +228,11 @@ describe.concurrent('KnownProviderSchema', () => {
 		expect(KnownProviderSchema.safeParse('github').success).toBe(true);
 	});
 
+	it('accepts gitlab', () => {
+		expect(KnownProviderSchema.safeParse('gitlab').success).toBe(true);
+	});
+
 	it('rejects unknown providers', () => {
-		expect(KnownProviderSchema.safeParse('gitlab').success).toBe(false);
 		expect(KnownProviderSchema.safeParse('asana').success).toBe(false);
 		expect(KnownProviderSchema.safeParse('imap').success).toBe(false);
 		expect(KnownProviderSchema.safeParse('gmail').success).toBe(false);

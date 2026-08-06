@@ -177,14 +177,26 @@ export async function linkPRPostExecution(
 	const prNumber = extractPRNumber(agentResult.prUrl);
 	if (!prNumber) return;
 
+	// Fetch PR/MR title from the configured SCM provider (best-effort).
 	let prTitle: string | undefined;
 	try {
-		const { githubClient } = await import('../../github/client.js');
-		const { owner, repo } = parseRepoFullName(project.repo);
-		const pr = await githubClient.getPR(owner, repo, prNumber);
-		prTitle = pr.title;
+		const { getIntegrationProvider } = await import(
+			'../../db/repositories/credentialsRepository.js'
+		);
+		const scmProvider = await getIntegrationProvider(project.id, 'scm');
+
+		if (scmProvider === 'gitlab') {
+			const { gitlabClient } = await import('../../gitlab/client.js');
+			const mr = await gitlabClient.getMR(project.repo, prNumber);
+			prTitle = mr.title;
+		} else {
+			const { githubClient } = await import('../../github/client.js');
+			const { owner, repo } = parseRepoFullName(project.repo);
+			const pr = await githubClient.getPR(owner, repo, prNumber);
+			prTitle = pr.title;
+		}
 	} catch (err) {
-		logger.warn('Failed to fetch PR title from GitHub', {
+		logger.warn('Failed to fetch PR/MR title', {
 			projectId: project.id,
 			prNumber,
 			error: String(err),

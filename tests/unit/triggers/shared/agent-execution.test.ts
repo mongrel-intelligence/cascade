@@ -154,6 +154,10 @@ vi.mock('../../../../src/triggers/github/utils.js', () => ({
 	resolveWorkItemDisplayData: mockResolveWorkItemDisplayData,
 }));
 
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue('github'),
+}));
+
 import {
 	createWorkItem,
 	linkPRToWorkItem,
@@ -781,7 +785,7 @@ describe('linkPRPostExecution PR title backfill (via runAgentExecutionPipeline)'
 			expect.objectContaining({ prTitle: undefined }),
 		);
 		expect(mockLogger.warn).toHaveBeenCalledWith(
-			'Failed to fetch PR title from GitHub',
+			'Failed to fetch PR/MR title',
 			expect.objectContaining({ prNumber: 42 }),
 		);
 	});

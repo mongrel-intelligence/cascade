@@ -36,8 +36,11 @@ vi.mock('../../../../src/cli/base.js', () => ({
 	CredentialScopedCommand: class {
 		log = vi.fn();
 		parse = vi.fn();
+		exit = vi.fn();
 	},
 	resolveOwnerRepo: vi.fn((owner: string, repo: string) => ({ owner, repo })),
+	detectSCMProvider: vi.fn(() => 'github'),
+	resolveProjectPath: vi.fn(() => 'owner/repo'),
 }));
 
 import CreatePRReviewCommand from '../../../../src/cli/scm/create-pr-review.js';

@@ -39,6 +39,10 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	updateRunPRNumber: mockUpdateRunPRNumber,
 }));
 
+vi.mock('../../../../src/db/repositories/credentialsRepository.js', () => ({
+	getIntegrationProvider: vi.fn().mockResolvedValue('github'),
+}));
+
 vi.mock('../../../../src/github/client.js', () => ({
 	githubClient: mockGithubClient,
 }));
@@ -334,7 +338,7 @@ describe('agent-work-items', () => {
 				expect.objectContaining({ prTitle: undefined }),
 			);
 			expect(mockLogger.warn).toHaveBeenCalledWith(
-				'Failed to fetch PR title from GitHub',
+				'Failed to fetch PR/MR title',
 				expect.objectContaining({ prNumber: 42 }),
 			);
 			expect(mockLogger.warn).toHaveBeenCalledWith(

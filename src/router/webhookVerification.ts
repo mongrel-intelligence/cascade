@@ -9,6 +9,7 @@ import type { Context } from 'hono';
 import { logger } from '../utils/logging.js';
 import {
 	verifyGitHubSignature,
+	verifyGitLabSignature,
 	verifyJiraSignature,
 	verifyLinearSignature,
 	verifySentrySignature,
@@ -18,7 +19,7 @@ import { loadProjectConfig, routerConfig } from './config.js';
 import { resolveWebhookSecret } from './platformClients/credentials.js';
 
 /** The set of platforms that have a webhook secret in {@link resolveWebhookSecret}. */
-type WebhookPlatform = 'github' | 'trello' | 'jira' | 'sentry' | 'linear';
+type WebhookPlatform = 'github' | 'gitlab' | 'trello' | 'jira' | 'sentry' | 'linear';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -234,6 +235,32 @@ export const verifySentryWebhookSignature = createWebhookVerifier({
 	findProject: (projectId, projects) =>
 		projects.find((p) => p.id === projectId) as { id: string } | undefined,
 	verify: (rawBody, sig, secret) => verifySentrySignature(rawBody, sig, secret),
+});
+
+/**
+ * verifySignature callback for the GitLab webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ *
+ * GitLab sends a pre-shared secret token in the `X-Gitlab-Token` header.
+ * Verification is a timing-safe direct comparison (not HMAC).
+ */
+export const verifyGitLabWebhookSignature = createWebhookVerifier({
+	headerName: 'X-Gitlab-Token',
+	platform: 'gitlab',
+	platformLabel: 'GitLab',
+	extractIdentifier: (_c, rawBody) => {
+		try {
+			const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+			return (parsed?.project as Record<string, unknown>)?.path_with_namespace as
+				| string
+				| undefined;
+		} catch {
+			return undefined;
+		}
+	},
+	findProject: (projectPath, projects) =>
+		projects.find((p) => p.repo === projectPath) as { id: string } | undefined,
+	verify: (_rawBody, sig, secret) => verifyGitLabSignature('', sig, secret),
 });
 
 /**

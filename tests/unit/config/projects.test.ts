@@ -11,6 +11,10 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	resolveProjectCredential: vi.fn(),
 	resolveAllProjectCredentials: vi.fn(),
+	getIntegrationProvider: vi.fn((_projectId: string, category: string) => {
+		const map: Record<string, string> = { scm: 'github', pm: 'trello', alerting: 'sentry' };
+		return Promise.resolve(map[category] ?? null);
+	}),
 }));
 
 import { getProjectGitHubToken } from '../../../src/config/projects.js';

@@ -9,7 +9,7 @@ import { CAPABILITIES } from '../capabilities/registry.js';
 export const IntegrationCategorySchema = z.enum(['pm', 'scm', 'alerting']);
 
 // Known providers for validation
-export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'sentry']);
+export const KnownProviderSchema = z.enum(['trello', 'jira', 'github', 'gitlab', 'sentry']);
 
 // Trigger event format validation: {category}:{event-name}
 // Categories: pm, scm (integration-bound), alerting (monitoring), internal (orchestration chaining)

@@ -30,6 +30,16 @@ const BLOCKED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 		reason:
 			'Do not use `git push` directly. Use `cascade-tools scm create-pr` instead — it handles push atomically.',
 	},
+	{
+		pattern: /\bglab\s+mr\s+create\b/,
+		reason:
+			'Do not use `glab mr create`. Use `cascade-tools scm create-pr` instead — it pushes the branch and creates the MR atomically.',
+	},
+	{
+		pattern: /\bglab\s+mr\s+merge\b/,
+		reason:
+			'Do not use `glab mr merge`. Merging is managed externally. Use `cascade-tools scm create-pr` to create MRs.',
+	},
 ];
 
 /**

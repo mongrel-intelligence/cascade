@@ -145,6 +145,30 @@ export function verifySentrySignature(rawBody: string, signature: string, secret
 }
 
 /**
+ * Verify a GitLab webhook token.
+ *
+ * GitLab does not use HMAC — it sends a pre-shared secret token verbatim in
+ * the `X-Gitlab-Token` header. Verification is a timing-safe comparison of
+ * the header value against the configured secret.
+ *
+ * @param _rawBody - Unused (GitLab does not sign the body).
+ * @param tokenHeader - The value of the `X-Gitlab-Token` header.
+ * @param secret - The webhook secret token configured in GitLab.
+ * @returns `true` if the token matches, `false` otherwise.
+ */
+export function verifyGitLabSignature(
+	_rawBody: string,
+	tokenHeader: string,
+	secret: string,
+): boolean {
+	if (!tokenHeader || !secret) return false;
+	const expected = Buffer.from(secret, 'utf8');
+	const actual = Buffer.from(tokenHeader, 'utf8');
+	if (expected.length !== actual.length) return false;
+	return timingSafeEqual(expected, actual);
+}
+
+/**
  * Verify a JIRA webhook signature.
  *
  * JIRA Cloud signs payloads with HMAC-SHA256 and sends the result as

@@ -63,6 +63,8 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 	const integrations = integrationsQuery.data ?? [];
 	const pmIntegration = findIntegrationByCategory(integrations, 'pm');
 	const pmProvider = (pmIntegration?.provider as string) ?? 'trello';
+	const scmIntegration = findIntegrationByCategory(integrations, 'scm');
+	const scmProvider = (scmIntegration?.provider as string) ?? 'github';
 	const alertingIntegration = findIntegrationByCategory(integrations, 'alerting');
 
 	return (
@@ -96,7 +98,13 @@ export function IntegrationForm({ projectId }: { projectId: string }) {
 				/>
 			)}
 
-			{activeTab === 'scm' && <SCMTab projectId={projectId} project={projectQuery.data} />}
+			{activeTab === 'scm' && (
+				<SCMTab
+					projectId={projectId}
+					project={projectQuery.data}
+					initialProvider={scmProvider as 'github' | 'gitlab'}
+				/>
+			)}
 
 			{activeTab === 'alerting' && (
 				<AlertingTab

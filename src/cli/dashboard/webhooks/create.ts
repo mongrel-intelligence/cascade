@@ -15,6 +15,7 @@ export default class WebhooksCreate extends DashboardCommand {
 		}),
 		'trello-only': Flags.boolean({ description: 'Only create Trello webhook', default: false }),
 		'github-only': Flags.boolean({ description: 'Only create GitHub webhook', default: false }),
+		'gitlab-only': Flags.boolean({ description: 'Only create GitLab webhook', default: false }),
 		'github-token': Flags.string({
 			description: 'One-time GitHub PAT with admin:repo_hook scope',
 		}),
@@ -44,6 +45,7 @@ export default class WebhooksCreate extends DashboardCommand {
 					callbackBaseUrl,
 					trelloOnly: flags['trello-only'],
 					githubOnly: flags['github-only'],
+					gitlabOnly: flags['gitlab-only'],
 					oneTimeTokens: Object.keys(oneTimeTokens).length > 0 ? oneTimeTokens : undefined,
 				}),
 			);
@@ -68,6 +70,14 @@ export default class WebhooksCreate extends DashboardCommand {
 					this.log(`GitHub: ${result.github}`);
 				} else {
 					this.success(`Created GitHub webhook: [${result.github.id}] ${result.github.config.url}`);
+				}
+			}
+
+			if (result.gitlab) {
+				if (typeof result.gitlab === 'string') {
+					this.log(`GitLab: ${result.gitlab}`);
+				} else {
+					this.success(`Created GitLab webhook: [${result.gitlab.id}] ${result.gitlab.url}`);
 				}
 			}
 

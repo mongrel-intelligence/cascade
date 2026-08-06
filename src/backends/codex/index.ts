@@ -922,7 +922,11 @@ export class CodexEngine extends NativeToolEngine {
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
-		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
+		const systemPrompt = buildSystemPrompt(
+			input.systemPrompt,
+			input.availableTools,
+			process.env.CASCADE_SCM_PROVIDER,
+		);
 		const { prompt: taskPrompt, hasOffloadedContext } = await buildTaskPrompt(
 			input.taskPrompt,
 			input.contextInjections,

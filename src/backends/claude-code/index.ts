@@ -245,7 +245,8 @@ export class ClaudeCodeEngine extends NativeToolEngine {
 
 	async execute(input: AgentExecutionPlan): Promise<AgentEngineResult> {
 		const startTime = Date.now();
-		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools);
+		const scmProvider = process.env.CASCADE_SCM_PROVIDER;
+		const systemPrompt = buildSystemPrompt(input.systemPrompt, input.availableTools, scmProvider);
 
 		// Collect supported images for native SDK delivery; strip from injections so
 		// offloadLargeContext does not also write them to disk (redundant for this engine).

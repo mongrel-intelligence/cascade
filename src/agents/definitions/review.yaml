@@ -29,7 +29,7 @@ triggers:
     label: CI Passed
     description: Trigger review when CI checks pass on a PR
     defaultEnabled: false
-    providers: [github]
+    providers: [github, gitlab]
     parameters:
       - name: authorMode
         type: select
@@ -42,13 +42,13 @@ triggers:
     label: On Review Requested
     description: Trigger review when a CASCADE persona is explicitly requested as reviewer
     defaultEnabled: false
-    providers: [github]
+    providers: [github, gitlab]
     contextPipeline: [prContext, contextFiles, workItem]
   - event: scm:pr-opened
     label: PR Opened
     description: Trigger review when a new PR is opened (without waiting for CI)
     defaultEnabled: false
-    providers: [github]
+    providers: [github, gitlab]
     parameters:
       - name: authorMode
         type: select
@@ -96,7 +96,7 @@ prompts:
 
     ## Your task
 
-    Examine the code changes carefully and submit your review using CreatePRReview.
+    Examine the code changes carefully and submit your review using the review submission tool (CreatePRReview or CreateMRReview, whichever is available).
 
 hooks:
   trailing:

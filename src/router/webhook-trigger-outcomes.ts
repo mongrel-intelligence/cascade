@@ -279,7 +279,8 @@ function shouldIgnorePendingOwnLocks({
 	projectId: string;
 	result: TriggerResult & { agentType: string };
 }): boolean {
-	if (!pendingJobData || pendingJobData.type === 'github') return false;
+	if (!pendingJobData || pendingJobData.type === 'github' || pendingJobData.type === 'gitlab')
+		return false;
 	if (pendingJobData.projectId !== projectId) return false;
 
 	const pendingResult = pendingJobData.triggerResult;
@@ -293,7 +294,12 @@ function shouldIgnorePendingOwnLocks({
 function releaseSupersededJobLocks(
 	supersededJobData: Awaited<ReturnType<typeof scheduleCoalescedJob>>['supersededJobData'],
 ): void {
-	if (!supersededJobData || supersededJobData.type === 'github') return;
+	if (
+		!supersededJobData ||
+		supersededJobData.type === 'github' ||
+		supersededJobData.type === 'gitlab'
+	)
+		return;
 
 	const oldAgentType = supersededJobData.triggerResult?.agentType;
 	const oldLockKey =

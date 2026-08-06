@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 import { getAllProjectCredentials } from '../../../config/provider.js';
 import { findProjectByIdFromDb } from '../../../db/repositories/configRepository.js';
+import { getIntegrationByProjectAndCategory } from '../../../db/repositories/integrationsRepository.js';
 import { getJiraConfig, getTrelloConfig } from '../../../pm/config.js';
 import { getSentryIntegrationConfig } from '../../../sentry/integration.js';
 import { verifyProjectOrgAccess } from '../_shared/projectAccess.js';
@@ -38,11 +39,26 @@ export async function resolveProjectContext(
 	const sentryConfig = await getSentryIntegrationConfig(projectId);
 	const sentryConfigured = !!creds.SENTRY_API_TOKEN && sentryConfig !== null;
 
+	// Determine SCM provider from integration config
+	const scmIntegration = await getIntegrationByProjectAndCategory(projectId, 'scm');
+	const scmProvider = (scmIntegration?.provider === 'gitlab' ? 'gitlab' : 'github') as
+		| 'github'
+		| 'gitlab';
+
+	// Resolve GitLab host: integration config → GITLAB_HOST env var → default
+	const scmConfig = (scmIntegration?.config ?? {}) as Record<string, unknown>;
+	const gitlabHost =
+		(scmConfig.host as string | undefined) ??
+		(process.env.GITLAB_HOST
+			? `https://${process.env.GITLAB_HOST.replace(/^https?:\/\//, '')}`
+			: undefined);
+
 	return {
 		projectId,
 		orgId: project.orgId,
 		repo: project.repo,
 		pmType: project.pm?.type ?? 'trello',
+		scmProvider,
 		boardId: trelloConfig?.boardId,
 		jiraBaseUrl: jiraConfig?.baseUrl,
 		jiraAuthType: jiraConfig?.authType,
@@ -51,6 +67,9 @@ export async function resolveProjectContext(
 		trelloApiKey: creds.TRELLO_API_KEY ?? '',
 		trelloToken: creds.TRELLO_TOKEN ?? '',
 		githubToken: creds.GITHUB_TOKEN_IMPLEMENTER ?? '',
+		gitlabToken: creds.GITLAB_TOKEN_IMPLEMENTER ?? '',
+		gitlabHost,
+		gitlabWebhookSecret: creds.GITLAB_WEBHOOK_SECRET ?? undefined,
 		jiraEmail: creds.JIRA_EMAIL ?? '',
 		jiraApiToken: creds.JIRA_API_TOKEN ?? '',
 		webhookSecret: creds.GITHUB_WEBHOOK_SECRET ?? undefined,

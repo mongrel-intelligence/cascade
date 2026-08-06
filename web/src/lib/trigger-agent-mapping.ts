@@ -25,7 +25,7 @@ export interface TriggerDef {
 	/** PM provider this trigger applies to (if omitted, shown for all providers) */
 	pmProvider?: 'trello' | 'jira';
 	/** SCM provider this trigger applies to */
-	scmProvider?: 'github';
+	scmProvider?: 'github' | 'gitlab';
 	/** Integration category this trigger belongs to */
 	category: 'pm' | 'scm';
 }

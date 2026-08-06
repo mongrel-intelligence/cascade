@@ -29,7 +29,7 @@ triggers:
     label: PR Comment @mention
     description: Trigger when the implementer bot is @mentioned in a PR comment
     defaultEnabled: false
-    providers: [github]
+    providers: [github, gitlab]
     contextPipeline: [prContext, prConversation, directoryListing, contextFiles]
 
 strategies:

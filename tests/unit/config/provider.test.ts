@@ -14,6 +14,12 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
 	resolveProjectCredential: vi.fn(),
 	resolveAllProjectCredentials: vi.fn(),
+	getIntegrationProvider: vi.fn().mockImplementation((_projectId: string, category: string) => {
+		if (category === 'scm') return Promise.resolve('github');
+		if (category === 'pm') return Promise.resolve('trello');
+		if (category === 'alerting') return Promise.resolve('sentry');
+		return Promise.resolve(null);
+	}),
 }));
 
 // Mock configCache

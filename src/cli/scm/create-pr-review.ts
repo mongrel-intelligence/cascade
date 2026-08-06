@@ -10,16 +10,19 @@ import {
 } from '../../config/reviewEventPolicy.js';
 import { createPRReview } from '../../gadgets/github/core/createPRReview.js';
 import { createPRReviewDef } from '../../gadgets/github/definitions.js';
+import { createMRReview } from '../../gadgets/gitlab/core/createMRReview.js';
 import { writeReviewSidecar } from '../../gadgets/session/core/sidecar.js';
 import { REVIEW_SIDECAR_ENV_VAR } from '../../gadgets/sessionState.js';
 import { createCLICommand } from '../../gadgets/shared/cliCommandFactory.js';
 import { githubClient } from '../../github/client.js';
+import { gitlabClient } from '../../gitlab/client.js';
+import { detectSCMProvider, resolveProjectPath } from '../base.js';
 
 /**
  * Delete the GitHub ack/progress comment (best-effort).
  * Returns true if the comment was successfully deleted.
  */
-async function deleteAckComment(owner: string, repo: string): Promise<boolean> {
+async function deleteGitHubAckComment(owner: string, repo: string): Promise<boolean> {
 	const ackCommentIdStr = process.env[GITHUB_ACK_COMMENT_ID_ENV_VAR];
 	if (!ackCommentIdStr) return false;
 
@@ -28,6 +31,25 @@ async function deleteAckComment(owner: string, repo: string): Promise<boolean> {
 
 	try {
 		await githubClient.deletePRComment(owner, repo, ackCommentId);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Delete the GitLab ack/progress note (best-effort).
+ * Returns true if the note was successfully deleted.
+ */
+async function deleteGitLabAckNote(projectPath: string, mrIid: number): Promise<boolean> {
+	const ackNoteIdStr = process.env[GITHUB_ACK_COMMENT_ID_ENV_VAR];
+	if (!ackNoteIdStr) return false;
+
+	const ackNoteId = Number(ackNoteIdStr);
+	if (!Number.isFinite(ackNoteId) || ackNoteId <= 0) return false;
+
+	try {
+		await gitlabClient.deleteMRNote(projectPath, mrIid, ackNoteId);
 		return true;
 	} catch {
 		return false;
@@ -62,6 +84,31 @@ function resolveEventPolicyFromEnv(): ReviewEventPolicy {
 }
 
 export default createCLICommand(createPRReviewDef, async (params) => {
+	if (detectSCMProvider() === 'gitlab') {
+		const projectPath = resolveProjectPath();
+		const mrIid = params.prNumber as number;
+
+		const result = await createMRReview({
+			projectPath,
+			mrIid,
+			event: params.event as 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT',
+			body: params.body as string,
+		});
+
+		// Delete ack note (best-effort)
+		const ackCommentDeleted = await deleteGitLabAckNote(projectPath, mrIid);
+
+		writeReviewSidecar(
+			process.env[REVIEW_SIDECAR_ENV_VAR],
+			`${projectPath}!${mrIid}`,
+			params.event as string,
+			params.body as string,
+			ackCommentDeleted,
+		);
+
+		return result;
+	}
+
 	const result = await createPRReview(
 		{
 			owner: params.owner as string,
@@ -75,7 +122,10 @@ export default createCLICommand(createPRReviewDef, async (params) => {
 	);
 
 	// Delete ack comment (best-effort)
-	const ackCommentDeleted = await deleteAckComment(params.owner as string, params.repo as string);
+	const ackCommentDeleted = await deleteGitHubAckComment(
+		params.owner as string,
+		params.repo as string,
+	);
 
 	// Record the SUBMITTED event/body — under comment-only these differ from the
 	// requested params (the core downgrades to an advisory COMMENT).

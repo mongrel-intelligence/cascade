@@ -147,6 +147,9 @@ export async function notifyTimeout(job: CascadeJob, info: TimeoutInfo): Promise
 			await notifyGitHubTimeout(job, info);
 		} else if (job.type === 'jira') {
 			await notifyJiraTimeout(job, info);
+		} else if (job.type === 'gitlab') {
+			// GitLab timeout notifications not yet implemented
+			logger.info('[Notifications] GitLab timeout notification not yet implemented, skipping');
 		} else {
 			logger.warn('[Notifications] Unknown job type, skipping notification');
 		}

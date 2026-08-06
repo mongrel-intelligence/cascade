@@ -15,6 +15,7 @@ export {
 	resolveTrelloCredentials,
 } from './credentials.js';
 export { GitHubPlatformClient } from './github.js';
+export { GitLabPlatformClient } from './gitlab.js';
 export { _resetJiraCloudIdCache, JiraPlatformClient } from './jira.js';
 export { LinearPlatformClient } from './linear.js';
 export { TrelloPlatformClient } from './trello.js';

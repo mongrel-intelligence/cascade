@@ -164,7 +164,11 @@ async function promptOpenCodeSession(
 					path: { id: sessionId },
 					body: {
 						agent,
-						system: buildSystemPrompt(input.systemPrompt, input.availableTools),
+						system: buildSystemPrompt(
+							input.systemPrompt,
+							input.availableTools,
+							process.env.CASCADE_SCM_PROVIDER,
+						),
 						parts: buildPromptParts(promptText),
 					},
 					throwOnError: true,
