@@ -1,59 +1,17 @@
 import { lookupWorkItemForPR } from '../../db/repositories/prWorkItemsRepository.js';
-import type { PersonaIdentities } from '../../github/personas.js';
 import { getPMProviderOrNull } from '../../pm/context.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 
-export interface AuthorModeResult {
-	shouldTrigger: boolean;
-	authorMode: string;
-	isCascadePR: boolean;
-}
-
-/**
- * Evaluate whether a trigger should fire based on the PR author and the
- * configured `authorMode` parameter.
- *
- * Returns `null` when personaIdentities is missing (caller should return null).
- * Validates authorMode against known values and falls back to 'own'.
- *
- * "own" means the PR was authored by any CASCADE persona (implementer OR reviewer).
- * This aligns with `isCascadeBot()` which already checks both personas.
- */
-export function evaluateAuthorMode(
-	prAuthorLogin: string,
-	personaIdentities: PersonaIdentities | undefined,
-	parameters: Record<string, unknown>,
-	handlerName: string,
-): AuthorModeResult | null {
-	if (!personaIdentities) {
-		logger.info('No persona identities available, skipping', { handler: handlerName });
-		return null;
-	}
-	const implLogin = personaIdentities.implementer;
-	const reviewerLogin = personaIdentities.reviewer;
-	const isImplementerPR = prAuthorLogin === implLogin || prAuthorLogin === `${implLogin}[bot]`;
-	const isReviewerPR = prAuthorLogin === reviewerLogin || prAuthorLogin === `${reviewerLogin}[bot]`;
-	const isCascadePR = isImplementerPR || isReviewerPR;
-
-	const rawMode = parameters.authorMode;
-	const authorMode =
-		typeof rawMode === 'string' && ['own', 'external', 'all'].includes(rawMode) ? rawMode : 'own';
-
-	if (typeof rawMode === 'string' && authorMode !== rawMode) {
-		logger.warn('Invalid authorMode value, falling back to "own"', {
-			handler: handlerName,
-			configuredValue: rawMode,
-		});
-	}
-
-	const shouldTrigger =
-		authorMode === 'all' ||
-		(authorMode === 'own' && isCascadePR) ||
-		(authorMode === 'external' && !isCascadePR);
-
-	return { shouldTrigger, authorMode, isCascadePR };
-}
+// Re-export the author-mode evaluator from its canonical shared home so
+// `pr-opened.ts` and `tests/unit/triggers/github-utils.test.ts` keep working
+// untouched. The core logic now lives in `src/triggers/shared/author-mode.ts`.
+export {
+	type AuthorMode,
+	type AuthorModeResult,
+	evaluateAuthorMode,
+	resolveAuthorMode,
+} from '../shared/author-mode.js';
 
 /**
  * Extract PR number from GitHub's refs/pull/{N}/head virtual ref.

@@ -37,7 +37,7 @@ vi.mock('../../../src/db/repositories/prWorkItemsRepository.js', () => ({
 }));
 
 import { lookupWorkItemForPR } from '../../../src/db/repositories/prWorkItemsRepository.js';
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 
 import { expectSkipFor } from '../../helpers/triggerAssertions.js';
 
@@ -191,7 +191,11 @@ describe('CheckSuiteFailureTrigger', () => {
 		it('returns null when trigger is disabled (so the registry can try the next matcher)', async () => {
 			// Disabled-at-config returns null, not a structured skip — see
 			// `checkTriggerEnablement` contract for the shadowing-bug context.
-			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+			// The handler now resolves enablement + authorMode params in one call.
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: false,
+				parameters: {},
+			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -202,7 +206,7 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).toBeNull();
-			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test',
 				'respond-to-ci',
 				'scm:check-suite-failure',
@@ -292,7 +296,12 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expectSkip(result, /not authored by a cascade persona.*author: some-human/i);
+			// Default authorMode 'own' filters human-authored PRs with the
+			// author-mode skip message (before the base-branch gate).
+			expectSkip(
+				result,
+				/author some-human does not match configured authorMode 'own' \(isCascadePR=false\)/i,
+			);
 			expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
 		});
 
@@ -352,7 +361,11 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 
-			expectSkip(result, /not authored by a cascade persona.*author: some-human/);
+			// Default authorMode 'own' → human author skipped via author-mode gate.
+			expectSkip(
+				result,
+				/author some-human does not match configured authorMode 'own' \(isCascadePR=false\)/,
+			);
 		});
 
 		// Fix 3: gate widening — both implementer AND reviewer personas should
@@ -790,6 +803,154 @@ describe('CheckSuiteFailureTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('respond-to-ci');
+		});
+
+		// MNG-1774: authorMode extension + fork write-access skip.
+		describe('authorMode + fork write-access (MNG-1774)', () => {
+			it("dispatches respond-to-ci on a HUMAN same-repo PR under authorMode 'all'", async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'all' },
+				});
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Human PR',
+					body: null,
+					state: 'open',
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					user: { login: 'some-human' },
+					isFork: false,
+				});
+				vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+					allPassing: false,
+					totalCount: 1,
+					checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeFailurePayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBe('respond-to-ci');
+				expect(result?.prNumber).toBe(42);
+			});
+
+			it("dispatches respond-to-ci on a HUMAN same-repo PR under authorMode 'external'", async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'external' },
+				});
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Human PR',
+					body: null,
+					state: 'open',
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					user: { login: 'some-human' },
+					isFork: false,
+				});
+				vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+					allPassing: false,
+					totalCount: 1,
+					checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeFailurePayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBe('respond-to-ci');
+			});
+
+			it("skips a CASCADE-authored PR under authorMode 'external'", async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'external' },
+				});
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Cascade PR',
+					body: null,
+					state: 'open',
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					user: { login: 'cascade-impl' },
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeFailurePayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expectSkip(
+					result,
+					/author cascade-impl does not match configured authorMode 'external' \(isCascadePR=true\)/,
+				);
+				expect(githubClient.getCheckSuiteStatus).not.toHaveBeenCalled();
+			});
+
+			it('skips a FORK PR with an explicit fork write-access reason (no dispatch)', async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'all' },
+				});
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Fork PR',
+					body: null,
+					state: 'open',
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					user: { login: 'some-human' },
+					isFork: true,
+					headRepoFullName: 'contributor/repo',
+				});
+				vi.mocked(githubClient.getCheckSuiteStatus).mockResolvedValue({
+					allPassing: false,
+					totalCount: 1,
+					checkRuns: [{ name: 'test', status: 'completed', conclusion: 'failure' }],
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeFailurePayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expectSkip(result, /head branch lives on fork contributor\/repo.*no write access/i);
+				expect(result?.agentType).toBeNull();
+			});
 		});
 	});
 });

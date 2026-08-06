@@ -31,6 +31,19 @@ export interface PRDetails {
 	merged: boolean;
 	mergeable: boolean | null;
 	user: { login: string };
+	/**
+	 * Full name (`owner/repo`) of the PR's head repository, or `null` when the
+	 * head repo is unavailable (deleted fork). Optional so existing `getPR`
+	 * mocks keep type-checking and default to "not a fork".
+	 */
+	headRepoFullName?: string | null;
+	/**
+	 * True when the PR's head branch lives on a different repo than the base
+	 * (a fork). CASCADE cannot push commits to a contributor's fork, so
+	 * write-mode agents (respond-to-ci, resolve-conflicts) skip fork PRs
+	 * cleanly instead of failing at push. Optional and defaults to non-fork.
+	 */
+	isFork?: boolean;
 }
 
 export interface PRReviewComment {
@@ -162,6 +175,19 @@ export const githubClient = {
 			repo,
 			pull_number: prNumber,
 		});
+		// Fork detection. The `null` (deleted fork) vs `undefined` (test mock)
+		// split below is DELIBERATE — do not collapse them:
+		//   - head.repo === null      → the fork was deleted; it is unpushable,
+		//                                so treat as a fork (skip write agents).
+		//   - head.repo present       → fork iff its full_name differs from base.
+		//   - head.repo === undefined  → test-mock payloads without a head repo;
+		//                                treat as non-fork so the many existing
+		//                                getPR mocks default to "not a fork".
+		const baseRepoFullName = data.base.repo?.full_name ?? `${owner}/${repo}`;
+		const headRepo = data.head.repo;
+		const headRepoFullName = headRepo?.full_name ?? null;
+		const isFork =
+			headRepo === null ? true : headRepo ? headRepo.full_name !== baseRepoFullName : false;
 		return {
 			number: data.number,
 			title: data.title,
@@ -174,6 +200,8 @@ export const githubClient = {
 			merged: data.merged ?? false,
 			mergeable: data.mergeable ?? null,
 			user: { login: data.user?.login || 'unknown' },
+			headRepoFullName,
+			isFork,
 		};
 	},
 

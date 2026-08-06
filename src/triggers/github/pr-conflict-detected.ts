@@ -4,13 +4,14 @@ import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
 import {
 	gateAttemptLimit,
+	gateAuthorMode,
 	gateBaseBranch,
-	gateCascadePersona,
+	gateForkWriteAccess,
 	requirePersonaIdentities,
 } from '../shared/gates.js';
 import { buildDeferredRecheckResult } from '../shared/result-builders.js';
 import { skip } from '../shared/skip.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
 import { buildResolveConflictsResult } from './result-builders.js';
 import { type GitHubPullRequestPayload, isGitHubPullRequestPayload } from './types.js';
 import { resolveWorkItemId } from './utils.js';
@@ -67,14 +68,14 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 		// Disabled-at-config returns null so the registry's first-match loop
 		// continues to the next matcher — see `src/triggers/shared/trigger-check.ts`
 		// for the disabled-shadowing contract.
-		if (
-			!(await checkTriggerEnabled(
-				ctx.project.id,
-				'resolve-conflicts',
-				'scm:pr-conflict-detected',
-				this.name,
-			))
-		) {
+		// Check trigger config + get parameters (authorMode) in a single DB call.
+		const triggerConfig = await checkTriggerEnabledWithParams(
+			ctx.project.id,
+			'resolve-conflicts',
+			'scm:pr-conflict-detected',
+			this.name,
+		);
+		if (!triggerConfig.enabled) {
 			return null;
 		}
 
@@ -83,17 +84,21 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 		const repoFullName = payload.repository.full_name;
 		const { owner, repo } = parseRepoFullName(repoFullName);
 
-		// Sync gate chain — author must be a cascade persona AND the PR must
-		// target the project's base branch. Loop-prevention: only auto-resolve
-		// conflicts on PRs authored by bot personas; human PRs are owned by
-		// the human.
+		// Sync gate chain — author must match the configured authorMode AND the
+		// PR must target the project's base branch. `own` (default) restricts to
+		// cascade bot personas; `external`/`all` extend to human same-repo PRs.
 		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumber, this.name);
 		if (!personasResult.ok) return personasResult.skip;
 
 		const prAuthorLogin = payload.pull_request.user.login;
 		const gateChainSkip =
-			gateCascadePersona(prAuthorLogin, prNumber, personasResult.value, this.name) ??
-			gateBaseBranch(payload.pull_request.base.ref, prNumber, ctx.project, this.name);
+			gateAuthorMode(
+				prAuthorLogin,
+				prNumber,
+				personasResult.value,
+				triggerConfig.parameters,
+				this.name,
+			) ?? gateBaseBranch(payload.pull_request.base.ref, prNumber, ctx.project, this.name);
 		if (gateChainSkip) return gateChainSkip;
 
 		// Fetch PR details, retrying if mergeable is null (GitHub computes it asynchronously)
@@ -131,6 +136,14 @@ export class PRConflictDetectedTrigger implements TriggerHandler {
 			logger.debug('PR is mergeable, no conflict detected', { prNumber });
 			return skip(this.name, `PR #${prNumber} is mergeable — no conflict detected`);
 		}
+
+		// Fork write-access skip. resolve-conflicts rebases and force-pushes —
+		// CASCADE cannot push to a contributor's fork. Skip a fork conflict PR
+		// cleanly (before bumping the attempt counter / dispatching an agent
+		// that would fail at push). No-op under `own` mode (cascade PRs are
+		// same-repo); only reachable under `external`/`all`.
+		const forkSkip = gateForkWriteAccess(prDetails, prNumber, this.name);
+		if (forkSkip) return forkSkip;
 
 		// Check attempt limit to prevent infinite loops. Side effect (PR
 		// comment) is handler-local because the warning text differs from

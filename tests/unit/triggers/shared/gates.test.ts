@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 import type { PersonaIdentities } from '../../../../src/github/personas.js';
 import {
 	gateAttemptLimit,
+	gateAuthorMode,
 	gateBaseBranch,
 	gateCascadePersona,
+	gateForkWriteAccess,
 	requirePersonaIdentities,
 } from '../../../../src/triggers/shared/gates.js';
 import type { ProjectConfig } from '../../../../src/types/index.js';
@@ -59,6 +61,100 @@ describe('gateCascadePersona', () => {
 		expect(result?.skipReason?.message).toMatch(
 			/PR #42 not authored by a cascade persona.*some-human/,
 		);
+	});
+});
+
+describe('gateAuthorMode', () => {
+	// authorMode 'own' (default): only cascade personas pass.
+	it("passes cascade authors and skips humans under authorMode 'own'", () => {
+		expect(
+			gateAuthorMode('cascade-impl', 42, mockPersonas, { authorMode: 'own' }, 'respond-to-ci'),
+		).toBeNull();
+		expect(
+			gateAuthorMode('cascade-rev', 42, mockPersonas, { authorMode: 'own' }, 'respond-to-ci'),
+		).toBeNull();
+
+		const humanSkip = gateAuthorMode(
+			'some-human',
+			42,
+			mockPersonas,
+			{ authorMode: 'own' },
+			'respond-to-ci',
+		);
+		expect(humanSkip?.skipReason?.handler).toBe('respond-to-ci');
+		expect(humanSkip?.skipReason?.message).toMatch(
+			/author some-human does not match configured authorMode 'own' \(isCascadePR=false\)/,
+		);
+	});
+
+	// authorMode 'external': only non-cascade authors pass.
+	it("passes humans and skips cascade authors under authorMode 'external'", () => {
+		expect(
+			gateAuthorMode(
+				'some-human',
+				42,
+				mockPersonas,
+				{ authorMode: 'external' },
+				'resolve-conflicts',
+			),
+		).toBeNull();
+
+		const cascadeSkip = gateAuthorMode(
+			'cascade-impl',
+			42,
+			mockPersonas,
+			{ authorMode: 'external' },
+			'resolve-conflicts',
+		);
+		expect(cascadeSkip?.skipReason?.message).toMatch(
+			/author cascade-impl does not match configured authorMode 'external' \(isCascadePR=true\)/,
+		);
+	});
+
+	// authorMode 'all': every author passes.
+	it("passes both cascade and human authors under authorMode 'all'", () => {
+		expect(gateAuthorMode('cascade-impl', 42, mockPersonas, { authorMode: 'all' }, 'h')).toBeNull();
+		expect(gateAuthorMode('some-human', 42, mockPersonas, { authorMode: 'all' }, 'h')).toBeNull();
+	});
+
+	// Missing/invalid authorMode falls back to 'own'.
+	it('defaults to own when authorMode is absent', () => {
+		expect(gateAuthorMode('cascade-impl', 42, mockPersonas, {}, 'h')).toBeNull();
+		const humanSkip = gateAuthorMode('some-human', 42, mockPersonas, {}, 'h');
+		expect(humanSkip?.skipReason?.message).toMatch(/authorMode 'own'/);
+	});
+});
+
+describe('gateForkWriteAccess', () => {
+	it('returns null for a same-repo (non-fork) PR', () => {
+		expect(
+			gateForkWriteAccess({ isFork: false, headRepoFullName: 'owner/repo' }, 42, 'respond-to-ci'),
+		).toBeNull();
+	});
+
+	it('returns null when isFork is undefined (older mocks default to non-fork)', () => {
+		expect(gateForkWriteAccess({}, 42, 'respond-to-ci')).toBeNull();
+	});
+
+	it('returns a structured skip naming the fork head repo', () => {
+		const result = gateForkWriteAccess(
+			{ isFork: true, headRepoFullName: 'contributor/repo' },
+			42,
+			'respond-to-ci',
+		);
+		expect(result?.skipReason?.handler).toBe('respond-to-ci');
+		expect(result?.skipReason?.message).toMatch(
+			/PR #42 head branch lives on fork contributor\/repo.*no write access.*respond-to-ci/i,
+		);
+	});
+
+	it('returns a skip with a deleted-fork phrasing when headRepoFullName is null', () => {
+		const result = gateForkWriteAccess(
+			{ isFork: true, headRepoFullName: null },
+			42,
+			'resolve-conflicts',
+		);
+		expect(result?.skipReason?.message).toMatch(/deleted\/unavailable fork head/i);
 	});
 });
 
