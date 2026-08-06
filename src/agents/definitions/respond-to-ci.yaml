@@ -32,6 +32,13 @@ triggers:
     description: Trigger when CI checks fail
     defaultEnabled: false
     providers: [github]
+    parameters:
+      - name: authorMode
+        type: select
+        label: Author Filter
+        description: Filter PRs by author type
+        options: [own, external, all]
+        defaultValue: own
     contextPipeline: [prContext, directoryListing, contextFiles, workItem]
 
 strategies: {}

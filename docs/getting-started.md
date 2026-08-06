@@ -380,6 +380,17 @@ node bin/cascade.js projects trigger-set my-project \
 node bin/cascade.js projects trigger-set my-project \
   --agent respond-to-ci --event scm:check-suite-failure --enable
 
+# respond-to-ci and resolve-conflicts also accept the `authorMode` param
+# (own/external/all, default own). `all`/`external` authorize CASCADE to WRITE
+# to human-authored (same-repo) branches — a conscious opt-in. Fork PRs are
+# always skipped (CASCADE cannot push to a contributor's fork).
+node bin/cascade.js projects trigger-set my-project \
+  --agent respond-to-ci --event scm:check-suite-failure --enable \
+  --params '{"authorMode":"all"}'
+node bin/cascade.js projects trigger-set my-project \
+  --agent resolve-conflicts --event scm:pr-conflict-detected --enable \
+  --params '{"authorMode":"all"}'
+
 # Enable respond-to-review when the reviewer requests changes
 node bin/cascade.js projects trigger-set my-project \
   --agent respond-to-review --event scm:pr-review-submitted --enable

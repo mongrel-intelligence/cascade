@@ -119,12 +119,88 @@ describe('githubClient', () => {
 				merged: false,
 				mergeable: null,
 				user: { login: 'test-user' },
+				// No head/base repo objects in this payload → treated as non-fork.
+				headRepoFullName: null,
+				isFork: false,
 			});
 			expect(mockPulls.get).toHaveBeenCalledWith({
 				owner: 'owner',
 				repo: 'repo',
 				pull_number: 42,
 			});
+		});
+
+		it('detects a fork when head repo differs from base repo', async () => {
+			mockPulls.get.mockResolvedValue({
+				data: {
+					number: 42,
+					title: 'Fork PR',
+					body: null,
+					state: 'open',
+					html_url: 'https://github.com/owner/repo/pull/42',
+					head: {
+						ref: 'fix/some-bug',
+						sha: 'forksha',
+						repo: { full_name: 'contributor/repo' },
+					},
+					base: { ref: 'main', repo: { full_name: 'owner/repo' } },
+					merged: false,
+					user: { login: 'contributor' },
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPR('owner', 'repo', 42),
+			);
+
+			expect(result.isFork).toBe(true);
+			expect(result.headRepoFullName).toBe('contributor/repo');
+		});
+
+		it('treats same-repo PR (head.full_name === base.full_name) as non-fork', async () => {
+			mockPulls.get.mockResolvedValue({
+				data: {
+					number: 42,
+					title: 'Same-repo PR',
+					body: null,
+					state: 'open',
+					html_url: 'https://github.com/owner/repo/pull/42',
+					head: { ref: 'feature/x', sha: 'abc', repo: { full_name: 'owner/repo' } },
+					base: { ref: 'main', repo: { full_name: 'owner/repo' } },
+					merged: false,
+					user: { login: 'cascade-impl' },
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPR('owner', 'repo', 42),
+			);
+
+			expect(result.isFork).toBe(false);
+			expect(result.headRepoFullName).toBe('owner/repo');
+		});
+
+		it('treats a deleted fork head (head.repo === null) as a fork', async () => {
+			mockPulls.get.mockResolvedValue({
+				data: {
+					number: 42,
+					title: 'Deleted fork PR',
+					body: null,
+					state: 'open',
+					html_url: 'https://github.com/owner/repo/pull/42',
+					head: { ref: 'fix/gone', sha: 'gonesha', repo: null },
+					base: { ref: 'main', repo: { full_name: 'owner/repo' } },
+					merged: false,
+					user: { login: 'contributor' },
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPR('owner', 'repo', 42),
+			);
+
+			expect(result.isFork).toBe(true);
+			expect(result.headRepoFullName).toBeNull();
 		});
 
 		it('handles null merged field and missing user', async () => {

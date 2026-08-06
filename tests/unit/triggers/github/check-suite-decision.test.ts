@@ -131,6 +131,84 @@ describe('decideCheckSuiteOutcome', () => {
 		expect(decision).toBeNull();
 	});
 
+	// MNG-1774: respond-to-ci mode now carries authorMode parameters and routes
+	// through the same shared author-mode evaluator as review mode.
+	describe('respond-to-ci mode (MNG-1774)', () => {
+		const respondBase = {
+			...baseOptions,
+			handlerName: 'check-suite-failure',
+		} as const;
+
+		it("skips a cascade-authored PR under respond-to-ci authorMode 'external'", () => {
+			const decision = decideCheckSuiteGates({
+				...respondBase,
+				prAuthorLogin: 'cascade-impl',
+				mode: { kind: 'respond-to-ci', parameters: { authorMode: 'external' } },
+			});
+
+			expect(decision).toEqual({
+				action: 'skip',
+				message:
+					"PR #42 author cascade-impl does not match configured authorMode 'external' (isCascadePR=true)",
+			});
+		});
+
+		it("passes a human-authored PR under respond-to-ci authorMode 'all'", () => {
+			const decision = decideCheckSuiteGates({
+				...respondBase,
+				prAuthorLogin: 'random-contributor',
+				mode: { kind: 'respond-to-ci', parameters: { authorMode: 'all' } },
+			});
+
+			expect(decision).toBeNull();
+		});
+
+		it("skips a human-authored PR under respond-to-ci authorMode 'own' (default)", () => {
+			const decision = decideCheckSuiteGates({
+				...respondBase,
+				prAuthorLogin: 'random-contributor',
+				mode: { kind: 'respond-to-ci', parameters: {} },
+			});
+
+			expect(decision).toEqual({
+				action: 'skip',
+				message:
+					"PR #42 author random-contributor does not match configured authorMode 'own' (isCascadePR=false)",
+			});
+		});
+
+		it('still returns the "all passed — no action" skip for respond-to-ci when every check passes', () => {
+			const decision = decideCheckSuiteOutcome({
+				...respondBase,
+				prAuthorLogin: 'cascade-impl',
+				mode: { kind: 'respond-to-ci', parameters: {} },
+				checkStatus: status([
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'success' },
+				]),
+			});
+
+			expect(decision).toEqual({
+				action: 'skip',
+				message: 'All 2 checks passed for PR #42 — no action needed',
+			});
+		});
+
+		it('returns respond-to-ci for a mixed aggregate under respond-to-ci mode', () => {
+			const decision = decideCheckSuiteOutcome({
+				...respondBase,
+				prAuthorLogin: 'cascade-impl',
+				mode: { kind: 'respond-to-ci', parameters: {} },
+				checkStatus: status([
+					{ name: 'lint', status: 'completed', conclusion: 'success' },
+					{ name: 'test', status: 'completed', conclusion: 'failure' },
+				]),
+			});
+
+			expect(decision).toEqual({ action: 'respond-to-ci' });
+		});
+	});
+
 	it('rejects cascade-authored stacked PR if persona identities cannot be resolved', () => {
 		// Defense in depth: with no personaIdentities, isCascadeBot is unreliable.
 		// The author-mode gate already returns its own skip in that case (see
