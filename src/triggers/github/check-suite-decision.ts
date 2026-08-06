@@ -1,6 +1,7 @@
 import type { CheckSuiteStatus } from '../../github/client.js';
 import { isCascadeBot, type PersonaIdentities } from '../../github/personas.js';
 import type { ProjectConfig } from '../../types/index.js';
+import { evaluateAuthorMode } from '../shared/author-mode.js';
 
 export type CheckSuiteDecision =
 	| { action: 'defer'; incompleteChecks: string[]; message: string }
@@ -10,7 +11,7 @@ export type CheckSuiteDecision =
 
 export type CheckSuiteDecisionMode =
 	| { kind: 'review'; parameters: Record<string, unknown> }
-	| { kind: 'respond-to-ci' };
+	| { kind: 'respond-to-ci'; parameters: Record<string, unknown> };
 
 export interface DecideCheckSuiteOutcomeOptions {
 	prNumber: number;
@@ -27,68 +28,48 @@ export interface DecideCheckSuiteAggregateOptions extends DecideCheckSuiteOutcom
 }
 
 const FAILURE_CONCLUSIONS = new Set(['failure', 'timed_out', 'action_required']);
-const VALID_AUTHOR_MODES = new Set(['own', 'external', 'all']);
 
-function resolveAuthorMode(parameters: Record<string, unknown>): string {
-	const rawMode = parameters.authorMode;
-	return typeof rawMode === 'string' && VALID_AUTHOR_MODES.has(rawMode) ? rawMode : 'own';
-}
-
+/**
+ * Thin wrapper over the shared `evaluateAuthorMode`, adapting its result into a
+ * check-suite `skip` decision. Preserves the established skip-message text
+ * (including the `isCascadePR=` suffix) so webhook decision reasons are stable.
+ */
 function authorModeDecision(
 	prAuthorLogin: string,
 	personaIdentities: PersonaIdentities | undefined,
 	parameters: Record<string, unknown>,
 	prNumber: number,
+	handlerName: string,
 ): Extract<CheckSuiteDecision, { action: 'skip' }> | null {
-	if (!personaIdentities) {
+	const result = evaluateAuthorMode(prAuthorLogin, personaIdentities, parameters, handlerName);
+	if (!result) {
 		return {
 			action: 'skip',
 			message: 'Cascade persona identities could not be resolved (token / GitHub API issue)',
 		};
 	}
-
-	const authorMode = resolveAuthorMode(parameters);
-	const isCascadePR = isCascadeBot(prAuthorLogin, personaIdentities);
-	const shouldTrigger =
-		authorMode === 'all' ||
-		(authorMode === 'own' && isCascadePR) ||
-		(authorMode === 'external' && !isCascadePR);
-
-	if (shouldTrigger) return null;
-
+	if (result.shouldTrigger) return null;
 	return {
 		action: 'skip',
-		message: `PR #${prNumber} author ${prAuthorLogin} does not match configured authorMode '${authorMode}' (isCascadePR=${isCascadePR})`,
-	};
-}
-
-function cascadePersonaDecision(
-	prAuthorLogin: string,
-	personaIdentities: PersonaIdentities | undefined,
-	prNumber: number,
-): Extract<CheckSuiteDecision, { action: 'skip' }> | null {
-	if (!personaIdentities) {
-		return {
-			action: 'skip',
-			message: 'Cascade persona identities could not be resolved (token / GitHub API issue)',
-		};
-	}
-	if (isCascadeBot(prAuthorLogin, personaIdentities)) return null;
-	return {
-		action: 'skip',
-		message: `PR #${prNumber} not authored by a cascade persona (author: ${prAuthorLogin})`,
+		message: `PR #${prNumber} author ${prAuthorLogin} does not match configured authorMode '${result.authorMode}' (isCascadePR=${result.isCascadePR})`,
 	};
 }
 
 export function decideCheckSuiteGates(
 	options: DecideCheckSuiteOutcomeOptions,
 ): Extract<CheckSuiteDecision, { action: 'skip' }> | null {
-	const { prNumber, prAuthorLogin, prBaseRef, project, personaIdentities, mode } = options;
+	const { prNumber, prAuthorLogin, prBaseRef, project, personaIdentities, handlerName, mode } =
+		options;
 
-	const authorSkip =
-		mode.kind === 'review'
-			? authorModeDecision(prAuthorLogin, personaIdentities, mode.parameters, prNumber)
-			: cascadePersonaDecision(prAuthorLogin, personaIdentities, prNumber);
+	// Both `review` and `respond-to-ci` modes now carry authorMode parameters
+	// and route through the shared author-mode evaluator (MNG-1774).
+	const authorSkip = authorModeDecision(
+		prAuthorLogin,
+		personaIdentities,
+		mode.parameters,
+		prNumber,
+		handlerName,
+	);
 	if (authorSkip) return authorSkip;
 
 	// Bug 2 (2026-05-11 prod incident on ucho PR #393, MNG-691):

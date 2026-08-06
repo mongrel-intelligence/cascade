@@ -2,11 +2,10 @@ import { githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerHandler, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { gateCascadePersona, requirePersonaIdentities } from '../shared/gates.js';
 import { buildDeferredRecheckResult } from '../shared/result-builders.js';
 import { skip } from '../shared/skip.js';
-import { checkTriggerEnabled } from '../shared/trigger-check.js';
-import { decideCheckSuiteOutcome } from './check-suite-decision.js';
+import { checkTriggerEnabledWithParams } from '../shared/trigger-check.js';
+import { decideCheckSuiteGates, decideCheckSuiteOutcome } from './check-suite-decision.js';
 import { resolveCheckSuitePRNumber } from './pr-resolution.js';
 import { dispatchRespondToCi, resetFixAttempts } from './respond-to-ci-dispatch.js';
 import { type GitHubCheckSuitePayload, isGitHubCheckSuitePayload } from './types.js';
@@ -40,14 +39,14 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// Disabled-at-config returns null so the registry's first-match loop
 		// continues to the next matcher — see `src/triggers/shared/trigger-check.ts`
 		// for the disabled-shadowing contract.
-		if (
-			!(await checkTriggerEnabled(
-				ctx.project.id,
-				'respond-to-ci',
-				'scm:check-suite-failure',
-				this.name,
-			))
-		) {
+		// Check trigger config + get parameters (authorMode) in a single DB call.
+		const triggerConfig = await checkTriggerEnabledWithParams(
+			ctx.project.id,
+			'respond-to-ci',
+			'scm:check-suite-failure',
+			this.name,
+		);
+		if (!triggerConfig.enabled) {
 			return null;
 		}
 
@@ -72,20 +71,24 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 		// Fetch PR details
 		const prDetails = await githubClient.getPR(owner, repo, prNumber);
 
-		const personasResult = requirePersonaIdentities(ctx.personaIdentities, prNumber, this.name);
-		if (!personasResult.ok) return personasResult.skip;
-
-		// Cascade-authored PRs bypass the base-branch gate — a cascade PR
-		// targeting a non-base branch is a stacked PR, not a drive-by.
-		// Non-cascade authors are filtered here and never reach the gate.
-		// Mirrors the authorIsCascade bypass in decideCheckSuiteGates (lines 101-109).
-		const cascadePersonaSkip = gateCascadePersona(
-			prDetails.user.login,
+		// Author-mode + base-branch gate BEFORE the checks API call (preserves
+		// the pre-API skip; mirrors check-suite-success). Handles the missing-
+		// personaIdentities case internally, so no separate requirePersonaIdentities
+		// call is needed here. `own` (default) filters to cascade-authored PRs;
+		// `external`/`all` now dispatch respond-to-ci on human same-repo PRs.
+		const mode = { kind: 'respond-to-ci', parameters: triggerConfig.parameters } as const;
+		const gateSkip = decideCheckSuiteGates({
 			prNumber,
-			personasResult.value,
-			this.name,
-		);
-		if (cascadePersonaSkip) return cascadePersonaSkip;
+			prAuthorLogin: prDetails.user.login,
+			prBaseRef: prDetails.baseRef,
+			project: ctx.project,
+			personaIdentities: ctx.personaIdentities,
+			handlerName: this.name,
+			mode,
+		});
+		if (gateSkip) {
+			return skip(this.name, gateSkip.message);
+		}
 
 		// Resolve work item from DB
 		const workItemId = await resolveWorkItemId(ctx.project.id, prNumber);
@@ -100,7 +103,7 @@ export class CheckSuiteFailureTrigger implements TriggerHandler {
 			project: ctx.project,
 			personaIdentities: ctx.personaIdentities,
 			handlerName: this.name,
-			mode: { kind: 'respond-to-ci' },
+			mode,
 		});
 
 		if (decision.action === 'defer') {

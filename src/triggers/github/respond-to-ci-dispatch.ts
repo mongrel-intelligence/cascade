@@ -2,7 +2,7 @@ import { type CheckSuiteStatus, githubClient } from '../../github/client.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
 import { parseRepoFullName } from '../../utils/repo.js';
-import { gateAttemptLimit } from '../shared/gates.js';
+import { gateAttemptLimit, gateForkWriteAccess } from '../shared/gates.js';
 import { skip } from '../shared/skip.js';
 import { checkTriggerEnabled } from '../shared/trigger-check.js';
 import {
@@ -28,6 +28,13 @@ export interface PRDetails {
 	headRef: string;
 	htmlUrl: string;
 	title: string;
+	/**
+	 * Fork write-access fields (optional). Populated from `githubClient.getPR`
+	 * so the shared `gateForkWriteAccess` can skip fork PRs that CASCADE cannot
+	 * push to. Optional so same-repo callers and older mocks default to non-fork.
+	 */
+	isFork?: boolean;
+	headRepoFullName?: string | null;
 }
 
 /**
@@ -63,6 +70,16 @@ export async function dispatchRespondToCi(opts: {
 	) {
 		return null;
 	}
+
+	// Fork write-access skip. respond-to-ci pushes commits — CASCADE cannot
+	// push to a contributor's fork. Skip BEFORE claiming the Redis dedup slot
+	// or bumping the attempt counter so a fork PR never consumes either. This
+	// is the single-sourced dispatch path for both check-suite-failure and the
+	// check-suite-success mixed-state fork, so one insertion covers every entry
+	// point. For `own`-mode dispatches `isFork` is always false (cascade PRs are
+	// same-repo), so this is a no-op except under `external`/`all`.
+	const forkSkip = gateForkWriteAccess(opts.prDetails, opts.prNumber, opts.handlerName);
+	if (forkSkip) return forkSkip;
 
 	const { owner, repo } = parseRepoFullName(opts.payload.repository.full_name);
 	const headSha = opts.payload.check_suite.head_sha;
