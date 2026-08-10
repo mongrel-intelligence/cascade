@@ -359,6 +359,11 @@ interface RawContentNode {
  * node ID. Callers holding a content node ID (`getWorkItem`, `updateWorkItem`)
  * must use this: `node(<contentId>)` resolves to an Issue/PullRequest, so a
  * `... on ProjectV2Item` query would never match and would drop `content`.
+ *
+ * Known limitation: `projectItems(first: 20)` only inspects the first 20 projects
+ * an Issue/PR belongs to. An item added to >20 projects could fail to surface its
+ * `ProjectV2Item` for the configured project — extremely rare in practice, so it
+ * is left un-paginated intentionally.
  */
 export async function getContentNode(
 	contentId: string,
@@ -626,6 +631,11 @@ export async function addContentToProject(projectId: string, contentId: string):
  * ProjectV2Item ID, but the work-item ID carried across the github-projects path
  * is the *content* node ID — so a status move must resolve the item ID first.
  * Returns `null` when the content is not part of the project.
+ *
+ * Known limitation: like `getContentNode`, `projectItems(first: 20)` only inspects
+ * the first 20 projects the content belongs to; an Issue/PR in >20 projects could
+ * fail to resolve its item ID (making `moveWorkItem` throw). Rare enough to leave
+ * un-paginated.
  */
 export async function resolveProjectItemId(
 	contentId: string,

@@ -315,12 +315,14 @@ Cascade can drive work from a **GitHub Projects (Projects v2)** board — the mo
 2. Find your Project node ID (`PVT_…`) and the Status field's single-select **option IDs** — the setup wizard discovers these automatically once the token is entered.
 
 ```bash
-# GitHub Projects reuses the GITHUB_TOKEN credential (scoped to a dedicated
-# AsyncLocalStorage store, separate from the SCM GitHub token).
-node bin/cascade.js projects credentials-set my-project --key GITHUB_TOKEN --value ghp_... --name "GitHub Token"
+# GitHub Projects uses a dedicated GITHUB_PROJECTS_TOKEN credential — separate
+# from the SCM GITHUB_TOKEN so the configured PM PAT survives the worker's
+# persona-token override and never collides with a co-configured GitHub SCM
+# integration.
+node bin/cascade.js projects credentials-set my-project --key GITHUB_PROJECTS_TOKEN --value ghp_... --name "GitHub Projects Token"
 
 # Optional: webhook secret for HMAC-SHA256 signature verification
-node bin/cascade.js projects credentials-set my-project --key GITHUB_WEBHOOK_SECRET --value ... --name "GitHub Webhook Secret"
+node bin/cascade.js projects credentials-set my-project --key GITHUB_PROJECTS_WEBHOOK_SECRET --value ... --name "GitHub Projects Webhook Secret"
 
 # Configure the integration
 # projectId:  the ProjectV2 node ID (PVT_…)
@@ -332,7 +334,9 @@ node bin/cascade.js projects integration-set my-project \
   --config '{"projectId":"PVT_xxx","owner":"your-login","ownerType":"user","statuses":{"todo":"OPTION_ID","inProgress":"OPTION_ID","done":"OPTION_ID"}}'
 ```
 
-**Webhook setup.** For an **organization**-owned project, the wizard can create the webhook programmatically (the `projects_v2_item` event is org-webhook-creatable via `POST /orgs/{org}/hooks`) — click **Create Webhook** in the Webhook step; the token needs the `admin:org_hook` scope. A **user**-owned project has no webhook-create API, so events must arrive via an org-owned project or a GitHub App subscribed to `projects_v2_item`; the wizard shows the manual-setup instructions instead. Either way the webhook is for the **`projects_v2_item`** event pointing at `https://your-router-host/github-projects/webhook` (set the secret to match `GITHUB_WEBHOOK_SECRET` if configured).
+**Webhook setup.** For an **organization**-owned project, the wizard can create the webhook programmatically (the `projects_v2_item` event is org-webhook-creatable via `POST /orgs/{org}/hooks`) — click **Create Webhook** in the Webhook step; the token needs the `admin:org_hook` scope. A **user**-owned project has no webhook-create API, so events must arrive via an org-owned project or a GitHub App subscribed to `projects_v2_item`; the wizard shows the manual-setup instructions instead. Either way the webhook is for the **`projects_v2_item`** event pointing at `https://your-router-host/github-projects/webhook` (set the secret to match `GITHUB_PROJECTS_WEBHOOK_SECRET` if configured).
+
+**Triggering.** Agents dispatch on Status-field **edits** to a mapped column (the `projects_v2_item.edited` webhook action). Adding a brand-new item straight into a mapped column does **not** dispatch on its own — move an existing item into the column (or change its Status) to trigger a run.
 
 **Scope.** GitHub Projects is a deliberately **status-focused** provider: only Status field changes dispatch agents. Supported: reading/updating the linked issue/PR, reading/posting comments, moving Status, board listing, add/remove label (config value resolved to a repo-scoped label), checklists (inline markdown task lists in the issue/PR body), and **work-item creation** — which creates a real Issue in the project's SCM repo and adds it to the board, enabling friction/alert card materialization when the `statuses.friction` / `statuses.alerts` slots are configured. It does **not** support attachments (formal attachment records — inline-pasted images *are* delivered) or custom number fields. See the GitHub Projects section of [Integration Layer](./architecture/06-integration-layer.md) for the full method-by-method breakdown.
 

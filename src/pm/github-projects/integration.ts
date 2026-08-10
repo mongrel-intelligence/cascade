@@ -176,12 +176,15 @@ export class GitHubProjectsIntegration implements PMIntegration {
 		return (await loadProjectConfigByGitHubProjectsProjectId(identifier)) ?? null;
 	}
 
-	extractWorkItemId(text: string): string | null {
-		// GitHub issue/PR URLs: https://github.com/owner/repo/issues/123 or /pull/123
-		const issueMatch = text.match(/https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/);
-		if (issueMatch) return issueMatch[1];
-		const prMatch = text.match(/https:\/\/github\.com\/[^/]+\/[^/]+\/pull\/(\d+)/);
-		if (prMatch) return prMatch[1];
+	extractWorkItemId(_text: string): string | null {
+		// Intentionally returns null. Everywhere else on the github-projects path a
+		// work item is keyed by its *content node ID* (`I_…` / `PR_…`), but a GitHub
+		// issue/PR URL only carries the numeric issue/PR number. That number can't be
+		// resolved to a node ID synchronously (it needs a GraphQL round-trip), and
+		// returning the raw number would hand callers an ID shape nothing on this
+		// path accepts (a downstream `getContentNode(number)` would throw). Text-based
+		// work-item linking is not supported for github-projects — mirror the GitHub
+		// SCM integration, which also returns null here.
 		return null;
 	}
 }

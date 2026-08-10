@@ -142,14 +142,18 @@ describe('GitHubProjectsIntegration', () => {
 	});
 
 	describe('extractWorkItemId', () => {
-		it('extracts an issue number from a GitHub issue URL', () => {
-			expect(integration.extractWorkItemId('see https://github.com/octocat/repo/issues/123')).toBe(
-				'123',
-			);
+		// The github-projects path keys work items by their content node ID
+		// (`I_…` / `PR_…`), which can't be derived synchronously from a URL's issue
+		// number. Text-based linking is therefore unsupported and always returns
+		// null (mirrors the GitHub SCM integration), avoiding a misleading number.
+		it('returns null for a GitHub issue URL (number is not a content node ID)', () => {
+			expect(
+				integration.extractWorkItemId('see https://github.com/octocat/repo/issues/123'),
+			).toBeNull();
 		});
 
-		it('extracts a PR number from a GitHub pull URL', () => {
-			expect(integration.extractWorkItemId('https://github.com/octocat/repo/pull/456')).toBe('456');
+		it('returns null for a GitHub pull URL', () => {
+			expect(integration.extractWorkItemId('https://github.com/octocat/repo/pull/456')).toBeNull();
 		});
 
 		it('returns null when no GitHub URL is present', () => {
