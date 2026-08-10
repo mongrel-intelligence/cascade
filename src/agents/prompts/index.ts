@@ -86,6 +86,11 @@ export interface PromptContext {
 	// (reviews are downgraded to advisory COMMENT submissions by the tool layer).
 	commentOnlyReview?: boolean;
 
+	// false when the project's update channel disables PM posting (scm-only / none).
+	// Used by templates to suppress PM-comment instructions so agents don't call
+	// `cascade-tools pm post-comment` via bash even after the tool is filtered.
+	pmPostingEnabled?: boolean;
+
 	// Future extensibility
 	[key: string]: unknown;
 }

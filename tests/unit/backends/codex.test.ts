@@ -11,6 +11,7 @@ const mockWriteProjectCredential = vi.fn<() => Promise<void>>();
 const mockWriteFile = vi.fn<() => Promise<void>>();
 const mockMkdir = vi.fn<() => Promise<void>>();
 const mockReadFile = vi.fn<() => Promise<string>>();
+const mockRm = vi.fn<() => Promise<void>>();
 
 vi.mock('node:child_process', () => ({
 	spawn: (...args: unknown[]) => mockSpawn(...args),
@@ -20,6 +21,7 @@ vi.mock('node:fs/promises', () => ({
 	mkdir: (...args: unknown[]) => mockMkdir(...args),
 	writeFile: (...args: unknown[]) => mockWriteFile(...args),
 	readFile: (...args: unknown[]) => mockReadFile(...args),
+	rm: (...args: unknown[]) => mockRm(...args),
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({
@@ -45,11 +47,16 @@ import {
 	CodexEngine,
 	extractErrorMessage,
 	extractTextParts,
+	extractThreadId,
 	extractToolCall,
 	extractUsage,
 	resolveCodexModel,
 } from '../../../src/backends/codex/index.js';
 import { DEFAULT_CODEX_MODEL } from '../../../src/backends/codex/models.js';
+import {
+	CODEX_COMPLETION_OUTPUT_SCHEMA,
+	parseCodexCompletionReport,
+} from '../../../src/backends/codex/outputSchema.js';
 import {
 	assertHeadlessCodexSettings,
 	resolveCodexSettings,
@@ -203,6 +210,13 @@ describe('extractErrorMessage', () => {
 
 	it('returns undefined for empty string error', () => {
 		expect(extractErrorMessage({ error: '' })).toBeUndefined();
+	});
+});
+
+describe('extractThreadId', () => {
+	it('extracts a resumable id only from thread.started', () => {
+		expect(extractThreadId({ type: 'thread.started', thread_id: 'th_abc' })).toBe('th_abc');
+		expect(extractThreadId({ type: 'turn.started', thread_id: 'th_abc' })).toBeUndefined();
 	});
 });
 
@@ -480,6 +494,7 @@ describe('buildArgs', () => {
 			{ ...baseSettings, webSearch: false },
 			'model-x',
 			'/tmp/last.json',
+			'/tmp/output-schema.json',
 		);
 		expect(args).not.toContain('--search');
 		expect(args).not.toContain('search=true');
@@ -491,17 +506,125 @@ describe('buildArgs', () => {
 			{ ...baseSettings, webSearch: true },
 			'model-x',
 			'/tmp/last.json',
+			'/tmp/output-schema.json',
 		);
 		expect(args).toContain('--enable');
 		expect(args).toContain('web_search');
 	});
+
+	it('bypasses interactive hook trust unless blockGitPush is explicitly false (claude-code parity)', () => {
+		const enabledArgs = buildArgs(
+			makeInput({ blockGitPush: true }),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		const disabledArgs = buildArgs(
+			makeInput({ blockGitPush: false }),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		// Undefined must resolve to block (`input.blockGitPush ?? true`) — mirrors claude-code's
+		// `options?.blockGitPush ?? true`, so implementation / review still bypass hook trust.
+		const defaultArgs = buildArgs(
+			makeInput({ blockGitPush: undefined }),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+
+		expect(enabledArgs).toContain('--dangerously-bypass-hook-trust');
+		expect(disabledArgs).not.toContain('--dangerously-bypass-hook-trust');
+		expect(defaultArgs).toContain('--dangerously-bypass-hook-trust');
+	});
+
+	it('passes the structured completion schema to codex exec', () => {
+		const args = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		expect(args[args.indexOf('--output-schema') + 1]).toBe('/tmp/output-schema.json');
+	});
+
+	it('ignores user config and execpolicy rules for hermetic execution', () => {
+		const args = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		expect(args).toContain('--ignore-user-config');
+		expect(args).toContain('--ignore-rules');
+	});
+
+	it('persists the initial rollout and resumes it on continuation turns', () => {
+		const initialArgs = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		const resumeArgs = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: false },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+			'th_abc',
+		);
+
+		expect(initialArgs).not.toContain('--ephemeral');
+		expect(resumeArgs.slice(0, 4)).toEqual(['exec', 'resume', 'th_abc', '--json']);
+	});
+});
+
+describe('structured completion output', () => {
+	it('defines a strict schema for status, PR claim, and prose summary', () => {
+		expect(CODEX_COMPLETION_OUTPUT_SCHEMA).toMatchObject({
+			type: 'object',
+			additionalProperties: false,
+			required: ['status', 'prUrl', 'summary'],
+		});
+	});
+
+	it('parses a schema-conforming report', () => {
+		expect(
+			parseCodexCompletionReport(
+				JSON.stringify({
+					status: 'completed',
+					prUrl: 'https://github.com/owner/repo/pull/123',
+					summary: 'Implemented and tested the change.',
+				}),
+			),
+		).toEqual({
+			status: 'completed',
+			prUrl: 'https://github.com/owner/repo/pull/123',
+			summary: 'Implemented and tested the change.',
+		});
+	});
+
+	it('returns undefined for malformed or invalid reports', () => {
+		expect(parseCodexCompletionReport('not json')).toBeUndefined();
+		expect(parseCodexCompletionReport('{"status":"completed","prUrl":null}')).toBeUndefined();
+	});
 });
 
 describe('buildEnv', () => {
-	it('passes through OPENAI_API_KEY and project secrets', () => {
+	it('allows Codex auth variables and project secrets', () => {
 		process.env.OPENAI_API_KEY = 'host-key';
+		process.env.CODEX_API_KEY = 'codex-host-key';
 		const env = buildEnv({ CASCADE_AGENT_TYPE: 'implementation' });
-		expect(env.OPENAI_API_KEY).toBe('host-key');
+		expect(env.OPENAI_API_KEY).toBeUndefined();
+		expect(env.CODEX_API_KEY).toBe('codex-host-key');
 		expect(env.CASCADE_AGENT_TYPE).toBe('implementation');
 	});
 });
@@ -515,12 +638,14 @@ describe('CodexEngine', () => {
 		mockMkdir.mockResolvedValue(undefined);
 		mockWriteFile.mockResolvedValue(undefined);
 		mockReadFile.mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
+		mockRm.mockResolvedValue(undefined);
 		mockWriteProjectCredential.mockResolvedValue(undefined);
 	});
 
 	afterEach(() => {
 		rmSync(workspaceDir, { recursive: true, force: true });
 		Reflect.deleteProperty(process.env, 'OPENAI_API_KEY');
+		Reflect.deleteProperty(process.env, 'CODEX_API_KEY');
 	});
 
 	it('executes codex CLI and parses JSONL activity', async () => {
@@ -575,6 +700,103 @@ describe('CodexEngine', () => {
 		expect(input.progressReporter.onText).toHaveBeenCalledWith('Thinking...');
 		expect(mockStoreLlmCall).toHaveBeenCalled();
 		expect(readFileSync(join(workspaceDir, 'codex.log'), 'utf-8')).toContain('codex');
+	});
+
+	it('resumes the captured thread and preserves cumulative usage accounting', async () => {
+		const prSidecarPath = join(workspaceDir, 'pr-sidecar.json');
+		mockSpawn
+			.mockImplementationOnce((_cmd: string, args: string[]) => {
+				expect(args).not.toContain('resume');
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({ type: 'thread.started', thread_id: 'th_resume_123' }),
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 100, output_tokens: 50 },
+						}),
+					],
+					onBeforeClose: () => writeFileSync(outputPath, 'Initial turn done', 'utf-8'),
+				});
+			})
+			.mockImplementationOnce((_cmd: string, args: string[]) => {
+				expect(args.slice(0, 4)).toEqual(['exec', 'resume', 'th_resume_123', '--json']);
+				const outputPath = args[args.indexOf('-o') + 1];
+				return createMockChild({
+					stdoutLines: [
+						JSON.stringify({
+							type: 'turn.completed',
+							usage: { input_tokens: 150, output_tokens: 70 },
+						}),
+					],
+					onBeforeClose: () => {
+						writeFileSync(outputPath, 'Continuation done', 'utf-8');
+						writeFileSync(
+							prSidecarPath,
+							JSON.stringify({ prUrl: 'https://github.com/owner/repo/pull/789' }),
+							'utf-8',
+						);
+					},
+				});
+			});
+
+		const result = await new CodexEngine().execute(
+			makeInput({
+				repoDir: workspaceDir,
+				runId: 'run-resume',
+				completionRequirements: {
+					requiresPR: true,
+					prSidecarPath,
+					maxContinuationTurns: 1,
+				},
+			}),
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/789');
+		expect(mockSpawn).toHaveBeenCalledTimes(2);
+		const costRows = mockStoreLlmCall.mock.calls.map(
+			([call]) => JSON.parse((call as { response: string }).response) as Record<string, unknown>,
+		);
+		expect(costRows[0]).toMatchObject({
+			delta: { inputTokens: 100, outputTokens: 50 },
+		});
+		expect(costRows[1]).toMatchObject({
+			delta: { inputTokens: 50, outputTokens: 20 },
+		});
+	});
+
+	it('uses the structured summary and treats its PR URL as non-authoritative text evidence', async () => {
+		mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+			const outputPath = args[args.indexOf('-o') + 1];
+			const schemaPath = args[args.indexOf('--output-schema') + 1];
+			expect(JSON.parse(readFileSync(schemaPath, 'utf-8'))).toEqual(CODEX_COMPLETION_OUTPUT_SCHEMA);
+			return createMockChild({
+				onBeforeClose: () => {
+					writeFileSync(
+						outputPath,
+						JSON.stringify({
+							status: 'completed',
+							prUrl: 'https://github.com/owner/repo/pull/456',
+							summary: 'Implemented the structured completion report.',
+						}),
+						'utf-8',
+					);
+				},
+			});
+		});
+
+		const input = makeInput({ repoDir: workspaceDir });
+		const result = await new CodexEngine().execute(input);
+
+		expect(result.output).toBe('Implemented the structured completion report.');
+		expect(result.prUrl).toBe('https://github.com/owner/repo/pull/456');
+		expect(result.prEvidence).toEqual({ source: 'text', authoritative: false });
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Codex structured completion claimed PR creation',
+			expect.objectContaining({ authoritative: false }),
+		);
 	});
 
 	it('fails fast when approval policy is not automation-safe', async () => {
@@ -1255,7 +1477,8 @@ describe('Codex subscription auth', () => {
 		await engine.execute(input);
 
 		expect(capturedEnv?.CODEX_AUTH_JSON).toBeUndefined();
-		expect(capturedEnv?.OPENAI_API_KEY).toBe('sk-test');
+		expect(capturedEnv?.OPENAI_API_KEY).toBeUndefined();
+		expect(capturedEnv?.CODEX_API_KEY).toBeUndefined();
 	});
 
 	it('writes refreshed token to project_credentials when auth.json is updated by Codex CLI', async () => {
@@ -1310,14 +1533,17 @@ describe('Codex subscription auth', () => {
 		);
 	});
 
-	// --- Bare OpenAI API key auth (synthesized auth.json) ---
-	// Codex does NOT read OPENAI_API_KEY from the environment; it authenticates
-	// only from ~/.codex/auth.json. cascade must synthesize the apikey auth.json
-	// shape that `codex login --with-api-key` writes so a bare key authenticates.
+	// --- Bare OpenAI API key auth (single-run CODEX_API_KEY) ---
 	const API_KEY = 'sk-proj-test-key-123';
-	const SYNTHESIZED_AUTH = JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: API_KEY });
 
-	it('synthesizes apikey auth.json from OPENAI_API_KEY when CODEX_AUTH_JSON is absent', async () => {
+	it('injects CODEX_API_KEY without writing auth.json when CODEX_AUTH_JSON is absent', async () => {
+		let capturedEnv: Record<string, string | undefined> | undefined;
+		mockSpawn.mockImplementation(
+			(_cmd: string, _args: string[], options: { env?: Record<string, string | undefined> }) => {
+				capturedEnv = options.env;
+				return createMockChild({ exitCode: 0 });
+			},
+		);
 		const engine = new CodexEngine();
 		const input = makeInput({
 			repoDir: workspaceDir,
@@ -1326,16 +1552,16 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockWriteFile).toHaveBeenCalledWith(
+		expect(mockWriteFile).not.toHaveBeenCalledWith(
 			expect.stringContaining('auth.json'),
-			SYNTHESIZED_AUTH,
-			{ mode: 0o600 },
+			expect.anything(),
+			expect.anything(),
 		);
+		expect(capturedEnv?.OPENAI_API_KEY).toBeUndefined();
+		expect(capturedEnv?.CODEX_API_KEY).toBe(API_KEY);
 	});
 
-	it('never persists the synthesized API-key auth.json back into CODEX_AUTH_JSON', async () => {
-		// Even if the on-disk auth.json "changes" after the run, the API-key path
-		// must never write it into the subscription credential slot.
+	it('never persists API-key auth back into CODEX_AUTH_JSON', async () => {
 		mockReadFile.mockResolvedValue(
 			JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-proj-rotated' }),
 		);
@@ -1363,11 +1589,6 @@ describe('Codex subscription auth', () => {
 		expect(mockWriteFile).toHaveBeenCalledWith(expect.stringContaining('auth.json'), AUTH_JSON, {
 			mode: 0o600,
 		});
-		expect(mockWriteFile).not.toHaveBeenCalledWith(
-			expect.stringContaining('auth.json'),
-			SYNTHESIZED_AUTH,
-			{ mode: 0o600 },
-		);
 	});
 
 	it('writes no auth.json when neither CODEX_AUTH_JSON nor OPENAI_API_KEY is set', async () => {
@@ -1383,7 +1604,14 @@ describe('Codex subscription auth', () => {
 		);
 	});
 
-	it('falls back to the synthesized API-key auth.json when CODEX_AUTH_JSON is invalid JSON', async () => {
+	it('falls back to CODEX_API_KEY when CODEX_AUTH_JSON is invalid JSON', async () => {
+		let capturedEnv: Record<string, string | undefined> | undefined;
+		mockSpawn.mockImplementation(
+			(_cmd: string, _args: string[], options: { env?: Record<string, string | undefined> }) => {
+				capturedEnv = options.env;
+				return createMockChild({ exitCode: 0 });
+			},
+		);
 		const engine = new CodexEngine();
 		const input = makeInput({
 			repoDir: workspaceDir,
@@ -1392,11 +1620,12 @@ describe('Codex subscription auth', () => {
 
 		await engine.execute(input);
 
-		expect(mockWriteFile).toHaveBeenCalledWith(
+		expect(mockWriteFile).not.toHaveBeenCalledWith(
 			expect.stringContaining('auth.json'),
-			SYNTHESIZED_AUTH,
-			{ mode: 0o600 },
+			expect.anything(),
+			expect.anything(),
 		);
+		expect(capturedEnv?.CODEX_API_KEY).toBe(API_KEY);
 		expect(input.logWriter).toHaveBeenCalledWith(
 			'WARN',
 			expect.stringContaining('not valid JSON'),
@@ -1586,6 +1815,148 @@ describe('CodexEngine lifecycle hooks', () => {
 		});
 	});
 
+	it('beforeExecute writes a PreToolUse git-push deny hook when blockGitPush is enabled', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			blockGitPush: true,
+		});
+
+		await engine.beforeExecute(input);
+
+		const hooksWrite = mockWriteFile.mock.calls.find(([path]) =>
+			String(path).endsWith('hooks.json'),
+		);
+		expect(hooksWrite).toBeDefined();
+		expect(JSON.parse(String(hooksWrite?.[1]))).toEqual({
+			hooks: {
+				PreToolUse: [
+					{
+						matcher: 'Bash',
+						hooks: [
+							{
+								type: 'command',
+								command: expect.stringContaining('cascade-block-git-push.cjs'),
+							},
+						],
+					},
+				],
+			},
+		});
+
+		const hookScriptWrite = mockWriteFile.mock.calls.find(([path]) =>
+			String(path).endsWith('cascade-block-git-push.cjs'),
+		);
+		expect(hookScriptWrite?.[1]).toContain('/\\bgit\\s+push\\b/');
+		expect(hookScriptWrite?.[1]).toContain('cascade-tools scm create-pr flow');
+	});
+
+	it.each([
+		'git push',
+		'git push origin HEAD',
+		'cd /tmp/repo && git push origin feature/x',
+	])('generated PreToolUse hook denies compound push command: %s', async (command) => {
+		const engine = new CodexEngine();
+		await engine.beforeExecute(makeInput({ repoDir: workspaceDir, blockGitPush: true }));
+		const script = String(
+			mockWriteFile.mock.calls.find(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			)?.[1],
+		);
+		const stdin = new EventEmitter() as EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+		stdin.setEncoding = vi.fn();
+		const write = vi.fn();
+
+		new Function('process', script)({ stdin, stdout: { write } });
+		stdin.emit('data', JSON.stringify({ tool_input: { command } }));
+		stdin.emit('end');
+
+		expect(JSON.parse(String(write.mock.calls[0]?.[0]))).toEqual({
+			hookSpecificOutput: {
+				hookEventName: 'PreToolUse',
+				permissionDecision: 'deny',
+				permissionDecisionReason: expect.stringContaining('cascade-tools scm create-pr'),
+			},
+		});
+	});
+
+	it('generated PreToolUse hook allows non-push git commands', async () => {
+		const engine = new CodexEngine();
+		await engine.beforeExecute(makeInput({ repoDir: workspaceDir, blockGitPush: true }));
+		const script = String(
+			mockWriteFile.mock.calls.find(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			)?.[1],
+		);
+		const stdin = new EventEmitter() as EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+		stdin.setEncoding = vi.fn();
+		const write = vi.fn();
+
+		new Function('process', script)({ stdin, stdout: { write } });
+		stdin.emit('data', JSON.stringify({ tool_input: { command: 'git status' } }));
+		stdin.emit('end');
+
+		expect(write).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		'',
+		'not json{',
+		'{"tool_input": ',
+	])('generated PreToolUse hook fails open without throwing on unparseable stdin: %j', async (rawInput) => {
+		const engine = new CodexEngine();
+		await engine.beforeExecute(makeInput({ repoDir: workspaceDir, blockGitPush: true }));
+		const script = String(
+			mockWriteFile.mock.calls.find(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			)?.[1],
+		);
+		const stdin = new EventEmitter() as EventEmitter & {
+			setEncoding: ReturnType<typeof vi.fn>;
+		};
+		stdin.setEncoding = vi.fn();
+		const write = vi.fn();
+
+		new Function('process', script)({ stdin, stdout: { write } });
+		stdin.emit('data', rawInput);
+		// The guard must swallow the JSON.parse error — emitting 'end' must not throw
+		// (an unguarded parse would exit the hook non-zero and produce undefined behavior).
+		expect(() => stdin.emit('end')).not.toThrow();
+		expect(write).not.toHaveBeenCalled();
+	});
+
+	it('beforeExecute writes the git-push deny hook by default when blockGitPush is unset (claude-code parity)', async () => {
+		const engine = new CodexEngine();
+		// implementation / review leave blockGitPush undefined; the codex path must default to
+		// block (`blockGitPush ?? true`) just like claude-code, so the deny hook is materialized.
+		const input = makeInput({ repoDir: workspaceDir, blockGitPush: undefined });
+
+		await engine.beforeExecute(input);
+
+		expect(mockWriteFile.mock.calls.some(([path]) => String(path).endsWith('hooks.json'))).toBe(
+			true,
+		);
+		expect(
+			mockWriteFile.mock.calls.some(([path]) =>
+				String(path).endsWith('cascade-block-git-push.cjs'),
+			),
+		).toBe(true);
+	});
+
+	it('beforeExecute does not write hooks when blockGitPush is disabled', async () => {
+		const engine = new CodexEngine();
+		const input = makeInput({
+			repoDir: workspaceDir,
+			blockGitPush: false,
+		});
+
+		await engine.beforeExecute(input);
+
+		expect(mockWriteFile.mock.calls.some(([path]) => String(path).endsWith('hooks.json'))).toBe(
+			false,
+		);
+	});
+
 	it('afterExecute writes refreshed token to project_credentials', async () => {
 		const refreshedJson = JSON.stringify({ accessToken: 'tok_NEW', refreshToken: 'ref_xyz' });
 		mockReadFile.mockResolvedValue(refreshedJson);
@@ -1612,6 +1983,10 @@ describe('CodexEngine lifecycle hooks', () => {
 		const plan = makeInput({ repoDir: workspaceDir });
 
 		await expect(engine.afterExecute(plan, { success: true, output: '' })).resolves.not.toThrow();
+		expect(mockRm).toHaveBeenCalledWith(expect.stringContaining('hooks.json'), { force: true });
+		expect(mockRm).toHaveBeenCalledWith(expect.stringContaining('cascade-block-git-push.cjs'), {
+			force: true,
+		});
 	});
 
 	it('adapter lifecycle: execute does not double-capture token when adapter calls afterExecute', async () => {

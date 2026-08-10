@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -9,6 +9,7 @@ import { writeProjectCredential } from '../../db/repositories/credentialsReposit
 import { calculateCost } from '../../utils/llmMetrics.js';
 import { CODEX_ENGINE_DEFINITION } from '../catalog.js';
 import { cleanupContextFiles } from '../shared/contextFiles.js';
+import { runContinuationLoop } from '../shared/continuationLoop.js';
 import { appendEngineLog } from '../shared/engineLog.js';
 import { buildEngineResult, extractAndBuildPrEvidence } from '../shared/engineResult.js';
 import { SHARED_ALLOWED_ENV_EXACT } from '../shared/envFilter.js';
@@ -18,7 +19,8 @@ import { buildSystemPrompt, buildTaskPrompt } from '../shared/nativeToolPrompts.
 import type { AgentEngineResult, AgentExecutionPlan, LogWriter } from '../types.js';
 import type { UsageSummary } from './jsonlParser.js';
 import { extractUsage, parseCodexEvent } from './jsonlParser.js';
-import { CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
+import { CODEX_ACCEPTED_PREFIXES, CODEX_MODEL_IDS, DEFAULT_CODEX_MODEL } from './models.js';
+import { CODEX_COMPLETION_OUTPUT_SCHEMA, parseCodexCompletionReport } from './outputSchema.js';
 import {
 	assertHeadlessCodexSettings,
 	CodexSettingsSchema,
@@ -27,6 +29,78 @@ import {
 
 const CODEX_AUTH_DIR = join(homedir(), '.codex');
 const CODEX_AUTH_FILE = join(CODEX_AUTH_DIR, 'auth.json');
+const CODEX_HOOKS_FILE = join(CODEX_AUTH_DIR, 'hooks.json');
+const CODEX_BLOCK_GIT_PUSH_HOOK_FILE = join(CODEX_AUTH_DIR, 'cascade-block-git-push.cjs');
+
+const BLOCK_GIT_PUSH_REASON =
+	'Push is blocked for this agent; use the cascade-tools scm create-pr flow.';
+
+const BLOCK_GIT_PUSH_HOOK = `let input = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => { input += chunk; });
+process.stdin.on('end', () => {
+	let payload;
+	try {
+		payload = JSON.parse(input);
+	} catch {
+		// Empty / non-JSON stdin means we cannot read the command. Codex serializes this
+		// envelope itself, so the agent cannot forge a malformed payload to smuggle a push;
+		// a parse failure signals a codex payload-format mismatch, not an evasion attempt.
+		// Fail open (allow) rather than deny-blocking every Bash call and bricking the run —
+		// git-push blocking resumes on the next well-formed payload. This is a deliberate
+		// decision so the process never throws / exits non-zero on unexpected input.
+		return;
+	}
+	const command = payload?.tool_input?.command ?? '';
+	if (/\\bgit\\s+push\\b/.test(command)) {
+		process.stdout.write(JSON.stringify({
+			hookSpecificOutput: {
+				hookEventName: 'PreToolUse',
+				permissionDecision: 'deny',
+				permissionDecisionReason: ${JSON.stringify(BLOCK_GIT_PUSH_REASON)}
+			}
+		}));
+	}
+});
+`;
+
+async function writeCodexHooksFile(blockGitPush: boolean | undefined): Promise<void> {
+	// Mirror claude-code's default (buildPreToolUseHooks: `options?.blockGitPush ?? true`):
+	// an undefined blockGitPush blocks by default, so the deny hook is materialized for
+	// implementation / review (the MNG-1755 targets) and every other agent. Only the four
+	// PR-branch agents opt out with an explicit `blockGitPush: false`.
+	const shouldBlock = blockGitPush ?? true;
+	if (!shouldBlock) return;
+
+	await mkdir(CODEX_AUTH_DIR, { recursive: true });
+	await writeFile(CODEX_BLOCK_GIT_PUSH_HOOK_FILE, BLOCK_GIT_PUSH_HOOK, { mode: 0o700 });
+	await writeFile(
+		CODEX_HOOKS_FILE,
+		JSON.stringify({
+			hooks: {
+				PreToolUse: [
+					{
+						matcher: 'Bash',
+						hooks: [
+							{
+								type: 'command',
+								command: `node ${JSON.stringify(CODEX_BLOCK_GIT_PUSH_HOOK_FILE)}`,
+							},
+						],
+					},
+				],
+			},
+		}),
+		{ mode: 0o600 },
+	);
+}
+
+async function cleanupCodexHooksFiles(): Promise<void> {
+	await Promise.all([
+		rm(CODEX_HOOKS_FILE, { force: true }),
+		rm(CODEX_BLOCK_GIT_PUSH_HOOK_FILE, { force: true }),
+	]);
+}
 
 /**
  * Codex's persistent-bash-session corruption signal. When this stderr message
@@ -71,6 +145,14 @@ type CodexCumulativeUsage = {
 	reasoningTokens: number;
 };
 
+type CodexRunState = {
+	iterationCount: number;
+	llmCallCount: number;
+	cost?: number;
+	sessionId?: string;
+	cumulativeUsage: CodexCumulativeUsage;
+};
+
 type CodexLineContext = {
 	input: AgentExecutionPlan;
 	model: string;
@@ -84,6 +166,8 @@ type CodexLineContext = {
 	currentTurn: CodexTurnAccumulator;
 	/** Previous turn's cumulative usage — used to compute per-turn deltas. */
 	cumulativeUsage: CodexCumulativeUsage;
+	/** Shared across subprocesses so continuation turns can resume this rollout. */
+	runState: CodexRunState;
 };
 
 function tomlString(value: string): string {
@@ -308,6 +392,10 @@ async function handleStructuralEvent(
 		return true;
 	}
 	if (eventType === 'turn.started' || eventType === 'thread.started') {
+		if (eventType === 'thread.started') {
+			const { threadId } = parseCodexEvent(parsed);
+			if (threadId) context.runState.sessionId = threadId;
+		}
 		// Reset turn accumulator at the start of each new turn
 		context.currentTurn = { textSummary: [], usage: null };
 		return true;
@@ -420,7 +508,7 @@ function resolveCodexModel(cascadeModel: string): string {
 	// and would silently persist zero cost. Add new models to CODEX_MODEL_IDS in
 	// src/backends/codex/models.ts AND add a pricing row to MODEL_PRICING in
 	// src/utils/llmMetrics.ts before accepting them here.
-	if (cascadeModel.startsWith('openai:')) {
+	if (CODEX_ACCEPTED_PREFIXES.some((prefix) => cascadeModel.startsWith(prefix))) {
 		const bareId = cascadeModel.replace('openai:', '');
 		if (CODEX_MODEL_IDS.includes(bareId)) return bareId;
 	}
@@ -434,16 +522,108 @@ function buildPrompt(systemPrompt: string, taskPrompt: string): string {
 	return `## System Instructions\n${systemPrompt}\n\n## Task\n${taskPrompt}`;
 }
 
+function buildCodexTurnResult(options: {
+	input: AgentExecutionPlan;
+	runState: CodexRunState;
+	startTime: number;
+	exitCode: number;
+	lastMessagePath: string;
+	rawTextParts: string[];
+	stderrChunks: string[];
+	finalError?: string;
+	turnCost?: number;
+	toolCallCount: number;
+}): { result: AgentEngineResult; toolCallCount: number } {
+	const {
+		input,
+		runState,
+		startTime,
+		exitCode,
+		lastMessagePath,
+		rawTextParts,
+		stderrChunks,
+		finalError,
+		turnCost,
+		toolCallCount,
+	} = options;
+	const fileOutput =
+		existsSync(lastMessagePath) && readFileSync(lastMessagePath, 'utf-8').trim()
+			? readFileSync(lastMessagePath, 'utf-8').trim()
+			: rawTextParts.join('\n').trim();
+	const { finalOutput, prUrl, prEvidence, structuredPrClaim } = resolveCompletionOutput(
+		fileOutput,
+		rawTextParts.join('\n'),
+	);
+	const stderrOutput = stderrChunks.join('').trim();
+
+	if (structuredPrClaim) {
+		input.logWriter('INFO', 'Codex structured completion claimed PR creation', {
+			prUrl: structuredPrClaim,
+			authoritative: false,
+			hint: 'The native-tool PR sidecar remains the sole authority for completion gating',
+		});
+	}
+	input.logWriter('DEBUG', 'Codex process exited', {
+		exitCode,
+		iterationCount: runState.iterationCount,
+		llmCallCount: runState.llmCallCount,
+		finalOutputLength: finalOutput.length,
+	});
+	if (stderrOutput) input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
+
+	const shellCorruptionResult = classifyShellCorruption(
+		stderrOutput,
+		exitCode,
+		prUrl,
+		prEvidence,
+		finalOutput,
+		turnCost,
+		input.logWriter,
+	);
+	if (shellCorruptionResult) return { result: shellCorruptionResult, toolCallCount };
+
+	const result =
+		exitCode !== 0
+			? buildEngineResult({
+					success: false,
+					output: finalOutput,
+					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
+					cost: turnCost,
+					prUrl,
+					prEvidence,
+				})
+			: buildEngineResult({
+					success: true,
+					output: finalOutput,
+					cost: turnCost,
+					prUrl,
+					prEvidence,
+				});
+	if (result.success) {
+		input.logWriter('INFO', 'Codex execution completed', {
+			turns: runState.iterationCount,
+			cost: runState.cost ?? null,
+			prUrl: prUrl ?? null,
+			durationMs: Date.now() - startTime,
+		});
+	}
+	return { result, toolCallCount };
+}
+
 export function buildArgs(
 	input: AgentExecutionPlan,
 	settings: ReturnType<typeof resolveCodexSettings>,
 	model: string,
 	lastMessagePath: string,
+	outputSchemaPath: string,
+	sessionId?: string,
 ): string[] {
 	const args = [
 		'exec',
+		...(sessionId ? ['resume', sessionId] : []),
 		'--json',
-		'--ephemeral',
+		'--ignore-user-config',
+		'--ignore-rules',
 		'--skip-git-repo-check',
 		'-C',
 		input.repoDir,
@@ -453,6 +633,8 @@ export function buildArgs(
 		settings.sandboxMode,
 		'-o',
 		lastMessagePath,
+		'--output-schema',
+		outputSchemaPath,
 		'-c',
 		`approval_policy=${tomlString(settings.approvalPolicy)}`,
 	];
@@ -463,49 +645,57 @@ export function buildArgs(
 	if (settings.webSearch) {
 		args.push('--enable', 'web_search');
 	}
+	if (input.blockGitPush ?? true) {
+		// CASCADE owns and rewrites this per-run hook, so no interactive trust prompt is possible
+		// or necessary in the headless worker. Mirror claude-code's default-block semantics: an
+		// undefined blockGitPush blocks (so the per-run hook is written and its trust must be
+		// bypassed) for every agent except the four PR-branch opt-outs that set blockGitPush: false.
+		args.push('--dangerously-bypass-hook-trust');
+	}
 	args.push('-');
 
 	return args;
 }
 
-/**
- * Build the auth.json contents that `codex login --with-api-key` writes for a
- * bare OpenAI API key. Codex authenticates ONLY from ~/.codex/auth.json — it does
- * NOT read OPENAI_API_KEY from the environment — so a bare API key must be
- * materialised into this file for codex to send a bearer token.
- */
-function synthesizeApiKeyAuthJson(apiKey: string): string {
-	return JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: apiKey });
+function isValidJson(value: string | undefined): value is string {
+	if (!value) return false;
+	try {
+		JSON.parse(value);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function buildCodexSubprocessSecrets(
+	projectSecrets: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+	if (!projectSecrets) return undefined;
+
+	const subprocessSecrets = Object.fromEntries(
+		Object.entries(projectSecrets).filter(
+			([key]) => key !== 'CODEX_AUTH_JSON' && key !== 'OPENAI_API_KEY',
+		),
+	);
+	if (!isValidJson(projectSecrets.CODEX_AUTH_JSON) && projectSecrets.OPENAI_API_KEY) {
+		subprocessSecrets.CODEX_API_KEY = projectSecrets.OPENAI_API_KEY;
+	}
+	return subprocessSecrets;
 }
 
 /**
- * Write ~/.codex/auth.json so Codex can authenticate. Supports BOTH auth modes,
- * mirroring claude-code's ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN duality:
- *   - subscription token via CODEX_AUTH_JSON (ChatGPT Plus/Pro), written verbatim;
- *   - bare API key via OPENAI_API_KEY, synthesized into the apikey auth.json shape.
- *
- * Returns the written JSON string ONLY for the subscription path, so the caller
- * (captureRefreshedToken) can persist a token the Codex CLI rotated mid-run. The
- * API-key path returns undefined: API keys never rotate, and returning undefined
- * guarantees the synthesized blob is never written back into the CODEX_AUTH_JSON
- * credential slot. CODEX_AUTH_JSON takes precedence when both are configured.
+ * Write ~/.codex/auth.json for ChatGPT subscription auth. API-key runs use the
+ * Codex CLI's single-run CODEX_API_KEY environment variable instead and never
+ * touch the persistent auth file.
  */
 async function writeCodexAuthFile(
 	projectSecrets: Record<string, string> | undefined,
 	logWriter: LogWriter,
 ): Promise<string | undefined> {
 	const authJson = projectSecrets?.CODEX_AUTH_JSON;
-	const apiKey = projectSecrets?.OPENAI_API_KEY;
 
-	// 1. Subscription token wins when present and valid JSON.
 	if (authJson) {
-		let valid = true;
-		try {
-			JSON.parse(authJson);
-		} catch {
-			valid = false;
-		}
-		if (valid) {
+		if (isValidJson(authJson)) {
 			await mkdir(CODEX_AUTH_DIR, { recursive: true });
 			await writeFile(CODEX_AUTH_FILE, authJson, { mode: 0o600 });
 			logWriter('INFO', 'Writing ~/.codex/auth.json for subscription auth', {});
@@ -518,18 +708,9 @@ async function writeCodexAuthFile(
 		);
 	}
 
-	// 2. Bare OpenAI API key — synthesize the apikey auth.json codex requires.
-	if (apiKey) {
-		await mkdir(CODEX_AUTH_DIR, { recursive: true });
-		await writeFile(CODEX_AUTH_FILE, synthesizeApiKeyAuthJson(apiKey), { mode: 0o600 });
-		logWriter('INFO', 'Writing ~/.codex/auth.json for API key auth', {});
-		return undefined; // API keys do not rotate — nothing to capture
-	}
-
-	// 3. Neither configured.
 	logWriter(
 		'DEBUG',
-		'No CODEX_AUTH_JSON or OPENAI_API_KEY credential — codex auth not configured',
+		'No valid CODEX_AUTH_JSON credential — subscription auth file not written',
 		{},
 	);
 	return undefined;
@@ -544,10 +725,7 @@ async function captureRefreshedToken(
 	originalJson: string | undefined,
 	logWriter: LogWriter,
 ): Promise<void> {
-	// originalJson is undefined on the API-key path (writeCodexAuthFile returns
-	// undefined there) and when no auth was configured — so a synthesized apikey
-	// auth.json is never persisted back into the CODEX_AUTH_JSON credential slot.
-	// Only a rotated subscription token is captured.
+	// Only subscription auth has an original file to compare and capture.
 	if (!originalJson) return;
 
 	let newJson: string;
@@ -620,6 +798,31 @@ function classifyShellCorruption(
 	});
 }
 
+function resolveCompletionOutput(
+	rawOutput: string,
+	streamedOutput: string,
+): {
+	finalOutput: string;
+	prUrl: string | undefined;
+	prEvidence: ReturnType<typeof extractAndBuildPrEvidence>['prEvidence'];
+	structuredPrClaim: string | undefined;
+} {
+	const completionReport = parseCodexCompletionReport(rawOutput);
+	const finalOutput = completionReport?.summary ?? rawOutput;
+	let { prUrl, prEvidence } = completionReport?.prUrl
+		? extractAndBuildPrEvidence(completionReport.prUrl)
+		: extractAndBuildPrEvidence(finalOutput);
+	if (!prUrl) {
+		({ prUrl, prEvidence } = extractAndBuildPrEvidence(streamedOutput));
+	}
+	return {
+		finalOutput,
+		prUrl,
+		prEvidence,
+		structuredPrClaim: completionReport?.prUrl ?? undefined,
+	};
+}
+
 /**
  * Codex CLI backend for CASCADE.
  *
@@ -646,7 +849,7 @@ export class CodexEngine extends NativeToolEngine {
 		return new Set([
 			...SHARED_ALLOWED_ENV_EXACT,
 			// Codex auth
-			'OPENAI_API_KEY',
+			'CODEX_API_KEY',
 		]);
 	}
 
@@ -672,6 +875,7 @@ export class CodexEngine extends NativeToolEngine {
 	async beforeExecute(plan: AgentExecutionPlan): Promise<void> {
 		this._adapterLifecycleActive = true;
 		this._originalAuthJson = await writeCodexAuthFile(plan.projectSecrets, plan.logWriter);
+		await writeCodexHooksFile(plan.blockGitPush);
 	}
 
 	/**
@@ -679,10 +883,14 @@ export class CodexEngine extends NativeToolEngine {
 	 * refreshed Codex auth token back to the project credentials.
 	 */
 	async afterExecute(plan: AgentExecutionPlan, result: AgentEngineResult): Promise<void> {
-		await super.afterExecute(plan, result);
-		await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
-		this._originalAuthJson = undefined;
-		this._adapterLifecycleActive = false;
+		try {
+			await super.afterExecute(plan, result);
+			await captureRefreshedToken(plan.project.id, this._originalAuthJson, plan.logWriter);
+		} finally {
+			await cleanupCodexHooksFiles();
+			this._originalAuthJson = undefined;
+			this._adapterLifecycleActive = false;
+		}
 	}
 
 	/** Remove temp file created by execute() — best-effort, ignores errors. */
@@ -736,20 +944,22 @@ export class CodexEngine extends NativeToolEngine {
 			? this._originalAuthJson
 			: await writeCodexAuthFile(input.projectSecrets, input.logWriter);
 
-		// Strip CODEX_AUTH_JSON from env — it's written to disk, not passed to the subprocess
-		const strippedSecrets: Record<string, string> | undefined = input.projectSecrets
-			? Object.fromEntries(
-					Object.entries(input.projectSecrets).filter(([k]) => k !== 'CODEX_AUTH_JSON'),
-				)
-			: undefined;
+		// Subscription auth stays file-backed. API-key auth is scoped to this
+		// subprocess via CODEX_API_KEY and does not persist in ~/.codex/auth.json.
+		const subprocessSecrets = buildCodexSubprocessSecrets(input.projectSecrets);
 
-		const lastMessagePath = join(
-			tmpdir(),
-			`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
-		);
-		const prompt = buildPrompt(systemPrompt, taskPrompt);
-		const env = this.buildEnv(strippedSecrets, input.cliToolsDir, input.nativeToolShimDir);
-		const args = buildArgs(input, settings, model, lastMessagePath);
+		const env = this.buildEnv(subprocessSecrets, input.cliToolsDir, input.nativeToolShimDir);
+		const initialPrompt = buildPrompt(systemPrompt, taskPrompt);
+		const runState: CodexRunState = {
+			iterationCount: 0,
+			llmCallCount: 0,
+			cumulativeUsage: {
+				inputTokens: 0,
+				outputTokens: 0,
+				cachedTokens: 0,
+				reasoningTokens: 0,
+			},
+		};
 
 		input.logWriter('INFO', 'Starting Codex execution', {
 			agentType: input.agentType,
@@ -761,170 +971,135 @@ export class CodexEngine extends NativeToolEngine {
 			hasOffloadedContext,
 		});
 
-		appendEngineLog(
-			input.engineLogPath,
-			`$ codex ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`,
-		);
-
-		let iterationCount = 0;
-		let llmCallCount = 0;
-		let cost: number | undefined;
-		const rawTextParts: string[] = [];
-		const stderrChunks: string[] = [];
-		let finalError: string | undefined;
-
 		try {
-			const exitCode = await new Promise<number>((resolve, reject) => {
-				const child = spawn('codex', args, {
-					cwd: input.repoDir,
-					env,
-					stdio: ['pipe', 'pipe', 'pipe'],
-				});
-				let lineQueue = Promise.resolve();
-				let streamFailed = false;
-				const lineContext: CodexLineContext = {
-					input,
-					model,
-					maxIterations: input.maxIterations,
-					rawTextParts,
-					iterationCount,
-					llmCallCount,
-					cost,
-					finalError,
-					currentTurn: { textSummary: [], usage: null },
-					cumulativeUsage: {
-						inputTokens: 0,
-						outputTokens: 0,
-						cachedTokens: 0,
-						reasoningTokens: 0,
-					},
-				};
-
-				child.once('error', (error) => {
-					reject(
-						error instanceof Error && 'code' in error && error.code === 'ENOENT'
-							? new Error(
-									'Codex CLI not found in PATH. Install `@openai/codex` in the worker image.',
-								)
-							: error,
+			return await runContinuationLoop({
+				initialPrompt,
+				completionRequirements: input.completionRequirements,
+				logWriter: input.logWriter,
+				engineLabel: 'Codex',
+				executeTurn: async ({ promptText }) => {
+					const lastMessagePath = join(
+						tmpdir(),
+						`cascade-codex-last-message-${process.pid}-${Date.now()}.txt`,
 					);
-				});
+					const outputSchemaPath = join(
+						tmpdir(),
+						`cascade-codex-output-schema-${process.pid}-${Date.now()}.json`,
+					);
+					writeFileSync(outputSchemaPath, JSON.stringify(CODEX_COMPLETION_OUTPUT_SCHEMA), {
+						encoding: 'utf-8',
+						mode: 0o600,
+					});
+					const args = buildArgs(
+						input,
+						settings,
+						model,
+						lastMessagePath,
+						outputSchemaPath,
+						runState.sessionId,
+					);
+					const rawTextParts: string[] = [];
+					const stderrChunks: string[] = [];
+					let finalError: string | undefined;
+					const costBeforeTurn = runState.cost ?? 0;
+					const llmCallsBeforeTurn = runState.llmCallCount;
+					let turnToolCallCount = 0;
 
-				const stdout = createInterface({ input: child.stdout });
-				stdout.on('line', (line) => {
-					lineQueue = lineQueue
-						.then(() => processStdoutLine(lineContext, line))
-						.catch((error) => {
-							streamFailed = true;
-							reject(error);
+					appendEngineLog(
+						input.engineLogPath,
+						`$ codex ${args.map((arg) => JSON.stringify(arg)).join(' ')}\n`,
+					);
+
+					try {
+						const exitCode = await new Promise<number>((resolve, reject) => {
+							const child = spawn('codex', args, {
+								cwd: input.repoDir,
+								env,
+								stdio: ['pipe', 'pipe', 'pipe'],
+							});
+							let lineQueue = Promise.resolve();
+							let streamFailed = false;
+							const lineContext: CodexLineContext = {
+								input,
+								model,
+								maxIterations: input.maxIterations,
+								rawTextParts,
+								iterationCount: runState.iterationCount,
+								llmCallCount: runState.llmCallCount,
+								cost: runState.cost,
+								finalError,
+								currentTurn: { textSummary: [], usage: null },
+								cumulativeUsage: runState.cumulativeUsage,
+								runState,
+							};
+
+							child.once('error', (error) => {
+								reject(
+									error instanceof Error && 'code' in error && error.code === 'ENOENT'
+										? new Error(
+												'Codex CLI not found in PATH. Install `@openai/codex` in the worker image.',
+											)
+										: error,
+								);
+							});
+
+							const stdout = createInterface({ input: child.stdout });
+							stdout.on('line', (line) => {
+								lineQueue = lineQueue
+									.then(() => processStdoutLine(lineContext, line))
+									.catch((error) => {
+										streamFailed = true;
+										reject(error);
+									});
+							});
+
+							child.stderr.on('data', (chunk: Buffer | string) => {
+								const text = chunk.toString();
+								stderrChunks.push(text);
+								appendEngineLog(input.engineLogPath, text);
+								const trimmed = text.trim();
+								if (trimmed) input.logWriter('DEBUG', 'Codex stderr', { stderr: trimmed });
+							});
+
+							child.stdin.write(promptText);
+							child.stdin.end();
+
+							child.once('close', (code) => {
+								void lineQueue
+									.then(() => {
+										runState.iterationCount = lineContext.iterationCount;
+										runState.llmCallCount = lineContext.llmCallCount;
+										runState.cost = lineContext.cost;
+										runState.cumulativeUsage = lineContext.cumulativeUsage;
+										finalError = lineContext.finalError;
+										turnToolCallCount = lineContext.llmCallCount - llmCallsBeforeTurn;
+										if (!streamFailed) resolve(code ?? 1);
+									})
+									.catch(reject);
+							});
 						});
-				});
 
-				child.stderr.on('data', (chunk: Buffer | string) => {
-					const text = chunk.toString();
-					stderrChunks.push(text);
-					appendEngineLog(input.engineLogPath, text);
-					const trimmed = text.trim();
-					if (trimmed) input.logWriter('DEBUG', 'Codex stderr', { stderr: trimmed });
-				});
-
-				child.stdin.write(prompt);
-				child.stdin.end();
-
-				child.once('close', (code) => {
-					void lineQueue
-						.then(() => {
-							iterationCount = lineContext.iterationCount;
-							llmCallCount = lineContext.llmCallCount;
-							cost = lineContext.cost;
-							finalError = lineContext.finalError;
-							if (!streamFailed) {
-								resolve(code ?? 1);
-							}
-						})
-						.catch(reject);
-				});
-			});
-
-			const finalOutput =
-				existsSync(lastMessagePath) && readFileSync(lastMessagePath, 'utf-8').trim()
-					? readFileSync(lastMessagePath, 'utf-8').trim()
-					: rawTextParts.join('\n').trim();
-			const stderrOutput = stderrChunks.join('').trim();
-			let { prUrl, prEvidence } = extractAndBuildPrEvidence(finalOutput);
-			if (!prUrl) {
-				({ prUrl, prEvidence } = extractAndBuildPrEvidence(rawTextParts.join('\n')));
-			}
-
-			input.logWriter('DEBUG', 'Codex process exited', {
-				exitCode,
-				iterationCount,
-				llmCallCount,
-				finalOutputLength: finalOutput.length,
-			});
-
-			if (stderrOutput) {
-				input.logWriter('WARN', 'Codex stderr output', { stderr: stderrOutput });
-			}
-
-			// Prod regression 2026-05-09 (runs 8b000cd6, d8e31665): codex's
-			// persistent bash session breaks with `ERROR
-			// codex_core::tools::router: error=write_stdin failed: stdin is
-			// closed for this session`. Once that signal fires, every
-			// subsequent command in the session inherits a corrupted stdout
-			// buffer (lint output from one command bleeding into the next,
-			// sidecar writes racing). We observed this leading to silent run
-			// failures with PR-creation evidence missing despite a real PR
-			// existing on GitHub. Codex itself exits cleanly (exit=0) — the
-			// stderr signal is the only evidence the session was corrupted.
-			//
-			// MNG-718 follow-up (run f801342b, 2026-05-11): the signal can
-			// also fire LATE, at session-close, after all real work has been
-			// captured. That run opened PR #1350, ran the full verification
-			// suite, and filed a follow-up friction ticket — yet was marked
-			// failed, costing cascade the post-completion review dispatch
-			// and surfacing a misleading "agent failed" comment. Split the
-			// two cases by whether success evidence (prUrl + finalOutput)
-			// was captured before the signal: late → WARN + success, early
-			// → ERROR + fail.
-			const shellCorruptionResult = classifyShellCorruption(
-				stderrOutput,
-				exitCode,
-				prUrl,
-				prEvidence,
-				finalOutput,
-				cost,
-				input.logWriter,
-			);
-			if (shellCorruptionResult) return shellCorruptionResult;
-
-			if (exitCode !== 0) {
-				return buildEngineResult({
-					success: false,
-					output: finalOutput,
-					error: finalError ?? stderrOutput ?? `Codex exited with code ${exitCode}`,
-					cost,
-					prUrl,
-					prEvidence,
-				});
-			}
-
-			input.logWriter('INFO', 'Codex execution completed', {
-				turns: iterationCount,
-				cost: cost ?? null,
-				prUrl: prUrl ?? null,
-				durationMs: Date.now() - startTime,
-			});
-
-			return buildEngineResult({
-				success: true,
-				output: finalOutput,
-				cost,
-				prUrl,
-				prEvidence,
+						const turnCost =
+							runState.cost === undefined ? undefined : runState.cost - costBeforeTurn;
+						return buildCodexTurnResult({
+							input,
+							runState,
+							startTime,
+							exitCode,
+							lastMessagePath,
+							rawTextParts,
+							stderrChunks,
+							finalError,
+							turnCost,
+							toolCallCount: turnToolCallCount,
+						});
+					} finally {
+						CodexEngine._cleanupLastMessagePath(lastMessagePath);
+						CodexEngine._cleanupLastMessagePath(outputSchemaPath);
+					}
+				},
 			});
 		} finally {
-			CodexEngine._cleanupLastMessagePath(lastMessagePath);
 			// When called directly (not via adapter), afterExecute won't be invoked.
 			// Perform cleanup here so direct callers (e.g. tests) still behave correctly.
 			if (!this._adapterLifecycleActive) {
@@ -943,6 +1118,7 @@ export class CodexEngine extends NativeToolEngine {
 export {
 	extractErrorMessage,
 	extractTextParts,
+	extractThreadId,
 	extractToolCall,
 	extractUsage,
 } from './jsonlParser.js';

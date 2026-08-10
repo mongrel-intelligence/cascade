@@ -3,9 +3,15 @@ import {
 	CLAUDE_CODE_ENGINE_DEFINITION,
 	CODEX_ENGINE_DEFINITION,
 	DEFAULT_ENGINE_CATALOG,
+	defaultModelLabel,
 	LLMIST_ENGINE_DEFINITION,
 	OPENCODE_ENGINE_DEFINITION,
 } from '../../../src/backends/catalog.js';
+import {
+	CLAUDE_CODE_MODELS,
+	DEFAULT_CLAUDE_CODE_MODEL,
+} from '../../../src/backends/claude-code/models.js';
+import { CODEX_MODELS, DEFAULT_CODEX_MODEL } from '../../../src/backends/codex/models.js';
 import type { AgentEngineDefinition } from '../../../src/backends/types.js';
 
 describe('DEFAULT_ENGINE_CATALOG', () => {
@@ -47,6 +53,60 @@ describe('DEFAULT_ENGINE_CATALOG', () => {
 		expect(DEFAULT_ENGINE_CATALOG[1].id).toBe('llmist');
 		expect(DEFAULT_ENGINE_CATALOG[2].id).toBe('codex');
 		expect(DEFAULT_ENGINE_CATALOG[3].id).toBe('opencode');
+	});
+});
+
+// ─── defaultModelLabel + displayed-default==resolved-default guard ────────────
+describe('defaultModelLabel', () => {
+	it('renders "Default (<label>)" using the catalog label lookup', () => {
+		const models = [
+			{ value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+			{ value: 'gpt-5.4', label: 'GPT-5.4' },
+		];
+		expect(defaultModelLabel(models, 'claude-sonnet-5')).toBe('Default (Claude Sonnet 5)');
+		expect(defaultModelLabel(models, 'gpt-5.4')).toBe('Default (GPT-5.4)');
+	});
+
+	it('falls back to the raw id when the id is not in the catalog', () => {
+		expect(defaultModelLabel([{ value: 'a', label: 'A' }], 'missing')).toBe('Default (missing)');
+	});
+});
+
+/**
+ * Anti-drift guard (MNG-1772): the label displayed for the empty option of each
+ * `select` engine must be derived from that engine's DEFAULT_*_MODEL. If someone
+ * bumps the default model without touching the label (or vice versa), this fails
+ * loudly — the "displayed default != resolved default" defect class this issue
+ * was about cannot silently reappear.
+ */
+describe('select engines: displayed default == resolved default', () => {
+	it('claude-code defaultValueLabel matches DEFAULT_CLAUDE_CODE_MODEL catalog label', () => {
+		const label = CLAUDE_CODE_MODELS.find((m) => m.value === DEFAULT_CLAUDE_CODE_MODEL)?.label;
+		expect(label).toBeDefined();
+		if (CLAUDE_CODE_ENGINE_DEFINITION.modelSelection.type === 'select') {
+			expect(CLAUDE_CODE_ENGINE_DEFINITION.modelSelection.defaultValueLabel).toBe(
+				`Default (${label})`,
+			);
+		}
+	});
+
+	it('codex defaultValueLabel matches DEFAULT_CODEX_MODEL catalog label', () => {
+		const label = CODEX_MODELS.find((m) => m.value === DEFAULT_CODEX_MODEL)?.label;
+		expect(label).toBeDefined();
+		if (CODEX_ENGINE_DEFINITION.modelSelection.type === 'select') {
+			expect(CODEX_ENGINE_DEFINITION.modelSelection.defaultValueLabel).toBe(`Default (${label})`);
+		}
+	});
+
+	it('select engines expose acceptedModelPrefixes as a plain string[]', () => {
+		for (const engine of DEFAULT_ENGINE_CATALOG) {
+			if (engine.modelSelection.type !== 'select') continue;
+			const prefixes = engine.modelSelection.acceptedModelPrefixes;
+			expect(Array.isArray(prefixes)).toBe(true);
+			for (const prefix of prefixes ?? []) {
+				expect(typeof prefix).toBe('string');
+			}
+		}
 	});
 });
 

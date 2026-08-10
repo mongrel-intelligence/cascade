@@ -7,6 +7,7 @@ const {
 	mockMarkdownToAdf,
 	mockExtractAdfMediaNodes,
 	mockResolveJiraMediaUrls,
+	mockCaptureException,
 } = vi.hoisted(() => ({
 	mockJiraClient: {
 		getIssue: vi.fn(),
@@ -32,10 +33,15 @@ const {
 	mockMarkdownToAdf: vi.fn(),
 	mockExtractAdfMediaNodes: vi.fn(),
 	mockResolveJiraMediaUrls: vi.fn(),
+	mockCaptureException: vi.fn(),
 }));
 
 vi.mock('../../../../src/jira/client.js', () => ({
 	jiraClient: mockJiraClient,
+}));
+
+vi.mock('../../../../src/sentry.js', () => ({
+	captureException: mockCaptureException,
 }));
 
 vi.mock('../../../../src/pm/jira/adf.js', () => ({
@@ -68,9 +74,12 @@ const mockConfig = {
 		todo: 'To Do',
 		done: 'Done',
 	},
+	// MNG-1769: the wizard's IssueTypeMappingStep persists the operator's Task
+	// mapping under `issueTypes.task` — the exact key createWorkItem now reads.
+	// The old `default` key was never written by anything and is intentionally
+	// no longer honored.
 	issueTypes: {
-		default: 'Task',
-		subtask: 'Sub-task',
+		task: 'Story',
 	},
 };
 
@@ -391,12 +400,98 @@ describe('JiraPMProvider', () => {
 				expect.objectContaining({
 					project: { key: 'PROJ' },
 					summary: 'New Task',
-					issuetype: { name: 'Task' },
+					// MNG-1769: mockConfig maps Task → 'Story' under `issueTypes.task`;
+					// createWorkItem must honor that mapping (previously it read the
+					// never-written `default` key and always sent 'Task').
+					issuetype: { name: 'Story' },
 					labels: ['backend'],
 				}),
 			);
 			expect(result.id).toBe('PROJ-456');
 			expect(result.url).toBe('https://mycompany.atlassian.net/browse/PROJ-456');
+		});
+
+		it('honors the wizard-written issueTypes.task mapping (parity guard, MNG-1769)', async () => {
+			const mappedProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: { task: 'Story' },
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-500' });
+
+			await mappedProvider.createWorkItem({ containerId: 'PROJ', title: 'Mapped task' });
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issuetype: { name: 'Story' } }),
+			);
+		});
+
+		it('falls back to "Task" when issueTypes is empty/absent (MNG-1769)', async () => {
+			const noMappingProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: {},
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-501' });
+
+			await noMappingProvider.createWorkItem({ containerId: 'PROJ', title: 'Unmapped task' });
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issuetype: { name: 'Task' } }),
+			);
+		});
+
+		it('does NOT honor the legacy issueTypes.default key (regression guard, MNG-1769)', async () => {
+			const legacyProvider = new JiraPMProvider({
+				...mockConfig,
+				// The old, never-written key. It must be ignored — falling back to 'Task'.
+				issueTypes: { default: 'Story' } as Record<string, string>,
+			});
+			mockJiraClient.createIssue.mockResolvedValue({ key: 'PROJ-502' });
+
+			await legacyProvider.createWorkItem({ containerId: 'PROJ', title: 'Legacy config task' });
+
+			expect(mockJiraClient.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({ issuetype: { name: 'Task' } }),
+			);
+		});
+
+		it('re-throws an enriched error naming discovered issue types when creation fails (MNG-1769)', async () => {
+			const failingProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: { task: 'Task' },
+			});
+			mockJiraClient.createIssue.mockRejectedValue(new Error('JIRA 400: invalid issue type'));
+			mockJiraClient.getIssueTypesForProject.mockResolvedValue([
+				{ name: 'Zadanie', subtask: false },
+				{ name: 'Story', subtask: false },
+				{ name: 'Podzadanie', subtask: true },
+			]);
+
+			await expect(
+				failingProvider.createWorkItem({ containerId: 'PROJ', title: 'Doomed task' }),
+			).rejects.toThrow(/Zadanie/);
+
+			const thrown = await failingProvider
+				.createWorkItem({ containerId: 'PROJ', title: 'Doomed task' })
+				.catch((e: unknown) => e as Error);
+			// Names the attempted type, the discovered non-subtask types, and never
+			// lists subtask-only types in the "available" set.
+			expect(thrown.message).toContain('Task');
+			expect(thrown.message).toContain('Story');
+			expect(thrown.message).not.toContain('Podzadanie');
+			expect(mockJiraClient.getIssueTypesForProject).toHaveBeenCalledWith('PROJ');
+		});
+
+		it('surfaces the original creation error when issue-type discovery also fails (MNG-1769)', async () => {
+			const failingProvider = new JiraPMProvider({
+				...mockConfig,
+				issueTypes: { task: 'Task' },
+			});
+			mockJiraClient.createIssue.mockRejectedValue(new Error('original creation failure'));
+			mockJiraClient.getIssueTypesForProject.mockRejectedValue(new Error('discovery failed'));
+
+			await expect(
+				failingProvider.createWorkItem({ containerId: 'PROJ', title: 'Doomed task' }),
+			).rejects.toThrow('original creation failure');
 		});
 
 		it('omits labels when not provided', async () => {
@@ -591,6 +686,89 @@ describe('JiraPMProvider', () => {
 			]);
 
 			await expect(provider.moveWorkItem('PROJ-1', 'unknown-status')).resolves.toBeUndefined();
+		});
+
+		it('matches by target status ID (to.id) when destination is an ID, ignoring foreign-language names (MNG-1768)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				// Localized (French) name; only `to.id` matches the ID destination.
+				{ id: 't-9', name: 'Terminer', to: { id: '10011', name: 'Terminé' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.moveWorkItem('PROJ-1', '10011');
+
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't-9');
+			expect(mockCaptureException).not.toHaveBeenCalled();
+		});
+
+		it('captures a Sentry event tagged jira_transition_not_found on a genuine miss (MNG-1768)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Done', to: { id: '10011', name: 'Done' } },
+			]);
+			// The issue is NOT already in the destination — a real miss.
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-1',
+				fields: { status: { id: '10011', name: 'Done' } },
+			});
+
+			await provider.moveWorkItem('PROJ-1', '99999');
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
+			expect(mockCaptureException).toHaveBeenCalledWith(
+				expect.any(Error),
+				expect.objectContaining({
+					tags: { jira_transition_not_found: 'true' },
+					extra: expect.objectContaining({ issueKey: 'PROJ-1', destination: '99999' }),
+				}),
+			);
+		});
+
+		it('does not capture Sentry when the issue is already in the destination status (benign no-op) (MNG-1768)', async () => {
+			// No transition matches the destination because JIRA offers no
+			// self-transition — but the issue is *already* in the destination. This
+			// is the common best-effort path (createWorkItem's backlog move, lifecycle
+			// moveOnPrepare/moveOnSuccess) and must not pollute the genuine-miss signal.
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Start Progress', to: { id: '10005', name: 'In Progress' } },
+			]);
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-1',
+				fields: { status: { id: '10000', name: 'Backlog' } },
+			});
+
+			await provider.moveWorkItem('PROJ-1', '10000');
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
+			expect(mockCaptureException).not.toHaveBeenCalled();
+		});
+
+		it('treats an already-in-destination match by status name as a benign no-op (back-compat) (MNG-1768)', async () => {
+			// Legacy name-based config: destination is a status name and the issue is
+			// already in it. Still a benign no-op, so no Sentry capture.
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-1', name: 'Start Progress', to: { id: '10005', name: 'In Progress' } },
+			]);
+			mockJiraClient.getIssue.mockResolvedValue({
+				key: 'PROJ-1',
+				fields: { status: { id: '10000', name: 'Backlog' } },
+			});
+
+			await provider.moveWorkItem('PROJ-1', 'backlog');
+
+			expect(mockJiraClient.transitionIssue).not.toHaveBeenCalled();
+			expect(mockCaptureException).not.toHaveBeenCalled();
+		});
+
+		it('does not capture Sentry when a name-based transition still resolves (back-compat)', async () => {
+			mockJiraClient.getTransitions.mockResolvedValue([
+				{ id: 't-2', name: 'Done', to: { id: '10011', name: 'Done' } },
+			]);
+			mockJiraClient.transitionIssue.mockResolvedValue(undefined);
+
+			await provider.moveWorkItem('PROJ-1', 'Done');
+
+			expect(mockJiraClient.transitionIssue).toHaveBeenCalledWith('PROJ-1', 't-2');
+			expect(mockCaptureException).not.toHaveBeenCalled();
 		});
 	});
 

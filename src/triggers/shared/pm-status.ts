@@ -105,6 +105,48 @@ export function resolvePMStatusAgentByNameFromWorkflowDefinitions(args: {
 	});
 }
 
+/**
+ * Resolve an agent from a configured-status map by matching on a
+ * locale-invariant status ID first, falling back to a case-insensitive
+ * status-name match (MNG-1768).
+ *
+ * JIRA status *names* are rendered in the language of whichever account
+ * the webhook / credential is scoped to, so name-only matching silently
+ * no-ops when the site language differs from the credential account's
+ * language. Matching on the numeric status ID (`"10010"`) is locale-proof.
+ * Name matching is retained as a fallback so existing name-based configs
+ * keep dispatching untouched.
+ *
+ * There is no collision risk between the two branches: JIRA status IDs are
+ * numeric strings while names are free text, so a configured value matches
+ * at most one interpretation.
+ *
+ * Reuses `resolvePMStatusAgentFromWorkflowDefinitions` (via a closure
+ * matcher) so the `resolveWorkflowStatusDefinition(cascadeStatus)` lookup —
+ * and therefore custom workflow statuses plus the null-`agentType` guard —
+ * keeps working unchanged.
+ */
+export function resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions(args: {
+	statusId?: string;
+	statusName?: string;
+	configuredStatuses: Record<string, string>;
+}): Promise<ResolvedPMStatusAgent | undefined> {
+	const { statusId, statusName } = args;
+	const matcher: StatusMatcher = (configuredStatus) => {
+		if (statusId && configuredStatus === statusId) return true;
+		if (statusName && configuredStatus.toLowerCase() === statusName.toLowerCase()) return true;
+		return false;
+	};
+
+	return resolvePMStatusAgentFromWorkflowDefinitions({
+		// `incomingStatus` is unused by the closure matcher above (it captures
+		// both id and name directly); pass the id when present for readable logs.
+		incomingStatus: statusId ?? statusName ?? '',
+		configuredStatuses: args.configuredStatuses,
+		matcher,
+	});
+}
+
 export function buildPMStatusCoalesceKey(projectId: string, workItemId: string): string {
 	return `${projectId}:${workItemId}`;
 }

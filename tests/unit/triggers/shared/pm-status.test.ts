@@ -14,6 +14,7 @@ import {
 	buildPMStatusDispatchResult,
 	resolvePMStatusAgentById,
 	resolvePMStatusAgentByIdFromWorkflowDefinitions,
+	resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions,
 	resolvePMStatusAgentByName,
 	resolvePMStatusAgentByNameFromWorkflowDefinitions,
 	shouldFirePMStatusEvent,
@@ -145,6 +146,105 @@ describe('PM status helpers', () => {
 				},
 			}),
 		).resolves.toBeUndefined();
+	});
+
+	describe('resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions (MNG-1768)', () => {
+		it('matches on a locale-invariant status ID', async () => {
+			await expect(
+				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+					statusId: '10010',
+					// Deliberately foreign-language name that would never match by name.
+					statusName: 'En cours',
+					configuredStatuses: {
+						todo: '10010',
+					},
+				}),
+			).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+		});
+
+		it('matches on the status name (case-insensitive) when config stores names', async () => {
+			await expect(
+				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+					statusId: '10010',
+					statusName: 'to do',
+					configuredStatuses: {
+						todo: 'To Do',
+					},
+				}),
+			).resolves.toEqual({ agentType: 'implementation', cascadeStatus: 'todo' });
+		});
+
+		it('checks the ID branch before the name branch within a single configured entry', async () => {
+			await expect(
+				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+					statusId: '10010',
+					statusName: 'To Do',
+					configuredStatuses: {
+						// Both entries are matchable: `planning` by ID, `todo` by name.
+						// The winner is the first entry that matches during iteration
+						// (here `planning`), NOT a global id-over-name preference —
+						// reversing the entry order would let `todo` win on the name.
+						// What this asserts is only that the ID branch is evaluated
+						// for `planning` before the name branch, so an ID-valued entry
+						// resolves without needing a name.
+						planning: '10010',
+						todo: 'To Do',
+					},
+				}),
+			).resolves.toEqual({ agentType: 'planning', cascadeStatus: 'planning' });
+		});
+
+		it('returns undefined when neither id nor name matches', async () => {
+			await expect(
+				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+					statusId: '99999',
+					statusName: 'Unknown',
+					configuredStatuses: {
+						todo: '10010',
+						planning: 'Planning',
+					},
+				}),
+			).resolves.toBeUndefined();
+		});
+
+		it('resolves custom workflow statuses via ID matching', async () => {
+			mockGetCustomWorkflowStatusDefinition.mockImplementation(async (key: string) => {
+				if (key === 'prd') {
+					return {
+						id: 1,
+						key: 'prd',
+						label: 'PRD',
+						agentType: 'prd',
+						sortOrder: 1000,
+						createdAt: null,
+						updatedAt: null,
+					};
+				}
+				return null;
+			});
+
+			await expect(
+				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+					statusId: '10050',
+					statusName: 'Revisión PRD',
+					configuredStatuses: {
+						prd: '10050',
+					},
+				}),
+			).resolves.toEqual({ agentType: 'prd', cascadeStatus: 'prd' });
+		});
+
+		it('ignores a matched status with no dispatch agent', async () => {
+			await expect(
+				resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+					statusId: '10011',
+					statusName: 'Done',
+					configuredStatuses: {
+						done: '10011',
+					},
+				}),
+			).resolves.toBeUndefined();
+		});
 	});
 
 	it('applies shared onCreate/onMove trigger parameter semantics', () => {

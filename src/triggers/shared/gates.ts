@@ -1,7 +1,9 @@
+import type { PRDetails } from '../../github/client.js';
 import type { PersonaIdentities } from '../../github/personas.js';
 import { isCascadeBot } from '../../github/personas.js';
 import type { ProjectConfig, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
+import { evaluateAuthorMode } from './author-mode.js';
 import { skip } from './skip.js';
 
 /**
@@ -84,6 +86,77 @@ export function gateCascadePersona(
 	return skip(
 		handlerName,
 		`PR #${prNumber} not authored by a cascade persona (author: ${prAuthorLogin})`,
+	);
+}
+
+/**
+ * Sync gate: does the PR author match the configured `authorMode` parameter?
+ *
+ * Delegates to the shared `evaluateAuthorMode` (single source of truth for
+ * author-mode logic — MNG-1774). Mirrors `gateCascadePersona`'s signature so it
+ * slots into the `??` gate chains, but adds the `parameters` bag carrying the
+ * operator's `authorMode` select (own/external/all, default own).
+ *
+ * Requires a defined `PersonaIdentities` — pair with `requirePersonaIdentities`
+ * exactly like `gateCascadePersona`. (When `personaIdentities` is nonetheless
+ * undefined, `evaluateAuthorMode` returns null and this gate emits the same
+ * persona-resolution skip as the other gates, defense-in-depth.)
+ */
+export function gateAuthorMode(
+	prAuthorLogin: string,
+	prNumber: number,
+	personaIdentities: PersonaIdentities,
+	parameters: Record<string, unknown>,
+	handlerName: string,
+): TriggerResult | null {
+	const result = evaluateAuthorMode(prAuthorLogin, personaIdentities, parameters, handlerName);
+	if (!result) {
+		return skip(
+			handlerName,
+			'Cascade persona identities could not be resolved (token / GitHub API issue)',
+		);
+	}
+	if (result.shouldTrigger) return null;
+	logger.info(`PR author does not match configured authorMode, skipping ${handlerName}`, {
+		prNumber,
+		prAuthor: prAuthorLogin,
+		authorMode: result.authorMode,
+		isCascadePR: result.isCascadePR,
+	});
+	return skip(
+		handlerName,
+		`PR #${prNumber} author ${prAuthorLogin} does not match configured authorMode '${result.authorMode}' (isCascadePR=${result.isCascadePR})`,
+	);
+}
+
+/**
+ * Sync gate: does the PR head branch live on the base repo (not a fork)?
+ *
+ * respond-to-ci and resolve-conflicts *push commits*; CASCADE has no write
+ * access to a contributor's fork, so a fork PR would fire → fail at push. This
+ * gate turns that into a clean, self-explanatory skip (MNG-1774). Only relevant
+ * under `authorMode: external`/`all` — cascade-authored PRs are always
+ * same-repo, so `isFork` is false and this is a no-op for `own` mode.
+ *
+ * `isFork` is optional on `PRDetails` and defaults to non-fork, so callers with
+ * older mocks / same-repo PRs pass through unchanged.
+ */
+export function gateForkWriteAccess(
+	prDetails: Pick<PRDetails, 'isFork' | 'headRepoFullName'>,
+	prNumber: number,
+	handlerName: string,
+): TriggerResult | null {
+	if (!prDetails.isFork) return null;
+	const forkTarget = prDetails.headRepoFullName
+		? `fork ${prDetails.headRepoFullName}`
+		: 'a deleted/unavailable fork head';
+	logger.info(`PR head branch lives on a fork, skipping ${handlerName}`, {
+		prNumber,
+		headRepoFullName: prDetails.headRepoFullName ?? null,
+	});
+	return skip(
+		handlerName,
+		`PR #${prNumber} head branch lives on ${forkTarget} — CASCADE has no write access to push fixes; skipping ${handlerName}`,
 	);
 }
 

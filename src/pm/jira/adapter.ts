@@ -5,6 +5,7 @@
  */
 
 import { jiraClient } from '../../jira/client.js';
+import { captureException } from '../../sentry.js';
 import { logger } from '../../utils/logging.js';
 import { withDescriptionMutationLock } from '../_shared/description-mutation-lock.js';
 import {
@@ -45,6 +46,16 @@ import { adfToPlainText, extractAdfMediaNodes, markdownToAdf } from './adf.js';
  * enforces invariance on object-property types. Internally the adapter
  * uses `config.containerId` as a JIRA project key — the project-scoped
  * entry point.
+ *
+ * MNG-1769: `createWorkItem` reads the operator's Task mapping from
+ * `issueTypes.task` — the exact key the wizard's `IssueTypeMappingStep`
+ * writes (`web/src/components/projects/pm-providers/jira/issue-type-step.tsx`).
+ * The `'Task'` string is the last-resort fallback for configs that never set
+ * a mapping. The legacy `issueTypes.default` key is intentionally NOT read —
+ * nothing ever wrote it, so honoring it would resurrect the bug where every
+ * JIRA issue was hardcoded to type `"Task"`. `subtask` is intentionally not
+ * consumed: there is no subtask-creation path. This is the "wizard writes X →
+ * runtime reads X" contract, mirroring MNG-1768's parity guard.
  */
 
 interface JiraConfig {
@@ -101,9 +112,15 @@ interface JiraAttachment {
 
 /** Partial shape of a JIRA transition */
 interface JiraTransition {
+	/** The *transition* ID (distinct from `to.id`, the target status ID). */
 	id?: string;
 	name?: string;
-	to?: { name?: string };
+	/**
+	 * The target status object. `to.id` is the locale-invariant status ID —
+	 * the JIRA REST transitions endpoint returns a full status object here.
+	 * `to.name` is the localized status name.
+	 */
+	to?: { id?: string; name?: string };
 }
 
 export class JiraPMProvider implements PMProvider {
@@ -187,14 +204,23 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async createWorkItem(config: CreateWorkItemConfig): Promise<WorkItem> {
-		const issueType = this.config.issueTypes?.default ?? 'Task';
-		const result = await jiraClient.createIssue({
-			project: { key: config.containerId || this.config.projectKey },
-			summary: config.title,
-			description: config.description ? markdownToAdf(config.description) : undefined,
-			issuetype: { name: issueType },
-			...(config.labels?.length ? { labels: config.labels } : {}),
-		});
+		// MNG-1769: read the key the wizard actually writes (`issueTypes.task`),
+		// not the never-written legacy `issueTypes.default`. `'Task'` remains the
+		// last-resort fallback for configs that never set a mapping.
+		const issueType = this.config.issueTypes?.task ?? 'Task';
+		const projectKey = config.containerId || this.config.projectKey;
+		let result: Awaited<ReturnType<typeof jiraClient.createIssue>>;
+		try {
+			result = await jiraClient.createIssue({
+				project: { key: projectKey },
+				summary: config.title,
+				description: config.description ? markdownToAdf(config.description) : undefined,
+				issuetype: { name: issueType },
+				...(config.labels?.length ? { labels: config.labels } : {}),
+			});
+		} catch (err) {
+			throw await this.enrichCreateIssueError(err, projectKey, issueType);
+		}
 		const key = result.key ?? '';
 
 		// Transition to backlog status if configured
@@ -223,6 +249,45 @@ export class JiraPMProvider implements PMProvider {
 		};
 	}
 
+	/**
+	 * MNG-1769: when `jiraClient.createIssue` fails (commonly a JIRA 400 because
+	 * the configured/fallback issue type does not exist on the project), best-effort
+	 * fetch the project's discovered issue types and re-throw an Error naming the
+	 * attempted type and the available non-subtask types. This turns an opaque JIRA
+	 * 400 into an actionable message pointing the operator at the wizard mapping.
+	 *
+	 * The diagnostic fetch is guarded in its own try/catch so a discovery failure
+	 * never masks the original creation error — if discovery also fails, the
+	 * original error surfaces unchanged.
+	 */
+	private async enrichCreateIssueError(
+		originalError: unknown,
+		projectKey: string,
+		attemptedType: string,
+	): Promise<unknown> {
+		try {
+			const types = await jiraClient.getIssueTypesForProject(projectKey);
+			const available = types
+				.filter((t) => !t.subtask)
+				.map((t) => t.name)
+				.filter((name) => name.length > 0);
+			return new Error(
+				`Failed to create JIRA issue in project "${projectKey}" with issue type "${attemptedType}". ` +
+					`Available issue types for this project: ${
+						available.length > 0 ? available.join(', ') : '(none discovered)'
+					}. ` +
+					`Map the Task role to one of these in the JIRA wizard's issue-type step. ` +
+					`Original error: ${String(originalError)}`,
+			);
+		} catch (discoveryErr) {
+			logger.warn('[JIRA] Could not fetch issue types while enriching createIssue error', {
+				projectKey,
+				error: String(discoveryErr),
+			});
+			return originalError;
+		}
+	}
+
 	async listWorkItems(
 		containerId: ContainerId | undefined,
 		filter?: ListWorkItemsFilter,
@@ -232,10 +297,15 @@ export class JiraPMProvider implements PMProvider {
 		if (!projectKey) return [];
 		let jql = `project = "${projectKey}"`;
 		if (filter?.status) {
-			// Map CASCADE status key (e.g. 'todo') to native JIRA status name
-			// via config.statuses. Falls through to the literal value when no
-			// mapping exists, preserving backwards compat with callers that
+			// Map CASCADE status key (e.g. 'todo') to the native JIRA status
+			// value via config.statuses. Falls through to the literal value when
+			// no mapping exists, preserving backwards compat with callers that
 			// pass status names directly.
+			//
+			// MNG-1768: config.statuses values are now status IDs (locale-proof),
+			// with names accepted as a legacy fallback. JQL accepts a quoted
+			// status ID (`status = "10010"`) just as it accepts a quoted name, so
+			// ID-based config values continue to resolve here with no change.
 			const native = this.config.statuses?.[filter.status] ?? filter.status;
 			jql += ` AND status = "${native}"`;
 		}
@@ -256,23 +326,81 @@ export class JiraPMProvider implements PMProvider {
 	}
 
 	async moveWorkItem(id: string, destination: ContainerId): Promise<void> {
-		// destination is a JIRA status name — find the transition ID
+		// `destination` is a JIRA status ID (MNG-1768: locale-invariant) or,
+		// for legacy name-based configs, a status name. Find the transition
+		// whose *target status* matches.
 		const transitions = await jiraClient.getTransitions(id);
 		const transition = transitions.find(
 			(t: JiraTransition) =>
+				// Prefer the locale-invariant target status ID (`t.to.id`, distinct
+				// from `t.id` which is the *transition* ID no caller passes here).
+				t.to?.id === destination ||
+				// Legacy name-based configs: match the transition's own name or its
+				// target status name (both localized, case-insensitive).
 				t.name?.toLowerCase() === destination.toLowerCase() ||
-				t.to?.name?.toLowerCase() === destination.toLowerCase() ||
-				t.id === destination,
+				t.to?.name?.toLowerCase() === destination.toLowerCase(),
 		);
 		if (!transition) {
+			// A missing transition is benign when the issue is *already* in the
+			// destination status: JIRA exposes no self-transition, so best-effort
+			// callers (createWorkItem's backlog move at ~L214, lifecycle
+			// moveOnPrepare/moveOnSuccess) legitimately reach here on a no-op.
+			// Only a genuine locale/misconfig miss should be surfaced loudly, so
+			// the `jira_transition_not_found` Sentry signal stays meaningful.
+			if (await this.isAlreadyInStatus(id, destination)) {
+				logger.debug('JIRA issue already in destination status; move is a no-op', {
+					issueKey: id,
+					destination,
+				});
+				return;
+			}
+			const available = transitions.map(
+				(t: JiraTransition) => `${t.id}:${t.name} (to ${t.to?.id}:${t.to?.name})`,
+			);
 			logger.warn('No JIRA transition found for destination', {
 				issueKey: id,
 				destination,
-				available: transitions.map((t: JiraTransition) => `${t.id}:${t.name}`),
+				available,
+			});
+			// MNG-1768: make the silent miss loud. A localized / misconfigured
+			// account whose transitions never match `destination` is otherwise
+			// invisible — this capture surfaces it on the first run. No-op when
+			// SENTRY_DSN is unset.
+			captureException(new Error('No JIRA transition found for destination'), {
+				tags: { jira_transition_not_found: 'true' },
+				extra: { issueKey: id, destination, available },
 			});
 			return;
 		}
 		await jiraClient.transitionIssue(id, transition.id ?? '');
+	}
+
+	/**
+	 * MNG-1768: report whether an issue is already in `destination` so a missing
+	 * transition can be treated as a benign no-op rather than a genuine
+	 * locale/misconfig miss worth a Sentry capture. Best-effort callers
+	 * (`createWorkItem`'s backlog move, lifecycle `moveOnPrepare`/`moveOnSuccess`)
+	 * move unconditionally without first checking the current status, and JIRA
+	 * offers no self-transition, so an already-there issue is the common way a
+	 * legitimate move reaches the miss path. Matches the current status by
+	 * locale-invariant ID first, then case-insensitive name (mirroring the
+	 * transition matcher). Any read failure returns `false` so a real miss is
+	 * never suppressed.
+	 */
+	private async isAlreadyInStatus(id: string, destination: string): Promise<boolean> {
+		try {
+			const issue = await jiraClient.getIssue(id);
+			const status = issue?.fields?.status as { id?: string; name?: string } | undefined;
+			return (
+				status?.id === destination || status?.name?.toLowerCase() === destination.toLowerCase()
+			);
+		} catch (err) {
+			logger.debug('Could not read current JIRA status for no-op check', {
+				issueKey: id,
+				error: String(err),
+			});
+			return false;
+		}
 	}
 
 	async addLabel(id: string, labelName: LabelId): Promise<void> {

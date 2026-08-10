@@ -1,12 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../../../src/utils/logging.js', () => ({
-	logger: {
+const { mockLogger } = vi.hoisted(() => ({
+	mockLogger: {
 		debug: vi.fn(),
 		info: vi.fn(),
 		warn: vi.fn(),
 		error: vi.fn(),
 	},
+}));
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: mockLogger,
 }));
 
 // Use vi.hoisted to create mock objects before vi.mock factories run
@@ -670,12 +674,16 @@ describe('jiraClient', () => {
 	});
 
 	describe('searchProjects', () => {
-		it('returns project keys and names', async () => {
-			mockProjects.searchProjects.mockResolvedValue({
+		it('returns a single page when isLast is true', async () => {
+			mockProjects.searchProjects.mockResolvedValueOnce({
 				values: [
 					{ key: 'PROJ', name: 'My Project' },
 					{ key: 'TEST', name: 'Test Project' },
 				],
+				isLast: true,
+				total: 2,
+				startAt: 0,
+				maxResults: 50,
 			});
 
 			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
@@ -684,12 +692,85 @@ describe('jiraClient', () => {
 				{ key: 'PROJ', name: 'My Project' },
 				{ key: 'TEST', name: 'Test Project' },
 			]);
-			expect(mockProjects.searchProjects).toHaveBeenCalledWith({ maxResults: 100 });
+			expect(mockProjects.searchProjects).toHaveBeenCalledTimes(1);
+			expect(mockProjects.searchProjects).toHaveBeenCalledWith({
+				startAt: 0,
+				maxResults: 50,
+				orderBy: 'name',
+			});
+		});
+
+		it('paginates across multiple pages and concatenates the results', async () => {
+			mockProjects.searchProjects
+				.mockResolvedValueOnce({
+					values: [
+						{ key: 'PROJ', name: 'My Project' },
+						{ key: 'TEST', name: 'Test Project' },
+					],
+					isLast: false,
+					total: 3,
+					startAt: 0,
+					maxResults: 50,
+				})
+				.mockResolvedValueOnce({
+					values: [{ key: 'THIRD', name: 'Third Project' }],
+					isLast: true,
+					total: 3,
+					startAt: 2,
+					maxResults: 50,
+				});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
+
+			expect(result).toEqual([
+				{ key: 'PROJ', name: 'My Project' },
+				{ key: 'TEST', name: 'Test Project' },
+				{ key: 'THIRD', name: 'Third Project' },
+			]);
+			expect(mockProjects.searchProjects).toHaveBeenCalledTimes(2);
+			expect(mockProjects.searchProjects).toHaveBeenNthCalledWith(1, {
+				startAt: 0,
+				maxResults: 50,
+				orderBy: 'name',
+			});
+			expect(mockProjects.searchProjects).toHaveBeenNthCalledWith(2, {
+				startAt: 2,
+				maxResults: 50,
+				orderBy: 'name',
+			});
+		});
+
+		it('terminates via startAt >= total even when isLast is absent', async () => {
+			mockProjects.searchProjects
+				.mockResolvedValueOnce({
+					values: [
+						{ key: 'A', name: 'Alpha' },
+						{ key: 'B', name: 'Beta' },
+					],
+					total: 2,
+					startAt: 0,
+					maxResults: 50,
+				})
+				.mockResolvedValueOnce({
+					values: [{ key: 'C', name: 'Gamma' }],
+					total: 2,
+					startAt: 2,
+					maxResults: 50,
+				});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
+
+			expect(result).toEqual([
+				{ key: 'A', name: 'Alpha' },
+				{ key: 'B', name: 'Beta' },
+			]);
+			expect(mockProjects.searchProjects).toHaveBeenCalledTimes(1);
 		});
 
 		it('handles missing fields gracefully', async () => {
-			mockProjects.searchProjects.mockResolvedValue({
+			mockProjects.searchProjects.mockResolvedValueOnce({
 				values: [{}, { key: 'X' }],
+				isLast: true,
 			});
 
 			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
@@ -700,12 +781,32 @@ describe('jiraClient', () => {
 			]);
 		});
 
-		it('returns empty array when values is missing', async () => {
-			mockProjects.searchProjects.mockResolvedValue({});
+		it('returns empty array and terminates when values is missing', async () => {
+			mockProjects.searchProjects.mockResolvedValueOnce({});
 
 			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
 
 			expect(result).toEqual([]);
+			expect(mockProjects.searchProjects).toHaveBeenCalledTimes(1);
+		});
+
+		it('stops at the safety cap when the API never reports the last page', async () => {
+			// Always return a full page with isLast: false and no reachable total,
+			// so only the MAX_PROJECT_PAGES safety cap can terminate the loop.
+			mockProjects.searchProjects.mockResolvedValue({
+				values: Array.from({ length: 50 }, (_, i) => ({ key: `K${i}`, name: `Name ${i}` })),
+				isLast: false,
+			});
+
+			const result = await withJiraCredentials(creds, () => jiraClient.searchProjects());
+
+			// 200 pages (MAX_PROJECT_PAGES) × 50 per page.
+			expect(mockProjects.searchProjects).toHaveBeenCalledTimes(200);
+			expect(result).toHaveLength(200 * 50);
+			expect(mockLogger.warn).toHaveBeenCalledWith(
+				'JIRA project pagination hit safety cap',
+				expect.objectContaining({ maxPages: 200 }),
+			);
 		});
 	});
 

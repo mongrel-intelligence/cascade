@@ -123,14 +123,24 @@ The handler reads the item's current Status option ID authoritatively via GraphQ
 | Handler | Event | Agent |
 |---------|-------|-------|
 | `CheckSuiteSuccessTrigger` | CI passed | `review` (with `authorMode` param) |
-| `CheckSuiteFailureTrigger` | CI failed | `respond-to-ci` |
+| `CheckSuiteFailureTrigger` | CI failed | `respond-to-ci` (with `authorMode` param) |
 | `PrReviewSubmittedTrigger` | Review with changes_requested | `respond-to-review` |
 | `ReviewRequestedTrigger` | Bot requested as reviewer | `review` |
 | `PrOpenedTrigger` | PR opened | `review` |
 | `PrCommentMentionTrigger` | Bot @mentioned in PR comment | `respond-to-pr-comment` |
 | `PrMergedTrigger` | PR merged | PM status update (no agent) |
 | `PrReadyToMergeTrigger` | PR approved + checks pass | PM status update (no agent) |
-| `PrConflictDetectedTrigger` | Merge conflict on PR | `resolve-conflicts` |
+| `PrConflictDetectedTrigger` | Merge conflict on PR | `resolve-conflicts` (with `authorMode` param) |
+
+The `authorMode` parameter (`own` / `external` / `all`, default `own`) filters PRs
+by author type for `CheckSuiteSuccessTrigger`, `CheckSuiteFailureTrigger`, and
+`PrConflictDetectedTrigger`. `own` restricts dispatch to CASCADE-authored PRs
+(the historical behavior); `external`/`all` extend it to human-authored PRs. The
+shared evaluator lives in `src/triggers/shared/author-mode.ts`. Because
+`respond-to-ci` and `resolve-conflicts` *push commits* and CASCADE has no write
+access to a contributor's fork, both apply a **fork write-access skip**
+(`gateForkWriteAccess`) — a fork PR under `external`/`all` produces a clean,
+self-explanatory skip instead of failing mid-run at `git push`.
 
 ### Linear triggers (`src/triggers/linear/`)
 

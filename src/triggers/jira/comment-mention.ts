@@ -72,25 +72,38 @@ function hasMention(body: unknown, accountId: string, depth = 0): boolean {
  * Check if the issue is in the configured PLANNING status.
  * Returns false (and logs) when the project has no planning status configured
  * or the issue's current status doesn't match.
+ *
+ * MNG-1768: the configured `planning` value is a locale-invariant status ID for
+ * migrated configs (a status name for legacy configs). Match the ID first, then
+ * fall back to a case-insensitive name comparison so both config shapes work.
+ * Without the ID branch, an ID-based config (all new projects, plus any re-saved
+ * project) would compare the localized `status.name` against a numeric ID and
+ * silently never gate the comment-mention trigger.
  */
 function isInPlanningStatus(
 	project: TriggerContext['project'],
 	issueKey: string,
+	currentStatusId: string | undefined,
 	currentStatusName: string | undefined,
 ): boolean {
-	const planningStatusName = getJiraConfig(project)?.statuses.planning;
-	if (!planningStatusName) {
+	const configuredPlanningStatus = getJiraConfig(project)?.statuses.planning;
+	if (!configuredPlanningStatus) {
 		logger.debug(
 			'Planning status not configured for JIRA project, skipping comment mention trigger',
 			{ projectId: project.id },
 		);
 		return false;
 	}
-	if (currentStatusName?.toLowerCase() !== planningStatusName.toLowerCase()) {
+	const matchesId = currentStatusId !== undefined && currentStatusId === configuredPlanningStatus;
+	const matchesName =
+		currentStatusName !== undefined &&
+		currentStatusName.toLowerCase() === configuredPlanningStatus.toLowerCase();
+	if (!matchesId && !matchesName) {
 		logger.debug('JIRA issue not in planning status, skipping comment mention trigger', {
 			issueKey,
-			currentStatus: currentStatusName,
-			planningStatus: planningStatusName,
+			currentStatusId,
+			currentStatusName,
+			planningStatus: configuredPlanningStatus,
 		});
 		return false;
 	}
@@ -177,9 +190,12 @@ export class JiraCommentMentionTrigger implements TriggerHandler {
 			return null;
 		}
 
-		// Gate on PLANNING status — only respond to comments on PLANNING issues
+		// Gate on PLANNING status — only respond to comments on PLANNING issues.
+		// MNG-1768: pass both the locale-invariant status ID and the localized
+		// name so the gate matches ID-based configs and legacy name-based configs.
+		const currentStatusId = payload.issue?.fields?.status?.id;
 		const currentStatusName = payload.issue?.fields?.status?.name;
-		if (!isInPlanningStatus(ctx.project, issueKey, currentStatusName)) {
+		if (!isInPlanningStatus(ctx.project, issueKey, currentStatusId, currentStatusName)) {
 			return null;
 		}
 		const jiraConfig = getJiraConfig(ctx.project);

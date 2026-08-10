@@ -12,7 +12,11 @@
  * - post-comment (basic param-passing)
  */
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { rmSync, writeFileSync } from 'node:fs';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { UPDATE_CHANNEL_FILE } from '../../../../src/config/updateChannel.js';
 
 // ---------------------------------------------------------------------------
 // Mock credential-scoping dependencies (same as file-input-flags.test.ts)
@@ -970,5 +974,147 @@ describe('PM CLI runtime failure envelopes (MNG-1428)', () => {
 		const output = readJsonOutput(logSpy);
 		expect(output.success).toBe(false);
 		expect(output.error).toEqual({ type: 'runtime', message: 'Provider 404' });
+	});
+});
+
+// ---------------------------------------------------------------------------
+// post-comment update-channel gate (MNG-1687)
+//
+// `cascade-tools pm post-comment` must honor the per-agent update channel even
+// when invoked via bash — the native-tool prompt-suppression layer only silences
+// implementation.eta, so this CLI gate is the engine-wide defense for every
+// PM-posting agent. It resolves the channel from CASCADE_UPDATE_CHANNEL, then
+// falls back to the /tmp channel file (claude-code drops custom env vars from
+// bash subprocesses), then defaults to `both` (post). When PM posting is
+// disabled it returns a structured `{ skipped: true, reason }` instead of posting.
+// ---------------------------------------------------------------------------
+describe('PostComment command — update channel gate', () => {
+	let originalChannelEnv: string | undefined;
+
+	beforeEach(() => {
+		originalChannelEnv = process.env.CASCADE_UPDATE_CHANNEL;
+		Reflect.deleteProperty(process.env, 'CASCADE_UPDATE_CHANNEL');
+		try {
+			rmSync(UPDATE_CHANNEL_FILE, { force: true });
+		} catch {
+			/* no-op */
+		}
+		// Re-establish a resolved implementation (a prior test may have set a reject).
+		vi.mocked(postComment).mockResolvedValue({ id: 'comment-1' } as never);
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(UPDATE_CHANNEL_FILE, { force: true });
+		} catch {
+			/* no-op */
+		}
+		if (originalChannelEnv !== undefined) {
+			process.env.CASCADE_UPDATE_CHANNEL = originalChannelEnv;
+		} else {
+			Reflect.deleteProperty(process.env, 'CASCADE_UPDATE_CHANNEL');
+		}
+	});
+
+	it("posts when the channel is 'both' (env var)", async () => {
+		process.env.CASCADE_UPDATE_CHANNEL = 'both';
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		expect(postComment).toHaveBeenCalledWith('card-1', 'Hi');
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output.success).toBe(true);
+		expect(output.data).toEqual({ id: 'comment-1' });
+	});
+
+	it('posts when no channel is configured (env absent, no file → defaults to both)', async () => {
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		await cmd.run();
+
+		expect(postComment).toHaveBeenCalledWith('card-1', 'Hi');
+	});
+
+	it("skips (does not post) when the channel is 'scm-only' (env var)", async () => {
+		process.env.CASCADE_UPDATE_CHANNEL = 'scm-only';
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		expect(postComment).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output.success).toBe(true);
+		expect(output.data).toEqual({
+			skipped: true,
+			reason: 'PM posting disabled by update channel (scm-only)',
+		});
+	});
+
+	it("skips when the channel is 'none' (env var)", async () => {
+		process.env.CASCADE_UPDATE_CHANNEL = 'none';
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		expect(postComment).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output.data).toEqual({
+			skipped: true,
+			reason: 'PM posting disabled by update channel (none)',
+		});
+	});
+
+	it('falls back to the channel file when the env var is stripped (scm-only)', async () => {
+		// Simulates the claude-code subprocess dropping CASCADE_UPDATE_CHANNEL:
+		// the env var is absent, but the orchestrator wrote the /tmp channel file.
+		writeFileSync(UPDATE_CHANNEL_FILE, 'scm-only', 'utf-8');
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		const logSpy = vi.spyOn(cmd, 'log');
+		await cmd.run();
+
+		expect(postComment).not.toHaveBeenCalled();
+		const output = JSON.parse(logSpy.mock.calls[0][0] as string);
+		expect(output.data).toEqual({
+			skipped: true,
+			reason: 'PM posting disabled by update channel (scm-only)',
+		});
+	});
+
+	it('env var wins over the channel file when both are present', async () => {
+		process.env.CASCADE_UPDATE_CHANNEL = 'both';
+		writeFileSync(UPDATE_CHANNEL_FILE, 'scm-only', 'utf-8');
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		await cmd.run();
+
+		expect(postComment).toHaveBeenCalledWith('card-1', 'Hi');
+	});
+
+	it('defaults to both (posts) when the channel file holds invalid content', async () => {
+		writeFileSync(UPDATE_CHANNEL_FILE, 'garbage-not-a-channel', 'utf-8');
+		const cmd = new PostComment(
+			['--workItemId', 'card-1', '--text', 'Hi'],
+			makeMockConfig() as never,
+		);
+		await cmd.run();
+
+		expect(postComment).toHaveBeenCalledWith('card-1', 'Hi');
 	});
 });

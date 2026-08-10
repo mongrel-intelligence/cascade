@@ -3,6 +3,7 @@ import { TRIGGER_EVENTS } from './events.js';
 import {
 	resolvePMStatusAgentById,
 	resolvePMStatusAgentByIdFromWorkflowDefinitions,
+	resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions,
 	resolvePMStatusAgentByName,
 	resolvePMStatusAgentByNameFromWorkflowDefinitions,
 } from './pm-status.js';
@@ -53,6 +54,29 @@ export function resolvePMLabelAgentByStatusNameFromWorkflowDefinitions(args: {
 	configuredStatuses: Record<string, string>;
 }): Promise<{ agentType: string; cascadeStatus: string } | undefined> {
 	return resolvePMStatusAgentByNameFromWorkflowDefinitions({
+		statusName: args.statusName,
+		configuredStatuses: args.configuredStatuses,
+	});
+}
+
+/**
+ * Resolve a label-trigger agent from a JIRA issue's current status by matching
+ * on the locale-invariant status ID first, falling back to a case-insensitive
+ * status-name match (MNG-1768).
+ *
+ * The `jira.statuses` config values are locale-invariant status IDs for
+ * migrated configs (status names for legacy configs). Delegating to
+ * `resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions` keeps the label
+ * trigger consistent with the status-changed dispatch path, so the
+ * `cascade-ready` label flow keeps firing once a project's config holds IDs.
+ */
+export function resolvePMLabelAgentByStatusIdOrNameFromWorkflowDefinitions(args: {
+	statusId?: string;
+	statusName?: string;
+	configuredStatuses: Record<string, string>;
+}): Promise<{ agentType: string; cascadeStatus: string } | undefined> {
+	return resolvePMStatusAgentByIdOrNameFromWorkflowDefinitions({
+		statusId: args.statusId,
 		statusName: args.statusName,
 		configuredStatuses: args.configuredStatuses,
 	});

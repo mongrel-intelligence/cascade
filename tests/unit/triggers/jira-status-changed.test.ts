@@ -54,13 +54,29 @@ function buildCtx(
 		source?: TriggerContext['source'];
 		webhookEvent?: string;
 		issueKey?: string;
-		statusChangeItems?: Array<{ field?: string; fromString?: string; toString?: string }>;
+		statusChangeItems?: Array<{
+			field?: string;
+			from?: string;
+			to?: string;
+			fromString?: string;
+			toString?: string;
+		}>;
 		noJiraConfig?: boolean;
 		/** Status name in issue.fields.status.name (for creation events) */
 		issueStatusName?: string;
+		/** Status ID in issue.fields.status.id (for creation events) */
+		issueStatusId?: string;
+		/** Override the configured jira.statuses map (locale/id-based repros) */
+		configuredStatuses?: Record<string, string>;
 	} = {},
 ): TriggerContext {
-	const project = overrides.noJiraConfig ? { ...mockProject, jira: undefined } : mockProject;
+	const baseProject = overrides.configuredStatuses
+		? {
+				...mockProject,
+				jira: { ...mockProject.jira, statuses: overrides.configuredStatuses },
+			}
+		: mockProject;
+	const project = overrides.noJiraConfig ? { ...baseProject, jira: undefined } : baseProject;
 
 	return {
 		project: project as TriggerContext['project'],
@@ -71,8 +87,15 @@ function buildCtx(
 				key: overrides.issueKey ?? 'PROJ-42',
 				fields: {
 					summary: 'Test Issue',
-					...(overrides.issueStatusName !== undefined
-						? { status: { name: overrides.issueStatusName } }
+					...(overrides.issueStatusName !== undefined || overrides.issueStatusId !== undefined
+						? {
+								status: {
+									...(overrides.issueStatusName !== undefined
+										? { name: overrides.issueStatusName }
+										: {}),
+									...(overrides.issueStatusId !== undefined ? { id: overrides.issueStatusId } : {}),
+								},
+							}
 						: {}),
 				},
 			},
@@ -218,6 +241,67 @@ describe('JiraStatusChangedTrigger', () => {
 			expect(await trigger.handle(ctx)).toBeNull();
 		});
 
+		it('dispatches via status ID when config stores IDs and toString is a foreign language (MNG-1768 repro)', async () => {
+			// Config maps `todo` → status ID "10010". The webhook carries the
+			// localized name "En cours" (French) which would never match by name,
+			// but the id `to: '10010'` matches locale-invariantly.
+			const ctx = buildCtx({
+				configuredStatuses: {
+					backlog: '10000',
+					todo: '10010',
+					done: '10011',
+				},
+				statusChangeItems: [
+					{
+						field: 'status',
+						from: '10000',
+						to: '10010',
+						fromString: 'Backlog',
+						toString: 'En cours',
+					},
+				],
+			});
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('implementation');
+			expect(result?.workItemId).toBe('PROJ-42');
+		});
+
+		it('still dispatches via toString when config stores names (back-compat)', async () => {
+			const ctx = buildCtx({
+				statusChangeItems: [
+					{ field: 'status', from: '10000', to: '10010', fromString: 'Backlog', toString: 'To Do' },
+				],
+			});
+
+			expect((await trigger.handle(ctx))?.agentType).toBe('implementation');
+		});
+
+		it('logs toStatusId alongside toStatus on the update path', async () => {
+			const ctx = buildCtx({
+				statusChangeItems: [
+					{
+						field: 'status',
+						from: '10000',
+						to: '10005',
+						fromString: 'Backlog',
+						toString: 'Splitting',
+					},
+				],
+			});
+			await trigger.handle(ctx);
+
+			expect(mockLogger.info).toHaveBeenCalledWith(
+				expect.stringContaining('JIRA'),
+				expect.objectContaining({
+					toStatus: 'Splitting',
+					toStatusId: '10005',
+					eventKind: 'move',
+				}),
+			);
+		});
+
 		it('logs fromStatus on the update path', async () => {
 			const ctx = buildCtx({
 				statusChangeItems: [{ field: 'status', fromString: 'Backlog', toString: 'Splitting' }],
@@ -268,6 +352,24 @@ describe('JiraStatusChangedTrigger', () => {
 				issueStatusName: 'Splitting',
 			});
 			expect((await trigger.handle(ctx))?.agentType).toBe('splitting');
+		});
+
+		it('resolves the create path via status.id when config stores IDs (MNG-1768)', async () => {
+			mockTriggerConfig(true, { onCreate: true, onMove: true });
+			const ctx = buildCtx({
+				webhookEvent: 'jira:issue_created',
+				configuredStatuses: {
+					todo: '10010',
+				},
+				// Foreign-language name; only the id matches.
+				issueStatusName: 'En cours',
+				issueStatusId: '10010',
+			});
+
+			const result = await trigger.handle(ctx);
+
+			expect(result?.agentType).toBe('implementation');
+			expect(result?.workItemId).toBe('PROJ-42');
 		});
 
 		it('returns null when onCreate is true but status is unmapped', async () => {

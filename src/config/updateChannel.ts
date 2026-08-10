@@ -35,6 +35,28 @@ export const DEFAULT_UPDATE_CHANNEL: UpdateChannel = 'both';
 export const UpdateChannelSchema = z.enum(UPDATE_CHANNELS);
 
 /**
+ * Worker env var carrying the resolved update channel to `cascade-tools`
+ * subprocesses (the native-tool engine path). Injected for every run by
+ * `augmentProjectSecrets` so the CLI gate (e.g. `cascade-tools pm post-comment`)
+ * can enforce the channel even when a posting command is invoked via bash,
+ * bypassing the in-process {@link filterPostingGadgetNames} filter.
+ */
+export const UPDATE_CHANNEL_ENV_VAR = 'CASCADE_UPDATE_CHANNEL';
+
+/**
+ * Channel file written by the worker process before the agent starts. Used as a
+ * fallback when {@link UPDATE_CHANNEL_ENV_VAR} is stripped by the claude
+ * subprocess chain (observed with @anthropic-ai/claude-code ≤ 2.1.185 — the
+ * bun-compiled binary does not forward all custom env vars to bash subprocesses,
+ * which is exactly why the sibling review-event-policy gate added a file
+ * fallback too). The path is fixed inside the ephemeral worker container's /tmp,
+ * so there is no cross-run collision. Written UNCONDITIONALLY with the run's
+ * resolved channel so the file always reflects the current run and self-corrects
+ * if a /tmp path is ever reused.
+ */
+export const UPDATE_CHANNEL_FILE = '/tmp/cascade-update-channel';
+
+/**
  * Minimal structural shape that {@link resolveUpdateChannel} reads from a
  * project.
  *

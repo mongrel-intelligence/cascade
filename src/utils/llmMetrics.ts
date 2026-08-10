@@ -3,27 +3,54 @@
  * Provides cost calculation.
  */
 import type { TokenUsage } from 'llmist';
+import { captureException } from '../sentry.js';
+import { logger } from './logging.js';
+
+/**
+ * Models we've already warned about this process, so a missing-pricing row logs/captures
+ * once per unique model instead of on every LLM call/turn. Workers are ephemeral (one job
+ * per container), so process-level dedup is the right granularity.
+ */
+const warnedMissingPricing = new Set<string>();
 
 /**
  * Model pricing per 1M tokens (in USD).
- * Prices as of January 2026.
+ * Prices as of August 2026.
  */
-const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput?: number }> = {
+export const MODEL_PRICING: Record<
+	string,
+	{ input: number; output: number; cachedInput?: number }
+> = {
 	// Anthropic Claude Fable 5 — 1M context by default (max = default), priced at 2× Opus.
 	// Key matches toPricingKey('claude-fable-5') = 'anthropic:claude-fable-5' (no trailing
 	// date to strip). cachedInput follows the 0.1× convention used by every Anthropic row.
 	'anthropic:claude-fable-5': { input: 10.0, output: 50.0, cachedInput: 1.0 },
+
+	// Anthropic Claude 5 family
+	// Opus 5: mirrors Opus 4.8 pricing; cachedInput follows the 0.1× Anthropic convention.
+	'anthropic:claude-opus-5': { input: 5.0, output: 25.0, cachedInput: 0.5 },
+	// Sonnet 5: seeded at standard post-intro rates. Intro pricing is $2.00/$10.00 per MTok
+	// through 2026-08-31; seeding at standard rates over-reports during the intro window,
+	// which is the safe direction for budgets (never under-reports). Revisit before that
+	// date if a short-lived intro-rate edit is wanted.
+	'anthropic:claude-sonnet-5': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 
 	// Anthropic Claude 4 family
 	'anthropic:claude-opus-4-8': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-8[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-7': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-7[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
+	// Bare claude-opus-4-6 backfill (was only present as the [1m] variant, so the bare
+	// dropdown ID ran unpriced at $0 — a silent budget bypass). Mirrors the [1m] row.
+	'anthropic:claude-opus-4-6': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-opus-4-6[1m]': { input: 5.0, output: 25.0, cachedInput: 0.5 },
 	'anthropic:claude-sonnet-4-6': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-sonnet-4-6[1m]': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-sonnet-4-5': { input: 3.0, output: 15.0, cachedInput: 0.3 },
 	'anthropic:claude-opus-4-5': { input: 15.0, output: 75.0, cachedInput: 1.5 },
+	// Bare claude-haiku-4-5 backfill: claude-haiku-4-5-20251001 is in the dropdown but
+	// only claude-haiku-3-5 was priced, so Haiku 4.5 ran unpriced at $0.
+	'anthropic:claude-haiku-4-5': { input: 1.0, output: 5.0, cachedInput: 0.1 },
 	'anthropic:claude-haiku-3-5': { input: 0.8, output: 4.0, cachedInput: 0.08 },
 
 	// Google Gemini
@@ -74,7 +101,26 @@ const MODEL_PRICING: Record<string, { input: number; output: number; cachedInput
  */
 export function calculateCost(model: string, usage: TokenUsage): number {
 	const pricing = MODEL_PRICING[model];
-	if (!pricing) return 0;
+	if (!pricing) {
+		// A missing pricing row makes calculateCost return 0, which silently disables
+		// workItemBudget enforcement for that model (checkBudgetExceeded never trips on a
+		// $0 spend). Make the miss loud — but non-fatal: calculateCost is a hot-path pure
+		// utility called across all three engines, so throwing would crash runs for any
+		// model not yet in MODEL_PRICING. Loud-observe + the drift-guard test is the safer
+		// combination. Dedup so it fires once per unique model per process, not per turn.
+		if (!warnedMissingPricing.has(model)) {
+			warnedMissingPricing.add(model);
+			logger.warn(
+				`No MODEL_PRICING row for "${model}"; cost reported as $0. This silently disables workItemBudget enforcement for this model — add a pricing row in src/utils/llmMetrics.ts.`,
+			);
+			captureException(new Error(`Missing MODEL_PRICING row for model "${model}"`), {
+				tags: { source: 'model_pricing_missing' },
+				level: 'warning',
+				extra: { model },
+			});
+		}
+		return 0;
+	}
 
 	const inputCost = (usage.inputTokens / 1_000_000) * pricing.input;
 	const outputCost = (usage.outputTokens / 1_000_000) * pricing.output;

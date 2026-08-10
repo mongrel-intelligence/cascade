@@ -84,7 +84,7 @@ import {
 } from '../../../src/backends/secretOrchestrator.js';
 import type { AgentEngine } from '../../../src/backends/types.js';
 import { REVIEW_EVENT_POLICY_FILE } from '../../../src/config/reviewEventPolicy.js';
-import type { UpdateChannel } from '../../../src/config/updateChannel.js';
+import { UPDATE_CHANNEL_FILE, type UpdateChannel } from '../../../src/config/updateChannel.js';
 import { getSentryIntegrationConfig } from '../../../src/sentry/integration.js';
 import type { AgentInput, CascadeConfig, ProjectConfig } from '../../../src/types/index.js';
 import { getDashboardUrl } from '../../../src/utils/runLink.js';
@@ -373,6 +373,70 @@ describe('buildExecutionPlan', () => {
 		});
 	});
 
+	// The task-prompt template (implementation.eta) forks on pmPostingEnabled to
+	// suppress the summary-comment instructions when PM posting is disabled, so a
+	// native-tool agent is never told to call `cascade-tools pm post-comment`.
+	describe('update channel prompt flag', () => {
+		it('sets promptContext.pmPostingEnabled=true under the default channel (both)', async () => {
+			mockBuildPromptContext.mockReturnValueOnce({});
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(makeProject(), 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
+			expect(promptContext.pmPostingEnabled).toBe(true);
+		});
+
+		it('sets promptContext.pmPostingEnabled=false when the channel disables PM posting (scm-only)', async () => {
+			mockBuildPromptContext.mockReturnValueOnce({});
+			const project = makeProject({ agentUpdateChannels: { implementation: 'scm-only' } });
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
+			expect(promptContext.pmPostingEnabled).toBe(false);
+		});
+
+		it('sets promptContext.pmPostingEnabled=false under the none channel', async () => {
+			mockBuildPromptContext.mockReturnValueOnce({});
+			const project = makeProject({ agentUpdateChannels: { implementation: 'none' } });
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			const promptContext = vi.mocked(resolveModelConfig).mock.calls[0][0].promptContext;
+			expect(promptContext.pmPostingEnabled).toBe(false);
+		});
+	});
+
 	// The review-event-policy file is written UNCONDITIONALLY with the run's
 	// resolved policy so it self-corrects if a /tmp path is ever reused. The CLI's
 	// env > file > default precedence still holds (see resolveEventPolicyFromEnv).
@@ -431,6 +495,68 @@ describe('buildExecutionPlan', () => {
 			);
 
 			expect(mockWriteFileSync).toHaveBeenCalledWith(REVIEW_EVENT_POLICY_FILE, 'all', 'utf-8');
+		});
+	});
+
+	// The update-channel file is the /tmp fallback the cascade-tools posting CLI
+	// reads when CASCADE_UPDATE_CHANNEL is stripped from the bash subprocess env by
+	// claude-code. Written UNCONDITIONALLY with the run's resolved channel — same
+	// self-correcting contract as the review-event-policy file above.
+	describe('update channel file write', () => {
+		it('writes the resolved channel (both) unconditionally under the default', async () => {
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(makeProject(), 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			expect(mockWriteFileSync).toHaveBeenCalledWith(UPDATE_CHANNEL_FILE, 'both', 'utf-8');
+		});
+
+		it('writes the per-agent channel when configured (scm-only)', async () => {
+			const project = makeProject({ agentUpdateChannels: { implementation: 'scm-only' } });
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			expect(mockWriteFileSync).toHaveBeenCalledWith(UPDATE_CHANNEL_FILE, 'scm-only', 'utf-8');
+		});
+
+		it('writes the channel for the agent type being built (not another agent)', async () => {
+			// review is 'none' but implementation is 'both' — building implementation
+			// must write implementation's channel, not review's.
+			const project = makeProject({
+				agentUpdateChannels: { review: 'none', implementation: 'both' },
+			});
+
+			await buildExecutionPlan(
+				'implementation',
+				makeInput(project, 'manual'),
+				'/repo',
+				noopLogWriter,
+				noopAgentLogger,
+				undefined,
+				false,
+				'claude-code',
+				engine,
+			);
+
+			expect(mockWriteFileSync).toHaveBeenCalledWith(UPDATE_CHANNEL_FILE, 'both', 'utf-8');
 		});
 	});
 

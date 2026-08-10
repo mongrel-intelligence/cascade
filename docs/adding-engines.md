@@ -72,13 +72,32 @@ export const MY_ENGINE_DEFINITION: AgentEngineDefinition = {
   ],
   modelSelection: {
     type: 'select',                      // or 'free-text' for open-ended model strings
-    defaultValueLabel: 'Default (v1.0)',
+    // Derive the label from your DEFAULT_*_MODEL constant + catalog lookup instead
+    // of hardcoding it, so the displayed default can never drift from the actually
+    // resolved default on the next model bump (MNG-1772). See catalog.ts's
+    // `defaultModelLabel(models, defaultId)` helper.
+    defaultValueLabel: defaultModelLabel(MY_ENGINE_MODELS, DEFAULT_MY_ENGINE_MODEL),
     options: MY_ENGINE_MODELS,           // Imported from ./my-engine/models.ts
+    // Optional: model-ID prefixes your engine accepts in addition to catalog IDs.
+    // Single-source these next to your model list (e.g. MY_ENGINE_ACCEPTED_PREFIXES)
+    // and consume them in your resolveModel() so the runtime acceptance rules and
+    // the dashboard's config-time incompatibility warning share one definition.
+    // Must be a plain string[] — it serializes across the agentConfigs.engines tRPC
+    // query and is mirrored by the frontend's isModelCompatibleWithEngine().
+    acceptedModelPrefixes: MY_ENGINE_ACCEPTED_PREFIXES,
   },
   logLabel: 'My Engine Log',
   // Optional: add 'settings' if your engine has configurable fields
 };
 ```
+
+> **Anti-drift + config-time warning contract (MNG-1772).** For `select`-type
+> engines, deriving `defaultValueLabel` from the default-model constant keeps the
+> UI honest, and exposing `acceptedModelPrefixes` lets the agent-config detail
+> panel warn *before* dispatch when an inherited model is incompatible with the
+> engine (instead of crashing mid-run). A guard test in
+> `tests/unit/backends/catalog.test.ts` asserts the displayed default always
+> matches the resolved default for every `select` engine.
 
 Add it to `DEFAULT_ENGINE_CATALOG` at the bottom of the same file:
 

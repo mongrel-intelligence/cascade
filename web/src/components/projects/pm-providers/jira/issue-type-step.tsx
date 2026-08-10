@@ -2,9 +2,14 @@
  * JIRA-specific issue-type mapping step (plan 011/3).
  *
  * Registered as `kind: 'custom'` in `jiraManifest.wizardSpec`. Maps the
- * CASCADE `task` and `subtask` roles to JIRA issue types. Splits the
- * discovered `issueTypes` list by the `subtask` flag so each row only
- * shows valid options.
+ * CASCADE `task` role to a JIRA issue type, filtering the discovered
+ * `issueTypes` list to non-subtask entries.
+ *
+ * MNG-1769: the `subtask` row was removed. Nothing consumed
+ * `issueTypes.subtask` — `JiraPMProvider.createWorkItem` has no
+ * subtask-creation path — so offering it persisted dead config that no
+ * runtime read. Real subtask creation, if ever wanted, is a separate feature
+ * with its own consumer. Only the `task` mapping is offered.
  *
  * Stays custom (rather than an 8th StandardStepKind) because JIRA is the
  * only PM provider with this concept today — Trello has no equivalent,
@@ -30,15 +35,14 @@ export interface IssueTypeMappingStepProps {
 	readonly providerId: string;
 	readonly issueTypes: ReadonlyArray<JiraIssueType>;
 	readonly mappings: Readonly<Record<string, string | undefined>>;
-	readonly onMappingChange: (role: 'task' | 'subtask', issueTypeName: string) => void;
+	readonly onMappingChange: (role: 'task', issueTypeName: string) => void;
 	readonly loading?: boolean;
 	readonly error?: string;
 }
 
-const ROLES = [
-	{ key: 'task' as const, label: 'Task', subtaskFlag: false },
-	{ key: 'subtask' as const, label: 'Subtask', subtaskFlag: true },
-];
+// MNG-1769: only the `task` role is offered. There is no consumer for a
+// `subtask` mapping, so the previous subtask row was removed.
+const ROLES = [{ key: 'task' as const, label: 'Task', subtaskFlag: false }];
 
 export function IssueTypeMappingStep({
 	step,

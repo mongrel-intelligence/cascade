@@ -29,6 +29,6 @@ strategies: {}
 
 prompts:
   taskPrompt: |
-    Analyze and process the work item with ID: <%= it.workItemId %>. The work item data has been pre-loaded.
+    Analyze the pre-loaded run and session data for the <%= it.detectedAgentType ?? 'unknown' %> agent<% if (it.originalWorkItemId) { %>, associated with work item <%= it.originalWorkItemId %><% } else if (it.prNumber) { %>, associated with PR #<%= it.prNumber %><% } %>. Identify what happened, the root cause, and actionable recommendations.
 
 hint: Analyze the current issue fully before moving to the next.

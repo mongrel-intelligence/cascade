@@ -48,9 +48,19 @@ export type EngineSettingField =
 			step?: number;
 	  };
 
+export type EngineModelSelection =
+	| { type: 'free-text' }
+	| {
+			type: 'select';
+			defaultValueLabel: string;
+			options: { value: string; label: string }[];
+			acceptedModelPrefixes?: string[];
+	  };
+
 export interface Engine {
 	id: string;
 	label: string;
+	modelSelection?: EngineModelSelection;
 	settings?: {
 		title?: string;
 		description?: string;

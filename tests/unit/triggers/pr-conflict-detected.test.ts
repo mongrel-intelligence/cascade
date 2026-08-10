@@ -21,7 +21,7 @@ import {
 	PRConflictDetectedTrigger,
 	resetConflictAttempts,
 } from '../../../src/triggers/github/pr-conflict-detected.js';
-import { checkTriggerEnabled } from '../../../src/triggers/shared/trigger-check.js';
+import { checkTriggerEnabledWithParams } from '../../../src/triggers/shared/trigger-check.js';
 import type { TriggerContext } from '../../../src/triggers/types.js';
 import { createMockProject } from '../../helpers/factories.js';
 import { mockPersonaIdentities } from '../../helpers/mockPersonas.js';
@@ -126,7 +126,10 @@ describe('PRConflictDetectedTrigger', () => {
 			// so the registry's first-match loop continues to the next
 			// matcher. See `src/triggers/shared/trigger-check.ts` for the
 			// disabled-shadowing contract.
-			vi.mocked(checkTriggerEnabled).mockResolvedValueOnce(false);
+			vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+				enabled: false,
+				parameters: {},
+			});
 
 			const ctx: TriggerContext = {
 				project: mockProject,
@@ -137,7 +140,7 @@ describe('PRConflictDetectedTrigger', () => {
 
 			const result = await trigger.handle(ctx);
 			expect(result).toBeNull();
-			expect(checkTriggerEnabled).toHaveBeenCalledWith(
+			expect(checkTriggerEnabledWithParams).toHaveBeenCalledWith(
 				'test',
 				'resolve-conflicts',
 				'scm:pr-conflict-detected',
@@ -584,6 +587,111 @@ describe('PRConflictDetectedTrigger', () => {
 
 			expect(result).not.toBeNull();
 			expect(result?.agentType).toBe('resolve-conflicts');
+		});
+
+		// MNG-1774: authorMode extension + fork write-access skip.
+		describe('authorMode + fork write-access (MNG-1774)', () => {
+			const makeHumanPayload = (login = 'some-human') =>
+				makeSynchronizePayload({
+					pull_request: {
+						...makeSynchronizePayload().pull_request,
+						user: { login },
+					},
+				});
+
+			it("dispatches resolve-conflicts on a HUMAN same-repo PR under authorMode 'all'", async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'all' },
+				});
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Human PR',
+					body: null,
+					state: 'open',
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					mergeable: false,
+					user: { login: 'some-human' },
+					isFork: false,
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeHumanPayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBe('resolve-conflicts');
+				expect(result?.prNumber).toBe(42);
+			});
+
+			it("skips a CASCADE-authored PR under authorMode 'external'", async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'external' },
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeSynchronizePayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBeNull();
+				expect(result?.skipReason?.message).toMatch(
+					/author cascade-impl does not match configured authorMode 'external' \(isCascadePR=true\)/,
+				);
+				// Gate runs before the PR fetch — no mergeability lookup happened.
+				expect(githubClient.getPR).not.toHaveBeenCalled();
+			});
+
+			it('skips a FORK conflict PR with an explicit fork write-access reason (no dispatch)', async () => {
+				vi.mocked(checkTriggerEnabledWithParams).mockResolvedValueOnce({
+					enabled: true,
+					parameters: { authorMode: 'all' },
+				});
+				vi.mocked(githubClient.getPR).mockResolvedValue({
+					number: 42,
+					title: 'Fork PR',
+					body: null,
+					state: 'open',
+					htmlUrl: 'https://github.com/owner/repo/pull/42',
+					headRef: 'feature/test',
+					headSha: 'sha123',
+					baseRef: 'main',
+					merged: false,
+					mergeable: false,
+					user: { login: 'some-human' },
+					isFork: true,
+					headRepoFullName: 'contributor/repo',
+				});
+
+				const ctx: TriggerContext = {
+					project: mockProject,
+					source: 'github',
+					payload: makeHumanPayload(),
+					personaIdentities: mockPersonaIdentities,
+				};
+
+				const result = await trigger.handle(ctx);
+
+				expect(result?.agentType).toBeNull();
+				expect(result?.skipReason?.message).toMatch(
+					/head branch lives on fork contributor\/repo.*no write access/i,
+				);
+				// Fork skip happens before the attempt counter increments / dispatch.
+				expect(githubClient.createPRComment).not.toHaveBeenCalled();
+			});
 		});
 	});
 });

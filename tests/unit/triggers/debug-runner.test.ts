@@ -73,6 +73,7 @@ describe('triggerDebugAnalysis', () => {
 			id: 'run-1',
 			agentType: 'implementation',
 			status: 'failed',
+			prNumber: 42,
 		} as ReturnType<typeof getRunById> extends Promise<infer T> ? NonNullable<T> : never);
 
 		vi.mocked(getRunLogs).mockResolvedValue({
@@ -98,6 +99,7 @@ describe('triggerDebugAnalysis', () => {
 			'debug',
 			expect.objectContaining({
 				originalWorkItemId: 'card-1',
+				prNumber: 42,
 				detectedAgentType: 'implementation',
 				project: mockProject,
 				config: mockConfig,

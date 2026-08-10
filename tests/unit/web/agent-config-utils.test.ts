@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedTrigger } from '../../../src/api/routers/_shared/triggerTypes.js';
+import type { Engine } from '../../../web/src/components/projects/agent-config-types.js';
 import {
 	countActiveTriggers,
 	engineHasCredentials,
+	isModelCompatibleWithEngine,
 } from '../../../web/src/components/projects/agent-config-utils.js';
 
 // ============================================================================
@@ -73,6 +75,90 @@ describe('engineHasCredentials', () => {
 	it('ignores unrelated keys', () => {
 		const keys = new Set(['SOME_OTHER_KEY', 'UNRELATED_KEY']);
 		expect(engineHasCredentials('claude-code', keys)).toBe(false);
+	});
+});
+
+// ============================================================================
+// isModelCompatibleWithEngine
+// ============================================================================
+
+describe('isModelCompatibleWithEngine', () => {
+	const claudeCode: Engine = {
+		id: 'claude-code',
+		label: 'Claude Code',
+		modelSelection: {
+			type: 'select',
+			defaultValueLabel: 'Default (Claude Sonnet 5)',
+			options: [
+				{ value: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+				{ value: 'claude-opus-5', label: 'Claude Opus 5' },
+			],
+			acceptedModelPrefixes: ['claude-', 'anthropic:'],
+		},
+	};
+
+	const codex: Engine = {
+		id: 'codex',
+		label: 'Codex',
+		modelSelection: {
+			type: 'select',
+			defaultValueLabel: 'Default (GPT-5.4)',
+			options: [{ value: 'gpt-5.4', label: 'GPT-5.4' }],
+			acceptedModelPrefixes: ['openai:'],
+		},
+	};
+
+	const freeText: Engine = {
+		id: 'llmist',
+		label: 'LLMist',
+		modelSelection: { type: 'free-text' },
+	};
+
+	it('flags an openrouter model as incompatible with claude-code', () => {
+		expect(
+			isModelCompatibleWithEngine('openrouter:google/gemini-3-flash-preview', claudeCode),
+		).toBe(false);
+	});
+
+	it('accepts a catalog id for claude-code', () => {
+		expect(isModelCompatibleWithEngine('claude-sonnet-5', claudeCode)).toBe(true);
+	});
+
+	it('accepts a non-catalog claude- prefixed model for claude-code', () => {
+		expect(isModelCompatibleWithEngine('claude-opus-5', claudeCode)).toBe(true);
+	});
+
+	it('accepts an anthropic: prefixed model for claude-code', () => {
+		expect(isModelCompatibleWithEngine('anthropic:claude-sonnet-4-5', claudeCode)).toBe(true);
+	});
+
+	it('flags an openai model as incompatible with claude-code', () => {
+		expect(isModelCompatibleWithEngine('openai:gpt-5.4', claudeCode)).toBe(false);
+	});
+
+	it('accepts catalog ids and openai: prefixes for codex', () => {
+		expect(isModelCompatibleWithEngine('gpt-5.4', codex)).toBe(true);
+		expect(isModelCompatibleWithEngine('openai:gpt-5.4', codex)).toBe(true);
+	});
+
+	it('flags an openrouter model as incompatible with codex', () => {
+		expect(isModelCompatibleWithEngine('openrouter:google/gemini-3-flash-preview', codex)).toBe(
+			false,
+		);
+	});
+
+	it('treats every model as compatible with a free-text engine', () => {
+		expect(isModelCompatibleWithEngine('openrouter:google/gemini-3-flash-preview', freeText)).toBe(
+			true,
+		);
+	});
+
+	it('treats an empty model (inherit) as compatible', () => {
+		expect(isModelCompatibleWithEngine('', claudeCode)).toBe(true);
+	});
+
+	it('treats an engine without modelSelection as compatible', () => {
+		expect(isModelCompatibleWithEngine('anything', { id: 'x', label: 'X' })).toBe(true);
 	});
 });
 

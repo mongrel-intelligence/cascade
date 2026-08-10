@@ -45,6 +45,26 @@ describe.concurrent('config/rateLimits', () => {
 			});
 		});
 
+		it('returns exact match for Claude Opus 5', () => {
+			const result = getRateLimitForModel('anthropic:claude-opus-5');
+
+			expect(result).toEqual({
+				requestsPerMinute: 50,
+				tokensPerMinute: 10_000,
+				safetyMargin: 0.85,
+			});
+		});
+
+		it('returns exact match for Claude Sonnet 5', () => {
+			const result = getRateLimitForModel('anthropic:claude-sonnet-5');
+
+			expect(result).toEqual({
+				requestsPerMinute: 50,
+				tokensPerMinute: 40_000,
+				safetyMargin: 0.9,
+			});
+		});
+
 		it('returns prefix match for models with version suffix', () => {
 			// anthropic:claude-sonnet-4-5-20250929 should match anthropic:claude-sonnet-4-5
 			const result = getRateLimitForModel('anthropic:claude-sonnet-4-5-20250929');
@@ -118,6 +138,11 @@ describe.concurrent('config/rateLimits', () => {
 			expect(MODEL_RATE_LIMITS['anthropic:claude-sonnet-4-6']).toBeDefined();
 			expect(MODEL_RATE_LIMITS['anthropic:claude-sonnet-4-5']).toBeDefined();
 			expect(MODEL_RATE_LIMITS['anthropic:claude-opus-4-5']).toBeDefined();
+		});
+
+		it('includes Claude Opus 5 and Sonnet 5 configs', () => {
+			expect(MODEL_RATE_LIMITS['anthropic:claude-opus-5']).toBeDefined();
+			expect(MODEL_RATE_LIMITS['anthropic:claude-sonnet-5']).toBeDefined();
 		});
 
 		it('includes OpenRouter models', () => {
