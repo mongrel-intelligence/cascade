@@ -68,8 +68,16 @@ export interface ProjectContext {
 	githubProjectsOwner?: string;
 	/** GitHub Projects owner type — programmatic webhooks require `'organization'`. */
 	githubProjectsOwnerType?: 'user' | 'organization';
-	/** GitHub Projects PM token (the `GITHUB_TOKEN` credential) for org-hook management. */
+	/** GitHub Projects PM token (the `GITHUB_PROJECTS_TOKEN` credential) for org-hook management. */
 	githubProjectsToken?: string;
+	/**
+	 * GitHub Projects webhook signing secret (the `GITHUB_PROJECTS_WEBHOOK_SECRET`
+	 * credential). Used to sign the programmatically-created org webhook so the
+	 * secret matches what the router verifies incoming `projects_v2_item` events
+	 * against (`resolveWebhookSecret('github-projects')`). Distinct from
+	 * `webhookSecret`, which is the SCM `github` role's `GITHUB_WEBHOOK_SECRET`.
+	 */
+	githubProjectsWebhookSecret?: string;
 	sentryConfigured?: boolean;
 	sentryOrganizationSlug?: string;
 	sentryProjectSlug?: string;

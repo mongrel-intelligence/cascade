@@ -197,13 +197,16 @@ describe('webhooks/github-projects', () => {
 			expect(result).toMatchObject({ id: 100 });
 		});
 
-		it('includes the secret in the webhook config when ctx.webhookSecret is set', async () => {
+		it('includes the secret in the webhook config when ctx.githubProjectsWebhookSecret is set', async () => {
 			mockListWebhooks.mockResolvedValue({ data: [] });
 			mockCreateWebhook.mockResolvedValue({
 				data: { id: 1, name: 'web', active: true, events: [], config: { url: CALLBACK } },
 			});
 
-			await githubProjectsCreateWebhook(orgCtx({ webhookSecret: 'shh-secret' }), CALLBACK);
+			await githubProjectsCreateWebhook(
+				orgCtx({ githubProjectsWebhookSecret: 'shh-secret' }),
+				CALLBACK,
+			);
 
 			expect(mockCreateWebhook).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -216,13 +219,56 @@ describe('webhooks/github-projects', () => {
 			);
 		});
 
-		it('omits the secret from the webhook config when ctx.webhookSecret is not set', async () => {
+		it('omits the secret from the webhook config when ctx.githubProjectsWebhookSecret is not set', async () => {
 			mockListWebhooks.mockResolvedValue({ data: [] });
 			mockCreateWebhook.mockResolvedValue({
 				data: { id: 1, name: 'web', active: true, events: [], config: { url: CALLBACK } },
 			});
 
 			await githubProjectsCreateWebhook(orgCtx(), CALLBACK);
+
+			expect(mockCreateWebhook).toHaveBeenCalledWith(
+				expect.objectContaining({
+					config: expect.not.objectContaining({ secret: expect.anything() }),
+				}),
+			);
+		});
+
+		it('signs with GITHUB_PROJECTS_WEBHOOK_SECRET, never the SCM github ctx.webhookSecret', async () => {
+			// Regression: the created org hook must be signed with the same secret the
+			// router verifies incoming `projects_v2_item` events against
+			// (`resolveWebhookSecret('github-projects')` → GITHUB_PROJECTS_WEBHOOK_SECRET).
+			// Signing with the SCM `github` role's GITHUB_WEBHOOK_SECRET (ctx.webhookSecret)
+			// would leave the hook signed with a key the router never checks, so every
+			// delivered event 401s. See PR #1498 review (BLOCKING).
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: { id: 1, name: 'web', active: true, events: [], config: { url: CALLBACK } },
+			});
+
+			await githubProjectsCreateWebhook(
+				orgCtx({ webhookSecret: 'scm-github-secret', githubProjectsWebhookSecret: 'pm-secret' }),
+				CALLBACK,
+			);
+
+			expect(mockCreateWebhook).toHaveBeenCalledWith(
+				expect.objectContaining({
+					config: expect.objectContaining({ secret: 'pm-secret' }),
+				}),
+			);
+		});
+
+		it('omits the secret when only the SCM github ctx.webhookSecret is set (not the PM secret)', async () => {
+			// The SCM webhook secret alone must NOT sign the Projects org hook — otherwise
+			// the hook would be signed with a key the router never verifies against, and
+			// the operator's intent (no PM webhook secret configured → verification skipped)
+			// would be silently violated.
+			mockListWebhooks.mockResolvedValue({ data: [] });
+			mockCreateWebhook.mockResolvedValue({
+				data: { id: 1, name: 'web', active: true, events: [], config: { url: CALLBACK } },
+			});
+
+			await githubProjectsCreateWebhook(orgCtx({ webhookSecret: 'scm-github-secret' }), CALLBACK);
 
 			expect(mockCreateWebhook).toHaveBeenCalledWith(
 				expect.objectContaining({

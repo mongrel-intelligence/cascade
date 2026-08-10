@@ -108,8 +108,14 @@ export async function githubProjectsCreateWebhook(
 		url: callbackURL,
 		content_type: 'json',
 	};
-	if (ctx.webhookSecret) {
-		webhookConfig.secret = ctx.webhookSecret;
+	// Sign with the PM provider's own webhook secret (GITHUB_PROJECTS_WEBHOOK_SECRET),
+	// NOT the SCM `github` role's GITHUB_WEBHOOK_SECRET (ctx.webhookSecret). The router
+	// verifies incoming `projects_v2_item` events against this provider's `webhook_secret`
+	// role via `resolveWebhookSecret('github-projects')`, and the wizard's ProjectSecretField
+	// persists the operator-supplied secret under the same key — so signing with anything
+	// else would make every delivered event fail signature verification (401).
+	if (ctx.githubProjectsWebhookSecret) {
+		webhookConfig.secret = ctx.githubProjectsWebhookSecret;
 	}
 
 	try {

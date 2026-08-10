@@ -160,6 +160,9 @@ function setupGithubProjectsProjectContext(opts?: {
 	ownerType?: 'user' | 'organization';
 	noOwner?: boolean;
 	noToken?: boolean;
+	webhookSecret?: string;
+	/** The SCM `github` role's GITHUB_WEBHOOK_SECRET — must NOT sign the Projects hook. */
+	scmWebhookSecret?: string;
 }) {
 	mockDbSelect.mockReturnValue({ from: mockDbFrom });
 	mockDbFrom.mockReturnValue({ where: mockDbWhere });
@@ -176,6 +179,12 @@ function setupGithubProjectsProjectContext(opts?: {
 	const creds: Record<string, string> = {};
 	if (!opts?.noToken) {
 		creds.GITHUB_PROJECTS_TOKEN = 'ghp_projects_test';
+	}
+	if (opts?.webhookSecret) {
+		creds.GITHUB_PROJECTS_WEBHOOK_SECRET = opts.webhookSecret;
+	}
+	if (opts?.scmWebhookSecret) {
+		creds.GITHUB_WEBHOOK_SECRET = opts.scmWebhookSecret;
 	}
 	mockGetAllProjectCredentials.mockResolvedValue(creds);
 }
@@ -1108,6 +1117,42 @@ describe('webhooksRouter', () => {
 				expect(result.githubProjects).toMatchObject({ id: 401 });
 				expect(mockOrgCreateWebhook).toHaveBeenCalledWith(
 					expect.objectContaining({ org: 'acme-org' }),
+				);
+			});
+
+			it('signs the org webhook with GITHUB_PROJECTS_WEBHOOK_SECRET, not the SCM GITHUB_WEBHOOK_SECRET', async () => {
+				// Full path regression (PR #1498 BLOCKING): resolveProjectContext threads
+				// GITHUB_PROJECTS_WEBHOOK_SECRET into ctx.githubProjectsWebhookSecret, and the
+				// created hook must be signed with THAT — the same key the router verifies
+				// incoming projects_v2_item events against. Signing with the co-configured SCM
+				// GITHUB_WEBHOOK_SECRET would leave every event failing signature verification.
+				setupGithubProjectsProjectContext({
+					webhookSecret: 'pm-projects-secret',
+					scmWebhookSecret: 'scm-github-secret',
+				});
+
+				mockOrgListWebhooks.mockResolvedValue({ data: [] });
+				mockOrgCreateWebhook.mockResolvedValue({
+					data: {
+						id: 402,
+						name: 'web',
+						active: true,
+						events: ['projects_v2_item'],
+						config: { url: 'http://example.com/github-projects/webhook' },
+					},
+				});
+
+				const caller = createCaller({ user: mockUser, effectiveOrgId: mockUser.orgId });
+				await caller.create({
+					projectId: 'gh-projects-project',
+					callbackBaseUrl: 'http://example.com',
+					githubProjectsOnly: true,
+				});
+
+				expect(mockOrgCreateWebhook).toHaveBeenCalledWith(
+					expect.objectContaining({
+						config: expect.objectContaining({ secret: 'pm-projects-secret' }),
+					}),
 				);
 			});
 		});
