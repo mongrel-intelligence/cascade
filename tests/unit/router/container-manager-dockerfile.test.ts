@@ -254,7 +254,7 @@ describe('container-manager — dockerfile launch (spec 023/2)', () => {
 
 		// A reference base is registry-backed → pulled-on-missing then retried.
 		expect(mockDockerPull).toHaveBeenCalledTimes(1);
-		expect(mockDockerPull).toHaveBeenCalledWith('sha256:refdigest');
+		expect(mockDockerPull).toHaveBeenCalledWith('sha256:refdigest', {});
 		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
 
 		resolveWait();

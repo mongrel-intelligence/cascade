@@ -47,6 +47,18 @@ export interface RouterConfig {
 	 */
 	workerBuildTimeoutMs: number;
 
+	/**
+	 * Optional registry credentials for router-side image pulls (spawn
+	 * self-heal, worker-image validation, build base refresh). Dockerode sends
+	 * no credentials unless given an authconfig, so private-registry worker
+	 * images need these set; unset → anonymous pulls (historical behavior).
+	 * See src/router/registry-auth.ts.
+	 */
+	workerImageRegistryUsername: string | undefined;
+	workerImageRegistryPassword: string | undefined;
+	/** Registry server override; derived from the image ref when unset. */
+	workerImageRegistryServer: string | undefined;
+
 	// Network settings
 	dockerNetwork: string;
 
@@ -151,6 +163,9 @@ export const routerConfig: RouterConfig = {
 	workerTimeoutMs: Number(process.env.WORKER_TIMEOUT_MS) || 30 * 60 * 1000, // 30 minutes
 	slotWaitTimeoutMs: Number(process.env.SLOT_WAIT_TIMEOUT_MS) || 5 * 60 * 1000, // 5 minutes
 	workerBuildTimeoutMs: Number(process.env.WORKER_BUILD_TIMEOUT_MS) || 10 * 60 * 1000, // 10 minutes
+	workerImageRegistryUsername: process.env.WORKER_IMAGE_REGISTRY_USERNAME,
+	workerImageRegistryPassword: process.env.WORKER_IMAGE_REGISTRY_PASSWORD,
+	workerImageRegistryServer: process.env.WORKER_IMAGE_REGISTRY_SERVER,
 	dockerNetwork: process.env.DOCKER_NETWORK || 'services_default',
 	emailScheduleIntervalMs: Number(process.env.EMAIL_SCHEDULE_INTERVAL_MS) || 5 * 60 * 1000,
 	webhookCallbackBaseUrl: process.env.WEBHOOK_CALLBACK_BASE_URL,
