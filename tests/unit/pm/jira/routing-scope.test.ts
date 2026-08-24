@@ -120,6 +120,19 @@ describe('JIRA write stamping (createWorkItem)', () => {
 		expect((await createdFields(p)).labels).toEqual(['team-be']);
 	});
 
+	it('stamps onto an empty caller labels array', async () => {
+		// The shape both materializers actually pass: the alert materializer sends
+		// labels: [] unconditionally, and friction sends [] whenever no friction
+		// label is configured. Neither of the other tests exercises it.
+		const p = provider({ kind: 'label', value: 'team-be' });
+		expect((await createdFields(p, [])).labels).toEqual(['team-be']);
+	});
+
+	it('sends no labels key at all for an empty array and no discriminator', async () => {
+		// Byte-identity for the same production shape on the unconfigured path.
+		expect(await createdFields(provider(), [])).not.toHaveProperty('labels');
+	});
+
 	it('does not duplicate a label the caller already supplied', async () => {
 		const p = provider({ kind: 'label', value: 'team-be' });
 		expect((await createdFields(p, ['team-be', 'other'])).labels).toEqual(['team-be', 'other']);

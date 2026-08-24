@@ -263,6 +263,18 @@ configured.
 Matching is exact and case-sensitive on both sides, so a label stamped on write
 is found by the read clause verbatim.
 
+> ⚠️ **A component discriminator must name a component that already exists on
+> the JIRA project.** Unlike labels, which JIRA creates on first use, an unknown
+> component makes `createIssue` fail with a 400 — and the resulting error
+> currently blames the issue-type mapping, because that is what
+> `enrichCreateIssueError` is written to diagnose. Create the component in JIRA
+> first, or use a label discriminator.
+
+The discriminator value is validated at save time: no `"` or `\` (both would
+break out of the quoted JQL value), and no whitespace for a **label**
+discriminator, since JIRA refuses to write such a label and the read clause
+would then match nothing.
+
 ### Save-time validation
 
 `assertJiraTopologyValid` (`pm/_shared/topology-validation.ts`) runs inside
