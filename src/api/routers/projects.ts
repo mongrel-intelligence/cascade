@@ -463,6 +463,22 @@ function serializeProject<T extends { agentEngineSettings?: unknown }>(
 }
 
 /**
+ * `repoPrimary` describes a repository, so it is meaningless without one.
+ *
+ * Accepting it alone would write nothing and report success — an operator
+ * promoting a secondary would believe the repository had changed hands when it
+ * had not. Fail instead of silently discarding it.
+ */
+function assertRepoPrimaryHasRepo(input: { repo?: string; repoPrimary?: boolean }): void {
+	if (input.repoPrimary !== undefined && !input.repo) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: 'Setting the repository role also requires sending the repository.',
+		});
+	}
+}
+
+/**
  * Decide the primacy of `repo` for `projectId`, or refuse with a message the
  * operator can act on (spec 024).
  *
@@ -651,6 +667,7 @@ export const projectsRouter = router({
 			// Spec 024: repositories may be shared, but exactly one project owns
 			// the events that carry no PR link. Projects without a repo skip this
 			// entirely — no sibling query, no behaviour change.
+			assertRepoPrimaryHasRepo(input);
 			const repoPrimary = input.repo
 				? await resolveRepoPrimary(input.repo, input.repoPrimary, undefined)
 				: undefined;
@@ -755,6 +772,7 @@ export const projectsRouter = router({
 			} = input;
 			// Spec 024: same rule as create, but the project itself is excluded from
 			// its own sibling set — re-saving must not conflict with itself.
+			assertRepoPrimaryHasRepo(input);
 			const repoPrimary = input.repo
 				? await resolveRepoPrimary(input.repo, input.repoPrimary, id)
 				: undefined;

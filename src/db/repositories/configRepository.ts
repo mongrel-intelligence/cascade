@@ -199,11 +199,6 @@ export function findProjectsByJiraProjectKeyFromDb(projectKey: string): Promise<
 }
 
 /**
- * The primary project for a repository (spec 024) — the one that owns GitHub
- * events carrying no PR->project link. DB-enforced unique per repo by
- * `uq_projects_repo_primary`.
- */
-/**
  * The id + primacy of every project on a repository (spec 024).
  *
  * Deliberately NOT a `ProjectConfig[]`: `repoPrimary` is a column, not part of
@@ -222,6 +217,11 @@ export async function findRepoSiblingsFromDb(
 		.orderBy(projects.id);
 }
 
+/**
+ * The primary project for a repository (spec 024) — the one that owns GitHub
+ * events carrying no PR->project link. DB-enforced unique per repo by
+ * `uq_projects_repo_primary`.
+ */
 export function findPrimaryProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(and(eq(projects.repo, repo), eq(projects.repoPrimary, true)) as SQL);
 }

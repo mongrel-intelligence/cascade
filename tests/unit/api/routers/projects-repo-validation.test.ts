@@ -167,6 +167,15 @@ describe('projectsRouter — repository sharing (spec 024)', () => {
 		).rejects.toThrow(/primary/i);
 	});
 
+	it('refuses repoPrimary without a repo rather than silently ignoring it', async () => {
+		// Plan 5 ships a primary/secondary toggle. If it PATCHes only the changed
+		// field, promoting a secondary would write nothing and report success —
+		// the operator would believe the repository had changed hands.
+		await expect(caller().update({ id: 'frontend', repoPrimary: true } as never)).rejects.toThrow(
+			/repo/i,
+		);
+	});
+
 	it('runs no topology check for a project without a repository', async () => {
 		// AC #12 pin: PM-only projects must not gain a sibling query.
 		await caller().create({ id: 'pmonly', name: 'PM only' } as never);
