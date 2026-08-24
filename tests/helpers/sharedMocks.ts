@@ -65,6 +65,9 @@ export const mockConfigProvider = {
 	getIntegrationCredentialOrNull: vi.fn(),
 	getOrgCredential: vi.fn(),
 	findProjectByRepo: vi.fn(),
+	// Spec 024: link-first resolution for repositories shared by several projects.
+	findPrimaryProjectByRepo: vi.fn(),
+	findProjectIdByRepoPr: vi.fn(),
 	findProjectByBoardId: vi.fn(),
 	findProjectByJiraProjectKey: vi.fn(),
 	findProjectById: vi.fn(),

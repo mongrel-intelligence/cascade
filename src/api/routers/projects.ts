@@ -10,6 +10,7 @@ import { PROJECT_DEFAULTS } from '../../config/schema.js';
 import { validateWorkerDockerfileContent } from '../../config/workerDockerfileContent.js';
 import { isValidImageReference } from '../../config/workerImageRef.js';
 import { getDb } from '../../db/client.js';
+import { findRepoSiblingsFromDb } from '../../db/repositories/configRepository.js';
 import {
 	deleteProjectCredential,
 	listProjectCredentials,
@@ -461,6 +462,114 @@ function serializeProject<T extends { agentEngineSettings?: unknown }>(
 	};
 }
 
+/**
+ * `repoPrimary` describes a repository, so it is meaningless without one.
+ *
+ * Accepting it alone would write nothing and report success — an operator
+ * promoting a secondary would believe the repository had changed hands when it
+ * had not. Fail instead of silently discarding it.
+ */
+function assertRepoPrimaryHasRepo(input: { repo?: string; repoPrimary?: boolean }): void {
+	if (input.repoPrimary !== undefined && !input.repo) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message: 'Setting the repository role also requires sending the repository.',
+		});
+	}
+}
+
+/**
+ * Decide the primacy of `repo` for `projectId`, or refuse with a message the
+ * operator can act on (spec 024).
+ *
+ * Sharing a repository is legal; ambiguity about who owns it is not. Exactly
+ * one project per repository is the PRIMARY — the one that receives events
+ * carrying no PR->project link (human-authored PRs, freshly opened ones).
+ * Returns the value to persist so the caller never has to default it twice.
+ */
+async function resolveRepoPrimary(
+	repo: string,
+	requested: boolean | undefined,
+	projectId: string | undefined,
+	orgId: string,
+): Promise<boolean> {
+	const all = await findRepoSiblingsFromDb(repo, orgId);
+	const self = projectId ? all.find((s) => s.id === projectId) : undefined;
+	const siblings = all.filter((s) => s.id !== projectId);
+	const incumbent = siblings.find((s) => s.repoPrimary);
+
+	// An update that does not mention the role must not change it. The SCM tab
+	// sends `repo` on every save and cannot yet send a role (that toggle is plan
+	// 5), so demanding one here would reject every save on a shared repository —
+	// including the primary's own, while telling it to demote itself, which the
+	// zero-primary rule below would then also refuse.
+	if (requested === undefined && self) return self.repoPrimary;
+
+	// Checked before the no-siblings shortcut: the partial unique index forbids
+	// TWO primaries but cannot require ONE, so a repository left with zero
+	// primaries is accepted by the DB and then drops every event that carries no
+	// PR->project link.
+	if (requested === false && !incumbent) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message:
+				`Repository "${repo}" would be left with no primary project, so events ` +
+				`for pull requests CASCADE did not create would go nowhere. Promote ` +
+				`another project on this repository first.`,
+		});
+	}
+
+	if (siblings.length === 0) return requested ?? true;
+
+	if (requested === undefined) {
+		// Before spec 024 this was a raw 500 from the unique index. Naming the
+		// owner and the choice is the whole difference.
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message:
+				`Repository "${repo}" is already used by project "${(incumbent ?? siblings[0]).id}". ` +
+				`Set this project as a secondary to share the repository, or choose a different one.`,
+		});
+	}
+
+	if (requested && incumbent) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message:
+				`Project "${incumbent.id}" is already the primary for "${repo}". ` +
+				`A repository has exactly one primary — save this project as a secondary instead.`,
+		});
+	}
+
+	return requested;
+}
+
+/**
+ * The pre-check above can pass and still lose to a concurrent save. The DB is
+ * the authority; this only makes the loser's error say the same thing.
+ */
+function rethrowRepoPrimaryConflict(err: unknown, repo: string): never {
+	// drizzle wraps the driver error, so `code`/`constraint` sit on `.cause`, not
+	// at the top level — the same reason `users.ts` walks the chain. Matching the
+	// flat shape looks correct in a unit test and never fires in production.
+	let current: unknown = err;
+	let hit = false;
+	for (let depth = 0; depth < 5 && current != null && !hit; depth++) {
+		const c = current as { code?: unknown; constraint?: unknown };
+		hit = c.code === '23505' && c.constraint === 'uq_projects_repo_primary';
+		current = (current as { cause?: unknown }).cause;
+	}
+	if (hit) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message:
+				`Another project just became the primary for "${repo}". ` +
+				`Reload and save this project as a secondary.`,
+		});
+	}
+	throw err;
+}
+
 export const projectsRouter = router({
 	/**
 	 * Returns all system-level default values, sourced from code constants.
@@ -517,6 +626,7 @@ export const projectsRouter = router({
 					.regex(/^[a-z0-9-]+$/),
 				name: z.string().min(1),
 				repo: z.string().min(1).optional(),
+				repoPrimary: z.boolean().optional(),
 				baseBranch: z.string().optional(),
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
@@ -563,13 +673,22 @@ export const projectsRouter = router({
 			});
 			const { workerImage: _workerImage, workerDockerfile: _workerDockerfile, ...rest } = input;
 
+			// Spec 024: repositories may be shared, but exactly one project owns
+			// the events that carry no PR link. Projects without a repo skip this
+			// entirely — no sibling query, no behaviour change.
+			assertRepoPrimaryHasRepo(input);
+			const repoPrimary = input.repo
+				? await resolveRepoPrimary(input.repo, input.repoPrimary, undefined, ctx.effectiveOrgId)
+				: undefined;
+
 			const created = await createProject(ctx.effectiveOrgId, {
 				...rest,
+				...(repoPrimary !== undefined ? { repoPrimary } : {}),
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
 				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
 				...(workerImageChange ? workerImageChange.columns : {}),
 				...(workerDockerfileChange ? workerDockerfileChange.columns : {}),
-			});
+			}).catch((err) => rethrowRepoPrimaryConflict(err, input.repo ?? ''));
 
 			if (workerImageChange) {
 				await finalizeWorkerImageChange({
@@ -598,6 +717,7 @@ export const projectsRouter = router({
 				id: z.string(),
 				name: z.string().min(1).optional(),
 				repo: z.string().min(1).optional(),
+				repoPrimary: z.boolean().optional(),
 				baseBranch: z.string().optional(),
 				branchPrefix: z.string().optional(),
 				model: z.string().nullish(),
@@ -659,13 +779,21 @@ export const projectsRouter = router({
 				workerDockerfile: _workerDockerfile,
 				...updates
 			} = input;
+			// Spec 024: same rule as create, but the project itself is excluded from
+			// its own sibling set — re-saving must not conflict with itself.
+			assertRepoPrimaryHasRepo(input);
+			const repoPrimary = input.repo
+				? await resolveRepoPrimary(input.repo, input.repoPrimary, id, ctx.effectiveOrgId)
+				: undefined;
+
 			await updateProject(id, ctx.effectiveOrgId, {
 				...updates,
+				...(repoPrimary !== undefined ? { repoPrimary } : {}),
 				...(input.agentEngine !== undefined ? { agentEngine: input.agentEngine } : {}),
 				...(input.engineSettings !== undefined ? { engineSettings: input.engineSettings } : {}),
 				...(workerImageChange ? workerImageChange.columns : {}),
 				...(workerDockerfileChange ? workerDockerfileChange.columns : {}),
-			});
+			}).catch((err) => rethrowRepoPrimaryConflict(err, input.repo ?? ''));
 
 			if (workerImageChange) {
 				await finalizeWorkerImageChange({
