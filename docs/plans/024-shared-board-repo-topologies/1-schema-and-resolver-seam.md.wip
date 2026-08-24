@@ -205,11 +205,17 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
+- [x] AC #1 — migration 0061 applied to a fresh DB at 0060 (drizzle-kit, Postgres 16): `repo_primary` boolean NOT NULL default true, `uq_projects_repo` gone, `uq_projects_repo_primary` partial index present. Semantics proven by direct SQL: primary+secondary on one repo both insert; a second primary is rejected with 23505.
+- [x] AC #2 — `tests/unit/integrations/pm-project-routing.test.ts` (5 schema tests): label + component round-trip, unknown kind and empty value rejected, config without `routing` parses and gains no key.
+- [x] AC #3 — same file (10 resolver tests): single-sibling, label match, component match, mixed kinds, default fallback, no_match message naming every evaluated discriminator, ambiguous on double match, ambiguous on two defaults, case sensitivity, empty sibling set.
+- [x] AC #4 — `tests/unit/config/provider-lookups.test.ts` (9 tests) covers the three new lookups plus cache invalidation; `tests/unit/config/provider.test.ts` (47 tests) passes **unedited**, pinning the legacy pair byte-for-byte.
+- [x] AC #5 — every new module and behavior has tests; 35 tests added across 3 new files.
+- [x] AC #6 — `npm run typecheck` exit 0.
+- [x] AC #7 — `npm test` exit 0: 611 files, 11095 passed, 23 skipped, 0 failed.
+- [x] AC #8 — `npm run lint` exit 0. The 13 warnings are pre-existing in files this plan never touched (verified by filename); none in this plan's files.
+
+**Partial-state criterion** — verified: grepping `src/` for `resolveProjectAmongSiblings`, `findProjectsByJiraProjectKey`, `findPrimaryProjectByRepo`, `findProjectIdByRepoPr` finds no caller outside their own definition sites. The code is dormant; routing behavior is unchanged until plans 2/4.
+
+**Plan divergences resolved during this run** (both user-approved, plan edited in place):
+1. Project lookups live in `configRepository.ts`, not `projectsRepository.ts` as originally written.
+2. The legacy singular lookups were left untouched rather than made delegates — `provider.test.ts` already pins their internals, and that pre-existing net is stronger AC #12 evidence than a rewritten one. New lookups sit alongside; plan 4 switches call sites.
