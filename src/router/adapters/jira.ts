@@ -39,15 +39,37 @@ const PROCESSABLE_EVENTS = [
 	'comment_updated',
 ];
 
+/**
+ * Stand-in for an event that carries no routing attributes.
+ *
+ * NOT a neutral value: an attribute-less issue matches no discriminator, so it
+ * resolves to the key's default. That is correct for an issue genuinely without
+ * labels or components, and it is what every event from `parseWebhook` means —
+ * that method always populates the field. It would be a fabricated decision for
+ * an event constructed elsewhere, which is why `parseWebhook` sets it
+ * unconditionally rather than leaving it optional in practice.
+ */
 const NO_ROUTING_ATTRIBUTES: PMRoutingIssueAttributes = { labels: [], components: [] };
 
 /**
  * Ambiguous routing is a configuration error, not an event error: the same
  * misconfiguration re-fires on every webhook for the issue. Report once per
- * issue per process so Sentry shows the problem without drowning in repeats —
- * same rationale as `warnedMissingPricing` in `src/utils/llmMetrics.ts`.
+ * issue per process so Sentry shows the problem without drowning in repeats.
+ *
+ * Unlike the ephemeral-worker dedup sets elsewhere in the codebase, the router
+ * is long-lived and the key domain is unbounded (JIRA issue keys), so this
+ * never resets in practice. That is deliberate — the spec asks only that the
+ * first occurrence be reported — and the growth is bounded by distinct
+ * ambiguously-labelled issues on shared keys, which is small.
  */
 const reportedAmbiguousIssues = new Set<string>();
+
+/**
+ * Shared keys where nobody has opted into routing — reported once per KEY, not
+ * per issue, because a shadowed sibling is a configuration problem that every
+ * event on that key would otherwise re-report.
+ */
+const reportedUnconfiguredKeys = new Set<string>();
 
 /**
  * Extended parsed event for JIRA — carries the issue key and webhook event string.
@@ -141,6 +163,30 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 			};
 		}
 
+		// Sharing is OPT-IN. A key whose projects have all declared nothing is a
+		// pre-024 deployment — the discriminator field did not exist, so this is
+		// the only duplicate state it could be in. Strict matching would take it
+		// from "one project works, the other is shadowed" to "nothing works",
+		// with no wizard field to fix it until plan 5. Keep first-match, but stop
+		// being silent about the sibling that is being shadowed.
+		if (siblings.length > 1 && !siblings.some((p) => p.jira?.routing?.discriminator)) {
+			if (!reportedUnconfiguredKeys.has(projectKey)) {
+				reportedUnconfiguredKeys.add(projectKey);
+				const shadowed = siblings.slice(1).map((p) => p.id);
+				logger.warn(
+					`JIRA key ${projectKey} is claimed by several projects but none declares a routing discriminator; ` +
+						`events go to "${siblings[0].id}" and ${shadowed.join(', ')} receive nothing. ` +
+						`Add a routing discriminator to route them separately.`,
+					{ projectKey, routedTo: siblings[0].id, shadowed },
+				);
+				captureException(new Error(`Unconfigured shared JIRA key ${projectKey}`), {
+					tags: { source: 'pm_shared_key_unconfigured' },
+					extra: { projectKey, routedTo: siblings[0].id, shadowed },
+				});
+			}
+			return { project: siblings[0], hadSiblings: true };
+		}
+
 		const outcome = resolveProjectAmongSiblings(
 			siblings.map((p) => ({
 				projectId: p.id,
@@ -152,6 +198,18 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		if (outcome.action === 'route') {
 			const project = siblings.find((p) => p.id === outcome.projectId);
 			if (project) return { project, hadSiblings: true };
+			// The resolver only ever returns an id from the list above, so this is
+			// a broken contract rather than a routing outcome. Say so instead of
+			// degrading into a skip whose reason would be nonsense.
+			captureException(new Error(`JIRA resolver returned unknown project "${outcome.projectId}"`), {
+				tags: { source: 'pm_routing_resolver_contract' },
+				extra: { projectKey, candidates: siblings.map((p) => p.id) },
+			});
+			return {
+				project: null,
+				reason: `Internal routing error for JIRA key ${projectKey}`,
+				hadSiblings: true,
+			};
 		}
 
 		if (outcome.action === 'skip' && outcome.reason === 'ambiguous') {
@@ -171,12 +229,13 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		// The resolver is provider-agnostic and never sees the key, so it can only
 		// say "this board key". Name it here — the decision reason is the
 		// operator's whole diagnosis, and it has to identify what was being routed.
-		const reason =
-			outcome.action === 'skip'
-				? `JIRA key ${projectKey}: ${outcome.message}`
-				: `No project config for ${projectKey}`;
-		logger.info('JIRA event matched no owning project', { projectKey, issueKey, reason });
-		return { project: null, reason, hadSiblings: true };
+		// No log line: `resolveForKey` runs twice per webhook (parse, then
+		// resolve), and the processor already logs this reason exactly once.
+		return {
+			project: null,
+			reason: `JIRA key ${projectKey}: ${outcome.message}`,
+			hadSiblings: true,
+		};
 	}
 
 	isProcessableEvent(event: ParsedWebhookEvent): boolean {
@@ -221,6 +280,14 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		);
 		return project ? { project } : { project: null, reason: reason ?? '' };
 	}
+
+	/**
+	 * Legacy single-result resolution.
+	 *
+	 * Kept because `RouterPlatformAdapter` declares it and callers outside the
+	 * processor use it. Note it discards the reason — anything that needs to
+	 * explain a miss must call `resolveProjectWithReason`.
+	 */
 
 	async resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null> {
 		return (await this.resolveProjectWithReason(event)).project;

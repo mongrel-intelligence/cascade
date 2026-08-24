@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { IntegrationProvider } from '../../config/integrationRoles.js';
 import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
 import { assertJiraTopologyValid } from '../../integrations/pm/_shared/topology-validation.js';
@@ -41,22 +41,27 @@ export async function upsertProjectIntegration(
 	const db = getDb();
 
 	// Spec 024: reject a JIRA topology the router could not resolve, BEFORE the
-	// write. Throwing a TRPCError from the repository layer is a deliberate
-	// exception to the usual layering — it keeps the message operator-facing
-	// wherever the save originates (wizard, CLI, API) without every caller
-	// re-implementing the check, and without touching the projects router that
-	// plan 4 owns.
+	// write, so the operator sees it while the wizard is still open.
+	//
+	// Throwing a TRPCError from the repository layer is a deliberate layering
+	// exception. The honest reason is file ownership: the check belongs in the
+	// projects tRPC router, which spec 024 plan 4 owns, and putting it there
+	// would have made plans 2 and 4 conflict. The only caller today is that
+	// router's upsert mutation, so nothing non-tRPC sees a TRPCError. Move this
+	// up a layer once plan 4 lands.
 	if (category === 'pm' && provider === 'jira') {
 		const projectKey = (config as { projectKey?: unknown }).projectKey;
 		if (typeof projectKey === 'string' && projectKey.length > 0) {
 			const siblings = await db
 				.select({ projectId: projectIntegrations.projectId, config: projectIntegrations.config })
 				.from(projectIntegrations)
+				// Includes the project itself: the validator needs to know whether it
+				// already claims this key, since an existing claimant is not the one
+				// creating the conflict (it predates the save).
 				.where(
 					and(
 						eq(projectIntegrations.category, 'pm'),
 						eq(projectIntegrations.provider, 'jira'),
-						ne(projectIntegrations.projectId, projectId),
 						sql`${projectIntegrations.config}->>'projectKey' = ${projectKey}`,
 					),
 				);

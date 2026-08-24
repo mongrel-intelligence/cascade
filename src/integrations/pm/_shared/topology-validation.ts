@@ -58,6 +58,20 @@ export function assertJiraTopologyValid(
 	const projectKey = readProjectKey(config);
 	if (!projectKey) return;
 
+	// A malformed discriminator must not read as "absent". Silently treating a
+	// typo'd kind as no-discriminator would make the project the key's DEFAULT —
+	// the opposite of what the operator asked for, and invisible until the wrong
+	// team's issues start arriving.
+	const rawRouting = (config as { routing?: unknown } | null)?.routing;
+	if (rawRouting !== undefined && rawRouting !== null && readDiscriminator(config) === null) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message:
+				`Invalid routing discriminator for JIRA key "${projectKey}". Expected ` +
+				`{ kind: "label" | "component", value: <non-empty string> }.`,
+		});
+	}
+
 	const others = siblings.filter(
 		(s) => s.projectId !== projectId && readProjectKey(s.config) === projectKey,
 	);
@@ -65,9 +79,18 @@ export function assertJiraTopologyValid(
 
 	const mine = readDiscriminator(config);
 
+	// A project already registered on this key is not creating the conflict —
+	// it predates the save. Rejecting would lock a pre-024 duplicate-key
+	// deployment out of editing anything else about the project (status
+	// mappings included) over a state it could not have avoided, and the wizard
+	// has no discriminator field to fix it with until spec 024 plan 5.
+	const alreadyClaimsKey = siblings.some(
+		(s) => s.projectId === projectId && readProjectKey(s.config) === projectKey,
+	);
+
 	if (!mine) {
 		const existingDefault = others.find((s) => readDiscriminator(s.config) === null);
-		if (existingDefault) {
+		if (existingDefault && !alreadyClaimsKey) {
 			throw new TRPCError({
 				code: 'BAD_REQUEST',
 				message:

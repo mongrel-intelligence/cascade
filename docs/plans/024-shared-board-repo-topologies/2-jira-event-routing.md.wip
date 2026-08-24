@@ -214,7 +214,25 @@ n/a — all ACs auto-tested.
 - [x] AC #3 — same file: ambiguous test asserts both claimants appear in the reason, `captureException` called exactly once across two identical events, tagged `source: pm_routing_ambiguous`.
 - [x] AC #4 — `jira-topology-validation.test.ts`: 9 matrix tests + 3 upsert-wiring tests. Mutation-proved: removing `assertJiraTopologyValid` from the upsert fails `rejects a conflicting JIRA save before writing anything`.
 - [x] AC #5 — `routes a lone project on the key exactly as before` (routes regardless of labels) + `leaves the decision reason untouched for adapters without the hook` + the pre-existing `tests/unit/router/adapters/jira.test.ts` `resolveProject` tests, unmodified and green.
-- [x] AC #6 — 20 new tests across the two files; every new branch covered.
+- [x] AC #6 — 28 new tests across the two files; every new branch covered.
+
+**Review round 1 — must-fix resolved (approved change to spec semantics).** The
+strict matrix would have taken a pre-024 duplicate-key deployment from "one
+project works, the other is shadowed" to "nothing works", and the save-time
+validator would then have locked the operator out of the wizard — with no
+discriminator field until plan 5. Verified empirically against the real
+resolver. **Sharing is now opt-in**: a key where nobody declares a discriminator
+keeps first-match plus a `WARN` + Sentry `pm_shared_key_unconfigured` (once per
+key), and a project already registered on a key may re-save in a legacy
+duplicate state. A NEW project claiming a taken key is still rejected, so AC #11
+stands. Spec AC #4's "skipped with recorded reason" now applies only to
+opted-in keys; the spec's "backward compatibility is absolute" constraint wins
+where the two conflict.
+
+**Deferred to plan 5 (documented, not fixed):** `buildIntegrationConfig` in
+`web/.../jira/wizard.ts` drops `routing` on the write path — a fifth projection,
+and the one that makes the only pre-plan-5 opt-in route a trap. Plan 5 owns that
+file; the README caveat now warns explicitly.
 - [x] AC #7 — `npm run typecheck` exit 0.
 - [x] AC #8 — `npm test` 11121 passed / 23 skipped, 614 files, exit 0.
 - [x] AC #9 — `npm run lint` exit 0 (13 warnings, all pre-existing in untouched files).

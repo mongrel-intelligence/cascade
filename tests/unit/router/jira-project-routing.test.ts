@@ -70,12 +70,16 @@ const KEY = 'SHARED';
 
 type Discriminator = { kind: 'label' | 'component'; value: string };
 
-const project = (id: string, discriminator: Discriminator | null): RouterProjectConfig => ({
+const project = (
+	id: string,
+	discriminator: Discriminator | null,
+	projectKey = KEY,
+): RouterProjectConfig => ({
 	id,
 	repo: `owner/${id}`,
 	pmType: 'jira',
 	jira: {
-		projectKey: KEY,
+		projectKey,
 		baseUrl: 'https://test.atlassian.net',
 		...(discriminator ? { routing: { discriminator } } : {}),
 	},
@@ -93,12 +97,13 @@ const payload = (over: {
 	components?: string[];
 	issueKey?: string;
 	event?: string;
+	projectKey?: string;
 }) => ({
 	webhookEvent: over.event ?? 'jira:issue_updated',
 	issue: {
-		key: over.issueKey ?? `${KEY}-1`,
+		key: over.issueKey ?? `${over.projectKey ?? KEY}-1`,
 		fields: {
-			project: { key: KEY },
+			project: { key: over.projectKey ?? KEY },
 			labels: over.labels ?? [],
 			components: (over.components ?? []).map((name) => ({ name })),
 		},
@@ -204,6 +209,51 @@ describe('JIRA project routing across shared keys', () => {
 		});
 	});
 
+	it('keeps first-match for a legacy duplicate key that never opted into sharing', async () => {
+		// The ONLY duplicate-key state a pre-024 deployment can be in: the
+		// discriminator field did not exist. Strict matching would take such a
+		// deployment from "one project works, the other is shadowed" to "nothing
+		// works at all" — and the wizard has no discriminator field until plan 5,
+		// so the operator could not even fix it. Sharing is opt-in.
+		useProjects(project('be', null), project('fe', null));
+
+		const { resolution } = await route(adapter, payload({ labels: ['bug'] }));
+
+		expect(resolution?.project?.id).toBe('be');
+	});
+
+	it('reports an unconfigured shared key once per key, not once per issue', async () => {
+		// A shadowed sibling is a configuration problem, not an event problem.
+		// Its own key: the dedup Set is module-level (per process, as intended),
+		// so a key another test already reported would suppress this one.
+		const OWN = 'DEDUP';
+		useProjects(project('be', null, OWN), project('fe', null, OWN));
+
+		await route(adapter, payload({ projectKey: OWN, issueKey: `${OWN}-1` }));
+		await route(adapter, payload({ projectKey: OWN, issueKey: `${OWN}-2` }));
+
+		expect(captureException).toHaveBeenCalledTimes(1);
+		expect(vi.mocked(captureException).mock.calls[0][1]).toMatchObject({
+			tags: { source: 'pm_shared_key_unconfigured' },
+		});
+	});
+
+	it('engages strict matching as soon as one sibling declares a discriminator', async () => {
+		// Opting in is per key, not per project: once anyone declares one, the
+		// remaining ambiguity is a real misconfiguration rather than legacy state.
+		useProjects(
+			project('be', { kind: 'label', value: 'team-be' }),
+			project('fe', null),
+			project('mobile', null),
+		);
+
+		const { resolution } = await route(adapter, payload({ labels: ['unrelated'] }));
+
+		expect(resolution?.project).toBeNull();
+		expect(resolution?.reason).toContain('fe');
+		expect(resolution?.reason).toContain('mobile');
+	});
+
 	it('resolves comment events through the same seam', async () => {
 		useProjects(
 			project('frontend', { kind: 'label', value: 'team-fe' }),
@@ -216,6 +266,25 @@ describe('JIRA project routing across shared keys', () => {
 		);
 
 		expect(resolution?.project?.id).toBe('backend');
+	});
+
+	it('surfaces the routing reason as the webhook-log decision reason', async () => {
+		// AC #2's actual claim, end to end through the real processor. Every other
+		// test calls the adapter directly, which would pass even if the new
+		// channel were never wired into processRouterWebhook at all — and that
+		// channel is the entire point of this plan's approved divergence.
+		useProjects(
+			project('frontend', { kind: 'label', value: 'team-fe' }),
+			project('backend', { kind: 'label', value: 'team-be' }),
+		);
+
+		const result = await processRouterWebhook(adapter, payload({ labels: ['unrelated'] }), {
+			dispatch: vi.fn(),
+		} as unknown as TriggerRegistry);
+
+		expect(result.decisionReason).toContain(KEY);
+		expect(result.decisionReason).toContain('team-fe');
+		expect(result.decisionReason).toContain('team-be');
 	});
 
 	it('leaves the decision reason untouched for adapters without the hook', async () => {

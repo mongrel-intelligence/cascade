@@ -145,10 +145,20 @@ The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatform
 
 ## Shared-key routing contract
 
-> ⚠️ **Do not configure a shared key in production yet.** Routing is correct as
-> of spec 024 plan 2, but read-scoping is not: a shared-board project's agents
-> still see the sibling team's items when listing work. Plan 3 closes that; this
-> caveat goes with it.
+> ⚠️ **Do not configure a shared key in production yet.** Two reasons, both
+> removed by later plans in spec 024:
+>
+> 1. **Read-scoping is missing** (plan 3). Routing is correct, but a
+>    shared-board project's agents still see the sibling team's items when
+>    listing work.
+> 2. **The wizard silently drops the discriminator** (plan 5). There is no
+>    discriminator field yet, so the only way to set one is an out-of-band
+>    write — and `buildIntegrationConfig` in
+>    `web/src/components/projects/pm-providers/jira/wizard.ts` rebuilds the
+>    config from wizard state without carrying `routing` through. The next
+>    wizard save on that project wipes it, silently turning a scoped project
+>    back into the key's default. Plan 5 owns that file and must thread the
+>    field when it adds the input.
 
 CASCADE historically assumed one project per PM board. The JIRA router resolved
 a project by **first match** on `projectKey`, so a second project on the same key
@@ -169,10 +179,30 @@ key belong to a project:
 JIRA labels are case-sensitive, and a near-miss must fail loudly rather than
 route another team's work to you.
 
+### Sharing is opt-in
+
+If **no** project on a key declares a discriminator, the key keeps pre-024
+first-match routing — plus a `WARN` and a Sentry capture tagged
+**`pm_shared_key_unconfigured`** naming the project that wins and the ones being
+shadowed (once per key per process).
+
+This is deliberate. A pre-024 deployment with two projects on one key can only
+be in that state — the field did not exist — and applying the strict matrix to
+it would turn *"one project works, the other is shadowed"* into *"nothing works
+at all"*, with no wizard field to fix it until plan 5. The shadowing bug stays,
+but stops being silent. The strict matrix engages the moment **any** project on
+the key declares a discriminator.
+
+Save-time validation follows the same rule: a project **already registered** on
+a key may be re-saved even in a legacy duplicate state (it did not create the
+conflict), while a **new** project claiming a taken key without a discriminator
+is still rejected.
+
 ### Resolution order
 
-`resolveProjectAmongSiblings` (`pm/_shared/project-routing.ts`) is pure and
-provider-agnostic, so Trello and Linear can adopt it unchanged:
+Once opted in, `resolveProjectAmongSiblings` (`pm/_shared/project-routing.ts`)
+decides. It is pure and provider-agnostic, so Trello and Linear can adopt it
+unchanged:
 
 | Situation | Outcome |
 |---|---|

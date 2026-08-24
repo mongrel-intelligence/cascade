@@ -102,6 +102,49 @@ describe('assertJiraTopologyValid', () => {
 		).not.toThrow();
 	});
 
+	it('rejects a malformed discriminator instead of reading it as absent', () => {
+		// A typo'd kind would otherwise parse as "no discriminator", silently
+		// making the project the key's DEFAULT — the opposite of what the
+		// operator asked for, and invisible until the wrong team's issues arrive.
+		expect(() =>
+			assertJiraTopologyValid(
+				'be',
+				{ projectKey: KEY, routing: { discriminator: { kind: 'LABEL', value: 'team-be' } } },
+				[],
+			),
+		).toThrow(/discriminator/i);
+	});
+
+	it('rejects an empty discriminator value', () => {
+		expect(() =>
+			assertJiraTopologyValid(
+				'be',
+				{ projectKey: KEY, routing: { discriminator: { kind: 'label', value: '' } } },
+				[],
+			),
+		).toThrow(/discriminator/i);
+	});
+
+	it('grandfathers a re-save of a project already on a legacy duplicate key', () => {
+		// A pre-024 deployment can only be in this state, and the wizard has no
+		// discriminator field until plan 5. Rejecting the save would lock the
+		// operator out of editing anything else about the project — status
+		// mappings included — over a conflict that predates the save.
+		expect(() =>
+			assertJiraTopologyValid('be', configFor(null), [sibling('be', null), sibling('fe', null)]),
+		).not.toThrow();
+	});
+
+	it('still rejects a NEW project claiming a key that already has a default', () => {
+		// The grandfather clause covers existing claimants only; AC #11 stands.
+		expect(() =>
+			assertJiraTopologyValid('mobile', configFor(null), [
+				sibling('be', null),
+				sibling('fe', null),
+			]),
+		).toThrow(/be|fe/);
+	});
+
 	it('ignores the project being edited when it is already among the siblings', () => {
 		// Re-saving an existing project must not conflict with itself.
 		expect(() =>
@@ -147,5 +190,9 @@ describe('upsertProjectIntegration topology guard', () => {
 		await upsertProjectIntegration('frontend', 'scm', 'github', { repo: 'a/b' }, {});
 
 		expect(mockDb.db.insert).toHaveBeenCalled();
+		// Asserting the write happened is not enough: a regression that ran the
+		// sibling query for every provider would still pass, since the mock
+		// returns [] and the validator then no-ops. "Untouched" means no query.
+		expect(mockDb.db.select).not.toHaveBeenCalled();
 	});
 });
