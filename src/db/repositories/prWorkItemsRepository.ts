@@ -365,6 +365,32 @@ export async function lookupWorkItemForPR(
 	return rows.length > 0 ? rows[0].workItemId : null;
 }
 
+/**
+ * Which project owns a PR, by repository (spec 024).
+ *
+ * The mirror of {@link lookupWorkItemForPR}: that one asks "given a project,
+ * which work item?", this asks "given a repository, which project?". It is the
+ * authoritative answer for every PR CASCADE created, which is what lets several
+ * projects share one repository — an event about a linked PR goes to its owner
+ * regardless of which project is the repository's primary.
+ *
+ * Newest row wins if a PR was somehow linked twice; a PR with no link returns
+ * null and the caller falls back to the repository's primary project.
+ */
+export async function findProjectIdByRepoPrFromDb(
+	repoFullName: string,
+	prNumber: number,
+): Promise<string | null> {
+	const db = getDb();
+	const rows = await db
+		.select({ projectId: prWorkItems.projectId })
+		.from(prWorkItems)
+		.where(and(eq(prWorkItems.repoFullName, repoFullName), eq(prWorkItems.prNumber, prNumber)))
+		.orderBy(desc(prWorkItems.updatedAt))
+		.limit(1);
+	return rows.length > 0 ? rows[0].projectId : null;
+}
+
 // ============================================================================
 // Unified work view
 // ============================================================================

@@ -33,7 +33,7 @@ Ships no behavior change: routing still uses the old lookups until plans 2/4 rew
 - `src/integrations/pm/jira/config-schema.ts`
 - `src/integrations/pm/_shared/project-routing.ts` (new)
 - `src/config/provider.ts`, `src/config/configCache.ts`
-- `src/db/repositories/projectsRepository.ts`, `src/db/repositories/prWorkItemsRepository.ts`
+- `src/db/repositories/configRepository.ts`, `src/db/repositories/prWorkItemsRepository.ts`
 - `tests/unit/integrations/pm-project-routing.test.ts` (new)
 - `tests/unit/config/provider-topology.test.ts` (new)
 
@@ -136,16 +136,16 @@ Ships no behavior change: routing still uses the old lookups until plans 2/4 rew
 
 **Tests first** (`tests/unit/config/provider-topology.test.ts`, mocking the repositories layer with `vi.mock` per existing provider tests' pattern):
 
-- `findProjectsByJiraProjectKey returns all siblings` — unit — repo mock returns two projects with same key → both returned, stable order by project id. Expected red: `TypeError: findProjectsByJiraProjectKey is not a function`.
-- `findProjectByJiraProjectKey (legacy) still returns first match` — unit — delegates to plural, returns element 0 — pins AC #12 (existing callers unchanged). Expected red: n/a green-from-start guard.
-- `getPrimaryProjectByRepo returns the repo_primary sibling` — unit — mock two projects sharing repo, one primary → primary returned. Expected red: function missing.
-- `getProjectByRepo (legacy) delegates to primary lookup` — unit — same fixture → same result as `getPrimaryProjectByRepo`; single-project fixture → identical to today. Expected red: function missing / wrong sibling.
-- `findProjectIdByRepoPr returns linked project` — unit — prWorkItems repo mock `(repoFullName,prNumber)→projectId` → returned; miss → null. Expected red: `findProjectIdByRepoPr is not a function`.
+- `findProjectsByJiraProjectKey returns all siblings` — unit — repo mock returns two projects with same key → both returned in DB order. Expected red: `TypeError: findProjectsByJiraProjectKey is not a function`.
+- `findProjectsByJiraProjectKey caches the sibling list` — unit — cache hit short-circuits the DB call; miss populates the cache. Expected red: function missing.
+- `findPrimaryProjectByRepo returns the repo_primary sibling` — unit — mock two projects sharing a repo, one primary → primary returned; caches like its siblings. Expected red: function missing.
+- `findProjectIdByRepoPr returns the linked project id` — unit — prWorkItems repo mock `(repoFullName,prNumber)→projectId` → returned; miss → null; never cached (links change mid-life). Expected red: `findProjectIdByRepoPr is not a function`.
+- **Legacy pair unchanged**: `findProjectByRepo` / `findProjectByJiraProjectKey` keep their behavior and their existing coverage in `tests/unit/config/provider.test.ts` — that suite staying green *without edits* is the AC #12 pin for this task.
 
 **Implementation**:
-- `src/db/repositories/projectsRepository.ts`: add `findProjectsByJiraProjectKeyFromDb(projectKey): Promise<ProjectRow[]>` (existing singular keeps its signature, reimplemented as `(await plural)[0] ?? null`); add `findPrimaryProjectByRepoFromDb(repo)` (`WHERE repo = $1 AND repo_primary`) and `findProjectsByRepoFromDb(repo)`.
+- `src/db/repositories/configRepository.ts` (the project-lookup home — `projectsRepository.ts` owns worker-image state and CRUD, not lookups): add `findProjectsByJiraProjectKeyFromDb(projectKey): Promise<ProjectConfig[]>`, `findPrimaryProjectByRepoFromDb(repo)` (`WHERE repo = $1 AND repo_primary`), and `findProjectsByRepoFromDb(repo)`. Compose the existing `findProjectConfigFromDb` + `jiraProjectKeyWhereClause` helpers rather than writing fresh SQL; the existing singular functions keep their signatures, reimplemented over the plural where applicable.
 - `src/db/repositories/prWorkItemsRepository.ts`: add `findProjectIdByRepoPr(repoFullName: string, prNumber: number): Promise<string | null>` — select `project_id` where both match, newest row wins on duplicates.
-- `src/config/provider.ts` + `src/config/configCache.ts`: expose `findProjectsByJiraProjectKey`, `getPrimaryProjectByRepo`, `findProjectIdByRepoPr`; cache keys stay per-identifier with the value now the sibling list (repo) — legacy `getProjectByRepo` / `findProjectByJiraProjectKey` become thin delegates preserving exact current return semantics for the single-project case.
+- `src/config/provider.ts` + `src/config/configCache.ts`: expose `findProjectsByJiraProjectKey`, `findPrimaryProjectByRepo`, `findProjectIdByRepoPr` (named to match the file's existing `findProjectBy*` convention), each with its own cache key holding the sibling list / primary. **The legacy `findProjectByRepo` and `findProjectByJiraProjectKey` are left byte-for-byte untouched** and keep their existing tests: `tests/unit/config/provider.test.ts` already pins their cache interactions, and that pre-existing net is stronger AC #12 evidence than a rewritten one. Plan 4 switches the GitHub call sites onto the new lookups; the legacy pair retires when its last caller does.
 
 ---
 
