@@ -1,6 +1,7 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne, sql } from 'drizzle-orm';
 import type { IntegrationProvider } from '../../config/integrationRoles.js';
 import { PROVIDER_CREDENTIAL_ROLES } from '../../config/integrationRoles.js';
+import { assertJiraTopologyValid } from '../../integrations/pm/_shared/topology-validation.js';
 import { getDb } from '../client.js';
 import { projectIntegrations } from '../schema/index.js';
 import { deleteProjectCredential } from './credentialsRepository.js';
@@ -38,6 +39,31 @@ export async function upsertProjectIntegration(
 	triggers?: Record<string, boolean>,
 ) {
 	const db = getDb();
+
+	// Spec 024: reject a JIRA topology the router could not resolve, BEFORE the
+	// write. Throwing a TRPCError from the repository layer is a deliberate
+	// exception to the usual layering — it keeps the message operator-facing
+	// wherever the save originates (wizard, CLI, API) without every caller
+	// re-implementing the check, and without touching the projects router that
+	// plan 4 owns.
+	if (category === 'pm' && provider === 'jira') {
+		const projectKey = (config as { projectKey?: unknown }).projectKey;
+		if (typeof projectKey === 'string' && projectKey.length > 0) {
+			const siblings = await db
+				.select({ projectId: projectIntegrations.projectId, config: projectIntegrations.config })
+				.from(projectIntegrations)
+				.where(
+					and(
+						eq(projectIntegrations.category, 'pm'),
+						eq(projectIntegrations.provider, 'jira'),
+						ne(projectIntegrations.projectId, projectId),
+						sql`${projectIntegrations.config}->>'projectKey' = ${projectKey}`,
+					),
+				);
+			assertJiraTopologyValid(projectId, config, siblings);
+		}
+	}
+
 	// Preserve existing triggers if not provided (prevents data loss from Integration tab saves)
 	let triggersToSave = triggers;
 	if (triggersToSave === undefined) {
