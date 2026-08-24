@@ -17,6 +17,7 @@ The config provider loads project configuration from the database with in-memory
 | `loadProjectConfigByRepo(repo)` | GitHub `owner/repo` | `{ project, config }` |
 | `loadProjectConfigByJiraProjectKey(key)` | JIRA project key | `{ project, config }` |
 | `loadProjectConfigByLinearTeamId(teamId)` | Linear team ID | `{ project, config }` |
+| `loadProjectConfigByGitHubProjectsProjectId(id)` | GitHub Project node ID (`PVT_…`) | `{ project, config }` |
 | `loadProjectConfigById(id)` | CASCADE project ID | `{ project, config }` |
 
 ### Caching

@@ -25,7 +25,7 @@ const ROUTER_ADAPTERS_DIR = join(__dirname, '..', '..', '..', 'src', 'router', '
 // Adding a new PM router adapter file here is part of the contract: the
 // guard fails fast on unregistered adapters too if they end up dispatching
 // without scope.
-const PM_ROUTER_ADAPTER_FILES = ['linear.ts', 'trello.ts', 'jira.ts'];
+const PM_ROUTER_ADAPTER_FILES = ['linear.ts', 'trello.ts', 'jira.ts', 'github-projects.ts'];
 
 const ACCEPTABLE_WRAPPERS = ['withPMScopeForDispatch', 'withPMProvider'];
 

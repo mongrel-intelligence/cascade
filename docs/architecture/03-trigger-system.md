@@ -41,7 +41,7 @@ interface TriggerHandler {
 ```typescript
 interface TriggerContext {
   project: ProjectConfig;
-  source: TriggerSource;          // 'trello' | 'github' | 'jira' | 'linear' | 'sentry'
+  source: TriggerSource;          // 'trello' | 'github' | 'jira' | 'linear' | 'github-projects' | 'sentry'
   payload: unknown;                // Raw webhook payload
   personaIdentities?: PersonaIdentities;  // GitHub bot identities
 }
@@ -75,7 +75,7 @@ interface TriggerResult {
 
 ## Built-in Triggers
 
-Registration happens in `src/triggers/builtins.ts`. PM providers (Trello, JIRA, Linear) contribute triggers via the manifest registry; SCM and alerting providers use their own `register.ts` functions:
+Registration happens in `src/triggers/builtins.ts`. PM providers (Trello, JIRA, Linear, GitHub Projects) contribute triggers via the manifest registry; SCM and alerting providers use their own `register.ts` functions:
 
 ```typescript
 function registerBuiltInTriggers(registry: TriggerRegistry): void {
@@ -109,6 +109,14 @@ function registerBuiltInTriggers(registry: TriggerRegistry): void {
 | `JiraCommentMentionTrigger` | Bot mentioned in comment | Varies |
 | `JiraStatusChangedTrigger` | Issue status transition | Per-status mapping |
 | `JiraLabelAddedTrigger` | "cascade-ready" label added | `splitting` |
+
+### GitHub Projects triggers (`src/triggers/github-projects/`)
+
+| Handler | Event | Agent |
+|---------|-------|-------|
+| `GitHubProjectsStatusChangedTrigger` | Board Status field change (`projects_v2_item`) | Per-status mapping |
+
+The handler reads the item's current Status option ID authoritatively via GraphQL (the `projects_v2_item` webhook does not reliably carry the new value), then resolves it against the configured status→agent mapping.
 
 ### GitHub triggers (`src/triggers/github/`)
 

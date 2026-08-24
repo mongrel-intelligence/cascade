@@ -5,7 +5,7 @@
 
 import type { ContainerId, LabelId, StateId } from './ids.js';
 
-export type PMType = 'trello' | 'jira' | 'linear';
+export type PMType = 'trello' | 'jira' | 'linear' | 'github-projects';
 
 // ── Discovery capability type machinery ───────────────────────────────────
 // Plan 009/1 introduces an optional `discover?` method on PMProvider that
@@ -71,7 +71,28 @@ export type DiscoveryResult<K extends DiscoveryCapability> = K extends 'labels'
 					// when present.
 					Array<{ id: ContainerId; name: string; url?: string }>
 				: K extends 'currentUser'
-					? { id: string; name: string; displayName?: string }
+					? {
+							id: string;
+							name: string;
+							displayName?: string;
+							/**
+							 * The viewer's canonical unique handle/login, when it differs from
+							 * the human-readable `name`/`displayName`. GitHub is the motivating
+							 * case: the profile `name` ("Jane Smith") is not the `login`
+							 * ("janesmith"), and owner/discovery lookups key off the login —
+							 * using the display name resolves to a null user and breaks
+							 * discovery. Optional; providers whose display name IS the canonical
+							 * handle can omit it.
+							 */
+							login?: string;
+							/**
+							 * Owner scopes the viewer can act within beyond their personal
+							 * account. GitHub Projects surfaces the viewer's organizations so the
+							 * wizard can offer an org-owner picker; other providers omit it. Each
+							 * entry is a provider-native owner handle/login.
+							 */
+							organizations?: Array<{ login: string }>;
+						}
 					: never;
 
 /**

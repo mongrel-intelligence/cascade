@@ -13,6 +13,7 @@ import { integrationRegistry } from '../registry.js';
 import './trello/index.js';
 import './jira/index.js';
 import './linear/index.js';
+import './github-projects/index.js';
 import { listPMProviders } from './registry.js';
 
 // Mirror PM manifests into integrationRegistry. Idempotent: guarded by

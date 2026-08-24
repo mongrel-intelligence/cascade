@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { githubProjectsConfigSchema } from '../integrations/pm/github-projects/config-schema.js';
 import { jiraConfigSchema } from '../integrations/pm/jira/config-schema.js';
 import { linearConfigSchema } from '../integrations/pm/linear/config-schema.js';
 import { trelloConfigSchema } from '../integrations/pm/trello/config-schema.js';
@@ -70,7 +71,7 @@ export const ProjectConfigSchema = z.object({
 	// src/pm/no-pm-provider.ts.
 	pm: z
 		.object({
-			type: z.enum(['trello', 'jira', 'linear']),
+			type: z.enum(['trello', 'jira', 'linear', 'github-projects']),
 		})
 		.optional(),
 
@@ -79,6 +80,8 @@ export const ProjectConfigSchema = z.object({
 	jira: jiraConfigSchema.optional(),
 
 	linear: linearConfigSchema.optional(),
+
+	githubProjects: githubProjectsConfigSchema.optional(),
 
 	model: z.string().default(PROJECT_DEFAULTS.model),
 	agentModels: z.record(z.string()).optional(),

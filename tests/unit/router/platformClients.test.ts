@@ -35,6 +35,7 @@ import {
 	JiraPlatformClient,
 	LinearPlatformClient,
 	resolveGitHubHeaders,
+	resolveGitHubProjectsCredentials,
 	resolveJiraCredentials,
 	resolveTrelloCredentials,
 	TrelloPlatformClient,
@@ -126,6 +127,33 @@ describe('resolveTrelloCredentials', () => {
 		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
 
 		const result = await resolveTrelloCredentials('proj1');
+
+		expect(result).toBeNull();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// resolveGitHubProjectsCredentials
+// ---------------------------------------------------------------------------
+
+describe('resolveGitHubProjectsCredentials', () => {
+	it('returns token on success', async () => {
+		mockGetIntegrationCredential.mockImplementation(
+			async (_projectId, category, _provider, role) => {
+				if (category === 'pm' && role === 'token') return 'ghp_test123';
+				throw new Error(`Credential '${category}/${role}' not found`);
+			},
+		);
+
+		const result = await resolveGitHubProjectsCredentials('proj1');
+
+		expect(result).toEqual({ token: 'ghp_test123' });
+	});
+
+	it('returns null when credentials are missing', async () => {
+		mockGetIntegrationCredential.mockRejectedValue(new Error('not found'));
+
+		const result = await resolveGitHubProjectsCredentials('proj1');
 
 		expect(result).toBeNull();
 	});

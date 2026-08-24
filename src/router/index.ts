@@ -18,12 +18,14 @@ import { logger } from '../utils/logging.js';
 import {
 	createWebhookHandler,
 	parseGitHubPayload,
+	parseGitHubProjectsPayload,
 	parseJiraPayload,
 	parseLinearPayload,
 	parseSentryPayload,
 	parseTrelloPayload,
 } from '../webhook/webhookHandlers.js';
 import { GitHubRouterAdapter, injectEventType } from './adapters/github.js';
+import { GitHubProjectsRouterAdapter } from './adapters/github-projects.js';
 import { JiraRouterAdapter } from './adapters/jira.js';
 import { LinearRouterAdapter } from './adapters/linear.js';
 import { SentryRouterAdapter } from './adapters/sentry.js';
@@ -33,6 +35,7 @@ import { ROUTER_INSTANCE_ID } from './instance-id.js';
 import { getQueueStats } from './queue.js';
 import { processRouterWebhook } from './webhook-processor.js';
 import {
+	verifyGitHubProjectsWebhookSignature,
 	verifyGitHubWebhookSignature,
 	verifyJiraWebhookSignature,
 	verifyLinearWebhookSignature,
@@ -189,6 +192,30 @@ app.post(
 		verifySignature: verifyLinearWebhookSignature,
 		processWebhook: async (payload) => {
 			const adapter = new LinearRouterAdapter();
+			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
+			return {
+				processed: result.shouldProcess,
+				projectId: result.projectId,
+				decisionReason: result.decisionReason,
+			};
+		},
+	}),
+);
+
+// GitHub Projects webhook verification
+app.get('/github-projects/webhook', (c) => {
+	return c.text('OK', 200);
+});
+
+// GitHub Projects webhook handler
+app.post(
+	'/github-projects/webhook',
+	createWebhookHandler({
+		source: 'github-projects',
+		parsePayload: parseGitHubProjectsPayload,
+		verifySignature: verifyGitHubProjectsWebhookSignature,
+		processWebhook: async (payload) => {
+			const adapter = new GitHubProjectsRouterAdapter();
 			const result = await processRouterWebhook(adapter, payload, triggerRegistry);
 			return {
 				processed: result.shouldProcess,

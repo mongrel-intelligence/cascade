@@ -11,7 +11,12 @@
  * still runs normally.
  */
 
-import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../../pm/config.js';
+import {
+	getGitHubProjectsConfig,
+	getJiraConfig,
+	getLinearConfig,
+	getTrelloConfig,
+} from '../../pm/config.js';
 import type { PMProvider } from '../../pm/types.js';
 import type { ProjectConfig } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -94,6 +99,10 @@ function isProviderMisconfigured(project: ProjectConfig, provider: PMProvider): 
 		case 'linear': {
 			const linear = getLinearConfig(project);
 			return !linear?.teamId || !linear.statuses?.backlog;
+		}
+		case 'github-projects': {
+			const githubProjects = getGitHubProjectsConfig(project);
+			return !githubProjects?.projectId || !githubProjects.statuses?.backlog;
 		}
 		// SCM-only projects have no PM provider (no backlog). This branch is never
 		// reached on the PM status-changed capacity path, but keeps the switch exhaustive.

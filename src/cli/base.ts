@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 
 import { Command } from '@oclif/core';
 import { withGitHubToken } from '../github/client.js';
+import { withGitHubProjectsCredentials } from '../github-projects/client.js';
 import { normalizeJiraAuthType } from '../jira/authType.js';
 import { withJiraCredentials } from '../jira/client.js';
 import { withLinearCredentials } from '../linear/client.js';
@@ -69,6 +70,19 @@ function wrapWithCredentialScopes(fn: () => Promise<void>): () => Promise<void> 
 		const prev = fn;
 		fn = () => withLinearCredentials({ apiKey: linearApiKey }, prev);
 	}
+	// GitHub Projects uses its own credential (GITHUB_PROJECTS_TOKEN) scoped through
+	// a dedicated AsyncLocalStorage (getGitHubProjectsCredentials()), distinct from
+	// the SCM `withGitHubToken` scope. It intentionally does NOT read GITHUB_TOKEN:
+	// the worker's secretOrchestrator overwrites GITHUB_TOKEN with the SCM persona
+	// token, which would run agent `cascade-tools pm` calls as the SCM identity.
+	// The dedicated key preserves the configured PM PAT. Established only for
+	// GitHub-Projects PM workers so `cascade-tools pm` calls don't throw "No GitHub
+	// Projects credentials in scope".
+	const githubProjectsToken = process.env.GITHUB_PROJECTS_TOKEN;
+	if (process.env.CASCADE_PM_TYPE === 'github-projects' && githubProjectsToken) {
+		const prev = fn;
+		fn = () => withGitHubProjectsCredentials({ token: githubProjectsToken }, prev);
+	}
 	return fn;
 }
 
@@ -87,47 +101,76 @@ function resolvePmType(): PMType {
 	return 'trello';
 }
 
+function parseJsonEnv(value: string | undefined): Record<string, string> {
+	return value ? JSON.parse(value) : {};
+}
+
+function synthesizeJiraFromEnv(): ProjectConfig {
+	return {
+		pm: { type: 'jira' },
+		jira: {
+			projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
+			baseUrl: resolveJiraBaseUrl() ?? '',
+			authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
+			statuses: parseJsonEnv(process.env.CASCADE_JIRA_STATUSES),
+		},
+	} as ProjectConfig;
+}
+
+function synthesizeLinearFromEnv(): ProjectConfig {
+	const linearProjectId = process.env.CASCADE_LINEAR_PROJECT_ID;
+	return {
+		pm: { type: 'linear' },
+		linear: {
+			teamId: process.env.CASCADE_LINEAR_TEAM_ID ?? '',
+			...(linearProjectId && { projectId: linearProjectId }),
+			statuses: parseJsonEnv(process.env.CASCADE_LINEAR_STATUSES),
+		},
+	} as ProjectConfig;
+}
+
+function synthesizeGitHubProjectsFromEnv(): ProjectConfig {
+	const ghpLabels = process.env.CASCADE_GITHUB_PROJECTS_LABELS;
+	return {
+		pm: { type: 'github-projects' },
+		githubProjects: {
+			projectId: process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID ?? '',
+			owner: process.env.CASCADE_GITHUB_PROJECTS_OWNER ?? '',
+			ownerType:
+				(process.env.CASCADE_GITHUB_PROJECTS_OWNER_TYPE as 'user' | 'organization') ?? 'user',
+			statuses: parseJsonEnv(process.env.CASCADE_GITHUB_PROJECTS_STATUSES),
+			...(ghpLabels && { labels: parseJsonEnv(ghpLabels) }),
+		},
+	} as ProjectConfig;
+}
+
+function synthesizeTrelloFromEnv(): ProjectConfig {
+	return {
+		pm: { type: 'trello' },
+		trello: {
+			boardId: process.env.CASCADE_TRELLO_BOARD_ID ?? '',
+			lists: parseJsonEnv(process.env.CASCADE_TRELLO_LISTS),
+			labels: parseJsonEnv(process.env.CASCADE_TRELLO_LABELS),
+		},
+	} as ProjectConfig;
+}
+
 /**
  * Synthesize a minimal ProjectConfig shell from `CASCADE_*` env vars so
  * `createPMProvider` can construct the in-scope provider. Worker-spawned CLI
  * commands receive these env vars from `secretBuilder.augmentProjectSecrets`.
  */
 function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
-	if (pmType === 'jira') {
-		const jiraStatuses = process.env.CASCADE_JIRA_STATUSES;
-		const jiraBaseUrl = resolveJiraBaseUrl();
-		return {
-			pm: { type: 'jira' },
-			jira: {
-				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
-				baseUrl: jiraBaseUrl ?? '',
-				authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
-				statuses: jiraStatuses ? JSON.parse(jiraStatuses) : {},
-			},
-		} as ProjectConfig;
+	switch (pmType) {
+		case 'jira':
+			return synthesizeJiraFromEnv();
+		case 'linear':
+			return synthesizeLinearFromEnv();
+		case 'github-projects':
+			return synthesizeGitHubProjectsFromEnv();
+		default:
+			return synthesizeTrelloFromEnv();
 	}
-	if (pmType === 'linear') {
-		const linearProjectId = process.env.CASCADE_LINEAR_PROJECT_ID;
-		const linearStatuses = process.env.CASCADE_LINEAR_STATUSES;
-		return {
-			pm: { type: 'linear' },
-			linear: {
-				teamId: process.env.CASCADE_LINEAR_TEAM_ID ?? '',
-				...(linearProjectId && { projectId: linearProjectId }),
-				statuses: linearStatuses ? JSON.parse(linearStatuses) : {},
-			},
-		} as ProjectConfig;
-	}
-	const trelloLists = process.env.CASCADE_TRELLO_LISTS;
-	const trelloLabels = process.env.CASCADE_TRELLO_LABELS;
-	return {
-		pm: { type: 'trello' },
-		trello: {
-			boardId: process.env.CASCADE_TRELLO_BOARD_ID ?? '',
-			lists: trelloLists ? JSON.parse(trelloLists) : {},
-			labels: trelloLabels ? JSON.parse(trelloLabels) : {},
-		},
-	} as ProjectConfig;
 }
 
 export abstract class CredentialScopedCommand extends Command {

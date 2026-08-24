@@ -34,7 +34,7 @@ export interface PromptContext {
 	projectId?: string;
 
 	// PM vocabulary (computed from pmType)
-	pmType?: 'trello' | 'jira' | 'linear';
+	pmType?: 'trello' | 'jira' | 'linear' | 'github-projects';
 	workItemNoun?: string; // "card" or "issue"
 	workItemNounPlural?: string; // "cards" or "issues"
 	workItemNounCap?: string; // "Card" or "Issue"
@@ -334,7 +334,11 @@ export function getTemplateVariables(): Array<{
 		{ name: 'workItemId', group: 'Common', description: 'Work item ID' },
 		{ name: 'workItemUrl', group: 'Common', description: 'Work item URL' },
 		{ name: 'projectId', group: 'Common', description: 'Project identifier' },
-		{ name: 'pmType', group: 'PM', description: 'PM type: trello, jira, or linear' },
+		{
+			name: 'pmType',
+			group: 'PM',
+			description: 'PM type: trello, jira, linear, or github-projects',
+		},
 		{ name: 'workItemNoun', group: 'PM', description: 'card or issue' },
 		{ name: 'workItemNounPlural', group: 'PM', description: 'cards or issues' },
 		{ name: 'workItemNounCap', group: 'PM', description: 'Card or Issue' },

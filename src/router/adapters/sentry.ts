@@ -7,6 +7,7 @@
  * augmented payload by the router before the adapter processes it.
  */
 
+import { withGitHubProjectsCredentials } from '../../github-projects/client.js';
 import { withJiraCredentials } from '../../jira/client.js';
 import { withLinearCredentials } from '../../linear/client.js';
 import { getSentryIntegrationConfig } from '../../sentry/integration.js';
@@ -23,6 +24,7 @@ import { logger } from '../../utils/logging.js';
 import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
 import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
 import {
+	resolveGitHubProjectsCredentials,
 	resolveJiraCredentials,
 	resolveLinearCredentials,
 	resolveTrelloCredentials,
@@ -179,6 +181,18 @@ export class SentryRouterAdapter implements RouterPlatformAdapter {
 				return null;
 			}
 			return withLinearCredentials({ apiKey: creds.apiKey }, dispatch);
+		}
+
+		if (pmType === 'github-projects') {
+			const creds = await resolveGitHubProjectsCredentials(fullProject.id);
+			if (!creds) {
+				logger.warn(
+					'SentryRouterAdapter: missing GitHub Projects credentials, cannot dispatch triggers',
+					{ projectId: fullProject.id },
+				);
+				return null;
+			}
+			return withGitHubProjectsCredentials({ token: creds.token }, dispatch);
 		}
 
 		// No PM integration configured — dispatch without PM credential scope.

@@ -1,12 +1,17 @@
 import { loadConfig } from '../config/provider.js';
-import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../pm/config.js';
+import {
+	getGitHubProjectsConfig,
+	getJiraConfig,
+	getLinearConfig,
+	getTrelloConfig,
+} from '../pm/config.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 
 // Minimal config types - what router needs for quick filtering
 export interface RouterProjectConfig {
 	id: string;
 	repo?: string; // owner/repo format (optional for projects without SCM integration)
-	pmType?: 'trello' | 'jira' | 'linear'; // undefined for SCM-only projects (no PM provider)
+	pmType?: 'trello' | 'jira' | 'linear' | 'github-projects'; // undefined for SCM-only projects (no PM provider)
 	trello?: {
 		boardId: string;
 		lists: Record<string, string>;
@@ -19,6 +24,11 @@ export interface RouterProjectConfig {
 	linear?: {
 		teamId: string;
 		projectId?: string;
+	};
+	githubProjects?: {
+		projectId: string;
+		owner: string;
+		ownerType: 'user' | 'organization';
 	};
 }
 
@@ -104,6 +114,7 @@ export async function loadProjectConfig(): Promise<{
 					const trelloConfig = getTrelloConfig(p);
 					const jiraConfig = getJiraConfig(p);
 					const linearConfig = getLinearConfig(p);
+					const githubProjectsConfig = getGitHubProjectsConfig(p);
 					return {
 						id: p.id,
 						repo: p.repo,
@@ -125,6 +136,13 @@ export async function loadProjectConfig(): Promise<{
 							linear: {
 								teamId: linearConfig.teamId,
 								...(linearConfig.projectId ? { projectId: linearConfig.projectId } : {}),
+							},
+						}),
+						...(githubProjectsConfig && {
+							githubProjects: {
+								projectId: githubProjectsConfig.projectId,
+								owner: githubProjectsConfig.owner,
+								ownerType: githubProjectsConfig.ownerType,
 							},
 						}),
 					};

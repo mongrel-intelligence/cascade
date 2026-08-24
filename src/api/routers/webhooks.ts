@@ -8,6 +8,11 @@ import {
 } from './webhooks/context.js';
 import { githubCreateWebhook, githubDeleteWebhook, githubListWebhooks } from './webhooks/github.js';
 import {
+	githubProjectsCreateWebhook,
+	githubProjectsDeleteWebhook,
+	githubProjectsListWebhooks,
+} from './webhooks/github-projects.js';
+import {
 	jiraCreateWebhook,
 	jiraDeleteWebhook,
 	jiraEnsureLabels,
@@ -28,7 +33,15 @@ type CreateInput = {
 	trelloOnly?: boolean;
 	githubOnly?: boolean;
 	jiraOnly?: boolean;
+	githubProjectsOnly?: boolean;
 };
+
+/** True when any *other* provider's `…Only` toggle is set (so this one must skip). */
+function skipForOtherOnly(input: CreateInput, self: keyof CreateInput): boolean {
+	return (['trelloOnly', 'githubOnly', 'jiraOnly', 'githubProjectsOnly'] as const).some(
+		(k) => k !== self && input[k],
+	);
+}
 type ProjectContext = Awaited<ReturnType<typeof resolveProjectContext>>;
 
 /**
@@ -47,7 +60,7 @@ async function maybeCreateTrelloWebhook(
 	input: CreateInput,
 	baseUrl: string,
 ): Promise<TrelloWebhook | string | undefined> {
-	if (input.githubOnly || input.jiraOnly) return undefined;
+	if (skipForOtherOnly(input, 'trelloOnly')) return undefined;
 	if (!pctx.trelloApiKey || !pctx.trelloToken || !pctx.boardId) return undefined;
 
 	const callbackUrl = `${baseUrl}/trello/webhook`;
@@ -64,7 +77,7 @@ async function maybeCreateJiraWebhook(
 	input: CreateInput,
 	baseUrl: string,
 ): Promise<{ jira?: JiraWebhookInfo | string; labelsEnsured?: string[] }> {
-	if (input.trelloOnly || input.githubOnly) return {};
+	if (skipForOtherOnly(input, 'jiraOnly')) return {};
 	if (!pctx.jiraEmail || !pctx.jiraApiToken || !pctx.jiraBaseUrl) return {};
 
 	const callbackUrl = `${baseUrl}/jira/webhook`;
@@ -98,7 +111,7 @@ async function maybeCreateGitHubWebhook(
 	input: CreateInput,
 	baseUrl: string,
 ): Promise<GitHubWebhook | string | undefined> {
-	if (input.trelloOnly || input.jiraOnly) return undefined;
+	if (skipForOtherOnly(input, 'githubOnly')) return undefined;
 	if (!pctx.githubToken) return undefined;
 
 	const callbackUrl = `${baseUrl}/github/webhook`;
@@ -108,6 +121,24 @@ async function maybeCreateGitHubWebhook(
 	);
 	if (duplicate) return `Already exists: ${duplicate.id}`;
 	return githubCreateWebhook(pctx, callbackUrl);
+}
+
+async function maybeCreateGitHubProjectsWebhook(
+	pctx: ProjectContext,
+	input: CreateInput,
+	baseUrl: string,
+): Promise<GitHubWebhook | string | undefined> {
+	if (skipForOtherOnly(input, 'githubProjectsOnly')) return undefined;
+	// Programmatic creation is org-owned only; user-owned projects list [] and skip.
+	if (pctx.githubProjectsOwnerType !== 'organization' || !pctx.githubProjectsOwner)
+		return undefined;
+	if (!pctx.githubProjectsToken) return undefined;
+
+	const callbackUrl = `${baseUrl}/github-projects/webhook`;
+	const existing = await githubProjectsListWebhooks(pctx);
+	const duplicate = existing.find((w) => w.config?.url === callbackUrl);
+	if (duplicate) return `Already exists: ${duplicate.id}`;
+	return githubProjectsCreateWebhook(pctx, callbackUrl);
 }
 
 function buildSentryDisplayInfo(
@@ -152,11 +183,13 @@ export const webhooksRouter = router({
 			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
 			applyOneTimeTokens(pctx, input.oneTimeTokens);
 
-			const [trelloResult, githubResult, jiraResult] = await Promise.allSettled([
-				trelloListWebhooks(pctx),
-				githubListWebhooks(pctx),
-				jiraListWebhooks(pctx),
-			]);
+			const [trelloResult, githubResult, jiraResult, githubProjectsResult] =
+				await Promise.allSettled([
+					trelloListWebhooks(pctx),
+					githubListWebhooks(pctx),
+					jiraListWebhooks(pctx),
+					githubProjectsListWebhooks(pctx),
+				]);
 
 			const sentry = input.callbackBaseUrl
 				? (buildSentryDisplayInfo(
@@ -181,12 +214,16 @@ export const webhooksRouter = router({
 				trello: trelloResult.status === 'fulfilled' ? trelloResult.value : [],
 				github: githubResult.status === 'fulfilled' ? githubResult.value : [],
 				jira: jiraResult.status === 'fulfilled' ? jiraResult.value : [],
+				githubProjects:
+					githubProjectsResult.status === 'fulfilled' ? githubProjectsResult.value : [],
 				sentry,
 				linear,
 				errors: {
 					trello: trelloResult.status === 'rejected' ? String(trelloResult.reason) : null,
 					github: githubResult.status === 'rejected' ? String(githubResult.reason) : null,
 					jira: jiraResult.status === 'rejected' ? String(jiraResult.reason) : null,
+					githubProjects:
+						githubProjectsResult.status === 'rejected' ? String(githubProjectsResult.reason) : null,
 					linear: null,
 				},
 			};
@@ -200,6 +237,7 @@ export const webhooksRouter = router({
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
 				jiraOnly: z.boolean().optional(),
+				githubProjectsOnly: z.boolean().optional(),
 				oneTimeTokens: oneTimeTokensSchema,
 			}),
 		)
@@ -212,6 +250,7 @@ export const webhooksRouter = router({
 				trello?: TrelloWebhook | string;
 				github?: GitHubWebhook | string;
 				jira?: JiraWebhookInfo | string;
+				githubProjects?: GitHubWebhook | string;
 				sentry?: SentryWebhookInfo;
 				linear?: LinearWebhookInfo;
 				labelsEnsured?: string[];
@@ -226,6 +265,9 @@ export const webhooksRouter = router({
 
 			const github = await maybeCreateGitHubWebhook(pctx, input, baseUrl);
 			if (github !== undefined) results.github = github;
+
+			const githubProjects = await maybeCreateGitHubProjectsWebhook(pctx, input, baseUrl);
+			if (githubProjects !== undefined) results.githubProjects = githubProjects;
 
 			const sentry = buildSentryDisplayInfo(pctx, input.projectId, baseUrl);
 			if (sentry !== undefined) results.sentry = sentry;
@@ -244,6 +286,7 @@ export const webhooksRouter = router({
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
 				jiraOnly: z.boolean().optional(),
+				githubProjectsOnly: z.boolean().optional(),
 				oneTimeTokens: oneTimeTokensSchema,
 			}),
 		)
@@ -251,14 +294,20 @@ export const webhooksRouter = router({
 			const pctx = await resolveProjectContext(input.projectId, ctx.effectiveOrgId);
 			applyOneTimeTokens(pctx, input.oneTimeTokens);
 			const baseUrl = input.callbackBaseUrl.replace(/\/$/, '');
-			const deleted: { trello: string[]; github: number[]; jira: number[] } = {
+			const deleted: {
+				trello: string[];
+				github: number[];
+				jira: number[];
+				githubProjects: number[];
+			} = {
 				trello: [],
 				github: [],
 				jira: [],
+				githubProjects: [],
 			};
 
 			// Trello
-			if (!input.githubOnly && !input.jiraOnly && pctx.trelloApiKey && pctx.trelloToken) {
+			if (!skipForOtherOnly(input, 'trelloOnly') && pctx.trelloApiKey && pctx.trelloToken) {
 				const trelloCallbackUrl = `${baseUrl}/trello/webhook`;
 				const existing = await trelloListWebhooks(pctx);
 				const matching = existing.filter(
@@ -272,7 +321,7 @@ export const webhooksRouter = router({
 			}
 
 			// JIRA
-			if (!input.trelloOnly && !input.githubOnly && pctx.jiraEmail && pctx.jiraApiToken) {
+			if (!skipForOtherOnly(input, 'jiraOnly') && pctx.jiraEmail && pctx.jiraApiToken) {
 				const jiraCallbackUrl = `${baseUrl}/jira/webhook`;
 				const existing = await jiraListWebhooks(pctx);
 				const matching = existing.filter(
@@ -285,7 +334,7 @@ export const webhooksRouter = router({
 			}
 
 			// GitHub
-			if (!input.trelloOnly && !input.jiraOnly && pctx.githubToken) {
+			if (!skipForOtherOnly(input, 'githubOnly') && pctx.githubToken) {
 				const githubCallbackUrl = `${baseUrl}/github/webhook`;
 				const existing = await githubListWebhooks(pctx);
 				const matching = existing.filter(
@@ -294,6 +343,21 @@ export const webhooksRouter = router({
 				for (const w of matching) {
 					await githubDeleteWebhook(pctx, w.id);
 					deleted.github.push(w.id);
+				}
+			}
+
+			// GitHub Projects (org-owned only)
+			if (
+				!skipForOtherOnly(input, 'githubProjectsOnly') &&
+				pctx.githubProjectsOwnerType === 'organization' &&
+				pctx.githubProjectsToken
+			) {
+				const callbackUrl = `${baseUrl}/github-projects/webhook`;
+				const existing = await githubProjectsListWebhooks(pctx);
+				const matching = existing.filter((w) => w.config?.url === callbackUrl);
+				for (const w of matching) {
+					await githubProjectsDeleteWebhook(pctx, w.id);
+					deleted.githubProjects.push(w.id);
 				}
 			}
 

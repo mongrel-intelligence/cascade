@@ -201,6 +201,8 @@ export function extractWorkItemId(data: CascadeJob): string | undefined {
 	if (jobData.type === 'jira' && jobData.issueKey) return jobData.issueKey;
 	if (jobData.type === 'github') return jobData.triggerResult?.workItemId;
 	if (jobData.type === 'linear') return jobData.triggerResult?.workItemId ?? jobData.workItemId;
+	if (jobData.type === 'github-projects')
+		return jobData.triggerResult?.workItemId ?? jobData.workItemId;
 	// Sentry jobs: lockKey takes priority (set when workItemId is deferred to the worker)
 	if (jobData.type === 'sentry') {
 		return jobData.triggerResult?.lockKey ?? jobData.triggerResult?.workItemId;

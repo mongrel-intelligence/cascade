@@ -184,7 +184,12 @@ async function maybeHandleCoalescedDispatch({
 	if (windowMs <= 0) return null;
 
 	const job = adapter.buildJob(event, payload, project, result, undefined);
-	if (job.type === 'trello' || job.type === 'jira' || job.type === 'linear') {
+	if (
+		job.type === 'trello' ||
+		job.type === 'jira' ||
+		job.type === 'linear' ||
+		job.type === 'github-projects'
+	) {
 		job.pendingAck = true;
 		job.ackContextHint = result.workItemTitle ?? undefined;
 	}

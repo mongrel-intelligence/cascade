@@ -20,6 +20,7 @@ vi.mock('../../../src/utils/index.js', () => ({
 
 import {
 	parseGitHubPayload,
+	parseGitHubProjectsPayload,
 	parseJiraPayload,
 	parseTrelloPayload,
 } from '../../../src/webhook/webhookParsers.js';
@@ -213,6 +214,65 @@ describe('parseJiraPayload', () => {
 		expect(mockLogger.info).toHaveBeenCalledWith(
 			'Received JIRA webhook',
 			expect.objectContaining({ event: 'comment_created' }),
+		);
+	});
+});
+
+describe('parseGitHubProjectsPayload', () => {
+	it('extracts eventType as projects_v2_item/<action>', async () => {
+		const payload = {
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_1' },
+		};
+		const ctx = makeHonoContext(payload);
+
+		const result = await parseGitHubProjectsPayload(ctx as never);
+
+		expect(result.ok).toBe(true);
+		expect(result.eventType).toBe('projects_v2_item/edited');
+		expect(result.payload).toEqual(payload);
+	});
+
+	it('defaults eventType to "unknown" when action is missing', async () => {
+		const payload = { projects_v2_item: { node_id: 'PVTI_1' } };
+		const ctx = makeHonoContext(payload);
+
+		const result = await parseGitHubProjectsPayload(ctx as never);
+
+		expect(result.ok).toBe(true);
+		expect(result.eventType).toBe('unknown');
+	});
+
+	it('returns ok=false and error string on parse failure', async () => {
+		const ctx = {
+			req: {
+				text: vi.fn().mockResolvedValue('not valid json {{{'),
+				header: vi.fn(),
+			},
+		};
+
+		const result = await parseGitHubProjectsPayload(ctx as never);
+
+		expect(result.ok).toBe(false);
+		expect(result.error).toBeDefined();
+	});
+
+	it('logs info with action, eventType, and project node ID', async () => {
+		const payload = {
+			action: 'edited',
+			projects_v2_item: { node_id: 'PVTI_1', project_node_id: 'PVT_abc' },
+		};
+		const ctx = makeHonoContext(payload);
+
+		await parseGitHubProjectsPayload(ctx as never);
+
+		expect(mockLogger.info).toHaveBeenCalledWith(
+			'Received GitHub Projects webhook',
+			expect.objectContaining({
+				action: 'edited',
+				eventType: 'projects_v2_item/edited',
+				projectId: 'PVT_abc',
+			}),
 		);
 	});
 });

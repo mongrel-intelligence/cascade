@@ -5,9 +5,11 @@ vi.mock('../../../../src/db/client.js', () => mockDbClientModule);
 
 import {
 	findProjectByBoardIdFromDb,
+	findProjectByGitHubProjectsProjectIdFromDb,
 	findProjectByIdFromDb,
 	findProjectByLinearTeamIdFromDb,
 	findProjectByRepoFromDb,
+	findProjectWithConfigByGitHubProjectsProjectId,
 	loadConfigFromDb,
 } from '../../../../src/db/repositories/configRepository.js';
 
@@ -78,6 +80,22 @@ const linearIntegration = {
 		teamId: 'team-abc123',
 		statuses: { todo: 'Todo', inProgress: 'In Progress' },
 		labels: { processing: 'cascade-processing', readyToProcess: 'cascade-ready' },
+	},
+	triggers: {},
+	createdAt: new Date(),
+	updatedAt: new Date(),
+};
+
+const githubProjectsIntegration = {
+	id: 5,
+	projectId: 'proj1',
+	category: 'pm' as const,
+	provider: 'github-projects' as const,
+	config: {
+		projectId: 'PVT_kwABC',
+		owner: 'acme-org',
+		ownerType: 'organization',
+		statuses: { todo: 'Todo', inProgress: 'In Progress' },
 	},
 	triggers: {},
 	createdAt: new Date(),
@@ -563,6 +581,73 @@ describe('configRepository', () => {
 			mockGetDb.mockReturnValue(mockDb as never);
 
 			const result = await findProjectByLinearTeamIdFromDb('nonexistent-team');
+
+			expect(result).toBeUndefined();
+		});
+	});
+
+	describe('GitHub Projects integration', () => {
+		it('loads config with GitHub Projects integration from project_integrations', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [githubProjectsIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const config = await loadConfigFromDb();
+
+			expect(config.projects).toHaveLength(1);
+			const proj = config.projects[0];
+			expect(proj.pm?.type).toBe('github-projects');
+			expect(proj.githubProjects?.projectId).toBe('PVT_kwABC');
+			expect(proj.githubProjects?.owner).toBe('acme-org');
+			expect(proj.githubProjects?.ownerType).toBe('organization');
+			expect(proj.githubProjects?.statuses).toEqual({ todo: 'Todo', inProgress: 'In Progress' });
+		});
+	});
+
+	describe('findProjectByGitHubProjectsProjectIdFromDb', () => {
+		it('returns project found via integrations projectId subquery', async () => {
+			const mockDb = createSequentialMockDb([
+				[projectRow], // subquery finds project
+				[],
+				[githubProjectsIntegration],
+			]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByGitHubProjectsProjectIdFromDb('PVT_kwABC');
+
+			expect(result).toBeDefined();
+			expect(result?.id).toBe('proj1');
+			expect(result?.githubProjects?.projectId).toBe('PVT_kwABC');
+			expect(result?.pm?.type).toBe('github-projects');
+		});
+
+		it('returns undefined when no project has matching GitHub Projects project ID', async () => {
+			const mockDb = createSequentialMockDb([[]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectByGitHubProjectsProjectIdFromDb('nonexistent-project');
+
+			expect(result).toBeUndefined();
+		});
+	});
+
+	describe('findProjectWithConfigByGitHubProjectsProjectId', () => {
+		it('returns project and org-scoped config found via integrations projectId subquery', async () => {
+			const mockDb = createSequentialMockDb([[projectRow], [], [githubProjectsIntegration]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectWithConfigByGitHubProjectsProjectId('PVT_kwABC');
+
+			expect(result).toBeDefined();
+			expect(result?.project.id).toBe('proj1');
+			expect(result?.project.githubProjects?.projectId).toBe('PVT_kwABC');
+			expect(result?.config.projects).toHaveLength(1);
+		});
+
+		it('returns undefined when no project has matching GitHub Projects project ID', async () => {
+			const mockDb = createSequentialMockDb([[]]);
+			mockGetDb.mockReturnValue(mockDb as never);
+
+			const result = await findProjectWithConfigByGitHubProjectsProjectId('nonexistent-project');
 
 			expect(result).toBeUndefined();
 		});

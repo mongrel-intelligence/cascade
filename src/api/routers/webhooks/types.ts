@@ -46,7 +46,7 @@ export interface ProjectContext {
 	projectId: string;
 	orgId: string;
 	repo?: string;
-	pmType: 'trello' | 'jira' | 'linear';
+	pmType: 'trello' | 'jira' | 'linear' | 'github-projects';
 	boardId?: string;
 	jiraBaseUrl?: string;
 	/**
@@ -64,6 +64,12 @@ export interface ProjectContext {
 	jiraEmail?: string;
 	jiraApiToken?: string;
 	webhookSecret?: string;
+	/** GitHub Projects owner login (org or user) from the PM config. */
+	githubProjectsOwner?: string;
+	/** GitHub Projects owner type — programmatic webhooks require `'organization'`. */
+	githubProjectsOwnerType?: 'user' | 'organization';
+	/** GitHub Projects PM token (the `GITHUB_TOKEN` credential) for org-hook management. */
+	githubProjectsToken?: string;
 	sentryConfigured?: boolean;
 	sentryOrganizationSlug?: string;
 	sentryProjectSlug?: string;

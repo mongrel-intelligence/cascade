@@ -151,6 +151,43 @@ describe('loadProjectConfig', () => {
 		});
 	});
 
+	it('maps github-projects project config correctly', async () => {
+		mockLoadConfig.mockResolvedValueOnce({
+			projects: [
+				{
+					id: 'p5',
+					name: 'GitHub Projects project',
+					repo: 'owner/gh-projects-repo',
+					orgId: 'org1',
+					baseBranch: 'main',
+					branchPrefix: 'cascade/',
+					pm: { type: 'github-projects' },
+					githubProjects: {
+						projectId: 'PVT_kwABC',
+						owner: 'acme-org',
+						ownerType: 'organization',
+						statuses: { todo: 'Todo' },
+					},
+				},
+			],
+		} as never);
+
+		const { loadProjectConfig: freshLoad } = await import('../../../src/router/config.js');
+		const result = await freshLoad();
+
+		expect(result.projects).toHaveLength(1);
+		expect(result.projects[0]).toMatchObject({
+			id: 'p5',
+			repo: 'owner/gh-projects-repo',
+			pmType: 'github-projects',
+			githubProjects: {
+				projectId: 'PVT_kwABC',
+				owner: 'acme-org',
+				ownerType: 'organization',
+			},
+		});
+	});
+
 	it('leaves pmType undefined when pm is not set (SCM-only project)', async () => {
 		mockLoadConfig.mockResolvedValueOnce({
 			projects: [

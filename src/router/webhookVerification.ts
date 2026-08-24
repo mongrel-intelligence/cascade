@@ -18,7 +18,7 @@ import { loadProjectConfig, routerConfig } from './config.js';
 import { resolveWebhookSecret } from './platformClients/credentials.js';
 
 /** The set of platforms that have a webhook secret in {@link resolveWebhookSecret}. */
-type WebhookPlatform = 'github' | 'trello' | 'jira' | 'sentry' | 'linear';
+type WebhookPlatform = 'github' | 'trello' | 'jira' | 'sentry' | 'linear' | 'github-projects';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -301,4 +301,37 @@ export const verifyLinearWebhookSignature = createWebhookVerifier({
 			| { id: string }
 			| undefined,
 	verify: (rawBody, sig, secret) => verifyLinearSignature(rawBody, sig, secret),
+});
+
+/**
+ * Extract the GitHub Projects project node ID from a raw webhook payload.
+ * GitHub sends it at `projects_v2_item.project_node_id`.
+ */
+export function extractGitHubProjectsProjectId(rawBody: string): string | undefined {
+	try {
+		const parsed = JSON.parse(rawBody) as Record<string, unknown>;
+		const item = parsed?.projects_v2_item as Record<string, unknown> | undefined;
+		return item?.project_node_id as string | undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * verifySignature callback for the GitHub Projects webhook handler.
+ * Returns null to skip verification when no secret is configured (backwards compat).
+ *
+ * GitHub signs the payload with HMAC-SHA256 and sends it as
+ * `sha256=<hex>` in the `X-Hub-Signature-256` header, identical to GitHub SCM webhooks.
+ */
+export const verifyGitHubProjectsWebhookSignature = createWebhookVerifier({
+	headerName: 'X-Hub-Signature-256',
+	platform: 'github-projects',
+	platformLabel: 'GitHub Projects',
+	extractIdentifier: (_c, rawBody) => extractGitHubProjectsProjectId(rawBody),
+	findProject: (projectId, projects) =>
+		projects.find(
+			(p) => (p.githubProjects as Record<string, unknown> | undefined)?.projectId === projectId,
+		) as { id: string } | undefined,
+	verify: (rawBody, sig, secret) => verifyGitHubSignature(rawBody, sig, secret),
 });

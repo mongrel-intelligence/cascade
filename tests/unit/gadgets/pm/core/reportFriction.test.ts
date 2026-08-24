@@ -64,6 +64,22 @@ beforeEach(() => {
 	delete process.env.JIRA_BASE_URL;
 	delete process.env.CASCADE_JIRA_STATUSES;
 	delete process.env.CASCADE_JIRA_AUTH_TYPE;
+	// Clear Linear env-synthesis vars.
+	delete process.env.CASCADE_LINEAR_TEAM_ID;
+	delete process.env.CASCADE_LINEAR_PROJECT_ID;
+	delete process.env.CASCADE_LINEAR_STATUSES;
+	// Clear GitHub Projects env-synthesis vars.
+	delete process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID;
+	delete process.env.CASCADE_GITHUB_PROJECTS_OWNER;
+	delete process.env.CASCADE_GITHUB_PROJECTS_OWNER_TYPE;
+	delete process.env.CASCADE_GITHUB_PROJECTS_STATUSES;
+	delete process.env.CASCADE_GITHUB_PROJECTS_LABELS;
+	// Clear Trello env-synthesis vars.
+	delete process.env.CASCADE_TRELLO_BOARD_ID;
+	delete process.env.CASCADE_TRELLO_LISTS;
+	delete process.env.CASCADE_TRELLO_LABELS;
+	delete process.env.CASCADE_REPO_OWNER;
+	delete process.env.CASCADE_REPO_NAME;
 });
 
 describe('reportFriction', () => {
@@ -376,5 +392,302 @@ describe('reportFriction', () => {
 			}),
 		);
 		rmSync(path, { force: true });
+	});
+
+	it('env-synthesized LINEAR config carries teamId, projectId, and parsed statuses (MNG-1050)', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'linear-project';
+		process.env.CASCADE_PM_TYPE = 'linear';
+		process.env.CASCADE_LINEAR_TEAM_ID = 'team-1';
+		process.env.CASCADE_LINEAR_PROJECT_ID = 'proj-1';
+		process.env.CASCADE_LINEAR_STATUSES = JSON.stringify({ friction: 'state-uuid-1' });
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'LIN-1',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'Linear env synthesis',
+			details: 'The synthesized project must carry Linear connection details.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					linear: {
+						teamId: 'team-1',
+						projectId: 'proj-1',
+						statuses: { friction: 'state-uuid-1' },
+					},
+				}),
+			}),
+		);
+		rmSync(path, { force: true });
+	});
+
+	it('env-synthesized LINEAR config omits projectId when CASCADE_LINEAR_PROJECT_ID is unset', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'linear-project';
+		process.env.CASCADE_PM_TYPE = 'linear';
+		process.env.CASCADE_LINEAR_TEAM_ID = 'team-2';
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'LIN-2',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'Linear env synthesis without project scope',
+			details: 'CASCADE_LINEAR_PROJECT_ID absent must not add a projectId key.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					linear: { teamId: 'team-2', statuses: {} },
+				}),
+			}),
+		);
+		const call = mockMaterializeFrictionReport.mock.calls[0][0] as {
+			project: { linear: Record<string, unknown> };
+		};
+		expect(call.project.linear).not.toHaveProperty('projectId');
+		rmSync(path, { force: true });
+	});
+
+	it('env-synthesized GITHUB PROJECTS config carries projectId, owner, ownerType, statuses, and labels (MNG-1050)', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'gh-projects-project';
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_1';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'acme-org';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER_TYPE = 'organization';
+		process.env.CASCADE_GITHUB_PROJECTS_STATUSES = JSON.stringify({ friction: 'Friction' });
+		process.env.CASCADE_GITHUB_PROJECTS_LABELS = JSON.stringify({ 'cascade-friction': 'label-1' });
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'gh-item-1',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'GitHub Projects env synthesis',
+			details: 'The synthesized project must carry GitHub Projects connection details.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					githubProjects: {
+						projectId: 'PVT_1',
+						owner: 'acme-org',
+						ownerType: 'organization',
+						statuses: { friction: 'Friction' },
+						labels: { 'cascade-friction': 'label-1' },
+					},
+				}),
+			}),
+		);
+		rmSync(path, { force: true });
+	});
+
+	it('env-synthesized GITHUB PROJECTS config defaults ownerType to user and omits labels when unset', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'gh-projects-project';
+		process.env.CASCADE_PM_TYPE = 'github-projects';
+		process.env.CASCADE_GITHUB_PROJECTS_PROJECT_ID = 'PVT_2';
+		process.env.CASCADE_GITHUB_PROJECTS_OWNER = 'octocat';
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'gh-item-2',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'GitHub Projects env synthesis without labels',
+			details: 'CASCADE_GITHUB_PROJECTS_LABELS absent must not add a labels key.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					githubProjects: {
+						projectId: 'PVT_2',
+						owner: 'octocat',
+						ownerType: 'user',
+						statuses: {},
+					},
+				}),
+			}),
+		);
+		const call = mockMaterializeFrictionReport.mock.calls[0][0] as {
+			project: { githubProjects: Record<string, unknown> };
+		};
+		expect(call.project.githubProjects).not.toHaveProperty('labels');
+		rmSync(path, { force: true });
+	});
+
+	it('env-synthesized TRELLO config is the switch default when CASCADE_PM_TYPE is unset', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'trello-project';
+		// CASCADE_PM_TYPE intentionally unset — projectFromEnv() falls through the
+		// switch's `default:` branch straight to trelloFromEnv().
+		process.env.CASCADE_REPO_OWNER = 'acme';
+		process.env.CASCADE_REPO_NAME = 'widgets';
+		process.env.CASCADE_TRELLO_BOARD_ID = 'board-99';
+		process.env.CASCADE_TRELLO_LISTS = JSON.stringify({ friction: 'list-friction-99' });
+		process.env.CASCADE_TRELLO_LABELS = JSON.stringify({ 'cascade-friction': 'label-99' });
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'card-99',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'Trello env synthesis via switch default',
+			details: 'No CASCADE_PM_TYPE set — must fall through to the Trello default branch.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					repo: 'acme/widgets',
+					trello: {
+						boardId: 'board-99',
+						lists: { friction: 'list-friction-99' },
+						labels: { 'cascade-friction': 'label-99' },
+					},
+				}),
+			}),
+		);
+		rmSync(path, { force: true });
+	});
+
+	it('parseJsonRecord returns {} when the env var parses to a non-object JSON value', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PROJECT_ID = 'linear-project';
+		process.env.CASCADE_PM_TYPE = 'linear';
+		process.env.CASCADE_LINEAR_TEAM_ID = 'team-3';
+		// A JSON array is valid JSON but not a plain object — parseJsonRecord's
+		// object/array guard must fall through to the {} branch instead of
+		// passing an array through as "statuses".
+		process.env.CASCADE_LINEAR_STATUSES = JSON.stringify(['friction']);
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'LIN-3',
+		});
+
+		await reportFriction({
+			sidecarPath: path,
+			summary: 'Non-object JSON env value',
+			details: 'A JSON array value must not be treated as a status record.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		expect(mockMaterializeFrictionReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				project: expect.objectContaining({
+					linear: expect.objectContaining({ statuses: {} }),
+				}),
+			}),
+		);
+		rmSync(path, { force: true });
+	});
+
+	it('carries CASCADE_PR_NUMBER from process.env when set to a valid integer string', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PR_NUMBER = '482';
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'card-pr-1',
+		});
+
+		await reportFriction({
+			project,
+			sidecarPath: path,
+			summary: 'PR number from env',
+			details: 'process.env.CASCADE_PR_NUMBER must be parsed into report.context.pr.number.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		const event = JSON.parse(readFileSync(path, 'utf-8').trim().split('\n')[0]);
+		expect(event.report.context.pr.number).toBe(482);
+		rmSync(path, { force: true });
+	});
+
+	it('falls back to undefined PR number when CASCADE_PR_NUMBER is not a safe integer', async () => {
+		const path = sidecarPath();
+		process.env.CASCADE_PR_NUMBER = 'not-a-number';
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'card-pr-2',
+		});
+
+		await reportFriction({
+			project,
+			sidecarPath: path,
+			summary: 'Invalid PR number from env',
+			details:
+				'A non-numeric CASCADE_PR_NUMBER must not crash and must yield an undefined PR number.',
+			category: 'tooling',
+			severity: 'low',
+		});
+
+		const event = JSON.parse(readFileSync(path, 'utf-8').trim().split('\n')[0]);
+		expect(event.report.context.pr.number).toBeUndefined();
+		rmSync(path, { force: true });
+	});
+
+	it('falls back to the default sidecar path when no override is provided anywhere', async () => {
+		const defaultPath = join(process.cwd(), '.cascade', 'friction-reports.jsonl');
+		rmSync(defaultPath, { force: true });
+		mockMaterializeFrictionReport.mockResolvedValue({
+			status: 'filed',
+			reportId: 'ignored',
+			workItemId: 'card-default-path',
+		});
+
+		try {
+			// No params.sidecarPath, no FRICTION_SIDECAR_ENV_VAR, and a SessionState
+			// with no frictionSidecarPath configured — must fall through to the
+			// module's DEFAULT_FRICTION_SIDECAR_PATH constant.
+			const result = await reportFriction({
+				project,
+				summary: 'No sidecar override anywhere',
+				details: 'Must resolve to the default .cascade/friction-reports.jsonl path.',
+				category: 'tooling',
+				severity: 'low',
+			});
+
+			expect(result.status).toBe('filed');
+			const events = readFileSync(defaultPath, 'utf-8')
+				.trim()
+				.split('\n')
+				.map((line) => JSON.parse(line));
+			expect(events.map((event) => event.event)).toEqual(['queued', 'filed']);
+		} finally {
+			rmSync(defaultPath, { force: true });
+		}
 	});
 });

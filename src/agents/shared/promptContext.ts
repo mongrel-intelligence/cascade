@@ -1,4 +1,9 @@
-import { getJiraConfig, getLinearConfig, getTrelloConfig } from '../../pm/config.js';
+import {
+	getGitHubProjectsConfig,
+	getJiraConfig,
+	getLinearConfig,
+	getTrelloConfig,
+} from '../../pm/config.js';
 import { getPMProviderOrNull } from '../../pm/index.js';
 import type { ProjectConfig } from '../../types/index.js';
 import type { PromptContext } from '../prompts/index.js';
@@ -7,12 +12,17 @@ function getListIds(project: ProjectConfig) {
 	const trelloConfig = getTrelloConfig(project);
 	const jiraConfig = getJiraConfig(project);
 	const linearConfig = getLinearConfig(project);
+	const githubProjectsConfig = getGitHubProjectsConfig(project);
 	const backlogStatusId =
 		trelloConfig?.lists?.backlog ??
 		jiraConfig?.statuses?.backlog ??
-		linearConfig?.statuses?.backlog;
+		linearConfig?.statuses?.backlog ??
+		githubProjectsConfig?.statuses?.backlog;
 	const workItemCreateContainerId =
-		trelloConfig?.lists?.backlog ?? jiraConfig?.projectKey ?? linearConfig?.teamId;
+		trelloConfig?.lists?.backlog ??
+		jiraConfig?.projectKey ??
+		linearConfig?.teamId ??
+		githubProjectsConfig?.projectId;
 
 	return {
 		// Value the agent should pass as `expectedSourceState` when moving an
@@ -26,36 +36,55 @@ function getListIds(project: ProjectConfig) {
 		// workItemCreateContainerId for creation.
 		backlogListId: backlogStatusId,
 		todoListId:
-			trelloConfig?.lists?.todo ?? jiraConfig?.statuses?.todo ?? linearConfig?.statuses?.todo,
+			trelloConfig?.lists?.todo ??
+			jiraConfig?.statuses?.todo ??
+			linearConfig?.statuses?.todo ??
+			githubProjectsConfig?.statuses?.todo,
 		inProgressListId:
 			trelloConfig?.lists?.inProgress ??
 			jiraConfig?.statuses?.inProgress ??
-			linearConfig?.statuses?.inProgress,
+			linearConfig?.statuses?.inProgress ??
+			githubProjectsConfig?.statuses?.inProgress,
 		inReviewListId:
 			trelloConfig?.lists?.inReview ??
 			jiraConfig?.statuses?.inReview ??
-			linearConfig?.statuses?.inReview,
+			linearConfig?.statuses?.inReview ??
+			githubProjectsConfig?.statuses?.inReview,
 		doneListId:
-			trelloConfig?.lists?.done ?? jiraConfig?.statuses?.done ?? linearConfig?.statuses?.done,
+			trelloConfig?.lists?.done ??
+			jiraConfig?.statuses?.done ??
+			linearConfig?.statuses?.done ??
+			githubProjectsConfig?.statuses?.done,
 		mergedListId:
-			trelloConfig?.lists?.merged ?? jiraConfig?.statuses?.merged ?? linearConfig?.statuses?.merged,
+			trelloConfig?.lists?.merged ??
+			jiraConfig?.statuses?.merged ??
+			linearConfig?.statuses?.merged ??
+			githubProjectsConfig?.statuses?.merged,
 		debugListId: trelloConfig?.lists?.debug,
 		processedLabelId: trelloConfig?.labels?.processed,
 		autoLabelId:
-			trelloConfig?.labels?.auto ?? jiraConfig?.labels?.auto ?? linearConfig?.labels?.auto,
+			trelloConfig?.labels?.auto ??
+			jiraConfig?.labels?.auto ??
+			linearConfig?.labels?.auto ??
+			// GitHub Projects has no dedicated `auto` label; `readyToProcess`
+			// (cascade-ready) is the closest analog to the other providers' auto
+			// label. `processing` means "an agent is already working" — the opposite.
+			githubProjectsConfig?.labels?.readyToProcess,
 	};
 }
 
 function getPromptTerminology(pmType: string | undefined) {
 	const isJira = pmType === 'jira';
 	const isLinear = pmType === 'linear';
+	const isGitHubProjects = pmType === 'github-projects';
+	const isIssueLike = isJira || isLinear || isGitHubProjects;
 
 	return {
-		workItemNoun: isJira || isLinear ? 'issue' : 'card',
-		workItemNounPlural: isJira || isLinear ? 'issues' : 'cards',
-		workItemNounCap: isJira || isLinear ? 'Issue' : 'Card',
-		workItemNounPluralCap: isJira || isLinear ? 'Issues' : 'Cards',
-		pmName: isJira ? 'JIRA' : isLinear ? 'Linear' : 'Trello',
+		workItemNoun: isIssueLike ? 'issue' : 'card',
+		workItemNounPlural: isIssueLike ? 'issues' : 'cards',
+		workItemNounCap: isIssueLike ? 'Issue' : 'Card',
+		workItemNounPluralCap: isIssueLike ? 'Issues' : 'Cards',
+		pmName: isJira ? 'JIRA' : isLinear ? 'Linear' : isGitHubProjects ? 'GitHub Projects' : 'Trello',
 	};
 }
 
