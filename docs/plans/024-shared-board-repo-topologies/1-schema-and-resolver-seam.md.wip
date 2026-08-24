@@ -6,7 +6,8 @@ plan_slug: schema-and-resolver-seam
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: []
-status: pending
+status: wip
+locked_at: ac37d36615515193353f7c44e5d6d7e746d45261
 ---
 
 # 024/1: Schema, config field, and the project-resolution seam
