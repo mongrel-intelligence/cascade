@@ -42,10 +42,19 @@ export type PMRoutingOutcome =
 			candidateProjectIds: string[];
 	  };
 
-function describeSibling(sibling: PMRoutingSibling): string {
-	return sibling.discriminator
-		? `${sibling.projectId} (${sibling.discriminator.kind} "${sibling.discriminator.value}")`
-		: `${sibling.projectId} (no discriminator)`;
+/** A sibling known to carry a discriminator — see {@link describeSibling}. */
+type DiscriminatedSibling = PMRoutingSibling & { discriminator: PMRoutingDiscriminator };
+
+const isDiscriminated = (sibling: PMRoutingSibling): sibling is DiscriminatedSibling =>
+	sibling.discriminator !== null;
+
+/**
+ * Both call sites describe siblings that provably carry a discriminator, so the
+ * parameter is narrowed rather than re-checked: a `no discriminator` branch here
+ * would be unreachable, and an unreachable branch is one no test can ever pin.
+ */
+function describeSibling(sibling: DiscriminatedSibling): string {
+	return `${sibling.projectId} (${sibling.discriminator.kind} "${sibling.discriminator.value}")`;
 }
 
 /**
@@ -88,7 +97,9 @@ export function resolveProjectAmongSiblings(
 		return { action: 'route', projectId: siblings[0].projectId };
 	}
 
-	const matched = siblings.filter((s) => s.discriminator && matches(s.discriminator, issue));
+	const matched = siblings.filter(
+		(s): s is DiscriminatedSibling => isDiscriminated(s) && matches(s.discriminator, issue),
+	);
 	if (matched.length === 1) {
 		return { action: 'route', projectId: matched[0].projectId };
 	}
@@ -120,13 +131,16 @@ export function resolveProjectAmongSiblings(
 		};
 	}
 
+	// `defaults` is empty here, so every sibling carries a discriminator; the
+	// filter re-states that for the type system rather than asserting it.
 	return {
 		action: 'skip',
 		reason: 'no_match',
 		message:
 			`Issue matches no routing discriminator on this board key. Evaluated: ` +
-			`${siblings.map(describeSibling).join(', ')}. Add the issue to one of those, or ` +
-			`configure a project without a discriminator to act as the default.`,
+			`${siblings.filter(isDiscriminated).map(describeSibling).join(', ')}. ` +
+			`Add the issue to one of those, or configure a project without a ` +
+			`discriminator to act as the default.`,
 		candidateProjectIds: siblings.map((s) => s.projectId),
 	};
 }
