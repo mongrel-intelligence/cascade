@@ -1,440 +1,440 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1735000000000,
-      "tag": "0000_base_schema",
-      "breakpoints": false
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1736000000000,
-      "tag": "0001_three_tier_normalization",
-      "breakpoints": false
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1737000000000,
-      "tag": "0002_agent_run_tracking",
-      "breakpoints": false
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1738000000000,
-      "tag": "0003_organizations_and_credentials",
-      "breakpoints": false
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1739000000000,
-      "tag": "0004_agent_credential_overrides",
-      "breakpoints": false
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1740000000000,
-      "tag": "0005_config_schema_cleanup",
-      "breakpoints": false
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1741000000000,
-      "tag": "0006_users_and_sessions",
-      "breakpoints": false
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1742000000000,
-      "tag": "0007_remove_flyio_columns",
-      "breakpoints": false
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1743000000000,
-      "tag": "0008_prompt_partials",
-      "breakpoints": false
-    },
-    {
-      "idx": 9,
-      "version": "7",
-      "when": 1744000000000,
-      "tag": "0009_add_squint_db_url",
-      "breakpoints": false
-    },
-    {
-      "idx": 10,
-      "version": "7",
-      "when": 1745000000000,
-      "tag": "0010_webhook_logs",
-      "breakpoints": false
-    },
-    {
-      "idx": 11,
-      "version": "7",
-      "when": 1746000000000,
-      "tag": "0011_remove_credentials_description",
-      "breakpoints": false
-    },
-    {
-      "idx": 12,
-      "version": "7",
-      "when": 1747000000000,
-      "tag": "0012_llm_calls_realtime",
-      "breakpoints": false
-    },
-    {
-      "idx": 13,
-      "version": "7",
-      "when": 1748000000000,
-      "tag": "0013_integration_model_refactor",
-      "breakpoints": false
-    },
-    {
-      "idx": 14,
-      "version": "7",
-      "when": 1749000000000,
-      "tag": "0014_pr_work_items",
-      "breakpoints": false
-    },
-    {
-      "idx": 15,
-      "version": "7",
-      "when": 1750000000000,
-      "tag": "0015_rename_briefing_to_splitting",
-      "breakpoints": false
-    },
-    {
-      "idx": 16,
-      "version": "7",
-      "when": 1751000000000,
-      "tag": "0016_add_task_prompt_column",
-      "breakpoints": false
-    },
-    {
-      "idx": 17,
-      "version": "7",
-      "when": 1752000000000,
-      "tag": "0017_email_integration",
-      "breakpoints": false
-    },
-    {
-      "idx": 18,
-      "version": "7",
-      "when": 1753000000000,
-      "tag": "0018_gmail_oauth",
-      "breakpoints": false
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1754000000000,
-      "tag": "0019_make_repo_optional",
-      "breakpoints": false
-    },
-    {
-      "idx": 20,
-      "version": "7",
-      "when": 1755000000000,
-      "tag": "0020_sms_twilio_integration",
-      "breakpoints": false
-    },
-    {
-      "idx": 21,
-      "version": "7",
-      "when": 1756000000000,
-      "tag": "0021_superadmin_role",
-      "breakpoints": false
-    },
-    {
-      "idx": 22,
-      "version": "7",
-      "when": 1757000000000,
-      "tag": "0022_agent_definitions",
-      "breakpoints": false
-    },
-    {
-      "idx": 23,
-      "version": "7",
-      "when": 1758000000000,
-      "tag": "0023_move_prompts_to_definitions",
-      "breakpoints": false
-    },
-    {
-      "idx": 24,
-      "version": "7",
-      "when": 1759000000000,
-      "tag": "0024_agent_trigger_configs",
-      "breakpoints": false
-    },
-    {
-      "idx": 25,
-      "version": "7",
-      "when": 1760000000000,
-      "tag": "0025_integration_hooks",
-      "breakpoints": false
-    },
-    {
-      "idx": 26,
-      "version": "7",
-      "when": 1761000000000,
-      "tag": "0026_agent_type_concurrency",
-      "breakpoints": false
-    },
-    {
-      "idx": 27,
-      "version": "7",
-      "when": 1762000000000,
-      "tag": "0027_webhook_decision_reason",
-      "breakpoints": false
-    },
-    {
-      "idx": 28,
-      "version": "7",
-      "when": 1763000000000,
-      "tag": "0028_remove_stories_status",
-      "breakpoints": false
-    },
-    {
-      "idx": 29,
-      "version": "7",
-      "when": 1764000000000,
-      "tag": "0029_work_item_pr_details",
-      "breakpoints": false
-    },
-    {
-      "idx": 30,
-      "version": "7",
-      "when": 1765000000000,
-      "tag": "0030_make_pr_work_items_flexible",
-      "breakpoints": false
-    },
-    {
-      "idx": 31,
-      "version": "7",
-      "when": 1766000000000,
-      "tag": "0031_rename_card_id_to_work_item_id",
-      "breakpoints": false
-    },
-    {
-      "idx": 32,
-      "version": "7",
-      "when": 1767000000000,
-      "tag": "0032_rename_backends_to_engines",
-      "breakpoints": false
-    },
-    {
-      "idx": 33,
-      "version": "7",
-      "when": 1768000000000,
-      "tag": "0033_add_engine_settings",
-      "breakpoints": false
-    },
-    {
-      "idx": 34,
-      "version": "7",
-      "when": 1769000000000,
-      "tag": "0034_remove_subscription_cost_zero",
-      "breakpoints": false
-    },
-    {
-      "idx": 35,
-      "version": "7",
-      "when": 1770000000000,
-      "tag": "0035_add_job_id_to_runs",
-      "breakpoints": false
-    },
-    {
-      "idx": 36,
-      "version": "7",
-      "when": 1771000000000,
-      "tag": "0036_project_only_agent_configs",
-      "breakpoints": false
-    },
-    {
-      "idx": 37,
-      "version": "7",
-      "when": 1772000000000,
-      "tag": "0037_add_run_links",
-      "breakpoints": false
-    },
-    {
-      "idx": 38,
-      "version": "7",
-      "when": 1773000000000,
-      "tag": "0038_remove_cascade_defaults",
-      "breakpoints": false
-    },
-    {
-      "idx": 39,
-      "version": "7",
-      "when": 1774000000000,
-      "tag": "0039_webhook_credential_roles",
-      "breakpoints": false
-    },
-    {
-      "idx": 40,
-      "version": "7",
-      "when": 1775000000000,
-      "tag": "0040_project_scoped_credentials",
-      "breakpoints": false
-    },
-    {
-      "idx": 41,
-      "version": "7",
-      "when": 1776000000000,
-      "tag": "0041_drop_legacy_org_credentials",
-      "breakpoints": false
-    },
-    {
-      "idx": 42,
-      "version": "7",
-      "when": 1777000000000,
-      "tag": "0042_add_max_in_flight_items",
-      "breakpoints": false
-    },
-    {
-      "idx": 43,
-      "version": "7",
-      "when": 1778000000000,
-      "tag": "0043_stats_composite_index",
-      "breakpoints": false
-    },
-    {
-      "idx": 44,
-      "version": "7",
-      "when": 1779000000000,
-      "tag": "0044_agent_config_engine_settings",
-      "breakpoints": false
-    },
-    {
-      "idx": 45,
-      "version": "7",
-      "when": 1780000000000,
-      "tag": "0045_agent_config_prompts",
-      "breakpoints": false
-    },
-    {
-      "idx": 46,
-      "version": "7",
-      "when": 1781000000000,
-      "tag": "0046_add_snapshot_policy",
-      "breakpoints": false
-    },
-    {
-      "idx": 47,
-      "version": "7",
-      "when": 1782000000000,
-      "tag": "0047_add_alerting_integration",
-      "breakpoints": false
-    },
-    {
-      "idx": 48,
-      "version": "7",
-      "when": 1783000000000,
-      "tag": "0048_remove_squint_db_url",
-      "breakpoints": false
-    },
-    {
-      "idx": 49,
-      "version": "7",
-      "when": 1784000000000,
-      "tag": "0049_allow_linear_pm_provider",
-      "breakpoints": false
-    },
-    {
-      "idx": 50,
-      "version": "7",
-      "when": 1785000000000,
-      "tag": "0050_trello_status_changed_on_create_backfill",
-      "breakpoints": false
-    },
-    {
-      "idx": 51,
-      "version": "7",
-      "when": 1786000000000,
-      "tag": "0051_pr_work_items_external_source",
-      "breakpoints": false
-    },
-    {
-      "idx": 52,
-      "version": "7",
-      "when": 1787000000000,
-      "tag": "0052_workflow_status_definitions",
-      "breakpoints": false
-    },
-    {
-      "idx": 53,
-      "version": "7",
-      "when": 1788000000000,
-      "tag": "0053_org_memberships",
-      "breakpoints": false
-    },
-    {
-      "idx": 54,
-      "version": "7",
-      "when": 1789000000000,
-      "tag": "0054_org_memberships_backfill",
-      "breakpoints": false
-    },
-    {
-      "idx": 55,
-      "version": "7",
-      "when": 1790000000000,
-      "tag": "0055_agent_config_update_channel",
-      "breakpoints": false
-    },
-    {
-      "idx": 56,
-      "version": "7",
-      "when": 1791000000000,
-      "tag": "0056_debug_analysis_status",
-      "breakpoints": false
-    },
-    {
-      "idx": 57,
-      "version": "7",
-      "when": 1792000000000,
-      "tag": "0057_project_worker_image",
-      "breakpoints": false
-    },
-    {
-      "idx": 58,
-      "version": "7",
-      "when": 1793000000000,
-      "tag": "0058_add_setup_timeout_ms",
-      "breakpoints": false
-    },
-    {
-      "idx": 59,
-      "version": "7",
-      "when": 1794000000000,
-      "tag": "0059_project_worker_dockerfile",
-      "breakpoints": false
-    },
-    {
-      "idx": 60,
-      "version": "7",
-      "when": 1795000000000,
-      "tag": "0060_agent_config_review_event_policy",
-      "breakpoints": false
-    },
-    {
-      "idx": 61,
-      "version": "7",
-      "when": 1796000000000,
-      "tag": "0061_repo_primary_topology",
-      "breakpoints": false
-    }
-  ]
+	"version": "7",
+	"dialect": "postgresql",
+	"entries": [
+		{
+			"idx": 0,
+			"version": "7",
+			"when": 1735000000000,
+			"tag": "0000_base_schema",
+			"breakpoints": false
+		},
+		{
+			"idx": 1,
+			"version": "7",
+			"when": 1736000000000,
+			"tag": "0001_three_tier_normalization",
+			"breakpoints": false
+		},
+		{
+			"idx": 2,
+			"version": "7",
+			"when": 1737000000000,
+			"tag": "0002_agent_run_tracking",
+			"breakpoints": false
+		},
+		{
+			"idx": 3,
+			"version": "7",
+			"when": 1738000000000,
+			"tag": "0003_organizations_and_credentials",
+			"breakpoints": false
+		},
+		{
+			"idx": 4,
+			"version": "7",
+			"when": 1739000000000,
+			"tag": "0004_agent_credential_overrides",
+			"breakpoints": false
+		},
+		{
+			"idx": 5,
+			"version": "7",
+			"when": 1740000000000,
+			"tag": "0005_config_schema_cleanup",
+			"breakpoints": false
+		},
+		{
+			"idx": 6,
+			"version": "7",
+			"when": 1741000000000,
+			"tag": "0006_users_and_sessions",
+			"breakpoints": false
+		},
+		{
+			"idx": 7,
+			"version": "7",
+			"when": 1742000000000,
+			"tag": "0007_remove_flyio_columns",
+			"breakpoints": false
+		},
+		{
+			"idx": 8,
+			"version": "7",
+			"when": 1743000000000,
+			"tag": "0008_prompt_partials",
+			"breakpoints": false
+		},
+		{
+			"idx": 9,
+			"version": "7",
+			"when": 1744000000000,
+			"tag": "0009_add_squint_db_url",
+			"breakpoints": false
+		},
+		{
+			"idx": 10,
+			"version": "7",
+			"when": 1745000000000,
+			"tag": "0010_webhook_logs",
+			"breakpoints": false
+		},
+		{
+			"idx": 11,
+			"version": "7",
+			"when": 1746000000000,
+			"tag": "0011_remove_credentials_description",
+			"breakpoints": false
+		},
+		{
+			"idx": 12,
+			"version": "7",
+			"when": 1747000000000,
+			"tag": "0012_llm_calls_realtime",
+			"breakpoints": false
+		},
+		{
+			"idx": 13,
+			"version": "7",
+			"when": 1748000000000,
+			"tag": "0013_integration_model_refactor",
+			"breakpoints": false
+		},
+		{
+			"idx": 14,
+			"version": "7",
+			"when": 1749000000000,
+			"tag": "0014_pr_work_items",
+			"breakpoints": false
+		},
+		{
+			"idx": 15,
+			"version": "7",
+			"when": 1750000000000,
+			"tag": "0015_rename_briefing_to_splitting",
+			"breakpoints": false
+		},
+		{
+			"idx": 16,
+			"version": "7",
+			"when": 1751000000000,
+			"tag": "0016_add_task_prompt_column",
+			"breakpoints": false
+		},
+		{
+			"idx": 17,
+			"version": "7",
+			"when": 1752000000000,
+			"tag": "0017_email_integration",
+			"breakpoints": false
+		},
+		{
+			"idx": 18,
+			"version": "7",
+			"when": 1753000000000,
+			"tag": "0018_gmail_oauth",
+			"breakpoints": false
+		},
+		{
+			"idx": 19,
+			"version": "7",
+			"when": 1754000000000,
+			"tag": "0019_make_repo_optional",
+			"breakpoints": false
+		},
+		{
+			"idx": 20,
+			"version": "7",
+			"when": 1755000000000,
+			"tag": "0020_sms_twilio_integration",
+			"breakpoints": false
+		},
+		{
+			"idx": 21,
+			"version": "7",
+			"when": 1756000000000,
+			"tag": "0021_superadmin_role",
+			"breakpoints": false
+		},
+		{
+			"idx": 22,
+			"version": "7",
+			"when": 1757000000000,
+			"tag": "0022_agent_definitions",
+			"breakpoints": false
+		},
+		{
+			"idx": 23,
+			"version": "7",
+			"when": 1758000000000,
+			"tag": "0023_move_prompts_to_definitions",
+			"breakpoints": false
+		},
+		{
+			"idx": 24,
+			"version": "7",
+			"when": 1759000000000,
+			"tag": "0024_agent_trigger_configs",
+			"breakpoints": false
+		},
+		{
+			"idx": 25,
+			"version": "7",
+			"when": 1760000000000,
+			"tag": "0025_integration_hooks",
+			"breakpoints": false
+		},
+		{
+			"idx": 26,
+			"version": "7",
+			"when": 1761000000000,
+			"tag": "0026_agent_type_concurrency",
+			"breakpoints": false
+		},
+		{
+			"idx": 27,
+			"version": "7",
+			"when": 1762000000000,
+			"tag": "0027_webhook_decision_reason",
+			"breakpoints": false
+		},
+		{
+			"idx": 28,
+			"version": "7",
+			"when": 1763000000000,
+			"tag": "0028_remove_stories_status",
+			"breakpoints": false
+		},
+		{
+			"idx": 29,
+			"version": "7",
+			"when": 1764000000000,
+			"tag": "0029_work_item_pr_details",
+			"breakpoints": false
+		},
+		{
+			"idx": 30,
+			"version": "7",
+			"when": 1765000000000,
+			"tag": "0030_make_pr_work_items_flexible",
+			"breakpoints": false
+		},
+		{
+			"idx": 31,
+			"version": "7",
+			"when": 1766000000000,
+			"tag": "0031_rename_card_id_to_work_item_id",
+			"breakpoints": false
+		},
+		{
+			"idx": 32,
+			"version": "7",
+			"when": 1767000000000,
+			"tag": "0032_rename_backends_to_engines",
+			"breakpoints": false
+		},
+		{
+			"idx": 33,
+			"version": "7",
+			"when": 1768000000000,
+			"tag": "0033_add_engine_settings",
+			"breakpoints": false
+		},
+		{
+			"idx": 34,
+			"version": "7",
+			"when": 1769000000000,
+			"tag": "0034_remove_subscription_cost_zero",
+			"breakpoints": false
+		},
+		{
+			"idx": 35,
+			"version": "7",
+			"when": 1770000000000,
+			"tag": "0035_add_job_id_to_runs",
+			"breakpoints": false
+		},
+		{
+			"idx": 36,
+			"version": "7",
+			"when": 1771000000000,
+			"tag": "0036_project_only_agent_configs",
+			"breakpoints": false
+		},
+		{
+			"idx": 37,
+			"version": "7",
+			"when": 1772000000000,
+			"tag": "0037_add_run_links",
+			"breakpoints": false
+		},
+		{
+			"idx": 38,
+			"version": "7",
+			"when": 1773000000000,
+			"tag": "0038_remove_cascade_defaults",
+			"breakpoints": false
+		},
+		{
+			"idx": 39,
+			"version": "7",
+			"when": 1774000000000,
+			"tag": "0039_webhook_credential_roles",
+			"breakpoints": false
+		},
+		{
+			"idx": 40,
+			"version": "7",
+			"when": 1775000000000,
+			"tag": "0040_project_scoped_credentials",
+			"breakpoints": false
+		},
+		{
+			"idx": 41,
+			"version": "7",
+			"when": 1776000000000,
+			"tag": "0041_drop_legacy_org_credentials",
+			"breakpoints": false
+		},
+		{
+			"idx": 42,
+			"version": "7",
+			"when": 1777000000000,
+			"tag": "0042_add_max_in_flight_items",
+			"breakpoints": false
+		},
+		{
+			"idx": 43,
+			"version": "7",
+			"when": 1778000000000,
+			"tag": "0043_stats_composite_index",
+			"breakpoints": false
+		},
+		{
+			"idx": 44,
+			"version": "7",
+			"when": 1779000000000,
+			"tag": "0044_agent_config_engine_settings",
+			"breakpoints": false
+		},
+		{
+			"idx": 45,
+			"version": "7",
+			"when": 1780000000000,
+			"tag": "0045_agent_config_prompts",
+			"breakpoints": false
+		},
+		{
+			"idx": 46,
+			"version": "7",
+			"when": 1781000000000,
+			"tag": "0046_add_snapshot_policy",
+			"breakpoints": false
+		},
+		{
+			"idx": 47,
+			"version": "7",
+			"when": 1782000000000,
+			"tag": "0047_add_alerting_integration",
+			"breakpoints": false
+		},
+		{
+			"idx": 48,
+			"version": "7",
+			"when": 1783000000000,
+			"tag": "0048_remove_squint_db_url",
+			"breakpoints": false
+		},
+		{
+			"idx": 49,
+			"version": "7",
+			"when": 1784000000000,
+			"tag": "0049_allow_linear_pm_provider",
+			"breakpoints": false
+		},
+		{
+			"idx": 50,
+			"version": "7",
+			"when": 1785000000000,
+			"tag": "0050_trello_status_changed_on_create_backfill",
+			"breakpoints": false
+		},
+		{
+			"idx": 51,
+			"version": "7",
+			"when": 1786000000000,
+			"tag": "0051_pr_work_items_external_source",
+			"breakpoints": false
+		},
+		{
+			"idx": 52,
+			"version": "7",
+			"when": 1787000000000,
+			"tag": "0052_workflow_status_definitions",
+			"breakpoints": false
+		},
+		{
+			"idx": 53,
+			"version": "7",
+			"when": 1788000000000,
+			"tag": "0053_org_memberships",
+			"breakpoints": false
+		},
+		{
+			"idx": 54,
+			"version": "7",
+			"when": 1789000000000,
+			"tag": "0054_org_memberships_backfill",
+			"breakpoints": false
+		},
+		{
+			"idx": 55,
+			"version": "7",
+			"when": 1790000000000,
+			"tag": "0055_agent_config_update_channel",
+			"breakpoints": false
+		},
+		{
+			"idx": 56,
+			"version": "7",
+			"when": 1791000000000,
+			"tag": "0056_debug_analysis_status",
+			"breakpoints": false
+		},
+		{
+			"idx": 57,
+			"version": "7",
+			"when": 1792000000000,
+			"tag": "0057_project_worker_image",
+			"breakpoints": false
+		},
+		{
+			"idx": 58,
+			"version": "7",
+			"when": 1793000000000,
+			"tag": "0058_add_setup_timeout_ms",
+			"breakpoints": false
+		},
+		{
+			"idx": 59,
+			"version": "7",
+			"when": 1794000000000,
+			"tag": "0059_project_worker_dockerfile",
+			"breakpoints": false
+		},
+		{
+			"idx": 60,
+			"version": "7",
+			"when": 1795000000000,
+			"tag": "0060_agent_config_review_event_policy",
+			"breakpoints": false
+		},
+		{
+			"idx": 61,
+			"version": "7",
+			"when": 1796000000000,
+			"tag": "0061_repo_primary_topology",
+			"breakpoints": false
+		}
+	]
 }
