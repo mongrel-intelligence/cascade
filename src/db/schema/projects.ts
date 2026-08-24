@@ -11,7 +11,11 @@ export const projects = pgTable(
 			.notNull()
 			.references(() => organizations.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
-		repo: text('repo').unique(),
+		repo: text('repo'),
+		// Spec 024: several projects may share a repository; exactly one is the
+		// primary (DB-enforced by the partial unique index uq_projects_repo_primary).
+		// The primary receives GitHub events that carry no PR->project link.
+		repoPrimary: boolean('repo_primary').notNull().default(true),
 		baseBranch: text('base_branch').default('main'),
 		branchPrefix: text('branch_prefix').default('feature/'),
 
