@@ -42,10 +42,15 @@ describe('JIRA wizardSpec through the shared generator (post plan 011/3)', () =>
 		}
 	});
 
-	it('includes exactly one custom step (IssueTypeMappingStep) for the issue-type slot', () => {
+	it('declares its custom steps in order: routing, then issue types', () => {
+		// Spec 024 plan 5 adds the shared-key routing step. Both are provider-owned
+		// components rather than StandardStepKinds because JIRA is the only
+		// provider with either concept today.
 		const customSteps = (jiraManifest.wizardSpec?.steps ?? []).filter((s) => s.kind === 'custom');
-		expect(customSteps).toHaveLength(1);
-		expect((customSteps[0] as { component: string }).component).toBe('IssueTypeMappingStep');
+		expect(customSteps.map((s) => (s as { component: string }).component)).toEqual([
+			'RoutingStep',
+			'IssueTypeMappingStep',
+		]);
 	});
 
 	it('declared steps use only StandardStepKinds + custom', () => {

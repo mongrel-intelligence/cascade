@@ -140,6 +140,12 @@ export const jiraManifest: PMProviderManifest = {
 			{ kind: 'credentials', id: 'jira-credentials' },
 			{ kind: 'container-pick', id: 'jira-project' },
 			{ kind: 'status-mapping', id: 'jira-statuses' },
+			// Spec 024 plan 5: the discriminator that decides which of several
+			// projects sharing this JIRA key owns an issue. Optional and empty by
+			// default — a project that does not share a board never touches it.
+			// Custom rather than a StandardStepKind because JIRA is the only
+			// provider with shared-key routing today.
+			{ kind: 'custom', id: 'jira-routing', component: 'RoutingStep' },
 			{ kind: 'label-mapping', id: 'jira-labels' },
 			{ kind: 'custom-field-mapping', id: 'jira-custom-fields' },
 			// Plan 011/3: JIRA task/subtask issue-type mapping is JIRA-specific
