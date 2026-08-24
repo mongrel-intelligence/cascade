@@ -54,6 +54,37 @@ function injectTrelloConfig(projectSecrets: Record<string, string>, project: Pro
 	projectSecrets.CASCADE_TRELLO_LABELS = JSON.stringify(trelloConfig.labels);
 }
 
+/**
+ * Flatten the JIRA config into the worker environment.
+ *
+ * `cascade-tools` has no database access and rebuilds `JiraConfig` from exactly
+ * these variables (see `src/jira/config-from-env.ts`), so a field omitted here
+ * does not exist inside the worker — which is how spec 024's routing
+ * discriminator came to no-op on stamping and JQL scoping before it was
+ * threaded. Anything added to `JiraConfig` that an agent needs belongs here AND
+ * in the reader.
+ */
+function injectJiraConfig(projectSecrets: Record<string, string>, project: ProjectConfig): void {
+	const jiraConfig = getJiraConfig(project);
+	if (!jiraConfig) return;
+
+	projectSecrets.CASCADE_JIRA_PROJECT_KEY = jiraConfig.projectKey;
+	projectSecrets.CASCADE_JIRA_BASE_URL = jiraConfig.baseUrl;
+	projectSecrets.JIRA_BASE_URL = jiraConfig.baseUrl;
+	// Carry the JIRA auth mode into the worker so in-worker JIRA calls
+	// (agent runs, friction reports) route through the correct host. Absent
+	// config ⇒ 'basic' (the historical default), preserving existing projects.
+	projectSecrets.CASCADE_JIRA_AUTH_TYPE = jiraConfig.authType ?? 'basic';
+	if (jiraConfig.statuses) {
+		projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
+	}
+	// Emitted only when set, so an unshared project's worker env is
+	// byte-identical to before spec 024.
+	if (jiraConfig.routing) {
+		projectSecrets.CASCADE_JIRA_ROUTING = JSON.stringify(jiraConfig.routing);
+	}
+}
+
 function injectAgentInputContext(projectSecrets: Record<string, string>, input: AgentInput): void {
 	const stringFields: Array<[keyof AgentInput, string]> = [
 		['workItemId', 'CASCADE_WORK_ITEM_ID'],
@@ -93,26 +124,7 @@ export async function augmentProjectSecrets(
 	injectTrelloConfig(projectSecrets, project);
 
 	// Inject JIRA integration config so cascade-tools can construct JiraPMProvider
-	const jiraConfig = getJiraConfig(project);
-	if (jiraConfig) {
-		projectSecrets.CASCADE_JIRA_PROJECT_KEY = jiraConfig.projectKey;
-		projectSecrets.CASCADE_JIRA_BASE_URL = jiraConfig.baseUrl;
-		projectSecrets.JIRA_BASE_URL = jiraConfig.baseUrl;
-		// Carry the JIRA auth mode into the worker so in-worker JIRA calls
-		// (agent runs, friction reports) route through the correct host. Absent
-		// config ⇒ 'basic' (the historical default), preserving existing projects.
-		projectSecrets.CASCADE_JIRA_AUTH_TYPE = jiraConfig.authType ?? 'basic';
-		if (jiraConfig.statuses) {
-			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
-		}
-		// Spec 024: the in-worker provider reads its config from these env vars,
-		// so an omitted field is invisible to `cascade-tools` — stamping and JQL
-		// scoping would both silently no-op on a shared board. Emitted only when
-		// set, keeping the worker env byte-identical for every unshared project.
-		if (jiraConfig.routing) {
-			projectSecrets.CASCADE_JIRA_ROUTING = JSON.stringify(jiraConfig.routing);
-		}
-	}
+	injectJiraConfig(projectSecrets, project);
 
 	// Inject Linear integration config so cascade-tools can construct LinearPMProvider.
 	// Without this, every `cascade-tools pm <cmd>` from inside a Linear-backed worker

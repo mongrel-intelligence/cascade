@@ -27,6 +27,9 @@ vi.mock('../../../src/config/provider.js', () => ({
 }));
 vi.mock('../../../src/github/personas.js', () => ({ getPersonaToken: vi.fn() }));
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { globSync } from 'tinyglobby';
 import { augmentProjectSecrets } from '../../../src/backends/secretBuilder.js';
 import { synthesizeProjectFromEnv } from '../../../src/cli/base.js';
 import type { AgentInput, ProjectConfig } from '../../../src/types/index.js';
@@ -111,5 +114,34 @@ describe('JIRA routing discriminator survives the worker env hop', () => {
 
 		expect(() => synthesizeProjectFromEnv('jira')).not.toThrow();
 		expect(synthesizeProjectFromEnv('jira').jira?.routing).toBeUndefined();
+	});
+});
+
+describe('one synthesizer, not several', () => {
+	// The tenth instance of "a JIRA config field dropped by a hand-written
+	// projection" in this area was a SECOND env→config synthesizer in the
+	// friction gadget: it hand-picked the same four fields and so never learned
+	// about routing. Counting the readers is what makes an eleventh copy fail
+	// here instead of silently misrouting an agent's work items.
+	const JIRA_ENV_VARS = [
+		'CASCADE_JIRA_PROJECT_KEY',
+		'CASCADE_JIRA_STATUSES',
+		'CASCADE_JIRA_AUTH_TYPE',
+		'CASCADE_JIRA_ROUTING',
+	];
+
+	it('reads the JIRA worker env vars in exactly one place', () => {
+		const files = globSync('src/**/*.ts', { cwd: process.cwd() });
+		const offenders = files.filter((f) => {
+			// The emitter legitimately writes them; the shared builder reads them.
+			if (f.endsWith('jira/config-from-env.ts') || f.endsWith('backends/secretBuilder.ts')) {
+				return false;
+			}
+			const src = readFileSync(join(process.cwd(), f), 'utf8');
+			// Actual reads only — doc comments naming the var are fine.
+			return JIRA_ENV_VARS.some((v) => src.includes(`process.env.${v}`));
+		});
+
+		expect(offenders).toEqual([]);
 	});
 });

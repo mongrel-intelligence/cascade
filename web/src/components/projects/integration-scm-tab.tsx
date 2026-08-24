@@ -487,7 +487,9 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 				</button>
 				{saveMutation.isSuccess && <span className="text-sm text-muted-foreground">Saved</span>}
 				{saveMutation.isError && (
-					<span className="text-sm text-destructive">{saveMutation.error.message}</span>
+					<span data-testid="scm-save-error" className="text-sm text-destructive">
+						{saveMutation.error.message}
+					</span>
 				)}
 			</div>
 
