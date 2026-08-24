@@ -6,7 +6,8 @@ plan_slug: jira-event-routing
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [1-schema-and-resolver-seam.md]
-status: pending
+status: wip
+locked_at: 870a80341df3307b0c8dafbee5cb4eae8c434dc9
 ---
 
 # 024/2: JIRA event routing by discriminator + save-time topology validation
@@ -28,10 +29,30 @@ Does NOT deliver read-scoping or stamping (plan 3) — after this plan, routing 
 
 **Files owned (exclusive to this plan within this spec):**
 - `src/router/adapters/jira.ts`
+- `src/router/platform-adapter.ts` — *(added mid-run; see Divergence below)*
+- `src/router/webhook-processor.ts` — *(added mid-run; see Divergence below)*
 - `src/integrations/pm/_shared/topology-validation.ts` (new)
 - `src/db/repositories/integrationsRepository.ts`
 - `tests/unit/router/jira-project-routing.test.ts` (new)
 - `tests/unit/integrations/jira-topology-validation.test.ts` (new)
+
+**Divergence (approved 2026-08-24, mid-run):** as written this plan could not
+satisfy AC #2/#3. Decision reasons on the project-resolution path are hardcoded
+in `webhook-processor.ts` (`'Event unparseable or not processable'`, `` `No
+project config for identifier ${…}` ``), and the adapter contract gives
+`parseWebhook` / `resolveProject` no channel to supply one — both return
+`T | null`. The only structured reason channel (`TriggerResult.skipReason`)
+sits on the dispatch path, reachable only *after* a project resolves. Neither
+file was owned by any plan in this spec.
+
+Resolution: add an **optional** `resolveProjectWithReason` to the adapter
+contract, preferred by `webhook-processor` when present and falling back to
+today's `resolveProject` + hardcoded message otherwise. Being optional, the
+other four adapters compile and behave unchanged — importantly `github.ts`,
+which plan 4 owns, so file-disjointness with plans 3/4 is preserved. This also
+corrects a message that actively misleads on shared keys: a no-match currently
+reports "No project config for identifier CLFX" when config exists and simply
+did not match.
 
 **Shared surfaces (append-only, conflicts are trivial):**
 - `src/integrations/README.md` — this plan adds the "Shared-key routing contract" section; plan 3 appends a "Scoping & stamping" subsection under it
@@ -75,11 +96,15 @@ Current behavior (both sites use first-match): `src/router/adapters/jira.ts:57` 
 - `no match without default returns skip outcome carrying resolver message` — unit — parse/resolve yields a null-project outcome whose reason string contains the key and both discriminators. Expected red: `expected null/skip, got project 'A'`.
 - `ambiguous match skips and captures Sentry once` — unit — payload matching both discriminators → skip outcome + `captureException` called with tag `pm_routing_ambiguous`; second identical event does not re-capture (per-process dedup). Expected red: `expected captureException to have been called`.
 - `comment events resolve through the same seam` — unit — comment-event payload on a discriminated issue routes to the right sibling. Expected red: wrong sibling.
+- `an adapter without resolveProjectWithReason keeps today's decision reason` — unit — drive `processRouterWebhook` with a stub adapter implementing only `resolveProject` → `null` ⇒ `decisionReason` is still `` `No project config for identifier …` ``. Expected red: n/a green-from-start (AC #5 pin; guards the four adapters this plan does not touch).
 
 **Implementation** (`src/router/adapters/jira.ts`):
 - Extract issue routing attributes once: `{ labels: fields.labels ?? [], components: (fields.components ?? []).map(c => c.name) }`.
 - Replace both `config.projects.find(... projectKey ===)` sites with: collect siblings (all projects whose `jira.projectKey` matches, each carrying `jira.routing?.discriminator ?? null`) → `resolveProjectAmongSiblings(siblings, attrs)`.
-- `route` → proceed exactly as today with the chosen project. `skip` → return the adapter's null/absent-project result **with the resolver's message as the decision reason**, using the same plumbing that today produces "No trigger matched for event" (the parse-result → webhook-log reason path in the router's webhook handling; reuse, do not invent a parallel channel).
+- `route` → proceed exactly as today with the chosen project. `skip` → surface the resolver's message as the webhook-log decision reason through the new optional adapter channel (see Divergence above):
+  - `src/router/platform-adapter.ts` — add `type ProjectResolution = { project: RouterProjectConfig } | { project: null; reason: string }` and an optional `resolveProjectWithReason?(event): Promise<ProjectResolution>`. `resolveProject` stays as-is so the other four adapters are untouched.
+  - `src/router/webhook-processor.ts` — at step 6, prefer `resolveProjectWithReason` when the adapter implements it; on a null project use its `reason` as `decisionReason`, otherwise keep today's hardcoded message verbatim (regression pin).
+  - `src/router/adapters/jira.ts` — implement `resolveProjectWithReason` as the single resolution seam; `resolveProject` delegates to it and discards the reason, so both entry points share one code path and cannot drift.
 - On `reason === 'ambiguous'`: `captureException` (from `src/sentry.js`) tagged `pm_routing_ambiguous`, `extra: { issueKey, candidateProjectIds }`, deduped per issueKey per process (module-level `Set`, mirroring the `warnedMissingPricing` pattern in `src/utils/llmMetrics.ts`).
 - Comment/webhook sub-paths that re-derive the project reuse the same helper — one resolution function inside the adapter, called from both sites.
 
