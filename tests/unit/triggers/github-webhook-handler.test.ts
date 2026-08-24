@@ -31,6 +31,21 @@ vi.mock('../../../src/triggers/github/integration.js', () => {
 	return { GitHubWebhookIntegration: vi.fn().mockImplementation(() => mockIntegration) };
 });
 
+// Spec 024: the worker resolves the project by the router's stamped projectId
+// (link-first on shared repositories) rather than re-deriving it from the repo.
+vi.mock('../../../src/config/provider.js', () => ({
+	loadProjectConfigById: vi.fn().mockResolvedValue({
+		project: {
+			id: 'linked-project',
+			name: 'Linked',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			watchdogTimeoutMs: 120000,
+		},
+		config: { projects: [] },
+	}),
+}));
+
 vi.mock('../../../src/github/personas.js', () => ({
 	getPersonaToken: vi.fn().mockResolvedValue('gh-token-xxx'),
 	resolvePersonaIdentities: vi
@@ -96,6 +111,7 @@ vi.mock('../../../src/utils/index.js', () => ({
 }));
 
 import { isPMFocusedAgent } from '../../../src/agents/definitions/loader.js';
+import { loadProjectConfigById } from '../../../src/config/provider.js';
 import {
 	postAcknowledgmentComment,
 	updateInitialCommentWithError,
@@ -155,6 +171,49 @@ describe('processGitHubWebhook', () => {
 		const registry = createMockRegistry();
 		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
 		expect(registry.dispatch).toHaveBeenCalled();
+	});
+
+	it('resolves the project by the stamped projectId (link-first), not by repo', async () => {
+		const registry = createMockRegistry();
+		await processGitHubWebhook(
+			validPayload,
+			'pull_request',
+			registry as never,
+			undefined,
+			undefined,
+			undefined,
+			false,
+			false,
+			'linked-project',
+		);
+
+		// The router's stamped id wins; the repo first-match lookup is skipped so a
+		// shared repository cannot hand the event to another project (spec 024).
+		expect(loadProjectConfigById).toHaveBeenCalledWith('linked-project');
+		const { GitHubWebhookIntegration } = await import(
+			'../../../src/triggers/github/integration.js'
+		);
+		expect(new GitHubWebhookIntegration().lookupProject).not.toHaveBeenCalled();
+		// The agent runs under the linked project, not the repo first-match one —
+		// mutation guard: resolving by repo would pass 'project-1' here instead.
+		expect(withAgentTypeConcurrency).toHaveBeenCalledWith(
+			'linked-project',
+			'implementation',
+			expect.any(Function),
+			'GitHub agent',
+			undefined,
+		);
+	});
+
+	it('falls back to the repo lookup when no projectId is stamped (pre-spec-024 jobs)', async () => {
+		const registry = createMockRegistry();
+		await processGitHubWebhook(validPayload, 'pull_request', registry as never);
+
+		const { GitHubWebhookIntegration } = await import(
+			'../../../src/triggers/github/integration.js'
+		);
+		expect(new GitHubWebhookIntegration().lookupProject).toHaveBeenCalledWith('owner/repo');
+		expect(loadProjectConfigById).not.toHaveBeenCalled();
 	});
 
 	it('runs agent execution when trigger matches', async () => {

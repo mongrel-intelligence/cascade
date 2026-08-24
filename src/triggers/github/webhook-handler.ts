@@ -12,6 +12,7 @@
  */
 
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
+import { loadProjectConfigById } from '../../config/provider.js';
 import { withGitHubToken } from '../../github/client.js';
 import { getPersonaToken, resolvePersonaIdentities } from '../../github/personas.js';
 import { extractGitHubContext, generateAckMessage } from '../../router/ackMessageGenerator.js';
@@ -245,9 +246,11 @@ async function handleRecheckResult(
 			payload,
 			eventType,
 			repoFullName: projectIdentifier,
-			// Carry the project forward: a rescheduled re-check that lost it would
-			// fall back to resolving by repo — first match — silently reopening the
-			// wrong-credentials bug on shared repositories for this path alone.
+			// Carry forward the project this run resolved (the stamped link-first
+			// id on shared repositories, spec 024). Dropping it would force the
+			// rescheduled re-check back onto the repo lookup — first match — which
+			// need not own this PR, reopening the wrong-credentials bug for this
+			// path alone.
 			projectId,
 			receivedAt: new Date().toISOString(),
 			checkSuiteRecheckAttempt: 1,
@@ -279,8 +282,20 @@ export async function processGitHubWebhook(
 	triggerResult?: TriggerResult,
 	isRecheckJob?: boolean,
 	isCheckSuiteRecheckJob?: boolean,
+	/**
+	 * The project the ROUTER resolved and stamped on the job (link-first on
+	 * shared repositories, spec 024). When present the worker resolves the
+	 * project by this id instead of re-deriving it from the repo — which takes
+	 * the first match and, on a shared repository, need not own this PR. Absent
+	 * only for jobs enqueued before jobs carried the id.
+	 */
+	projectId?: string,
 ): Promise<void> {
-	logger.info('Processing GitHub webhook', { eventType, hasTriggerResult: !!triggerResult });
+	logger.info('Processing GitHub webhook', {
+		eventType,
+		projectId,
+		hasTriggerResult: !!triggerResult,
+	});
 
 	const event = integration.parseWebhookPayload(payload);
 	if (!event) {
@@ -288,10 +303,21 @@ export async function processGitHubWebhook(
 		return;
 	}
 
-	const projectConfig = await integration.lookupProject(event.projectIdentifier);
+	// Prefer the project the ROUTER resolved (spec 024), mirroring the
+	// Trello / JIRA / Linear worker cases. Re-deriving it from the repo takes the
+	// first match, which on a shared repository need not own this PR: the agent
+	// would then run under a different project's ProjectConfig (withPMScope,
+	// engine/agent config, watchdog) than the one whose credentials built the
+	// container, and a rescheduled check-suite re-check (handleRecheckResult
+	// below) would carry that first-match project forward. The repo lookup
+	// remains a fallback for jobs enqueued before jobs carried the id.
+	const projectConfig = projectId
+		? await loadProjectConfigById(projectId)
+		: await integration.lookupProject(event.projectIdentifier);
 	if (!projectConfig) {
 		logger.warn('No project configured for repository', {
 			repoFullName: event.projectIdentifier,
+			projectId,
 		});
 		return;
 	}

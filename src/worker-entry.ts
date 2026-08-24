@@ -73,6 +73,18 @@ export interface GitHubJobData {
 	payload: unknown;
 	eventType: string;
 	repoFullName: string;
+	/**
+	 * The project the ROUTER resolved for this event (link-first on shared
+	 * repositories, spec 024). Mirrors `GitHubJob.projectId` in queue.ts and the
+	 * `projectId` that TrelloJobData / JiraJobData already carry. Without it the
+	 * worker re-resolved the project by repository — first match — which on a
+	 * shared repository need not own this PR, so the agent ran under a different
+	 * project's config than the one whose credentials built the container.
+	 *
+	 * Readers must still tolerate its absence at RUNTIME for jobs that were
+	 * already in Redis when this shipped.
+	 */
+	projectId: string;
 	receivedAt: string;
 	ackCommentId?: number;
 	ackMessage?: string;
@@ -344,6 +356,7 @@ export async function dispatchJob(
 				jobId,
 				eventType: jobData.eventType,
 				repoFullName: jobData.repoFullName,
+				projectId: jobData.projectId,
 				ackCommentId: jobData.ackCommentId,
 				hasTriggerResult: !!jobData.triggerResult,
 			});
@@ -356,6 +369,7 @@ export async function dispatchJob(
 				jobData.triggerResult,
 				!!jobData.mergeabilityRecheckAttempt,
 				!!jobData.checkSuiteRecheckAttempt,
+				jobData.projectId,
 			);
 			break;
 		case 'jira': {
