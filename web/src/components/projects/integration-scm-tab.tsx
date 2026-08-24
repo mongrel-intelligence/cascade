@@ -337,6 +337,12 @@ interface SCMTabProject {
 	repo?: string | null;
 	baseBranch?: string | null;
 	branchPrefix?: string | null;
+	/**
+	 * Spec 024. Declared rather than cast at the read site: a cast would turn a
+	 * renamed field or a new upstream projection into `undefined → true`, so a
+	 * SECONDARY project would display "Primary" with no compile error.
+	 */
+	repoPrimary?: boolean;
 }
 
 export function SCMTab({ projectId, project }: { projectId: string; project?: SCMTabProject }) {
@@ -349,23 +355,31 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 	// Spec 024: undefined means "not touched", which is what keeps an unrelated
 	// save from restating (and so potentially changing) a shared repository's
 	// topology. Seeded from the stored value so the control shows the truth.
-	const [repoPrimary, setRepoPrimary] = useState<boolean | undefined>(undefined);
+	const [repoPrimaryChoice, setRepoPrimaryChoice] = useState<boolean | undefined>(undefined);
 
 	useEffect(() => {
 		setRepo(project?.repo ?? '');
 		setBaseBranch(project?.baseBranch ?? 'main');
 		setBranchPrefix(project?.branchPrefix ?? 'feature/');
-		setRepoPrimary(undefined);
+		setRepoPrimaryChoice(undefined);
 	}, [project?.repo, project?.baseBranch, project?.branchPrefix]);
 
-	const storedRepoPrimary = (project as { repoPrimary?: boolean } | undefined)?.repoPrimary ?? true;
-	const effectiveRepoPrimary = repoPrimary ?? storedRepoPrimary;
+	const storedRepoPrimary = project?.repoPrimary ?? true;
+	const displayedRepoPrimary = repoPrimaryChoice ?? storedRepoPrimary;
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
 			// Save project-level SCM fields
 			await trpcClient.projects.update.mutate(
-				buildScmSavePayload({ projectId, repo, baseBranch, branchPrefix, repoPrimary }),
+				buildScmSavePayload({
+					projectId,
+					repo,
+					baseBranch,
+					branchPrefix,
+					// The CHOICE, not the displayed value: undefined means untouched,
+					// which is what keeps an unrelated save from restating the role.
+					repoPrimary: repoPrimaryChoice,
+				}),
 			);
 
 			// Note: triggers are intentionally omitted — they are managed via the Agent Configs tab
@@ -410,8 +424,8 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 						<Label htmlFor="scm-repo-role">Repository role</Label>
 						<NativeSelect
 							id="scm-repo-role"
-							value={effectiveRepoPrimary ? 'primary' : 'secondary'}
-							onChange={(e) => setRepoPrimary(e.target.value === 'primary')}
+							value={displayedRepoPrimary ? 'primary' : 'secondary'}
+							onChange={(e) => setRepoPrimaryChoice(e.target.value === 'primary')}
 						>
 							<option value="primary">
 								Primary — receives events for PRs CASCADE did not create

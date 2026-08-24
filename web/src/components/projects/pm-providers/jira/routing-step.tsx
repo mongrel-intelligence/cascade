@@ -33,6 +33,14 @@ export interface RoutingStepProps {
 	readonly routingKind: JiraRoutingKind;
 	readonly routingValue: string;
 	readonly onRoutingChange: (kind: JiraRoutingKind, value: string) => void;
+	/**
+	 * The kind the operator has SELECTED, which is not always the kind in state:
+	 * emptying the value box clears both fields in the reducer, and driving the
+	 * input's visibility off that would unmount the box the operator is typing
+	 * in. Defaults to the state kind for the first render.
+	 */
+	readonly selectedKind?: JiraRoutingKind;
+	readonly onSelectedKindChange?: (kind: JiraRoutingKind) => void;
 }
 
 const KINDS: ReadonlyArray<{ value: JiraRoutingKind; label: string }> = [
@@ -47,7 +55,7 @@ const KINDS: ReadonlyArray<{ value: JiraRoutingKind; label: string }> = [
  * the quoted JQL value the read path builds; whitespace in a *label* is refused
  * by JIRA itself on write, which would leave the read clause matching nothing.
  */
-function describeInvalid(kind: JiraRoutingKind, value: string): string | null {
+export function describeInvalid(kind: JiraRoutingKind, value: string): string | null {
 	if (!value) return null;
 	if (/["\\]/.test(value)) return 'Cannot contain a double quote or backslash.';
 	if (kind === 'label' && /\s/.test(value)) return 'JIRA labels cannot contain spaces.';
@@ -60,8 +68,14 @@ export function RoutingStep({
 	routingKind,
 	routingValue,
 	onRoutingChange,
+	selectedKind,
+	onSelectedKindChange,
 }: RoutingStepProps) {
-	const invalid = describeInvalid(routingKind, routingValue);
+	// The select drives what is shown; state drives what is saved. They diverge
+	// only while the value box is empty, which is exactly when yanking the box
+	// away would be worst.
+	const shownKind = selectedKind ?? routingKind;
+	const invalid = describeInvalid(shownKind, routingValue);
 
 	return createElement(
 		'div',
@@ -90,15 +104,18 @@ export function RoutingStep({
 				NativeSelect,
 				{
 					id: 'jira-routing-kind',
-					value: routingKind,
-					onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-						onRoutingChange(e.target.value as JiraRoutingKind, routingValue),
+					value: shownKind,
+					onChange: (e: React.ChangeEvent<HTMLSelectElement>) => {
+						const kind = e.target.value as JiraRoutingKind;
+						onSelectedKindChange?.(kind);
+						onRoutingChange(kind, kind ? routingValue : '');
+					},
 					className: 'flex-1',
 				},
 				...KINDS.map((k) => createElement('option', { key: k.value, value: k.value }, k.label)),
 			),
 		),
-		routingKind
+		shownKind
 			? createElement(
 					'div',
 					{ className: 'flex items-center gap-3' },
@@ -108,14 +125,14 @@ export function RoutingStep({
 							htmlFor: 'jira-routing-value',
 							className: 'w-32 shrink-0 text-xs text-muted-foreground',
 						},
-						routingKind === 'label' ? 'Label' : 'Component',
+						shownKind === 'label' ? 'Label' : 'Component',
 					),
 					createElement(Input, {
 						id: 'jira-routing-value',
 						value: routingValue,
-						placeholder: routingKind === 'label' ? 'team-backend' : 'Backend',
+						placeholder: shownKind === 'label' ? 'team-backend' : 'Backend',
 						onChange: (e: React.ChangeEvent<HTMLInputElement>) =>
-							onRoutingChange(routingKind, e.target.value),
+							onRoutingChange(shownKind, e.target.value),
 						className: 'flex-1',
 						'aria-invalid': invalid ? true : undefined,
 					}),
@@ -128,7 +145,7 @@ export function RoutingStep({
 					invalid,
 				)
 			: null,
-		routingKind === 'component'
+		shownKind === 'component'
 			? createElement(
 					'p',
 					{ className: 'text-xs text-muted-foreground' },

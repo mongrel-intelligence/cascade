@@ -17,7 +17,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createElement, type ReactElement } from 'react';
+import { createElement, type ReactElement, useState } from 'react';
 import { Button } from '@/components/ui/button.js';
 import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
@@ -323,11 +323,16 @@ function JiraIssueTypeAdapter({
 }
 
 function JiraRoutingAdapter({ state, dispatch }: ProviderWizardStepProps): ReactElement {
+	// `selectedKind` is view state, not config: it keeps the value input mounted
+	// while the box is empty, which the reducer treats as "no discriminator".
+	const [selectedKind, setSelectedKind] = useState<JiraRoutingKind | undefined>(undefined);
 	return RoutingStep({
 		step: { kind: 'custom', id: 'jira-routing', component: 'RoutingStep' },
 		providerId: 'jira',
 		routingKind: state.jiraRoutingKind,
 		routingValue: state.jiraRoutingValue,
+		selectedKind,
+		onSelectedKindChange: setSelectedKind,
 		onRoutingChange: (kind: JiraRoutingKind, value: string) =>
 			dispatch({ type: 'SET_JIRA_ROUTING_DISCRIMINATOR', kind, value }),
 	});

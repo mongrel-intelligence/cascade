@@ -174,7 +174,8 @@ shadowed (once per key per process).
 This is deliberate. A pre-024 deployment with two projects on one key can only
 be in that state — the field did not exist — and applying the strict matrix to
 it would turn *"one project works, the other is shadowed"* into *"nothing works
-at all"*, with no wizard field to fix it until plan 5. The shadowing bug stays,
+at all"*, and before plan 5 there was no wizard field to fix it with. The
+shadowing bug stays,
 but stops being silent. The strict matrix engages the moment **any** project on
 the key declares a discriminator.
 
@@ -276,8 +277,11 @@ would then match nothing.
 2. In each project's PM wizard, open **Team routing** and set the kind and value
    (`team-backend`, `Payments API`, …). Leave it as **None** on at most one
    project — that project becomes the key's default and receives issues carrying
-   no other team's discriminator. Two projects both left on None is rejected at
-   save time.
+   no other team's discriminator. A **new** project claiming a key that already
+   has a default is rejected at save time; two projects that were *already* on
+   the key before spec 024 are grandfathered and keep first-match routing with a
+   loud `pm_shared_key_unconfigured` warning until one of them declares a
+   discriminator (see *Sharing is opt-in* above).
 3. Have the teams apply the discriminator when they file. Issues carrying
    neither are skipped with a decision reason naming the key and every
    discriminator evaluated — visible in the webhook log, not silent.

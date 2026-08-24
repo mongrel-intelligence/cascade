@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { jiraConfigSchema } from '../../../src/integrations/pm/jira/config-schema.js';
+import { describeInvalid } from '../../../web/src/components/projects/pm-providers/jira/routing-step.js';
 import {
 	createInitialJiraState,
 	jiraWizardReducer,
@@ -91,13 +92,37 @@ describe('JIRA routing discriminator — config serialization', () => {
 		expect(jiraConfigSchema.safeParse(config).success).toBe(true);
 	});
 
-	it('does not emit a value the backend would reject', () => {
-		// The schema forbids whitespace in a LABEL discriminator (JIRA refuses to
-		// write such a label). The wizard must not produce a config that fails
-		// save-time validation with a message the operator cannot act on.
+	it('emits invalid values and leaves rejection to the backend', () => {
+		// Characterisation, not a filter. The step's inline warning is advisory
+		// and `isComplete` is always true, so an operator CAN save a label with a
+		// space — the backend refuses it with an actionable message. Naming this
+		// "does not emit a value the backend would reject" would tell the next
+		// maintainer a guard exists here when none does.
 		const config = configFrom(withDiscriminator('label', 'team be'));
 
 		expect(jiraConfigSchema.safeParse(config).success).toBe(false);
+	});
+});
+
+describe('JIRA routing discriminator — inline validation', () => {
+	// The step re-implements the backend's constraints so the operator hears
+	// about them before saving. Pinned AGAINST the real schema rather than
+	// against hardcoded messages: if the schema tightens and this does not, the
+	// UI would keep telling the operator a rejected value is fine.
+	const cases: ReadonlyArray<{ kind: 'label' | 'component'; value: string }> = [
+		{ kind: 'label', value: 'team-be' },
+		{ kind: 'component', value: 'Payments API' },
+		{ kind: 'label', value: 'team be' },
+		{ kind: 'component', value: 'say "hi"' },
+		{ kind: 'component', value: 'back\\slash' },
+	];
+
+	it.each(cases)('agrees with jiraConfigSchema for $kind "$value"', ({ kind, value }) => {
+		const uiRejects = describeInvalid(kind, value) !== null;
+		const schemaRejects = !jiraConfigSchema.safeParse(configFrom(withDiscriminator(kind, value)))
+			.success;
+
+		expect(uiRejects).toBe(schemaRejects);
 	});
 });
 

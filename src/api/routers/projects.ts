@@ -500,7 +500,7 @@ async function resolveRepoPrimary(
 
 	// An update that does not mention the role must not change it. The SCM tab
 	// sends `repo` on every save and cannot yet send a role (that toggle is plan
-	// 5), so demanding one here would reject every save on a shared repository —
+	// 5), so before spec 024 plan 5 shipped the toggle, demanding one here would have rejected every save on a shared repository —
 	// including the primary's own, while telling it to demote itself, which the
 	// zero-primary rule below would then also refuse.
 	if (requested === undefined && self) return self.repoPrimary;

@@ -7,6 +7,14 @@
  *
  * The payload shape is the part worth pinning, so it lives in a pure builder
  * the component calls rather than being asserted through a DOM render.
+ *
+ * NOT covered here: that the tab RENDERS a backend rejection verbatim. The plan
+ * named a test for it. Asserting it honestly needs a DOM render of this
+ * component, which the dashboard suites have no harness for; constructing a
+ * TRPCError and asserting it still contains the message I just put in it would
+ * be a tautology, not coverage. The backend half — that the rejection names the
+ * conflicting project — is pinned in `projects-repo-validation.test.ts`, and the
+ * tab renders `saveMutation.error.message` directly with no wrapping.
  */
 import { describe, expect, it } from 'vitest';
 import { buildScmSavePayload } from '../../../web/src/components/projects/scm-save-payload.js';

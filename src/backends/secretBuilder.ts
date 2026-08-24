@@ -105,6 +105,13 @@ export async function augmentProjectSecrets(
 		if (jiraConfig.statuses) {
 			projectSecrets.CASCADE_JIRA_STATUSES = JSON.stringify(jiraConfig.statuses);
 		}
+		// Spec 024: the in-worker provider reads its config from these env vars,
+		// so an omitted field is invisible to `cascade-tools` — stamping and JQL
+		// scoping would both silently no-op on a shared board. Emitted only when
+		// set, keeping the worker env byte-identical for every unshared project.
+		if (jiraConfig.routing) {
+			projectSecrets.CASCADE_JIRA_ROUTING = JSON.stringify(jiraConfig.routing);
+		}
 	}
 
 	// Inject Linear integration config so cascade-tools can construct LinearPMProvider.

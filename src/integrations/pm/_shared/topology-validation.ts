@@ -83,7 +83,9 @@ export function assertJiraTopologyValid(
 	// it predates the save. Rejecting would lock a pre-024 duplicate-key
 	// deployment out of editing anything else about the project (status
 	// mappings included) over a state it could not have avoided, and the wizard
-	// has no discriminator field to fix it with until spec 024 plan 5.
+	// had no discriminator field to fix it with until spec 024 plan 5 shipped
+	// the wizard step. The clause stays: a deployment that has not yet opted in
+	// is still in that state, and its saves must keep working.
 	const alreadyClaimsKey = siblings.some(
 		(s) => s.projectId === projectId && readProjectKey(s.config) === projectKey,
 	);
