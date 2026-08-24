@@ -1,0 +1,120 @@
+---
+id: 024
+slug: shared-board-repo-topologies
+level: spec
+title: Shared-board and shared-repo project topologies
+created: 2026-08-21
+status: draft
+---
+
+# 024: Shared-board and shared-repo project topologies
+
+## Problem & Motivation
+
+CASCADE currently hard-assumes that a project, a PM board, and a source repository are the same thing: one project owns one JIRA project key and one GitHub repository, and both webhook-routing paths resolve "which project does this event belong to?" through that assumption. A database-level uniqueness constraint forbids two projects from sharing a repository, and PM event routing resolves the project by first match on the JIRA project key.
+
+A live client deployment needs the matrix this forbids: two teams working from **one JIRA project key across two repositories**, and **two boards feeding one repository**. Today the first case fails silently — the second project configured with an already-claimed JIRA key never receives a single event, because the sibling project always matches first; the operator's attempt to differentiate via a ready-label could not work, since labels are evaluated only after the event has already been routed to the wrong project. The second case fails loudly but uselessly — saving the shared repository returns a generic "Internal server error" (an unhandled uniqueness violation) with no explanation.
+
+Both directions share one root: routing identity is implicit and 1:1. This spec makes a project an explicit **(board, repo) pair**. PM events disambiguate through an operator-configured routing discriminator; SCM events route through the PR-to-project link CASCADE already persists, with an explicit single "primary" project per repository as the fallback for events no link exists for. Deployments that never share a board or repo must see zero change.
+
+---
+
+## Goals
+
+- Two or more projects can share one JIRA project key, each receiving exactly the events for its own team's issues, selected by an operator-configured discriminator.
+- Two or more projects can share one GitHub repository, with every event that concerns a CASCADE-created PR routed to the project that owns that PR, and remaining events routed to a single explicitly designated primary project.
+- A project's agents see only their own slice of a shared board: work-item listing, pulling, and creation are all scoped by the same discriminator that routes events.
+- Misconfiguration and ambiguity are loud: rejected at save time where statically checkable, skipped with a self-explanatory recorded reason where only detectable at event time.
+- The existing 1:1 setup remains the zero-configuration default, byte-for-byte behaviorally identical.
+
+---
+
+## Non-goals
+
+- No inference of project ownership from branch names, PR titles, or other content parsing — the persisted link and explicit configuration are the only routing inputs.
+- No broadcast semantics: an event is dispatched to exactly one project or skipped with a reason, never to several.
+- No multi-primary repositories.
+- Trello and Linear stay 1:1 in this spec; the resolution seam is designed provider-generically so they can adopt discriminators later, but no Trello/Linear behavior changes ship here.
+- No changes to agent behavior, prompts, or lifecycle beyond routing and work-item scoping.
+
+---
+
+## Constraints
+
+- **Backward compatibility is absolute.** Existing single-project-per-board/-repo deployments require no migration, no new required configuration, and no behavior change. All new fields are optional and only meaningful when sharing occurs.
+- Routing decisions must remain deterministic and explainable: every skipped or routed event carries a decision reason an operator can read in the webhook log.
+- The discriminator must be an org-side PM concept operators already manage (labels, components) — not a CASCADE-invented marker embedded in issue content.
+- Validation must prevent silently-dead configurations: the current failure mode (a configured project that can never receive events) must become impossible to save.
+
+---
+
+## Requirements
+
+1. **PM routing discriminator.** A JIRA integration may declare one routing discriminator: a kind (JIRA label or JIRA component) plus a value. Sibling projects sharing a key may mix kinds. Among projects sharing a JIRA project key, an incoming issue event routes to the sibling whose discriminator the issue carries; a single discriminator-less sibling, when present, acts as the default for issues matching no discriminator.
+2. **Symmetric scoping.** The same discriminator that routes events also (a) filters every work-item read the project's agents perform against the board, and (b) is stamped onto every work item the project creates (friction reports, alert cards, split children), so created items route back to their origin project.
+3. **No-match behavior.** An event on a shared key whose issue matches no sibling's discriminator, with no default sibling configured, is skipped with a recorded decision reason naming the key and the discriminators evaluated.
+4. **Ambiguity behavior.** An issue matching more than one sibling's discriminator is skipped with the ambiguity recorded as the decision reason and surfaced through the deployment's error-observability channel on first occurrence — never silently awarded to one project.
+5. **SCM link-first routing.** A GitHub event concerning a PR for which CASCADE persists a project link routes to the linked project, regardless of how many projects share the repository.
+6. **Primary repository project.** Exactly one project among those sharing a repository is designated primary; events with no PR link (human-authored PRs, newly opened PRs) route to it. The designation is explicit operator configuration, enforced at save time.
+7. **Save-time validation.** (a) Claiming an already-used repository is either accepted under the primary-project rule or rejected with a message naming the conflicting project — never a generic server error. (b) Claiming an already-used JIRA project key without a discriminator, or duplicating a sibling's discriminator, is rejected with an actionable message.
+8. **Operator surface.** The discriminator (kind + value) and the primary-repository designation are configurable in the dashboard integration UI, not CLI-only.
+
+---
+
+## Research Notes
+
+Research skipped: internal routing/configuration change recombining patterns the codebase already establishes (provider manifest config schemas, project-resolution seams, the persisted PR-to-project link). No new dependency or external domain.
+
+---
+
+## Open Source Decisions
+
+| Tool | Solves | Decision | Reason |
+|------|--------|----------|--------|
+| — | — | none | Internal change; no new dependencies. |
+
+---
+
+## Strategic decisions
+
+1. **Discriminator kinds: label or component (union)** — chose supporting both kinds over label-only. Reason: user decision; component is the idiomatic JIRA concept for team splits while label matches what operators reach for first; each project declares one discriminator of either kind, so the per-project model stays simple while the feature covers both practices.
+2. **No-match events are skipped with an explicit reason** — chose over routing to the first sibling (would resurrect the shadowing bug) and over requiring a default at save time (would block fully-filtered setups). Reason: deterministic, debuggable, no surprise dispatches.
+3. **Ambiguous events are skipped loudly** — chose over deterministic priority order. Reason: an issue carrying two teams' discriminators is a process error in the tracker; guessing an owner silently misassigns work, while a loud skip gets it fixed at the source.
+4. **SCM routing is link-first with a single explicit primary fallback** — chose over content parsing or broadcast. Reason: the PR-to-project link already exists and is authoritative for everything CASCADE authored; unlinked events have no objectively correct owner, so ownership is a one-time explicit policy choice. (assumed — flag if wrong)
+5. **JIRA-only implementation behind a provider-generic resolution seam** — chose over implementing discriminators for all PM providers now. Reason: the demand is JIRA; Trello/Linear carry the same 1:1 assumption but no requester, and a generic seam lets them opt in without rework. (assumed — flag if wrong)
+6. **Discriminator doubles as read-filter and write-stamp** — chose over routing-only filtering. Reason: routing-only would let a shared-board project's agents pull the sibling team's tickets and create items that route back to the wrong project; one concept applied in all three places removes the drift surface. (assumed — flag if wrong)
+
+---
+
+## Acceptance Criteria (outcome-level)
+
+1. WHEN an operator saves an SCM integration whose repository is already used by another project, the system SHALL either accept it under the primary-project rule or reject it with a validation message naming the conflicting project — never a generic server error.
+2. WHEN two projects share a JIRA project key with distinct discriminators and an event arrives for an issue carrying exactly one sibling's discriminator, the system SHALL route the event to that sibling — its triggers, acknowledgments, and lifecycle actions all operate on that project only.
+3. WHEN an event arrives for a shared-key issue matching no sibling's discriminator and a discriminator-less default sibling exists, the system SHALL route the event to the default sibling.
+4. WHEN an event arrives for a shared-key issue matching no sibling's discriminator and no default sibling exists, the system SHALL skip the event and record a decision reason naming the key and the discriminators evaluated.
+5. WHEN an event arrives for an issue matching more than one sibling's discriminator, the system SHALL skip the event, record the ambiguity as the decision reason, and surface it through the error-observability channel.
+6. WHEN an agent on a discriminator-scoped project lists or pulls work items, the system SHALL return only items carrying that project's discriminator.
+7. WHEN CASCADE creates a work item on behalf of a discriminator-scoped project, the created item SHALL carry that project's discriminator, and subsequent events on it SHALL route back to that project.
+8. WHEN a GitHub event arrives for a PR with a persisted project link, the system SHALL route it to the linked project irrespective of repository sharing.
+9. WHEN a GitHub event arrives for a PR with no persisted link on a shared repository, the system SHALL route it to the repository's designated primary project.
+10. WHEN operators configure multiple projects on one repository, save-time validation SHALL enforce exactly one primary among them, rejecting configurations that would leave zero or several.
+11. WHEN a project claims an already-used JIRA project key without a discriminator, or with a discriminator equal to a sibling's, the save SHALL be rejected with a message naming the conflict.
+12. WHEN a deployment contains no shared boards and no shared repositories, all routing decisions, configuration requirements, and webhook-log reasons SHALL be identical to current behavior.
+13. WHEN an operator opens the JIRA integration setup in the dashboard, they SHALL be able to set the discriminator kind and value there; likewise the primary designation on the SCM integration.
+
+---
+
+## Documentation Impact (high-level)
+
+- PM integration architecture guide — new section: the project-resolution contract for shared keys (discriminators, no-match/ambiguity semantics, provider-generic seam).
+- Operator-facing setup docs — how to configure two teams on one board and shared repositories, including the JIRA-side prerequisites (label/component discipline).
+
+---
+
+## Out of Scope
+
+- Trello and Linear discriminator support (seam only, no behavior).
+- Routing by JIRA board/JQL filters, sprints, or issue types.
+- Any automatic backfill or rewriting of existing issues' labels/components.
+- Per-agent (rather than per-project) routing rules.
+- Cross-org sharing of boards or repositories.

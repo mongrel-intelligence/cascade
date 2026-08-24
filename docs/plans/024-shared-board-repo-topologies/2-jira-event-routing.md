@@ -1,0 +1,172 @@
+---
+id: 024
+slug: shared-board-repo-topologies
+plan: 2
+plan_slug: jira-event-routing
+level: plan
+parent_spec: docs/specs/024-shared-board-repo-topologies.md
+depends_on: [1-schema-and-resolver-seam.md]
+status: pending
+---
+
+# 024/2: JIRA event routing by discriminator + save-time topology validation
+
+> Part 2 of 5 in the 024-shared-board-repo-topologies plan. Parent spec: resolve `docs/specs/024-shared-board-repo-topologies.md*`.
+
+## Summary
+
+Wires plan 1's resolver into the JIRA router adapter so shared-key events route to the right sibling, no-match/ambiguous events are skipped with operator-readable webhook decision reasons (ambiguity additionally Sentry-captured), and the previously-silent shadowing state becomes unsaveable: the PM-integration upsert rejects a duplicate projectKey without a distinct discriminator.
+
+Does NOT deliver read-scoping or stamping (plan 3) — after this plan, routing is correct but a shared-board project's agents still see the sibling team's items when listing. Operators should not enable sharing until plan 3 merges; this caveat is part of the plan's doc block.
+
+**Components delivered:**
+- Discriminator-aware project resolution in the JIRA router adapter (both the parse path and `resolveProject`)
+- Structured skip reasons flowing into the webhook log decision reason
+- Sentry capture (tag `pm_routing_ambiguous`) on ambiguity, once per issue per process
+- Topology validation invoked from `upsertProjectIntegration`
+- Routing-contract section in the PM integration architecture guide
+
+**Files owned (exclusive to this plan within this spec):**
+- `src/router/adapters/jira.ts`
+- `src/integrations/pm/_shared/topology-validation.ts` (new)
+- `src/db/repositories/integrationsRepository.ts`
+- `tests/unit/router/jira-project-routing.test.ts` (new)
+- `tests/unit/integrations/jira-topology-validation.test.ts` (new)
+
+**Shared surfaces (append-only, conflicts are trivial):**
+- `src/integrations/README.md` — this plan adds the "Shared-key routing contract" section; plan 3 appends a "Scoping & stamping" subsection under it
+
+**Deferred to later plans in this spec:**
+- JQL read scoping + write stamping (plan 3)
+- GitHub/repo side (plan 4); wizard field (plan 5)
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #2 (route to discriminated sibling) — **partial (plan 1 logic; this plan wires events)** — completes the AC together with plan 1
+- Spec AC #3 (default sibling fallback) — **partial (with plan 1)** — completes
+- Spec AC #4 (no-match skip with recorded reason) — **partial (with plan 1)** — completes
+- Spec AC #5 (ambiguous skip + observability) — **partial (with plan 1)** — completes
+- Spec AC #7 (created items route back) — **partial (this plan provides routing of stamped items; plan 3 provides the stamping)**
+- Spec AC #11 (duplicate key without discriminator rejected at save) — **full**
+- Spec AC #12 (single-project identical) — **partial (explicit regression pins below)**
+
+---
+
+## Depends On
+
+- Plan 1 (`schema-and-resolver-seam`) — provides `resolveProjectAmongSiblings`, `findProjectsByJiraProjectKey`, and the `routing.discriminator` config field.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Discriminator-aware resolution in the JIRA router adapter
+
+Current behavior (both sites use first-match): `src/router/adapters/jira.ts:57` (webhook parse path) and `:103` (`resolveProject` from a parsed event). Both must consult the sibling set + issue attributes.
+
+**Tests first** (`tests/unit/router/jira-project-routing.test.ts`; construct webhook payloads with `issue.fields.labels` / `issue.fields.components[].name`, mock `loadProjectConfig`/provider lookups per existing router-adapter test patterns):
+
+- `single project with key routes as today` — unit — one CLFX project, payload with any labels → parse returns that projectId. Expected red: n/a green-from-start (AC #12 pin — must pass before and after the change).
+- `two siblings route by label discriminator` — unit — siblings A(label team-a)/B(label team-b), payload labels `['team-b']` → projectId B. Expected red: `expected 'B', got 'A'` (first-match still in place).
+- `component discriminator routes` — unit — sibling with component discriminator, payload `components:[{name:'Backend'}]` → routed. Expected red: `expected 'B', got 'A'`.
+- `no match with default sibling routes to default` — unit — A(label team-a), B(no discriminator), payload labels `[]` → B. Expected red: `expected 'B', got 'A'`.
+- `no match without default returns skip outcome carrying resolver message` — unit — parse/resolve yields a null-project outcome whose reason string contains the key and both discriminators. Expected red: `expected null/skip, got project 'A'`.
+- `ambiguous match skips and captures Sentry once` — unit — payload matching both discriminators → skip outcome + `captureException` called with tag `pm_routing_ambiguous`; second identical event does not re-capture (per-process dedup). Expected red: `expected captureException to have been called`.
+- `comment events resolve through the same seam` — unit — comment-event payload on a discriminated issue routes to the right sibling. Expected red: wrong sibling.
+
+**Implementation** (`src/router/adapters/jira.ts`):
+- Extract issue routing attributes once: `{ labels: fields.labels ?? [], components: (fields.components ?? []).map(c => c.name) }`.
+- Replace both `config.projects.find(... projectKey ===)` sites with: collect siblings (all projects whose `jira.projectKey` matches, each carrying `jira.routing?.discriminator ?? null`) → `resolveProjectAmongSiblings(siblings, attrs)`.
+- `route` → proceed exactly as today with the chosen project. `skip` → return the adapter's null/absent-project result **with the resolver's message as the decision reason**, using the same plumbing that today produces "No trigger matched for event" (the parse-result → webhook-log reason path in the router's webhook handling; reuse, do not invent a parallel channel).
+- On `reason === 'ambiguous'`: `captureException` (from `src/sentry.js`) tagged `pm_routing_ambiguous`, `extra: { issueKey, candidateProjectIds }`, deduped per issueKey per process (module-level `Set`, mirroring the `warnedMissingPricing` pattern in `src/utils/llmMetrics.ts`).
+- Comment/webhook sub-paths that re-derive the project reuse the same helper — one resolution function inside the adapter, called from both sites.
+
+### 2. Save-time topology validation
+
+**Tests first** (`tests/unit/integrations/jira-topology-validation.test.ts`; drive `upsertProjectIntegration` with a mocked db layer, per existing repository-test patterns):
+
+- `first project on a key saves without discriminator` — unit — no siblings → accepted. Expected red: n/a green-from-start.
+- `second project on same key without discriminator is rejected` — unit — sibling exists (no discriminator on either) → throws BAD_REQUEST whose message names the sibling project id and the word "discriminator". Expected red: `expected upsert to throw, resolved instead`.
+- `second project with distinct discriminator saves` — unit — sibling(no discriminator) + new(label team-b) → accepted (sibling becomes default). Expected red: unexpected throw.
+- `duplicate discriminator rejected` — unit — sibling(label team-b) + new(label team-b) → BAD_REQUEST naming both projects. Expected red: resolved instead of throwing.
+- `two discriminator-less siblings rejected` — unit — sibling(none) + new(none, third project) → rejected (at most one default). Expected red: resolved.
+- `same-kind different-value and cross-kind combinations save` — unit — label t1 + component Backend → accepted. Expected red: unexpected throw.
+- `non-jira and single-project upserts untouched` — unit — scm upsert and a jira upsert with a unique key hit no validation branch (spy: sibling query not executed for unique keys... assert accepted). Expected red: n/a green-from-start (AC #12 pin).
+
+**Implementation** (`src/integrations/pm/_shared/topology-validation.ts` new + `src/db/repositories/integrationsRepository.ts`):
+- `assertJiraTopologyValid(projectId, config, siblings: Array<{projectId, config}>): void` — pure; throws `TRPCError({ code: 'BAD_REQUEST', message })` with operator-actionable messages ("JIRA project key CLFX is already used by project 'frontend'. Add a routing discriminator (label or component) to distinguish them.").
+- `upsertProjectIntegration` (in `integrationsRepository.ts`): when `category === 'pm' && provider === 'jira'`, query sibling rows (`project_integrations` where category/provider match and `config->>'projectKey'` equals, `project_id != current`) and call the assertion before writing. Note: throwing `TRPCError` from the repository layer is a deliberate exception (documented inline) so the router file stays untouched (file-ownership seam with plan 4).
+
+### 3. Documentation
+
+**Implementation** (`src/integrations/README.md`):
+- New section "Shared-key routing contract": sibling collection, discriminator matching, default semantics, no-match/ambiguous skip reasons, `pm_routing_ambiguous` Sentry tag, save-time validation rules, and the explicit caveat: **do not configure sharing until plan 3's scoping has shipped** (remove the caveat sentence in plan 3's doc append).
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/router/jira-project-routing.test.ts`: ~8 tests covering both adapter resolution sites + Sentry dedup + single-project pins
+- [ ] `tests/unit/integrations/jira-topology-validation.test.ts`: ~7 tests covering the validation matrix
+
+### Integration tests
+- [ ] none new — router webhook integration coverage exercises the parse path via existing suites staying green
+
+### Acceptance tests
+- [ ] Per-plan ACs below map onto the two suites
+
+---
+
+## Manual Verification
+
+n/a — all ACs auto-tested.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. A webhook event for a shared-key issue carrying exactly one sibling's discriminator dispatches to that sibling (both parse and resolveProject paths).
+2. No-match events with a default sibling dispatch to the default; without one they are skipped and the webhook-log decision reason names the key and evaluated discriminators.
+3. Ambiguous events are skipped with the ambiguity as the decision reason and exactly one Sentry capture tagged `pm_routing_ambiguous` per issue per process.
+4. `upsertProjectIntegration` rejects duplicate-key configs per the validation matrix with messages naming the conflicting project; unique-key and non-JIRA upserts are untouched.
+5. Single-project fixtures produce identical routing results and webhook reasons as before this plan (explicit pin tests).
+6. All new/modified code has corresponding tests.
+7. `npm run typecheck` passes.
+8. `npm test` passes.
+9. `npm run lint` passes.
+10. Documentation listed below updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `src/integrations/README.md` | Add "Shared-key routing contract" section (routing semantics, skip reasons, validation rules, plan-3 caveat) |
+
+---
+
+## Out of Scope (this plan)
+
+- JQL scoping and stamping (plan 3) — routing works before scoping; the README caveat covers the window
+- GitHub/repo behavior and friendly repo errors (plan 4)
+- Wizard UI (plan 5); Trello/Linear (spec out-of-scope)
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
