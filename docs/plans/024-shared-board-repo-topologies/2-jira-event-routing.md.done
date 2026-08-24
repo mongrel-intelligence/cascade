@@ -6,7 +6,7 @@ plan_slug: jira-event-routing
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [1-schema-and-resolver-seam.md]
-status: wip
+status: done
 locked_at: 870a80341df3307b0c8dafbee5cb4eae8c434dc9
 ---
 
