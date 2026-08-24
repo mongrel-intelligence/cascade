@@ -6,7 +6,8 @@ plan_slug: jira-scope-and-stamp
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [1-schema-and-resolver-seam.md]
-status: pending
+status: done
+locked_at: 32e24a259d0867dd7a9bdcd374f405f1cea28d55
 ---
 
 # 024/3: JIRA read scoping and work-item stamping
@@ -147,11 +148,40 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
+- [x] AC #1 — `routing-scope.test.ts`: label → `AND labels = "team-be"`, component → `AND component = "Backend"`, and a space-containing value stays quoted. Full-string assertions, because the clause must land BEFORE `ORDER BY`.
+- [x] AC #2 — same file: label dedup-appends (3 tests incl. the no-caller-labels and already-present cases), component sets `components`. Client forwarding pinned by 2 new tests in `tests/unit/jira/client.test.ts`.
+- [x] AC #3 — two byte-identical pins: JQL is exactly `project = "SHARED" ORDER BY created DESC`, and the create payload has no `components` key at all. Both passed green-from-start, before and after.
+- [x] AC #4 — 20 new tests (12 adapter + 2 client + 6 config-schema).
+
+**Review round 1 — no must-fix; both should-fixes taken.**
+- **JQL injection via an unvalidated discriminator value.** The value is
+  interpolated into JQL inside double quotes; with `AND` binding tighter than
+  `OR`, a value like `x" OR project = "OTHER` turns the scoping clause into
+  "(this project) OR (everything in OTHER)" — defeating the isolation the
+  discriminator exists to provide. Not exploitable today (no writer until plan
+  5), but the realistic near-term bug is a JIRA component whose name contains a
+  quote, since components are free text. Fixed in `jiraConfigSchema` rather than
+  in the JQL builder, so plan 5's input inherits the constraint and the operator
+  gets a save-time error. Also rejects whitespace in a **label** discriminator:
+  JIRA refuses to write such a label, leaving the read clause matching nothing.
+  Mutation-proved.
+- **Components do not auto-create.** Unlike labels, an unknown component makes
+  `createIssue` 400, and `enrichCreateIssueError` then blames the issue-type
+  mapping. Documented in the README rather than reworked, since the error helper
+  is shared surface.
+- 💡 taken: `labels: []` — the shape both materializers actually pass — was
+  reachable but unexercised; two cases added.
+- 🕰️ recorded, not fixed: `jiraEnsureLabels` (`api/routers/webhooks/jira.ts:224`)
+  builds unscoped JQL and mutates the first issue on the key, which on a shared
+  board can belong to a sibling. Pre-existing and wizard-time-only, but spec 024
+  widens the blast radius. Written up in `docs/BUGS.md`.
+- [x] AC #5 — `npm run typecheck` exit 0.
+- [x] AC #6 — `npm test` 11149 passed / 23 skipped, 615 files, exit 0.
+- [x] AC #7 — `npm run lint` exit 0.
+- [x] AC #8 — README gains "Scoping & stamping"; plan 2's read-scoping caveat removed (the plan-5 wizard caveat remains).
+
+**Divergences (recorded, no behaviour change):**
+- **Plan task 2b was already satisfied.** `jiraClient.createIssue` takes an open `Record<string, unknown>` field bag and forwards it wholesale, so `components` needed no client change — the two new client tests passed green-from-start. They are kept as pins: a future narrowing of that signature would otherwise drop the discriminator silently rather than fail to compile.
+- **The plan's JQL description omitted `ORDER BY created DESC`.** JQL requires the sort clause last, so appending the discriminator to the finished string — the literal reading of the plan's "append in listWorkItems after the status clause" — would have produced a syntax error, not a filter. Caught by writing the tests first.
+- **Line numbers in the plan are stale** (`listWorkItems` is at 291, not 230-245; `createWorkItem` at 206, not 189); the descriptions are accurate.
+- **A sixth JIRA config projection.** The plan's "extend the `JiraConfig` interface" refers to a LOCAL interface at `src/pm/jira/adapter.ts:61`, distinct from `src/pm/config.ts`'s. That brings the count to six hand-written projections of the same config — see plan 2's divergence note.

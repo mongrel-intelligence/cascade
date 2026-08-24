@@ -145,20 +145,16 @@ The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatform
 
 ## Shared-key routing contract
 
-> ⚠️ **Do not configure a shared key in production yet.** Two reasons, both
-> removed by later plans in spec 024:
+> ⚠️ **One gap remains before configuring a shared key in production.** There is
+> no discriminator field in the wizard yet (spec 024 plan 5), so the only way to
+> set one is an out-of-band write — and `buildIntegrationConfig` in
+> `web/src/components/projects/pm-providers/jira/wizard.ts` rebuilds the config
+> from wizard state without carrying `routing` through. The next wizard save on
+> that project wipes it, silently turning a scoped project back into the key's
+> default. Plan 5 owns that file and must thread the field when it adds the
+> input.
 >
-> 1. **Read-scoping is missing** (plan 3). Routing is correct, but a
->    shared-board project's agents still see the sibling team's items when
->    listing work.
-> 2. **The wizard silently drops the discriminator** (plan 5). There is no
->    discriminator field yet, so the only way to set one is an out-of-band
->    write — and `buildIntegrationConfig` in
->    `web/src/components/projects/pm-providers/jira/wizard.ts` rebuilds the
->    config from wizard state without carrying `routing` through. The next
->    wizard save on that project wipes it, silently turning a scoped project
->    back into the key's default. Plan 5 owns that file and must thread the
->    field when it adds the input.
+> Routing (plan 2) and read-scoping + stamping (plan 3) are both complete.
 
 CASCADE historically assumed one project per PM board. The JIRA router resolved
 a project by **first match** on `projectKey`, so a second project on the same key
@@ -236,6 +232,48 @@ webhook for that issue.
 
 An event with no owning project also gets **no ack reaction**: acknowledging
 something about to be skipped tells the operator the opposite of the truth.
+
+### Scoping & stamping
+
+Routing alone makes sharing only half true. A scoped project must also see and
+produce only its own slice, or its agents pick up the sibling team's work and
+the issues it creates carry nothing to route their future events back.
+
+**Reads** — `listWorkItems` appends the discriminator to its JQL:
+
+| Discriminator | Clause |
+|---|---|
+| `label` / `team-be` | `AND labels = "team-be"` |
+| `component` / `Backend` | `AND component = "Backend"` |
+
+The clause lands **before** the `ORDER BY` — JQL requires the sort clause last,
+so an appended-at-the-end filter is a syntax error, not a filter. Values are
+double-quoted for the same reason the status clause quotes them: an unquoted
+multi-word value parses as syntax rather than as a value. With no discriminator
+the query is byte-identical to before spec 024.
+
+**Writes** — `createWorkItem` stamps every item the project creates, so friction
+reports, alert cards, and split children all route back on their own. A label
+discriminator is **dedup-appended** to the caller's labels (a retry, or a caller
+that already knows the config, must not produce it twice); a component
+discriminator sets `components`. The `components` key is omitted entirely when
+unset, because JIRA rejects `components: []` on projects that have none
+configured.
+
+Matching is exact and case-sensitive on both sides, so a label stamped on write
+is found by the read clause verbatim.
+
+> ⚠️ **A component discriminator must name a component that already exists on
+> the JIRA project.** Unlike labels, which JIRA creates on first use, an unknown
+> component makes `createIssue` fail with a 400 — and the resulting error
+> currently blames the issue-type mapping, because that is what
+> `enrichCreateIssueError` is written to diagnose. Create the component in JIRA
+> first, or use a label discriminator.
+
+The discriminator value is validated at save time: no `"` or `\` (both would
+break out of the quoted JQL value), and no whitespace for a **label**
+discriminator, since JIRA refuses to write such a label and the read clause
+would then match nothing.
 
 ### Save-time validation
 

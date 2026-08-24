@@ -55,10 +55,35 @@ export const jiraConfigSchema = z
 		 */
 		routing: z
 			.object({
-				discriminator: z.object({
-					kind: z.enum(['label', 'component']),
-					value: z.string().min(1),
-				}),
+				discriminator: z
+					.object({
+						kind: z.enum(['label', 'component']),
+						/**
+						 * Interpolated into JQL inside double quotes by the read path,
+						 * so a `"` or `\` would break out of the quoted value. With
+						 * `AND` binding tighter than `OR`, a crafted value turns the
+						 * scoping clause into `(this project) OR (everything else)` —
+						 * defeating exactly what the discriminator exists to enforce.
+						 * The realistic case is not malice but a JIRA component whose
+						 * name contains a quote: components are free text.
+						 */
+						value: z
+							.string()
+							.min(1)
+							.regex(/^[^"\\]+$/, 'must not contain a double quote or backslash'),
+					})
+					.superRefine((d, ctx) => {
+						// JIRA labels cannot contain whitespace — it silently rejects the
+						// value on write, leaving the read clause matching nothing. Fail
+						// at save time instead, where the operator can still see it.
+						if (d.kind === 'label' && /\s/.test(d.value)) {
+							ctx.addIssue({
+								code: z.ZodIssueCode.custom,
+								path: ['value'],
+								message: 'a label discriminator cannot contain whitespace',
+							});
+						}
+					}),
 			})
 			.optional(),
 
