@@ -1,5 +1,5 @@
 import { getProjectGitHubToken } from '../config/projects.js';
-import { findProjectByRepo } from '../config/provider.js';
+import { findProjectById, findProjectByRepo } from '../config/provider.js';
 import { logger } from '../utils/logging.js';
 import {
 	GitHubPlatformClient,
@@ -89,8 +89,13 @@ async function notifyTrelloTimeout(job: TrelloJob, info: TimeoutInfo): Promise<v
 }
 
 async function notifyGitHubTimeout(job: GitHubJob, info: TimeoutInfo): Promise<void> {
-	// Resolve project from repo name, then get GitHub token from DB
-	const project = await findProjectByRepo(job.repoFullName);
+	// Prefer the project the ROUTER resolved. Re-deriving it from the repo takes
+	// the first match, which on a shared repository (spec 024) need not own this
+	// PR — the timeout comment would then be posted by the wrong project's bot.
+	// The repo lookup remains for jobs enqueued before jobs carried the id.
+	const project = job.projectId
+		? await findProjectById(job.projectId)
+		: await findProjectByRepo(job.repoFullName);
 	if (!project) {
 		logger.warn('[Notifications] No project found for repo, skipping notification', {
 			repoFullName: job.repoFullName,
