@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('../../../src/config/provider.js', () => ({
 	getIntegrationCredential: vi.fn(),
 	findProjectByRepo: vi.fn(),
+	findProjectById: vi.fn(),
 }));
 
 // Mock config cache (imported transitively)
@@ -29,7 +30,11 @@ vi.mock('../../../src/utils/logging.js', () => ({
 	},
 }));
 
-import { findProjectByRepo, getIntegrationCredential } from '../../../src/config/provider.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../../../src/config/provider.js';
 import {
 	_clearReviewerUsernameCache,
 	addEyesReactionToPR,
@@ -106,6 +111,26 @@ describe('addEyesReactionToPR', () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+	});
+
+	it('reacts as the project the router resolved, not the repo first-match', async () => {
+		// The 👀 reaction is posted with a project's reviewer token. On a shared
+		// repository (spec 024) the repo lookup returns the PRIMARY, which need
+		// not own this PR — so the reaction would be posted by the wrong bot.
+		vi.mocked(findProjectById).mockResolvedValue({ ...mockProject, id: 'secondary' } as never);
+
+		await addEyesReactionToPR({
+			type: 'github',
+			source: 'github',
+			payload: { check_suite: { pull_requests: [{ number: 42 }] } },
+			eventType: 'check_suite',
+			repoFullName: 'owner/repo',
+			projectId: 'secondary',
+			receivedAt: new Date().toISOString(),
+		} as GitHubJob);
+
+		expect(findProjectById).toHaveBeenCalledWith('secondary');
+		expect(findProjectByRepo).not.toHaveBeenCalled();
 	});
 
 	it('adds eyes reaction when reviewer has no prior reviews (happy path)', async () => {

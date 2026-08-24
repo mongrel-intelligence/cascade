@@ -1,4 +1,8 @@
-import { findProjectByRepo, getIntegrationCredential } from '../config/provider.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getIntegrationCredential,
+} from '../config/provider.js';
 import { logger } from '../utils/logging.js';
 import { parseRepoFullName } from '../utils/repo.js';
 import { resolveGitHubHeaders } from './platformClients/index.js';
@@ -66,8 +70,13 @@ export async function addEyesReactionToPR(job: GitHubJob): Promise<void> {
 
 	const repoFullName = job.repoFullName;
 
-	// Resolve project
-	const project = await findProjectByRepo(repoFullName);
+	// Prefer the project the ROUTER resolved. The reaction is posted with that
+	// project's reviewer token, and on a shared repository (spec 024) the repo
+	// lookup returns the primary, which need not own this PR. The repo lookup
+	// remains for jobs enqueued before jobs carried the id.
+	const project = job.projectId
+		? await findProjectById(job.projectId)
+		: await findProjectByRepo(repoFullName);
 	if (!project) {
 		logger.warn('[PreActions] No project found for repo, skipping eyes reaction', {
 			repoFullName,

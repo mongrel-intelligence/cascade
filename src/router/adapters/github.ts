@@ -541,7 +541,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	buildJob(
 		event: ParsedWebhookEvent,
 		payload: unknown,
-		_project: RouterProjectConfig,
+		project: RouterProjectConfig,
 		result: TriggerResult,
 		ackResult?: AckResult,
 	): CascadeJob {
@@ -555,6 +555,9 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			payload,
 			eventType: event.eventType,
 			repoFullName: (event as GitHubParsedEvent).repoFullName,
+			// Carry the router's decision rather than making the worker re-derive
+			// it from the repo, which cannot see which project owns the PR.
+			projectId: project.id,
 			receivedAt: new Date().toISOString(),
 			triggerResult: isDeferredRecheck ? undefined : result,
 			ackCommentId: ackResult?.commentId as number | undefined,

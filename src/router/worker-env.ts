@@ -43,6 +43,12 @@ export async function extractProjectIdFromJob(data: CascadeJob): Promise<string 
 	// All PM providers (trello / jira / linear) now route through the
 	// manifest registry above. Non-PM job types remain below.
 	if (jobData.type === 'github') {
+		// The router stamps the project it resolved (link-first on shared
+		// repositories, spec 024). Prefer it: re-deriving from the repo alone
+		// takes the first match, which need not own this PR.
+		if (jobData.projectId) return jobData.projectId;
+		// Jobs enqueued before that shipped carry no projectId. Dropping them
+		// would be worse than the ambiguity this replaces.
 		if (!jobData.repoFullName) return null;
 		const project = await findProjectByRepo(jobData.repoFullName);
 		return project?.id ?? null;

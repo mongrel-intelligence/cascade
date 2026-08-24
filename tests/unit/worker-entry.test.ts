@@ -178,6 +178,7 @@ describe('dispatchJob routing', () => {
 			payload: jobPayload,
 			eventType: 'pull_request',
 			repoFullName: 'org/repo',
+			projectId: 'proj-1',
 			receivedAt: '2024-01-01T00:00:00Z',
 			ackCommentId: 456,
 			ackMessage: 'Starting implementation...',
@@ -195,6 +196,7 @@ describe('dispatchJob routing', () => {
 			triggerResult,
 			false,
 			false,
+			'proj-1',
 		);
 	});
 
@@ -208,6 +210,7 @@ describe('dispatchJob routing', () => {
 			payload: jobPayload,
 			eventType: 'pull_request',
 			repoFullName: 'org/repo',
+			projectId: 'proj-1',
 			receivedAt: '2024-01-01T00:00:00Z',
 			mergeabilityRecheckAttempt: 1,
 		};
@@ -223,6 +226,7 @@ describe('dispatchJob routing', () => {
 			undefined,
 			true,
 			false,
+			'proj-1',
 		);
 	});
 
