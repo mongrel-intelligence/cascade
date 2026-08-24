@@ -6,7 +6,8 @@ plan_slug: wizard-config-ui
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [2-jira-event-routing.md, 4-github-link-first-routing.md]
-status: pending
+status: wip
+locked_at: 3b5973a620e658896309cd64f1cbe1e4177417c3
 ---
 
 # 024/5: Dashboard configuration — routing discriminator and primary repo
