@@ -11,7 +11,13 @@ export const projects = pgTable(
 			.notNull()
 			.references(() => organizations.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
-		repo: text('repo').unique(),
+		repo: text('repo'),
+		// Spec 024: several projects may share a repository. The partial unique
+		// index uq_projects_repo_primary enforces AT MOST one primary per repo;
+		// requiring that one exists is save-time validation's job (plan 4), since
+		// an index cannot mandate a row. The primary receives GitHub events that
+		// carry no PR->project link.
+		repoPrimary: boolean('repo_primary').notNull().default(true),
 		baseBranch: text('base_branch').default('main'),
 		branchPrefix: text('branch_prefix').default('feature/'),
 
@@ -68,6 +74,8 @@ export const projects = pgTable(
 			.defaultNow()
 			.$onUpdate(() => new Date()),
 	},
-	// Partial unique index (only for non-null values) defined in migration 0019
+	// Indexes live in the hand-written migrations, not here: migration 0061
+	// replaced 0019's plain `uq_projects_repo` with the partial
+	// `uq_projects_repo_primary` (WHERE repo IS NOT NULL AND repo_primary).
 	() => [],
 );

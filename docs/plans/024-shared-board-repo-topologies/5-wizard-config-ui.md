@@ -1,0 +1,165 @@
+---
+id: 024
+slug: shared-board-repo-topologies
+plan: 5
+plan_slug: wizard-config-ui
+level: plan
+parent_spec: docs/specs/024-shared-board-repo-topologies.md
+depends_on: [2-jira-event-routing.md, 4-github-link-first-routing.md]
+status: pending
+---
+
+# 024/5: Dashboard configuration — routing discriminator and primary repo
+
+> Part 5 of 5 in the 024-shared-board-repo-topologies plan. Parent spec: resolve `docs/specs/024-shared-board-repo-topologies.md*`.
+
+## Summary
+
+Operator surface for the topology features. JIRA wizard: a provider-owned "Team routing" step where the operator sets the discriminator kind (label/component) and value, persisted through `buildIntegrationConfig` and restored by `buildEditState`. SCM tab: a primary/secondary control on the repository form, sent as `repoPrimary` on save. Both forms surface the backend validation errors from plans 2 and 4 verbatim (they are operator-actionable by design) instead of a generic failure.
+
+Depends on plans 2 and 4 because its error-display behavior is tested against their real validation messages; the config field shapes come from plan 1 transitively. Runnable in parallel with plan 3.
+
+**Components delivered:**
+- JIRA wizard routing step (provider-owned custom step, per the manifest pattern)
+- Provider state-slice fields + actions for the discriminator
+- `repoPrimary` control on the SCM integration tab + error surfacing
+- Operator-facing setup documentation
+
+**Files owned (exclusive to this plan within this spec):**
+- `web/src/components/projects/pm-providers/jira/routing-step.tsx` (new)
+- `web/src/components/projects/pm-providers/jira/state.ts`
+- `web/src/components/projects/pm-providers/jira/wizard.ts`
+- `web/src/components/projects/pm-wizard-state.ts` (the sanctioned shared-state composition edit, per the integrations README)
+- `web/src/components/projects/integration-scm-tab.tsx`
+- `src/integrations/pm/jira/manifest.ts` (add the custom step to `wizardSpec.steps`)
+- `tests/unit/web/jira-routing-step.test.ts` (new)
+- `tests/unit/web/scm-repo-primary.test.ts` (new)
+
+**Shared surfaces (append-only, conflicts are trivial):**
+- `src/integrations/README.md` — one line linking the routing-contract section to the wizard step (appended block)
+
+**Deferred to later plans in this spec:**
+- nothing — final plan
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #13 (discriminator + primary configurable in the dashboard) — **full**
+- Spec AC #1/#11 (validation errors) — **supporting only: this plan surfaces plan 2/4 messages in the UI; the ACs are completed by those plans** (no coverage claimed here)
+- Spec AC #12 (single-project identical) — **partial (wizard renders no new required inputs when unset; edit-mode of existing configs unchanged — pins below)**
+
+---
+
+## Depends On
+
+- Plan 2 (`jira-event-routing`) — provides the PM save-validation errors this UI surfaces.
+- Plan 4 (`github-link-first-routing`) — provides the `repoPrimary` input + SCM validation errors.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. JIRA wizard: provider state slice + routing step
+
+Wizard architecture per `src/integrations/README.md`: provider-owned state slice/actions in `pm-providers/jira/state.ts`, composed into `web/src/components/projects/pm-wizard-state.ts` (the one sanctioned shared edit); step components resolved from the manifest's `wizardSpec.steps`; config serialization in `wizard.ts` `buildIntegrationConfig`; edit hydration in `buildEditState`.
+
+**Tests first** (`tests/unit/web/jira-routing-step.test.ts`, following the existing `tests/unit/web/jira-status-mapping-ids.test.ts` style — reducer/serialization-level, no DOM):
+
+- `reducer stores discriminator kind and value` — unit — dispatch `SET_JIRA_ROUTING_DISCRIMINATOR {kind:'label', value:'team-be'}` → state fields set. Expected red: `unknown action type` / state unchanged.
+- `clearing the value clears the discriminator` — unit — dispatch with empty value → state cleared (no half-configured discriminator persists). Expected red: stale value retained.
+- `buildIntegrationConfig omits routing when unset` — unit — default state → config has **no** `routing` key (byte-identical config for non-sharing projects; AC #12 pin). Expected red: n/a green-from-start.
+- `buildIntegrationConfig emits routing when set` — unit — state kind/value set → `config.routing.discriminator` matches plan 1's schema shape and round-trips `jiraConfigSchema.parse`. Expected red: `routing` missing from built config.
+- `buildEditState restores discriminator from saved config` — unit — saved config with `routing.discriminator` → edit state fields populated; config without → fields empty. Expected red: fields empty despite saved config.
+
+**Implementation**:
+- `pm-providers/jira/state.ts`: add `jiraRoutingKind: '' | 'label' | 'component'`, `jiraRoutingValue: string`, action `SET_JIRA_ROUTING_DISCRIMINATOR`, defaults empty, reducer case (clears `verificationResult` like other credential-adjacent edits do NOT apply here — routing is non-secret config; keep reducer minimal).
+- `pm-wizard-state.ts`: compose the new slice fields + action type (sanctioned edit).
+- `pm-providers/jira/routing-step.tsx` (new): kind select (None / Label / Component) + value input; helper text explaining shared-board routing in operator terms; renders existing shared form primitives (same components the status-mapping step uses).
+- `pm-providers/jira/wizard.ts`: register the step (`kind: 'custom'`, component `RoutingStep`), extend `buildIntegrationConfig` + `buildEditState`; step `isComplete` is always true (optional feature).
+- `src/integrations/pm/jira/manifest.ts`: append `{ kind: 'custom', id: 'jira-routing', component: 'RoutingStep' }` to `wizardSpec.steps` (after the status-mapping step).
+
+### 2. SCM tab: primary repo control + error surfacing
+
+**Tests first** (`tests/unit/web/scm-repo-primary.test.ts`):
+
+- `save payload includes repoPrimary only when repo sharing is engaged` — unit — default (untouched control) → mutation payload has no `repoPrimary` key (AC #12 pin: existing projects' saves unchanged). Expected red: n/a green-from-start.
+- `selecting secondary sends repoPrimary false` — unit — control set to secondary → payload `repoPrimary: false`. Expected red: key absent from payload.
+- `backend BAD_REQUEST message is rendered verbatim` — unit — mutation rejects with message naming a project → that exact message rendered in the error slot (not the generic "Internal server error" string). Expected red: generic error text asserted-absent still present.
+
+**Implementation** (`web/src/components/projects/integration-scm-tab.tsx`):
+- Add a "Repository role" control (Primary — receives events for PRs not created by CASCADE / Secondary — shares a repository owned by another project) next to the repository field; omitted from the payload unless the operator changes it.
+- Wire `repoPrimary` into the existing `projects.update` mutation call; render the mutation error's message where the tab currently shows its failure text.
+
+### 3. Operator documentation
+
+**Implementation**:
+- `src/integrations/README.md`: one appended line in the routing-contract section pointing at the wizard step as the configuration surface.
+- Operator setup guidance (two-teams-one-board walkthrough incl. JIRA-side label/component discipline; shared-repo primary/secondary walkthrough) — add as a "Shared boards and repositories" subsection in the routing-contract section of the same README (the repo's operator-facing docs live there; no separate docs site exists).
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/web/jira-routing-step.test.ts`: ~5 tests (reducer, serialization, hydration, omission pin)
+- [ ] `tests/unit/web/scm-repo-primary.test.ts`: ~3 tests (payload shape, secondary, error surfacing)
+
+### Integration tests
+- [ ] none new
+
+### Acceptance tests
+- [ ] Per-plan ACs below map onto the two suites
+
+---
+
+## Manual Verification
+
+- **AC**: #5 (visual placement/usability of the two new controls)
+- **Why manual**: visual layout judgment; no DOM-render test infrastructure for the dashboard beyond reducer-level suites
+- **Verification protocol**: `npm run dev:web` against a dev API; open a JIRA project's wizard → the "Team routing" step appears after Status Mapping, kind defaults to None, saving without touching it produces a config identical to before (verify via `projects integrations <id>` CLI output); set Label + value, save, reopen → values restored. Open the SCM tab of a project whose repo is owned by another project, attempt save without choosing a role → the error names the owning project in the form's error slot.
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. The wizard reducer/serialization round-trips the discriminator (set → config → edit-state) and omits `routing` entirely when unset.
+2. The SCM save payload carries `repoPrimary` only when the operator engages the control; backend validation messages render verbatim.
+3. Manifest `wizardSpec` includes the routing step; conformance suite stays green.
+4. All new/modified code has corresponding tests.
+5. Wizard and SCM tab render correctly with the new controls `[manual]` — protocol above.
+6. `npm run typecheck` passes.
+7. `npm test` passes.
+8. `npm run lint` passes.
+9. Documentation listed below updated.
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `src/integrations/README.md` | Wizard-step pointer line + "Shared boards and repositories" operator walkthrough subsection |
+
+---
+
+## Out of Scope (this plan)
+
+- CLI flags for discriminator/`repoPrimary` (not spec-required)
+- Trello/Linear wizard surfaces (spec out-of-scope)
+- Any routing/validation logic (all delivered by plans 1–4)
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9

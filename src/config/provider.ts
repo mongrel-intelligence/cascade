@@ -1,9 +1,11 @@
 import {
+	findPrimaryProjectByRepoFromDb,
 	findProjectByBoardIdFromDb,
 	findProjectByIdFromDb,
 	findProjectByJiraProjectKeyFromDb,
 	findProjectByLinearTeamIdFromDb,
 	findProjectByRepoFromDb,
+	findProjectsByJiraProjectKeyFromDb,
 	findProjectWithConfigByBoardId,
 	findProjectWithConfigById,
 	findProjectWithConfigByJiraProjectKey,
@@ -15,6 +17,7 @@ import {
 	resolveAllProjectCredentials,
 	resolveProjectCredential,
 } from '../db/repositories/credentialsRepository.js';
+import { findProjectIdByRepoPrFromDb } from '../db/repositories/prWorkItemsRepository.js';
 import type { CascadeConfig, ProjectConfig } from '../types/index.js';
 import { configCache } from './configCache.js';
 import { PROVIDER_CATEGORY, PROVIDER_CREDENTIAL_ROLES } from './integrationRoles.js';
@@ -44,6 +47,50 @@ export async function findProjectByRepo(repo: string): Promise<ProjectConfig | u
 	const project = await findProjectByRepoFromDb(repo);
 	configCache.setProjectByRepo(repo, project);
 	return project;
+}
+
+/**
+ * Every project sharing a JIRA project key (spec 024).
+ *
+ * Shared-board routing decides between siblings by discriminator, so it needs
+ * the whole set — `findProjectByJiraProjectKey` below answers "some project on
+ * this key", which is only correct while a key has a single owner.
+ */
+export async function findProjectsByJiraProjectKey(projectKey: string): Promise<ProjectConfig[]> {
+	const cached = configCache.getProjectsByJiraKey(projectKey);
+	if (cached !== null) return cached;
+
+	const siblings = await findProjectsByJiraProjectKeyFromDb(projectKey);
+	configCache.setProjectsByJiraKey(projectKey, siblings);
+	return siblings;
+}
+
+/**
+ * The project that owns GitHub events for a repository when the event carries
+ * no PR->project link (spec 024).
+ */
+export async function findPrimaryProjectByRepo(repo: string): Promise<ProjectConfig | undefined> {
+	const cached = configCache.getPrimaryProjectByRepo(repo);
+	if (cached !== null) return cached;
+
+	const project = await findPrimaryProjectByRepoFromDb(repo);
+	configCache.setPrimaryProjectByRepo(repo, project);
+	return project;
+}
+
+/**
+ * The project that owns a PR (spec 024) — authoritative for everything CASCADE
+ * created, and the first thing GitHub routing consults on a shared repository.
+ *
+ * Deliberately uncached: a PR acquires its link partway through its life, so a
+ * cached "no link" would outlive the fact and send later events to the wrong
+ * project.
+ */
+export async function findProjectIdByRepoPr(
+	repoFullName: string,
+	prNumber: number,
+): Promise<string | null> {
+	return findProjectIdByRepoPrFromDb(repoFullName, prNumber);
 }
 
 export async function findProjectByJiraProjectKey(

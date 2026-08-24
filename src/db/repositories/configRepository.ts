@@ -1,4 +1,4 @@
-import { eq, type SQL, sql } from 'drizzle-orm';
+import { and, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { validateConfig } from '../../config/schema.js';
 import type { CascadeConfig, ProjectConfig } from '../../types/index.js';
 import { getDb } from '../client.js';
@@ -112,6 +112,40 @@ async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | unde
 	return result?.project;
 }
 
+/**
+ * Multi-row sibling of {@link findProjectFromDb} (spec 024).
+ *
+ * Shared board keys and shared repositories mean a where-clause can legitimately
+ * match several projects; this returns all of them, hydrated the same way, so
+ * callers can decide between siblings instead of taking whichever row came back
+ * first. Ordered by project id so the sibling list — which surfaces verbatim in
+ * operator-facing skip messages — is stable across restarts.
+ */
+async function findProjectsFromDb(whereClause: SQL): Promise<ProjectConfig[]> {
+	const db = getDb();
+	const rows = await db.select().from(projects).where(whereClause).orderBy(projects.id);
+	if (rows.length === 0) return [];
+
+	const ids = rows.map((r) => r.id);
+	const [allAgentConfigs, integrations] = await Promise.all([
+		db.select().from(agentConfigs).where(inArray(agentConfigs.projectId, ids)),
+		db.select().from(projectIntegrations).where(inArray(projectIntegrations.projectId, ids)),
+	]);
+
+	const projectAgentConfigsMap = new Map<string, AgentConfigRow[]>(ids.map((id) => [id, []]));
+	for (const ac of allAgentConfigs) {
+		projectAgentConfigsMap.get(ac.projectId)?.push(ac);
+	}
+
+	const rawConfig = buildRawConfig({
+		projectRows: rows,
+		integrationRows: integrations as IntegrationRow[],
+		projectAgentConfigsMap,
+	});
+
+	return validateConfig(rawConfig).projects;
+}
+
 type ProjectWithConfig = { project: ProjectConfig; config: CascadeConfig };
 
 const boardIdWhereClause = (boardId: string) =>
@@ -151,6 +185,26 @@ export function findProjectByJiraProjectKeyFromDb(
 	projectKey: string,
 ): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(jiraProjectKeyWhereClause(projectKey));
+}
+
+/**
+ * Every project configured against a JIRA project key (spec 024).
+ *
+ * The singular variant above answers "some project on this key", which is only
+ * correct while a key has one owner. Shared-board routing needs the whole set
+ * so the resolver can pick by discriminator instead of by position.
+ */
+export function findProjectsByJiraProjectKeyFromDb(projectKey: string): Promise<ProjectConfig[]> {
+	return findProjectsFromDb(jiraProjectKeyWhereClause(projectKey));
+}
+
+/**
+ * The primary project for a repository (spec 024) — the one that owns GitHub
+ * events carrying no PR->project link. DB-enforced unique per repo by
+ * `uq_projects_repo_primary`.
+ */
+export function findPrimaryProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
+	return findProjectFromDb(and(eq(projects.repo, repo), eq(projects.repoPrimary, true)) as SQL);
 }
 
 export function findProjectByLinearTeamIdFromDb(
