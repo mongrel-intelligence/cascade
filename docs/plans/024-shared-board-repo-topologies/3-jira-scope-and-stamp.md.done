@@ -6,7 +6,7 @@ plan_slug: jira-scope-and-stamp
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [1-schema-and-resolver-seam.md]
-status: wip
+status: done
 locked_at: 32e24a259d0867dd7a9bdcd374f405f1cea28d55
 ---
 
