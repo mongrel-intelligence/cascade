@@ -21,6 +21,11 @@ const mockCreateAgentConfig = vi.fn();
 const mockUpdateAgentConfig = vi.fn();
 const mockDeleteAgentConfig = vi.fn();
 
+vi.mock('../../../src/db/repositories/configRepository.js', () => ({
+	// Spec 024: create/update now consult the repository's siblings to settle
+	// primacy. These suites are not about topology — no siblings, no conflict.
+	findRepoSiblingsFromDb: vi.fn().mockResolvedValue([]),
+}));
 vi.mock('../../../src/db/repositories/settingsRepository.js', () => ({
 	getOrganization: (...args: unknown[]) => mockGetOrganization(...args),
 	listAllOrganizations: (...args: unknown[]) => mockListAllOrganizations(...args),

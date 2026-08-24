@@ -147,10 +147,16 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
+- [x] AC #1 — `github-project-routing.test.ts`: linked PR → linked project (not primary), unlinked → primary (siblings deliberately ordered so a lingering first-match answers wrong), unshared repo → unchanged, stale link → primary + warn, check-suite uses the nested PR number.
+- [x] AC #2 — `projects-repo-validation.test.ts`: duplicate repo rejected naming the owner via pre-check, and the 23505 race maps to the same BAD_REQUEST rather than a 500.
+- [x] AC #3 — same file: explicit secondary accepted, second primary rejected naming the incumbent, demoting the last primary rejected, self re-save allowed.
+- [x] AC #4 — 15 new tests (7 routing + 8 validation).
+- [x] AC #5 — `npm run typecheck` exit 0.
+- [x] AC #6 — `npm test` 11144 passed / 23 skipped, exit 0.
+- [x] AC #7 — `npm run lint` exit 0.
+
+**Divergences (recorded):**
+- **The plan cites one resolution site; there are two.** Besides `resolveProject`, a per-request cache feeds `isSelfAuthored` (loop prevention) and `sendReaction`. Left on first-match, a shared repo would check ONE project's bot identities against ANOTHER project's comments. Both now share one seam. Same file, so no ownership change — the task list was simply incomplete.
+- **`parseWebhook` had no PR number for `check_suite`**, which nests its PRs in an array. That is the highest-volume event CASCADE routes, so link-first would have been dead on the busiest path. Stamped at parse time, since `resolveProject` receives the event and never the payload.
+- **`repoPrimary` is not on `ProjectConfig`** — it exists only as a column, so a `ProjectConfig[]` sibling list cannot say which sibling is primary. Added a narrow `findRepoSiblingsFromDb` returning `{id, repoPrimary}` rather than widening the config projection. This is the **seventh** appearance of the hand-picked-projection family in this spec.
+- **Four existing suites needed the new dependency stubbed**, and `projects.test.ts` asserts the exact create payload, which now carries `repoPrimary: true`. Both are the honest cost of adding a dependency to `create`, not incidental churn.

@@ -47,6 +47,11 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	listProjectsForOrg: mockListProjectsForOrg,
 }));
 
+vi.mock('../../../../src/db/repositories/configRepository.js', () => ({
+	// Spec 024: create/update now consult the repository's siblings to settle
+	// primacy. These suites are not about topology — no siblings, no conflict.
+	findRepoSiblingsFromDb: vi.fn().mockResolvedValue([]),
+}));
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectsFull: mockListProjectsFull,
 	getProjectFull: mockGetProjectFull,
@@ -220,6 +225,9 @@ describe('projectsRouter', () => {
 				id: 'my-project',
 				name: 'My Project',
 				repo: 'owner/repo',
+				// Spec 024: the first project on a repository is its primary — the
+				// one that owns events carrying no PR->project link.
+				repoPrimary: true,
 				engineSettings: { codex: { approvalPolicy: 'never' } },
 			});
 			expect(result).toEqual(created);

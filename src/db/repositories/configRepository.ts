@@ -203,6 +203,25 @@ export function findProjectsByJiraProjectKeyFromDb(projectKey: string): Promise<
  * events carrying no PR->project link. DB-enforced unique per repo by
  * `uq_projects_repo_primary`.
  */
+/**
+ * The id + primacy of every project on a repository (spec 024).
+ *
+ * Deliberately NOT a `ProjectConfig[]`: `repoPrimary` is a column, not part of
+ * the hand-written config projection, so hydrating full configs here would
+ * return siblings that cannot say which of them is the primary — the one thing
+ * the caller needs. Ordered by id so operator-facing messages are stable.
+ */
+export async function findRepoSiblingsFromDb(
+	repo: string,
+): Promise<Array<{ id: string; repoPrimary: boolean }>> {
+	const db = getDb();
+	return db
+		.select({ id: projects.id, repoPrimary: projects.repoPrimary })
+		.from(projects)
+		.where(eq(projects.repo, repo))
+		.orderBy(projects.id);
+}
+
 export function findPrimaryProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(and(eq(projects.repo, repo), eq(projects.repoPrimary, true)) as SQL);
 }
