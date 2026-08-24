@@ -219,6 +219,7 @@ async function handleRecheckResult(
 	eventType: string,
 	payload: unknown,
 	projectIdentifier: string,
+	projectId: string,
 ): Promise<boolean> {
 	if (!result?.deferredRecheck) return false;
 
@@ -244,6 +245,10 @@ async function handleRecheckResult(
 			payload,
 			eventType,
 			repoFullName: projectIdentifier,
+			// Carry the project forward: a rescheduled re-check that lost it would
+			// fall back to resolving by repo — first match — silently reopening the
+			// wrong-credentials bug on shared repositories for this path alone.
+			projectId,
 			receivedAt: new Date().toISOString(),
 			checkSuiteRecheckAttempt: 1,
 		};
@@ -314,6 +319,7 @@ export async function processGitHubWebhook(
 			eventType,
 			payload,
 			event.projectIdentifier,
+			requireProjectId(project),
 		);
 		if (recheckHandled) return;
 	}

@@ -38,6 +38,18 @@ export interface GitHubJob {
 	payload: unknown;
 	eventType: string;
 	repoFullName: string;
+	/**
+	 * The project the ROUTER resolved for this event.
+	 *
+	 * Required, as it is on TrelloJob and JiraJob. Without it the worker
+	 * re-resolved by repository — first match — which on a shared repository
+	 * (spec 024) could disagree with the router that enqueued the job: the
+	 * container would be built with another project's credentials.
+	 *
+	 * Readers must still tolerate its absence at RUNTIME for jobs that were
+	 * already in Redis when this shipped.
+	 */
+	projectId: string;
 	receivedAt: string;
 	ackCommentId?: number;
 	ackMessage?: string;
