@@ -176,7 +176,7 @@ n/a — all ACs auto-tested.
 
 **Should-fixes taken:** `check_suite` sends an EMPTY `pull_requests` array when checks run on the `refs/pull/N/head` virtual ref (documented in `triggers/github/utils.ts`, which already ships the parser) — taking only `[0]` left the highest-volume event resolving no link; `repoPrimary` without `repo` now fails rather than silently writing nothing, which would have made plan 5's toggle report a success that changed nothing; removed this diff's lint warning and an orphaned docblock.
 
-**Deferred — belong in `docs/BUGS.md` once plan 3 merges it (plan 3's branch owns that file):**
+**Deferred — recorded in `docs/BUGS.md`:**
 - **The worker resolves its project by repo, ignoring the PR link.** `GitHubJob` carries `repoFullName` but no `projectId`, so `worker-env.ts:47` re-resolves first-match. On a shared repo the container can get the **wrong project's credentials**, and the compensator/classifier act on the wrong lock. No plan in this spec owns `worker-env.ts`; **spec AC #8/#9 are not true end-to-end until it lands.** Fix shape: stamp the resolved `projectId` onto the job in `buildJob`.
 - **Moving a project to a different repository can strand the old one** with secondaries and no primary — the zero-primary drop reached by a different door. Needs the update path to check the vacated repo.
 - [x] AC #5 — `npm run typecheck` exit 0.
