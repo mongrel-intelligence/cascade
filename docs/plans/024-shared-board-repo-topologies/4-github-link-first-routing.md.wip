@@ -32,7 +32,10 @@ File-disjoint from plans 2/3 (owns the GitHub adapter and the projects API route
 - `tests/unit/api/routers/projects-repo-validation.test.ts` (new)
 
 **Shared surfaces (append-only, conflicts are trivial):**
-- none for this plan
+- `tests/helpers/sharedMocks.ts` — two provider mocks added to `mockConfigProvider`
+- `tests/unit/api/routers/projects.test.ts`, `projects-worker-image.test.ts`, `projects-worker-dockerfile.test.ts`, `tests/unit/api/access-control.test.ts` — stub the sibling query that `create` now depends on
+- `tests/unit/router/adapters/github.test.ts` — repointed off `findProjectByRepo`, which is no longer the resolution path
+- `tests/integration/db/projects-repo-topology.test.ts` — three appended tests (plan 1's file, already `.done`)
 
 **Deferred to later plans in this spec:**
 - Dashboard primary toggle + error surfacing (plan 5)
@@ -99,14 +102,14 @@ Current behavior: `projects.update` (`src/api/routers/projects.ts:595`) and `cre
 ## Test Plan
 
 ### Unit tests
-- [ ] `tests/unit/router/github-project-routing.test.ts`: ~6 tests covering link-first order, fallbacks, stale links, single-project pin
-- [ ] `tests/unit/api/routers/projects-repo-validation.test.ts`: ~7 tests covering the validation matrix + 23505 mapping + no-repo pin
+- [x] `tests/unit/router/github-project-routing.test.ts`: 9 tests — link-first order, fallbacks, stale links, check-suite nested + head-ref shapes, dispatch/resolve agreement, single-project pin
+- [x] `tests/unit/api/routers/projects-repo-validation.test.ts`: 14 tests — validation matrix, 23505 (drizzle-wrapped shape), zero-primary guards, role preservation, org-scoping, no-repo pin
 
 ### Integration tests
-- [ ] none new — existing GitHub webhook integration suites stay green (single-project path untouched)
+- [x] 3 tests appended to `tests/integration/db/projects-repo-topology.test.ts` (plan 1's file, already present at the lock commit): `repoPrimary` persistence through a real INSERT, and org-scoping of the sibling query. Both cover mutations that unit tests structurally cannot see. (single-project path untouched)
 
 ### Acceptance tests
-- [ ] Per-plan ACs below map onto the two suites
+- [x] Per-plan ACs below map onto the two unit suites plus the integration additions
 
 ---
 
@@ -150,12 +153,26 @@ n/a — all ACs auto-tested.
 - [x] AC #1 — `github-project-routing.test.ts`: linked PR → linked project (not primary), unlinked → primary (siblings deliberately ordered so a lingering first-match answers wrong), unshared repo → unchanged, stale link → primary + warn, check-suite uses the nested PR number.
 - [x] AC #2 — `projects-repo-validation.test.ts`: duplicate repo rejected naming the owner via pre-check, and the 23505 race maps to the same BAD_REQUEST rather than a 500.
 - [x] AC #3 — same file: explicit secondary accepted, second primary rejected naming the incumbent, demoting the last primary rejected, self re-save allowed.
-- [x] AC #4 — 20 new tests (9 routing + 11 validation).
+- [x] AC #4 — 26 new tests: 23 unit (9 routing + 14 validation) + 3 integration appended to `tests/integration/db/projects-repo-topology.test.ts`.
 
-**Review round 1 — three must-fixes, all fixed. Each had ticked an AC that was not met.**
+**Review — four rounds, seven must-fixes. Converged at round 4 with zero code findings.**
+
+**Round 1 — three must-fixes. Each had ticked an AC that was not met.**
 1. **The 23505 race path never fired.** drizzle wraps the pg error, so `code`/`constraint` sit on `.cause` — `src/api/routers/users.ts` already documents this and walks the chain, and plan 1's own integration test asserts `{ cause: { code: '23505' } }` against this very index. My unit test passed only because it fabricated the flat shape it wanted; in production the operator got the generic 500 AC #2 forbids. Test now uses the shape drizzle actually produces.
 2. **Link-first routing was decision-only.** `dispatchWithCredentials` ignored the project the pipeline had just resolved and re-resolved by repo — first match — so on a shared repository the agent would run with ANOTHER project's GitHub token, PM provider and trigger context while the work-item lock was held under the linked one. Mutation-proved.
 3. **Zero primaries was saveable.** The no-siblings shortcut returned `requested ?? true`, so a repo's only project could declare itself secondary; the partial index forbids two primaries but cannot require one, and every event carrying no PR link was then dropped. Guard moved ahead of the shortcut.
+
+**Round 2 — three more must-fixes.**
+4. **`createProject` never persisted `repoPrimary`.** It builds an explicit column whitelist and the field was not in it, so the schema default (`true`) always applied and creating a **secondary was impossible through every surface** — the row hit the unique index and the operator was told another project had "just" become primary, blaming a phantom race for what they had asked for. The unit test passed because it asserted the router's argument to a **mocked** `createProject`; only a real INSERT can see a dropped column, so the coverage is now an integration test. Eighth instance of the hand-picked-projection family, on the write path.
+5. **Fixing (4) then rejected every save on a shared repo.** The SCM tab sends `repo` on every save and cannot send a role until plan 5, so updates hit the "state your role" branch — including the primary's own save, which was told to demote itself while the zero-primary rule would also refuse it, and the message named an arbitrary **secondary** as the owner. An update that does not mention the role now preserves it.
+6. **The sibling lookup was not org-scoped**, so a project in another organization on the same repo counted as a sibling and its id was rendered verbatim into the operator-facing error. Pre-024 that collision was a raw 500 with no leak, so this diff introduced the disclosure.
+
+**Round 3 — one must-fix.**
+7. **`findRepoSiblingsFromDb` had no executed coverage.** The committed assertion pinned the router's *call*, not the query. Swapping its two column predicates typechecks, lints, and passes all 11152 unit tests while returning `[]` for every input — reporting "no siblings" for every duplicate save and silently disabling this plan's entire pre-check. Verbatim the argument accepted one round earlier for `createProject`, applied to the write path but not the read path. Two integration tests now catch both that swap and the dropped org predicate.
+
+**Round 4 — converged, zero code findings.** Confirmed the six surfaces are mutually consistent, the per-request cache cannot bleed across PRs (the adapter is constructed per delivery), and `extractEventPRNumber` covers all five `PROCESSABLE_EVENTS`.
+
+**Pattern worth recording:** five of the seven must-fixes were tests asserting a *proxy* rather than the thing — a fabricated error shape, a mocked `createProject`, a mocked sibling query, and two half-wired resolution sites. Every one passed a green suite; none was caught by the AC walk.
 
 **Should-fixes taken:** `check_suite` sends an EMPTY `pull_requests` array when checks run on the `refs/pull/N/head` virtual ref (documented in `triggers/github/utils.ts`, which already ships the parser) — taking only `[0]` left the highest-volume event resolving no link; `repoPrimary` without `repo` now fails rather than silently writing nothing, which would have made plan 5's toggle report a success that changed nothing; removed this diff's lint warning and an orphaned docblock.
 
@@ -163,7 +180,7 @@ n/a — all ACs auto-tested.
 - **The worker resolves its project by repo, ignoring the PR link.** `GitHubJob` carries `repoFullName` but no `projectId`, so `worker-env.ts:47` re-resolves first-match. On a shared repo the container can get the **wrong project's credentials**, and the compensator/classifier act on the wrong lock. No plan in this spec owns `worker-env.ts`; **spec AC #8/#9 are not true end-to-end until it lands.** Fix shape: stamp the resolved `projectId` onto the job in `buildJob`.
 - **Moving a project to a different repository can strand the old one** with secondaries and no primary — the zero-primary drop reached by a different door. Needs the update path to check the vacated repo.
 - [x] AC #5 — `npm run typecheck` exit 0.
-- [x] AC #6 — `npm test` 11144 passed / 23 skipped, exit 0.
+- [x] AC #6 — `npm test` 11152 passed / 23 skipped, exit 0; `npm run test:integration` 673 passed, exit 0.
 - [x] AC #7 — `npm run lint` exit 0.
 
 **Divergences (recorded):**

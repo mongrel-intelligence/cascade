@@ -106,6 +106,9 @@ export async function updateProject(
 	updates: {
 		name?: string;
 		repo?: string;
+		/** Spec 024. Declared so a future column whitelist here cannot drop it
+		 * silently, which is exactly how createProject lost it. */
+		repoPrimary?: boolean;
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
