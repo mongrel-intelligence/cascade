@@ -282,13 +282,13 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 	}
 
 	/**
-	 * Legacy single-result resolution.
+	 * Single-result resolution required by `RouterPlatformAdapter`.
 	 *
-	 * Kept because `RouterPlatformAdapter` declares it and callers outside the
-	 * processor use it. Note it discards the reason — anything that needs to
-	 * explain a miss must call `resolveProjectWithReason`.
+	 * No production caller reaches it — the processor prefers
+	 * `resolveProjectWithReason` whenever an adapter declares it, so only tests
+	 * call this directly. It delegates rather than duplicating, and discards the
+	 * reason; anything that must explain a miss calls the other method.
 	 */
-
 	async resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null> {
 		return (await this.resolveProjectWithReason(event)).project;
 	}

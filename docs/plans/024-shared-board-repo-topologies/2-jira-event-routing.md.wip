@@ -234,6 +234,6 @@ where the two conflict.
 and the one that makes the only pre-plan-5 opt-in route a trap. Plan 5 owns that
 file; the README caveat now warns explicitly.
 - [x] AC #7 — `npm run typecheck` exit 0.
-- [x] AC #8 — `npm test` 11121 passed / 23 skipped, 614 files, exit 0.
+- [x] AC #8 — `npm test` 11129 passed / 23 skipped, 614 files, exit 0. (Integration suite 668/670; the two `webhookLogsRepository > filters by receivedAfter date` failures reproduce identically at the base commit `870a8034` — pre-existing, unrelated to this plan.)
 - [x] AC #9 — `npm run lint` exit 0 (13 warnings, all pre-existing in untouched files).
 - [x] AC #10 — `src/integrations/README.md` "Shared-key routing contract" section added, carrying the plan-3 caveat. CLAUDE.md deliberately skipped: not in this plan's Documentation Impact, and provider-specific routing detail belongs with the PM architecture guide.
