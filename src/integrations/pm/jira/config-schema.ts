@@ -42,6 +42,27 @@ export const jiraConfigSchema = z
 		authType: z.enum(['basic', 'scoped']).optional(),
 
 		/**
+		 * Optional routing discriminator (spec 024). Only meaningful when several
+		 * CASCADE projects share one JIRA project key: it is the attribute that
+		 * says which sibling an issue belongs to.
+		 *
+		 * The same discriminator is used symmetrically in three places — it routes
+		 * incoming webhook events to a sibling, scopes the JQL every read uses, and
+		 * is stamped onto work items the project creates so their future events
+		 * route back. Absent ⇒ the project is either the only holder of its key or
+		 * the default sibling for issues matching no other discriminator, and every
+		 * existing saved config stays valid untouched.
+		 */
+		routing: z
+			.object({
+				discriminator: z.object({
+					kind: z.enum(['label', 'component']),
+					value: z.string().min(1),
+				}),
+			})
+			.optional(),
+
+		/**
 		 * Mapping from CASCADE status keys (backlog/todo/inProgress/done/...)
 		 * to JIRA status names or transition IDs.
 		 */
