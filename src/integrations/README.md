@@ -143,6 +143,119 @@ The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatform
 
 ---
 
+## Shared-key routing contract
+
+> ⚠️ **Do not configure a shared key in production yet.** Two reasons, both
+> removed by later plans in spec 024:
+>
+> 1. **Read-scoping is missing** (plan 3). Routing is correct, but a
+>    shared-board project's agents still see the sibling team's items when
+>    listing work.
+> 2. **The wizard silently drops the discriminator** (plan 5). There is no
+>    discriminator field yet, so the only way to set one is an out-of-band
+>    write — and `buildIntegrationConfig` in
+>    `web/src/components/projects/pm-providers/jira/wizard.ts` rebuilds the
+>    config from wizard state without carrying `routing` through. The next
+>    wizard save on that project wipes it, silently turning a scoped project
+>    back into the key's default. Plan 5 owns that file and must thread the
+>    field when it adds the input.
+
+CASCADE historically assumed one project per PM board. The JIRA router resolved
+a project by **first match** on `projectKey`, so a second project on the same key
+never received an event — no error, no log, nothing in the webhook decision
+reason to suggest a second project existed. Spec 024 replaces that guess with an
+explicit decision over the whole sibling set.
+
+### The discriminator
+
+An optional field on the JIRA integration config says which issues on a shared
+key belong to a project:
+
+```jsonc
+{ "projectKey": "CLFX", "routing": { "discriminator": { "kind": "label", "value": "team-be" } } }
+```
+
+`kind` is `label` or `component`. Matching is **exact and case-sensitive** —
+JIRA labels are case-sensitive, and a near-miss must fail loudly rather than
+route another team's work to you.
+
+### Sharing is opt-in
+
+If **no** project on a key declares a discriminator, the key keeps pre-024
+first-match routing — plus a `WARN` and a Sentry capture tagged
+**`pm_shared_key_unconfigured`** naming the project that wins and the ones being
+shadowed (once per key per process).
+
+This is deliberate. A pre-024 deployment with two projects on one key can only
+be in that state — the field did not exist — and applying the strict matrix to
+it would turn *"one project works, the other is shadowed"* into *"nothing works
+at all"*, with no wizard field to fix it until plan 5. The shadowing bug stays,
+but stops being silent. The strict matrix engages the moment **any** project on
+the key declares a discriminator.
+
+Save-time validation follows the same rule: a project **already registered** on
+a key may be re-saved even in a legacy duplicate state (it did not create the
+conflict), while a **new** project claiming a taken key without a discriminator
+is still rejected.
+
+### Resolution order
+
+Once opted in, `resolveProjectAmongSiblings` (`pm/_shared/project-routing.ts`)
+decides. It is pure and provider-agnostic, so Trello and Linear can adopt it
+unchanged:
+
+| Situation | Outcome |
+|---|---|
+| One sibling, no discriminator | **route** — the 1:1 topology, untouched |
+| Exactly one discriminator matches | **route** to that sibling |
+| More than one matches | **skip** `ambiguous` |
+| Nothing matches, exactly one sibling has no discriminator | **route** to it (the default) |
+| Nothing matches, several siblings have no discriminator | **skip** `ambiguous` |
+| Nothing matches, every sibling is discriminated | **skip** `no_match` |
+
+A lone sibling that **has** a discriminator does not get the 1:1 shortcut: it
+asked to be scoped, so an issue outside its scope is not handed to it merely for
+lack of a rival. Nothing is ever awarded by position — that is the silent
+misrouting this module exists to end.
+
+### Where a skip surfaces
+
+`JiraRouterAdapter.resolveProjectWithReason` (the optional adapter hook added by
+spec 024) returns the resolver's message, and `webhook-processor` records it as
+the webhook-log **decision reason**. That is the operator's diagnosis surface:
+it names the key and every discriminator evaluated, instead of the previous
+`No project config for identifier CLFX` — which was actively misleading, since
+config existed and simply matched nothing.
+
+The hook is optional. Adapters that never share an identifier omit it and keep
+today's message verbatim.
+
+Ambiguity additionally captures Sentry under tag **`pm_routing_ambiguous`**,
+deduped per issue per process — the same misconfiguration re-fires on every
+webhook for that issue.
+
+An event with no owning project also gets **no ack reaction**: acknowledging
+something about to be skipped tells the operator the opposite of the truth.
+
+### Save-time validation
+
+`assertJiraTopologyValid` (`pm/_shared/topology-validation.ts`) runs inside
+`upsertProjectIntegration`, so an unroutable topology cannot be saved from any
+surface. Two rules, both derived from what the resolver can decide:
+
+1. A key may have **at most one** project without a discriminator (its default).
+2. **No two** projects may claim the same discriminator.
+
+A label and a component sharing a value do not collide — they are different
+facts about an issue. Re-saving an existing project does not conflict with
+itself. Rejections name the conflicting project and say what to add.
+
+> This validator throws `TRPCError` from the repository layer — a deliberate
+> layering exception, documented at the call site, so the message stays
+> operator-facing wherever the save originates.
+
+---
+
 ## Registration at startup
 
 Every runtime surface (router, worker, CLI bootstrap, dashboard) imports a single canonical entrypoint:

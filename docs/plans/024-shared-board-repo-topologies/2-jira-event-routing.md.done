@@ -6,7 +6,8 @@ plan_slug: jira-event-routing
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [1-schema-and-resolver-seam.md]
-status: pending
+status: done
+locked_at: 870a80341df3307b0c8dafbee5cb4eae8c434dc9
 ---
 
 # 024/2: JIRA event routing by discriminator + save-time topology validation
@@ -28,10 +29,54 @@ Does NOT deliver read-scoping or stamping (plan 3) — after this plan, routing 
 
 **Files owned (exclusive to this plan within this spec):**
 - `src/router/adapters/jira.ts`
+- `src/router/platform-adapter.ts` — *(added mid-run; see Divergence below)*
+- `src/router/webhook-processor.ts` — *(added mid-run; see Divergence below)*
+- `src/router/config.ts` — *(added mid-run; see Divergence below)*
+- `src/pm/config.ts` — *(added mid-run; type-only, see Divergence below)*
 - `src/integrations/pm/_shared/topology-validation.ts` (new)
 - `src/db/repositories/integrationsRepository.ts`
 - `tests/unit/router/jira-project-routing.test.ts` (new)
 - `tests/unit/integrations/jira-topology-validation.test.ts` (new)
+
+**Divergence (approved 2026-08-24, mid-run):** as written this plan could not
+satisfy AC #2/#3. Decision reasons on the project-resolution path are hardcoded
+in `webhook-processor.ts` (`'Event unparseable or not processable'`, `` `No
+project config for identifier ${…}` ``), and the adapter contract gives
+`parseWebhook` / `resolveProject` no channel to supply one — both return
+`T | null`. The only structured reason channel (`TriggerResult.skipReason`)
+sits on the dispatch path, reachable only *after* a project resolves. Neither
+file was owned by any plan in this spec.
+
+Resolution: add an **optional** `resolveProjectWithReason` to the adapter
+contract, preferred by `webhook-processor` when present and falling back to
+today's `resolveProject` + hardcoded message otherwise. Being optional, the
+other four adapters compile and behave unchanged — importantly `github.ts`,
+which plan 4 owns, so file-disjointness with plans 3/4 is preserved. This also
+corrects a message that actively misleads on shared keys: a no-match currently
+reports "No project config for identifier CLFX" when config exists and simply
+did not match.
+
+`src/router/config.ts` joins the same seam for the same reason: it hand-picks
+`{ projectKey, baseUrl }` into `RouterProjectConfig.jira`, so the router cannot
+see `routing.discriminator` at all and could not route by it however the adapter
+were written. This is the **third** appearance of that hand-pick drift class in
+this spec's territory — after `configMapper.buildJiraConfig` (plan 1) and
+MNG-1736's `authType`. `src/pm/config.ts`'s `JiraConfig` turned out to be a
+**fourth** (typecheck caught it; the cast means data was never dropped, only the
+declared type). So the JIRA config crosses four hand-written projections:
+
+| # | Projection | Drops silently? |
+|---|---|---|
+| 1 | `jiraConfigSchema` (Zod — source of truth) | n/a |
+| 2 | `configMapper.buildJiraConfig` | yes — runtime |
+| 3 | `src/router/config.ts` `RouterProjectConfig.jira` | yes — runtime |
+| 4 | `src/pm/config.ts` `JiraConfig` | no — type-only cast |
+
+Note `authType` appears in 1–3 because MNG-1736 forced it there one projection
+at a time. **Worth its own follow-up ticket:** every new JIRA config field must
+be added in four places, and forgetting #2 or #3 fails silently at runtime with
+the field simply absent. A derived type or a round-trip conformance assertion
+would make the omission a compile error instead of a production incident.
 
 **Shared surfaces (append-only, conflicts are trivial):**
 - `src/integrations/README.md` — this plan adds the "Shared-key routing contract" section; plan 3 appends a "Scoping & stamping" subsection under it
@@ -75,11 +120,15 @@ Current behavior (both sites use first-match): `src/router/adapters/jira.ts:57` 
 - `no match without default returns skip outcome carrying resolver message` — unit — parse/resolve yields a null-project outcome whose reason string contains the key and both discriminators. Expected red: `expected null/skip, got project 'A'`.
 - `ambiguous match skips and captures Sentry once` — unit — payload matching both discriminators → skip outcome + `captureException` called with tag `pm_routing_ambiguous`; second identical event does not re-capture (per-process dedup). Expected red: `expected captureException to have been called`.
 - `comment events resolve through the same seam` — unit — comment-event payload on a discriminated issue routes to the right sibling. Expected red: wrong sibling.
+- `an adapter without resolveProjectWithReason keeps today's decision reason` — unit — drive `processRouterWebhook` with a stub adapter implementing only `resolveProject` → `null` ⇒ `decisionReason` is still `` `No project config for identifier …` ``. Expected red: n/a green-from-start (AC #5 pin; guards the four adapters this plan does not touch).
 
 **Implementation** (`src/router/adapters/jira.ts`):
 - Extract issue routing attributes once: `{ labels: fields.labels ?? [], components: (fields.components ?? []).map(c => c.name) }`.
 - Replace both `config.projects.find(... projectKey ===)` sites with: collect siblings (all projects whose `jira.projectKey` matches, each carrying `jira.routing?.discriminator ?? null`) → `resolveProjectAmongSiblings(siblings, attrs)`.
-- `route` → proceed exactly as today with the chosen project. `skip` → return the adapter's null/absent-project result **with the resolver's message as the decision reason**, using the same plumbing that today produces "No trigger matched for event" (the parse-result → webhook-log reason path in the router's webhook handling; reuse, do not invent a parallel channel).
+- `route` → proceed exactly as today with the chosen project. `skip` → surface the resolver's message as the webhook-log decision reason through the new optional adapter channel (see Divergence above):
+  - `src/router/platform-adapter.ts` — add `type ProjectResolution = { project: RouterProjectConfig } | { project: null; reason: string }` and an optional `resolveProjectWithReason?(event): Promise<ProjectResolution>`. `resolveProject` stays as-is so the other four adapters are untouched.
+  - `src/router/webhook-processor.ts` — at step 6, prefer `resolveProjectWithReason` when the adapter implements it; on a null project use its `reason` as `decisionReason`, otherwise keep today's hardcoded message verbatim (regression pin).
+  - `src/router/adapters/jira.ts` — implement `resolveProjectWithReason` as the single resolution seam; `resolveProject` delegates to it and discards the reason, so both entry points share one code path and cannot drift.
 - On `reason === 'ambiguous'`: `captureException` (from `src/sentry.js`) tagged `pm_routing_ambiguous`, `extra: { issueKey, candidateProjectIds }`, deduped per issueKey per process (module-level `Set`, mirroring the `warnedMissingPricing` pattern in `src/utils/llmMetrics.ts`).
 - Comment/webhook sub-paths that re-derive the project reuse the same helper — one resolution function inside the adapter, called from both sites.
 
@@ -160,13 +209,31 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
+- [x] AC #1 — `jira-project-routing.test.ts`: label + component discriminator tests assert BOTH sites agree (`event.projectId` from the parse path, `resolution.project.id` from the processor path).
+- [x] AC #2 — same file: `routes to the discriminator-less default when nothing matches`, and `skips with a reason naming the key and every evaluated discriminator` (asserts the reason contains `SHARED`, `team-fe`, `team-be`). **The key was missing on first run** — the pure resolver can only say "this board key", so the adapter now names it; caught by walking this AC, not by the original test.
+- [x] AC #3 — same file: ambiguous test asserts both claimants appear in the reason, `captureException` called exactly once across two identical events, tagged `source: pm_routing_ambiguous`.
+- [x] AC #4 — `jira-topology-validation.test.ts`: 9 matrix tests + 3 upsert-wiring tests. Mutation-proved: removing `assertJiraTopologyValid` from the upsert fails `rejects a conflicting JIRA save before writing anything`.
+- [x] AC #5 — `routes a lone project on the key exactly as before` (routes regardless of labels) + `leaves the decision reason untouched for adapters without the hook` + the pre-existing `tests/unit/router/adapters/jira.test.ts` `resolveProject` tests, unmodified and green.
+- [x] AC #6 — 28 new tests across the two files; every new branch covered.
+
+**Review round 1 — must-fix resolved (approved change to spec semantics).** The
+strict matrix would have taken a pre-024 duplicate-key deployment from "one
+project works, the other is shadowed" to "nothing works", and the save-time
+validator would then have locked the operator out of the wizard — with no
+discriminator field until plan 5. Verified empirically against the real
+resolver. **Sharing is now opt-in**: a key where nobody declares a discriminator
+keeps first-match plus a `WARN` + Sentry `pm_shared_key_unconfigured` (once per
+key), and a project already registered on a key may re-save in a legacy
+duplicate state. A NEW project claiming a taken key is still rejected, so AC #11
+stands. Spec AC #4's "skipped with recorded reason" now applies only to
+opted-in keys; the spec's "backward compatibility is absolute" constraint wins
+where the two conflict.
+
+**Deferred to plan 5 (documented, not fixed):** `buildIntegrationConfig` in
+`web/.../jira/wizard.ts` drops `routing` on the write path — a fifth projection,
+and the one that makes the only pre-plan-5 opt-in route a trap. Plan 5 owns that
+file; the README caveat now warns explicitly.
+- [x] AC #7 — `npm run typecheck` exit 0.
+- [x] AC #8 — `npm test` 11129 passed / 23 skipped, 614 files, exit 0. (Integration suite 668/670; the two `webhookLogsRepository > filters by receivedAfter date` failures reproduce identically at the base commit `870a8034` — pre-existing, unrelated to this plan.)
+- [x] AC #9 — `npm run lint` exit 0 (13 warnings, all pre-existing in untouched files).
+- [x] AC #10 — `src/integrations/README.md` "Shared-key routing contract" section added, carrying the plan-3 caveat. CLAUDE.md deliberately skipped: not in this plan's Documentation Impact, and provider-specific routing detail belongs with the PM architecture guide.
