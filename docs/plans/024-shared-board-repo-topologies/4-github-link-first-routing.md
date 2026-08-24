@@ -90,7 +90,7 @@ Current behavior: `projects.update` (`src/api/routers/projects.ts:595`) and `cre
 
 **Implementation** (`src/api/routers/projects.ts`):
 - Input schemas (`create` ~:520, `update` ~:595): add `repoPrimary: z.boolean().optional()`.
-- Shared local helper `assertRepoTopology(repo, repoPrimary, currentProjectId)` used by both procedures: load siblings via plan 1's `findProjectsByRepoFromDb`; enforce — unused repo → default primary `true`; used repo → explicit `repoPrimary` required (reject with owning-project name otherwise); `repoPrimary: true` with an existing other primary → reject naming it; demotion leaving zero primaries while secondaries exist → reject. Messages are operator-actionable and name project ids.
+- Shared local helper `assertRepoTopology(repo, repoPrimary, currentProjectId)` used by both procedures: load the repo's siblings — plan 1 deliberately did **not** ship a `findProjectsByRepoFromDb` (it would have been a zero-caller, zero-test export), so add it here in `configRepository.ts` over the existing `findProjectsFromDb` helper, where it gains its first caller and its tests in the same change; enforce — unused repo → default primary `true`; used repo → explicit `repoPrimary` required (reject with owning-project name otherwise); `repoPrimary: true` with an existing other primary → reject naming it; demotion leaving zero primaries while secondaries exist → reject. Messages are operator-actionable and name project ids.
 - Wrap the persist call: catch PG `23505` on `uq_projects_repo_primary` and rethrow as the same BAD_REQUEST message (race-safety; the DB stays the authority).
 
 ---
