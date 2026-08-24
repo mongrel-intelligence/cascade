@@ -176,6 +176,44 @@ describe('projectsRouter — repository sharing (spec 024)', () => {
 		);
 	});
 
+	it('lets an existing project re-save without restating its role', async () => {
+		// The SCM tab sends `repo` on every save and never sends repoPrimary
+		// (the toggle is plan 5). Demanding an explicit role on update would
+		// reject every save on a shared repository — including the primary's own,
+		// while telling it to demote itself, which the zero-primary guard then
+		// also refuses. An update that does not mention the role must not change
+		// it.
+		mockFindRepoSiblings.mockResolvedValue([sibling('frontend', true), sibling('backend', false)]);
+
+		await caller().update({ id: 'frontend', repo: REPO } as never);
+
+		expect(mockUpdateProject).toHaveBeenCalledWith(
+			'frontend',
+			superAdmin.orgId,
+			expect.objectContaining({ repoPrimary: true }),
+		);
+	});
+
+	it('preserves a secondary’s role on an unrelated update', async () => {
+		mockFindRepoSiblings.mockResolvedValue([sibling('frontend', true), sibling('backend', false)]);
+
+		await caller().update({ id: 'backend', repo: REPO } as never);
+
+		expect(mockUpdateProject).toHaveBeenCalledWith(
+			'backend',
+			superAdmin.orgId,
+			expect.objectContaining({ repoPrimary: false }),
+		);
+	});
+
+	it('scopes the sibling lookup to the caller’s organization', async () => {
+		// Sibling ids are rendered verbatim into operator-facing errors. An
+		// unscoped lookup would name another tenant's project.
+		await create();
+
+		expect(mockFindRepoSiblings).toHaveBeenCalledWith(REPO, superAdmin.orgId);
+	});
+
 	it('runs no topology check for a project without a repository', async () => {
 		// AC #12 pin: PM-only projects must not gain a sibling query.
 		await caller().create({ id: 'pmonly', name: 'PM only' } as never);

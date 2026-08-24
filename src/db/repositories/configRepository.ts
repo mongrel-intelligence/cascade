@@ -208,13 +208,18 @@ export function findProjectsByJiraProjectKeyFromDb(projectKey: string): Promise<
  */
 export async function findRepoSiblingsFromDb(
 	repo: string,
+	orgId: string,
 ): Promise<Array<{ id: string; repoPrimary: boolean }>> {
 	const db = getDb();
-	return db
-		.select({ id: projects.id, repoPrimary: projects.repoPrimary })
-		.from(projects)
-		.where(eq(projects.repo, repo))
-		.orderBy(projects.id);
+	return (
+		db
+			.select({ id: projects.id, repoPrimary: projects.repoPrimary })
+			.from(projects)
+			// Org-scoped: these ids are rendered verbatim into operator-facing errors,
+			// so an unscoped lookup would name another tenant's project.
+			.where(and(eq(projects.repo, repo), eq(projects.orgId, orgId)))
+			.orderBy(projects.id)
+	);
 }
 
 /**

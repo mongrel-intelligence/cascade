@@ -491,15 +491,24 @@ async function resolveRepoPrimary(
 	repo: string,
 	requested: boolean | undefined,
 	projectId: string | undefined,
+	orgId: string,
 ): Promise<boolean> {
-	const siblings = (await findRepoSiblingsFromDb(repo)).filter((s) => s.id !== projectId);
+	const all = await findRepoSiblingsFromDb(repo, orgId);
+	const self = projectId ? all.find((s) => s.id === projectId) : undefined;
+	const siblings = all.filter((s) => s.id !== projectId);
 	const incumbent = siblings.find((s) => s.repoPrimary);
+
+	// An update that does not mention the role must not change it. The SCM tab
+	// sends `repo` on every save and cannot yet send a role (that toggle is plan
+	// 5), so demanding one here would reject every save on a shared repository —
+	// including the primary's own, while telling it to demote itself, which the
+	// zero-primary rule below would then also refuse.
+	if (requested === undefined && self) return self.repoPrimary;
 
 	// Checked before the no-siblings shortcut: the partial unique index forbids
 	// TWO primaries but cannot require ONE, so a repository left with zero
 	// primaries is accepted by the DB and then drops every event that carries no
-	// PR->project link. That includes the sole project on a repo declaring
-	// itself secondary.
+	// PR->project link.
 	if (requested === false && !incumbent) {
 		throw new TRPCError({
 			code: 'BAD_REQUEST',
@@ -669,7 +678,7 @@ export const projectsRouter = router({
 			// entirely — no sibling query, no behaviour change.
 			assertRepoPrimaryHasRepo(input);
 			const repoPrimary = input.repo
-				? await resolveRepoPrimary(input.repo, input.repoPrimary, undefined)
+				? await resolveRepoPrimary(input.repo, input.repoPrimary, undefined, ctx.effectiveOrgId)
 				: undefined;
 
 			const created = await createProject(ctx.effectiveOrgId, {
@@ -774,7 +783,7 @@ export const projectsRouter = router({
 			// its own sibling set — re-saving must not conflict with itself.
 			assertRepoPrimaryHasRepo(input);
 			const repoPrimary = input.repo
-				? await resolveRepoPrimary(input.repo, input.repoPrimary, id)
+				? await resolveRepoPrimary(input.repo, input.repoPrimary, id, ctx.effectiveOrgId)
 				: undefined;
 
 			await updateProject(id, ctx.effectiveOrgId, {

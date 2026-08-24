@@ -32,6 +32,7 @@ export async function createProject(
 		id: string;
 		name: string;
 		repo?: string;
+		repoPrimary?: boolean;
 		baseBranch?: string;
 		branchPrefix?: string;
 		model?: string | null;
@@ -65,6 +66,11 @@ export async function createProject(
 			orgId,
 			name: rest.name,
 			repo: rest.repo ?? null,
+			// Spec 024. Omitted rather than defaulted so the column default (true)
+			// still applies for callers that never mention it — but a caller that
+			// DOES ask for a secondary must not have it silently dropped, which is
+			// what an explicit column whitelist does to any field added later.
+			...(rest.repoPrimary !== undefined ? { repoPrimary: rest.repoPrimary } : {}),
 			baseBranch: rest.baseBranch ?? 'main',
 			branchPrefix: rest.branchPrefix ?? 'feature/',
 			model: rest.model,

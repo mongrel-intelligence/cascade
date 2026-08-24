@@ -10,6 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../../src/db/client.js';
+import { createProject } from '../../../src/db/repositories/projectsRepository.js';
 import { projects } from '../../../src/db/schema/index.js';
 import { truncateAll } from '../helpers/db.js';
 import { seedOrg } from '../helpers/seed.js';
@@ -78,6 +79,25 @@ describe('projects repo topology (integration)', () => {
 
 		const rows = await db.select().from(projects);
 		expect(rows).toHaveLength(2);
+	});
+
+	it('persists repoPrimary through createProject', async () => {
+		// createProject builds an explicit column whitelist, so a column missing
+		// from it is silently dropped and the schema default applies. Asserting
+		// the router's argument to a MOCKED createProject cannot see that — only
+		// a real INSERT can. Without this, saving a secondary is impossible: the
+		// row defaults to primary and dies on uq_projects_repo_primary.
+		await createProject('test-org', { id: 'p1', name: 'P1', repo: 'acme/web' });
+		await createProject('test-org', {
+			id: 'p2',
+			name: 'P2',
+			repo: 'acme/web',
+			repoPrimary: false,
+		});
+
+		const rows = await getDb().select().from(projects);
+		expect(rows.find((r) => r.id === 'p1')?.repoPrimary).toBe(true);
+		expect(rows.find((r) => r.id === 'p2')?.repoPrimary).toBe(false);
 	});
 
 	it('drops the table-level unique constraint left by `drizzle-kit push`', async () => {
