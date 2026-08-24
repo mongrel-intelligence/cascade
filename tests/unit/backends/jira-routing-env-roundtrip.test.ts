@@ -63,6 +63,12 @@ describe('JIRA routing discriminator survives the worker env hop', () => {
 		vi.unstubAllEnvs();
 		vi.stubEnv('CASCADE_JIRA_PROJECT_KEY', '');
 		vi.stubEnv('CASCADE_JIRA_BASE_URL', '');
+		// `resolveJiraBaseUrlFromEnv` reads the non-prefixed twin FIRST, and
+		// `roundTrip` only propagates the `CASCADE_JIRA*` secrets — so without
+		// clearing this, an ambient `JIRA_BASE_URL` (present in some worker/dev
+		// shells) leaks in and wins over the emitted value. Unset in CI, which is
+		// why this only bites locally.
+		vi.stubEnv('JIRA_BASE_URL', '');
 		vi.stubEnv('CASCADE_JIRA_AUTH_TYPE', '');
 		vi.stubEnv('CASCADE_JIRA_STATUSES', '');
 	});
