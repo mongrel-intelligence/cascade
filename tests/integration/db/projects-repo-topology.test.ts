@@ -10,6 +10,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '../../../src/db/client.js';
+import { findRepoSiblingsFromDb } from '../../../src/db/repositories/configRepository.js';
 import { createProject } from '../../../src/db/repositories/projectsRepository.js';
 import { projects } from '../../../src/db/schema/index.js';
 import { truncateAll } from '../helpers/db.js';
@@ -98,6 +99,47 @@ describe('projects repo topology (integration)', () => {
 		const rows = await getDb().select().from(projects);
 		expect(rows.find((r) => r.id === 'p1')?.repoPrimary).toBe(true);
 		expect(rows.find((r) => r.id === 'p2')?.repoPrimary).toBe(false);
+	});
+
+	it('returns only the calling organization’s projects on a repository', async () => {
+		// Sibling ids are rendered verbatim into operator-facing save errors, so
+		// an unscoped query names another tenant's project. Asserting the router
+		// passed the right arguments cannot see that — only running the query can.
+		// It also catches the worse failure: a query that matches nothing returns
+		// [] for every input, which reports "no siblings" for every duplicate save
+		// and silently disables this plan's entire pre-check.
+		await seedOrg('other-org', 'Other Org');
+		const db = getDb();
+		await db.insert(projects).values(project('mine', 'acme/web', true));
+		await db.insert(projects).values({
+			id: 'theirs',
+			orgId: 'other-org',
+			name: 'Theirs',
+			repo: 'acme/web',
+			// Secondary: uq_projects_repo_primary is global on `repo`, not
+			// org-scoped, so another org cannot hold a second PRIMARY on the same
+			// repository. That constraint is what keeps cross-tenant repo
+			// ownership impossible; this test is about the query's scoping.
+			repoPrimary: false,
+		});
+
+		const siblings = await findRepoSiblingsFromDb('acme/web', 'test-org');
+
+		expect(siblings).toEqual([{ id: 'mine', repoPrimary: true }]);
+	});
+
+	it('returns every project the calling organization has on a repository', async () => {
+		const db = getDb();
+		await db.insert(projects).values(project('primary', 'acme/web', true));
+		await db.insert(projects).values(project('secondary', 'acme/web', false));
+
+		const siblings = await findRepoSiblingsFromDb('acme/web', 'test-org');
+
+		// Ordered by id so operator-facing messages are stable.
+		expect(siblings).toEqual([
+			{ id: 'primary', repoPrimary: true },
+			{ id: 'secondary', repoPrimary: false },
+		]);
 	});
 
 	it('drops the table-level unique constraint left by `drizzle-kit push`', async () => {
