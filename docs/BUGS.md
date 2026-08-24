@@ -8,32 +8,6 @@ Close an entry by deleting it in the PR that fixes it.
 
 ---
 
-## The worker resolves its project by repo, ignoring the PR link
-
-**Found:** spec 024 plan 4 review (2026-08-24) · **Fix shape:** small, own PR
-
-`GitHubJob` (`src/router/queue.ts`) carries `repoFullName` but no `projectId` —
-unlike `TrelloJob` and `JiraJob`, which both carry one. So
-`extractProjectIdFromJob` (`src/router/worker-env.ts:47`) re-resolves with
-`findProjectByRepo` — **first match**.
-
-Plan 4 made the router resolve link-first, but the job does not carry that
-decision, so on a shared repository the worker can disagree with the router that
-enqueued it. Consequences: `spawnWorker` feeds that id to
-`getAllProjectCredentials`, so **the container gets the wrong project's
-credentials**; `dispatch-compensator.ts` and `lock-state-classifier.ts` release
-and classify the wrong project's lock.
-
-Not reachable until a repository is actually shared, and no plan in spec 024
-owns `worker-env.ts` — but **spec AC #8/#9 are not true end-to-end until this
-lands.**
-
-**Fix shape:** stamp the resolved `projectId` onto the job in `buildJob` and read
-it in `extractProjectIdFromJob`, keeping the repo lookup as a fallback for jobs
-already sitting in Redis at deploy time.
-
----
-
 ## Moving a project to a different repository can strand the old one
 
 **Found:** spec 024 plan 4 review (2026-08-24) · **Fix shape:** adhoc
