@@ -477,9 +477,24 @@ async function resolveRepoPrimary(
 	projectId: string | undefined,
 ): Promise<boolean> {
 	const siblings = (await findRepoSiblingsFromDb(repo)).filter((s) => s.id !== projectId);
-	if (siblings.length === 0) return requested ?? true;
-
 	const incumbent = siblings.find((s) => s.repoPrimary);
+
+	// Checked before the no-siblings shortcut: the partial unique index forbids
+	// TWO primaries but cannot require ONE, so a repository left with zero
+	// primaries is accepted by the DB and then drops every event that carries no
+	// PR->project link. That includes the sole project on a repo declaring
+	// itself secondary.
+	if (requested === false && !incumbent) {
+		throw new TRPCError({
+			code: 'BAD_REQUEST',
+			message:
+				`Repository "${repo}" would be left with no primary project, so events ` +
+				`for pull requests CASCADE did not create would go nowhere. Promote ` +
+				`another project on this repository first.`,
+		});
+	}
+
+	if (siblings.length === 0) return requested ?? true;
 
 	if (requested === undefined) {
 		// Before spec 024 this was a raw 500 from the unique index. Naming the
@@ -501,16 +516,6 @@ async function resolveRepoPrimary(
 		});
 	}
 
-	if (!requested && !incumbent) {
-		// Every unlinked event would stop being routed anywhere.
-		throw new TRPCError({
-			code: 'BAD_REQUEST',
-			message:
-				`Repository "${repo}" would be left with no primary project. ` +
-				`Promote another project on this repository first.`,
-		});
-	}
-
 	return requested;
 }
 
@@ -519,8 +524,17 @@ async function resolveRepoPrimary(
  * the authority; this only makes the loser's error say the same thing.
  */
 function rethrowRepoPrimaryConflict(err: unknown, repo: string): never {
-	const e = err as { code?: string; constraint?: string };
-	if (e?.code === '23505' && e?.constraint === 'uq_projects_repo_primary') {
+	// drizzle wraps the driver error, so `code`/`constraint` sit on `.cause`, not
+	// at the top level — the same reason `users.ts` walks the chain. Matching the
+	// flat shape looks correct in a unit test and never fires in production.
+	let current: unknown = err;
+	let hit = false;
+	for (let depth = 0; depth < 5 && current != null && !hit; depth++) {
+		const c = current as { code?: unknown; constraint?: unknown };
+		hit = c.code === '23505' && c.constraint === 'uq_projects_repo_primary';
+		current = (current as { cause?: unknown }).cause;
+	}
+	if (hit) {
 		throw new TRPCError({
 			code: 'BAD_REQUEST',
 			message:

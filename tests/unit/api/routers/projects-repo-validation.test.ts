@@ -137,14 +137,34 @@ describe('projectsRouter — repository sharing (spec 024)', () => {
 		// The pre-check can pass and still lose to a concurrent save; the DB stays
 		// the authority, but the operator should see the same message either way.
 		mockFindRepoSiblings.mockResolvedValue([]);
+		// The shape drizzle actually produces: it wraps the pg DatabaseError, so
+		// code/constraint live on .cause. Asserting the flat shape would pass
+		// while production fell through to a 500.
 		mockCreateProject.mockRejectedValue(
-			Object.assign(new Error('duplicate key'), {
-				code: '23505',
-				constraint: 'uq_projects_repo_primary',
+			Object.assign(new Error('DrizzleQueryError'), {
+				cause: Object.assign(new Error('duplicate key value violates unique constraint'), {
+					code: '23505',
+					constraint: 'uq_projects_repo_primary',
+				}),
 			}),
 		);
 
 		await expect(create()).rejects.toThrow(/primary/i);
+	});
+
+	it('refuses to create the only project on a repository as a secondary', async () => {
+		// The partial unique index forbids TWO primaries; it cannot require one.
+		// A repo with zero primaries drops every event that carries no PR link.
+		await expect(create({ repoPrimary: false })).rejects.toThrow(/primary/i);
+		expect(mockCreateProject).not.toHaveBeenCalled();
+	});
+
+	it('refuses to demote a repository’s only project', async () => {
+		mockFindRepoSiblings.mockResolvedValue([sibling('solo', true)]);
+
+		await expect(
+			caller().update({ id: 'solo', repo: REPO, repoPrimary: false } as never),
+		).rejects.toThrow(/primary/i);
 	});
 
 	it('runs no topology check for a project without a repository', async () => {

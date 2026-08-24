@@ -56,7 +56,10 @@ vi.mock('../../../src/github/personas.js', () => ({
 vi.mock('../../../src/github/client.js', () => ({ withGitHubToken: mockWithGitHubToken }));
 vi.mock('../../../src/pm/context.js', () => ({
 	withPMProvider: vi.fn().mockImplementation((_p: unknown, fn: () => unknown) => fn()),
-	withPMCredentials: vi.fn().mockImplementation((..._a: unknown[]) => undefined),
+	// 4th arg is the continuation — invoke it, or dispatch never runs.
+	withPMCredentials: vi
+		.fn()
+		.mockImplementation((_id: unknown, _t: unknown, _g: unknown, fn: () => unknown) => fn()),
 }));
 vi.mock('../../../src/pm/registry.js', () => ({
 	pmRegistry: {
@@ -159,6 +162,24 @@ describe('GitHub project routing across shared repositories', () => {
 		expect(mockProvider.findProjectIdByRepoPr).toHaveBeenCalledWith(REPO, 99);
 	});
 
+	it('reads the PR from the head ref when check_suite.pull_requests is empty', async () => {
+		// GitHub sends an EMPTY pull_requests array when checks run on the
+		// refs/pull/N/head virtual ref rather than the named branch — documented
+		// in src/triggers/github/utils.ts. Rung 1 alone leaves the busiest event
+		// silently falling back to the primary on a shared repo.
+		useProjects('primary', 'secondary');
+		mockProvider.findProjectIdByRepoPr.mockResolvedValue('secondary');
+
+		const event = await adapter.parseWebhook({
+			_eventType: 'check_suite',
+			repository: { full_name: REPO },
+			check_suite: { pull_requests: [], head_branch: 'refs/pull/77/head' },
+		});
+
+		expect((await adapter.resolveProject(event as never))?.id).toBe('secondary');
+		expect(mockProvider.findProjectIdByRepoPr).toHaveBeenCalledWith(REPO, 77);
+	});
+
 	it('falls back to the primary when a link points at a deleted project', async () => {
 		useProjects('primary');
 		mockProvider.findProjectIdByRepoPr.mockResolvedValue('deleted-project');
@@ -169,6 +190,31 @@ describe('GitHub project routing across shared repositories', () => {
 
 		expect((await adapter.resolveProject(event as never))?.id).toBe('primary');
 		expect(mockLogger.warn).toHaveBeenCalled();
+	});
+
+	it('dispatches as the project resolveProject chose, not the repo first-match', async () => {
+		// Link-first resolution is worthless if dispatch re-resolves by repo: the
+		// agent would then run with another project's GitHub token, PM provider
+		// and trigger context while the work-item lock is held under the linked
+		// one. `primary` is listed first so a first-match wins the wrong way.
+		useProjects('primary', 'secondary');
+		mockProvider.findProjectIdByRepoPr.mockResolvedValue('secondary');
+
+		const event = await adapter.parseWebhook(prPayload(42));
+		const chosen = await adapter.resolveProject(event as never);
+		const dispatch = vi.fn().mockResolvedValue(null);
+		await adapter.dispatchWithCredentials(
+			event as never,
+			{},
+			chosen as never,
+			{
+				dispatch,
+			} as never,
+		);
+
+		expect(dispatch).toHaveBeenCalledWith(
+			expect.objectContaining({ project: expect.objectContaining({ id: 'secondary' }) }),
+		);
 	});
 
 	it('resolves loop-prevention personas from the linked project', async () => {

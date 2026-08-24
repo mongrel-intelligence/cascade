@@ -28,6 +28,7 @@ import {
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { pmRegistry } from '../../pm/registry.js';
 import { captureException } from '../../sentry.js';
+import { parsePrNumberFromRef } from '../../triggers/github/utils.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { ProjectConfig, TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -152,9 +153,17 @@ function extractEventPRNumber(p: Record<string, unknown>): number | undefined {
 	if (issue?.pull_request && typeof issue.number === 'number') return issue.number;
 
 	const suite = p.check_suite as Record<string, unknown> | undefined;
-	const suitePRs = suite?.pull_requests as Array<Record<string, unknown>> | undefined;
+	if (!suite) return undefined;
+	const suitePRs = suite.pull_requests as Array<Record<string, unknown>> | undefined;
 	const first = suitePRs?.[0]?.number;
-	return typeof first === 'number' ? first : undefined;
+	if (typeof first === 'number') return first;
+
+	// GitHub sends an EMPTY pull_requests array when checks run on the
+	// refs/pull/N/head virtual ref instead of the named branch — see
+	// src/triggers/github/utils.ts, which documents this and already ships the
+	// parser. Without this rung the highest-volume event resolves no link at
+	// all and quietly falls back to the repository's primary.
+	return parsePrNumberFromRef(suite.head_branch as string | undefined) ?? undefined;
 }
 
 function getGitHubDeliveryId(payload: Record<string, unknown>): string | undefined {
@@ -352,15 +361,18 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	async dispatchWithCredentials(
 		event: ParsedWebhookEvent,
 		payload: unknown,
-		_project: RouterProjectConfig,
+		project: RouterProjectConfig,
 		triggerRegistry: TriggerRegistry,
 	): Promise<TriggerResult | null> {
 		const config = await loadProjectConfig();
-		const fullProject = config.fullProjects.find(
-			(fp) => fp.repo === (event as GitHubParsedEvent).repoFullName,
-		);
+		// Use the project the pipeline already resolved (spec 024). Re-resolving
+		// by repo here would take the first match, so on a shared repository the
+		// agent would run with ANOTHER project's GitHub token, PM provider and
+		// trigger context while the work-item lock is held under the linked one.
+		const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
 		if (!fullProject) {
-			logger.info('No project for GitHub repo, skipping dispatch', {
+			logger.info('No full project config for GitHub webhook, skipping dispatch', {
+				projectId: project.id,
 				repoFullName: (event as GitHubParsedEvent).repoFullName,
 			});
 			return null;

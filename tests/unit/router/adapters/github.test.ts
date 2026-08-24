@@ -50,7 +50,6 @@ vi.mock('../../../../src/config/projects.js', () => ({
 // findProjectById) and falls back to the repository's primary. findProjectByRepo
 // is no longer the resolution path.
 vi.mock('../../../../src/config/provider.js', () => ({
-	findProjectByRepo: mockConfigProvider.findProjectByRepo,
 	findPrimaryProjectByRepo: mockConfigProvider.findPrimaryProjectByRepo,
 	findProjectIdByRepoPr: mockConfigProvider.findProjectIdByRepoPr,
 	findProjectById: mockConfigProvider.findProjectById,
@@ -88,7 +87,6 @@ vi.mock('../../../../src/utils/runLink.js', () => ({
 }));
 
 import { isPMFocusedAgent } from '../../../../src/agents/definitions/loader.js';
-import { findProjectByRepo } from '../../../../src/config/provider.js';
 import { isCascadeBot, resolvePersonaIdentities } from '../../../../src/github/personas.js';
 import {
 	postGitHubAck,
