@@ -374,8 +374,15 @@ export async function lookupWorkItemForPR(
  * projects share one repository — an event about a linked PR goes to its owner
  * regardless of which project is the repository's primary.
  *
- * Newest row wins if a PR was somehow linked twice; a PR with no link returns
- * null and the caller falls back to the repository's primary project.
+ * Newest row wins if a PR was somehow linked twice — reachable precisely in the
+ * topology this enables, since `uq_pr_work_items_project_pr` is unique per
+ * project, so two projects sharing a repo can each hold a row for the same PR.
+ * `updated_at` is nullable and was never backfilled (migration 0029), and
+ * Postgres sorts DESC as NULLS FIRST, so it needs an explicit NULLS LAST plus a
+ * `created_at` tiebreak (NOT NULL) — otherwise the stalest row would win.
+ *
+ * A PR with no link returns null and the caller falls back to the repository's
+ * primary project.
  */
 export async function findProjectIdByRepoPrFromDb(
 	repoFullName: string,
@@ -386,7 +393,7 @@ export async function findProjectIdByRepoPrFromDb(
 		.select({ projectId: prWorkItems.projectId })
 		.from(prWorkItems)
 		.where(and(eq(prWorkItems.repoFullName, repoFullName), eq(prWorkItems.prNumber, prNumber)))
-		.orderBy(desc(prWorkItems.updatedAt))
+		.orderBy(sql`${prWorkItems.updatedAt} DESC NULLS LAST`, desc(prWorkItems.createdAt))
 		.limit(1);
 	return rows.length > 0 ? rows[0].projectId : null;
 }

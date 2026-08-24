@@ -118,11 +118,12 @@ async function findProjectFromDb(whereClause: SQL): Promise<ProjectConfig | unde
  * Shared board keys and shared repositories mean a where-clause can legitimately
  * match several projects; this returns all of them, hydrated the same way, so
  * callers can decide between siblings instead of taking whichever row came back
- * first. Returns them in the order Postgres yields.
+ * first. Ordered by project id so the sibling list — which surfaces verbatim in
+ * operator-facing skip messages — is stable across restarts.
  */
 async function findProjectsFromDb(whereClause: SQL): Promise<ProjectConfig[]> {
 	const db = getDb();
-	const rows = await db.select().from(projects).where(whereClause);
+	const rows = await db.select().from(projects).where(whereClause).orderBy(projects.id);
 	if (rows.length === 0) return [];
 
 	const ids = rows.map((r) => r.id);
@@ -204,11 +205,6 @@ export function findProjectsByJiraProjectKeyFromDb(projectKey: string): Promise<
  */
 export function findPrimaryProjectByRepoFromDb(repo: string): Promise<ProjectConfig | undefined> {
 	return findProjectFromDb(and(eq(projects.repo, repo), eq(projects.repoPrimary, true)) as SQL);
-}
-
-/** Every project sharing a repository — primary and secondaries alike. */
-export function findProjectsByRepoFromDb(repo: string): Promise<ProjectConfig[]> {
-	return findProjectsFromDb(eq(projects.repo, repo));
 }
 
 export function findProjectByLinearTeamIdFromDb(

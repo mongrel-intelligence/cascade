@@ -168,3 +168,27 @@ describe('resolveProjectAmongSiblings', () => {
 		expect(out).toMatchObject({ action: 'skip', reason: 'no_match' });
 	});
 });
+
+describe('resolveProjectAmongSiblings — lone discriminated sibling', () => {
+	it('does not hand an unmatched issue to a lone sibling that has a discriminator', () => {
+		// Onboarding order matters: team BE is configured first with its
+		// discriminator, before team FE's project exists. An unlabelled issue must
+		// not be routed to BE just because it is currently the only sibling —
+		// spec Req 2 makes the discriminator symmetric with plan 3's JQL scoping,
+		// which would exclude that same issue from BE's own work-item listing.
+		const out = resolveProjectAmongSiblings([label('be', 'team-be')], issue([]));
+		expect(out).toMatchObject({ action: 'skip', reason: 'no_match' });
+	});
+
+	it('still routes to a lone discriminated sibling when the issue matches it', () => {
+		const out = resolveProjectAmongSiblings([label('be', 'team-be')], issue(['team-be']));
+		expect(out).toEqual({ action: 'route', projectId: 'be' });
+	});
+
+	it('still short-circuits for a lone discriminator-less sibling (AC #12)', () => {
+		// Every pre-024 deployment is exactly this shape, so it must keep routing
+		// unconditionally regardless of what the issue carries.
+		const out = resolveProjectAmongSiblings([plain('solo')], issue(['whatever'], ['Whatever']));
+		expect(out).toEqual({ action: 'route', projectId: 'solo' });
+	});
+});

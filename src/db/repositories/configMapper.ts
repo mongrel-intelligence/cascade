@@ -27,6 +27,8 @@ export interface JiraIntegrationConfig {
 	baseUrl: string;
 	/** Optional JIRA auth mode (non-secret config, mirrors `baseUrl`). See jiraConfigSchema. */
 	authType?: JiraAuthType;
+	/** Optional shared-board routing discriminator (spec 024). See jiraConfigSchema. */
+	routing?: { discriminator: { kind: 'label' | 'component'; value: string } };
 	statuses: Record<string, string>;
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };
@@ -143,6 +145,7 @@ export interface ProjectConfigRaw {
 		projectKey: string;
 		baseUrl: string;
 		authType?: JiraAuthType;
+		routing?: { discriminator: { kind: 'label' | 'component'; value: string } };
 		statuses: Record<string, string>;
 		issueTypes?: Record<string, string>;
 		customFields?: { cost?: string };
@@ -273,6 +276,11 @@ function buildJiraConfig(config: JiraIntegrationConfig): ProjectConfigRaw['jira'
 		// this hand-pick, the field is dropped before jiraConfigSchema re-parses,
 		// so a persisted authType would always load back as `undefined`.
 		authType: config.authType,
+		// Same hand-pick requirement as authType above: the shared-board routing
+		// discriminator (spec 024) must be threaded or a persisted value loads back
+		// as `undefined`, and every event on a shared board key resolves as an
+		// ambiguous no-default skip.
+		routing: config.routing,
 		statuses: config.statuses,
 		issueTypes: config.issueTypes,
 		customFields: config.customFields,

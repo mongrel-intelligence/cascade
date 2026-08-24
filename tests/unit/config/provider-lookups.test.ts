@@ -21,7 +21,6 @@ vi.mock('../../../src/db/repositories/configRepository.js', () => ({
 	findProjectWithConfigByLinearTeamId: vi.fn(),
 	findProjectsByJiraProjectKeyFromDb: vi.fn(),
 	findPrimaryProjectByRepoFromDb: vi.fn(),
-	findProjectsByRepoFromDb: vi.fn(),
 }));
 
 vi.mock('../../../src/db/repositories/credentialsRepository.js', () => ({

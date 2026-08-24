@@ -79,8 +79,12 @@ export function resolveProjectAmongSiblings(
 		};
 	}
 
-	// Single holder of the key: today's behavior, discriminators irrelevant.
-	if (siblings.length === 1) {
+	// A lone sibling with no discriminator is every pre-024 deployment: it owns
+	// the key unconditionally, exactly as before. A lone sibling that HAS a
+	// discriminator does not get that shortcut — it asked to be scoped, and the
+	// same scoping governs which work items it reads and creates, so an issue
+	// outside its scope must not be routed to it merely for lack of a rival.
+	if (siblings.length === 1 && !siblings[0].discriminator) {
 		return { action: 'route', projectId: siblings[0].projectId };
 	}
 
