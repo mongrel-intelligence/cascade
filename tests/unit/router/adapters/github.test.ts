@@ -46,8 +46,14 @@ vi.mock('../../../../src/router/ackMessageGenerator.js', () => ({
 vi.mock('../../../../src/config/projects.js', () => ({
 	getProjectGitHubToken: vi.fn().mockResolvedValue('ghp_mock'),
 }));
+// Spec 024 plan 4: the adapter resolves link-first (findProjectIdByRepoPr →
+// findProjectById) and falls back to the repository's primary. findProjectByRepo
+// is no longer the resolution path.
 vi.mock('../../../../src/config/provider.js', () => ({
 	findProjectByRepo: mockConfigProvider.findProjectByRepo,
+	findPrimaryProjectByRepo: mockConfigProvider.findPrimaryProjectByRepo,
+	findProjectIdByRepoPr: mockConfigProvider.findProjectIdByRepoPr,
+	findProjectById: mockConfigProvider.findProjectById,
 }));
 vi.mock('../../../../src/github/personas.js', () => ({
 	resolvePersonaIdentities: vi.fn().mockResolvedValue({}),
@@ -219,7 +225,7 @@ describe('GitHubRouterAdapter', () => {
 		});
 
 		it('returns true when comment author is a cascade bot', async () => {
-			vi.mocked(findProjectByRepo).mockResolvedValue({ id: 'p1' } as never);
+			mockConfigProvider.findPrimaryProjectByRepo.mockResolvedValue({ id: 'p1' } as never);
 			vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
 			vi.mocked(isCascadeBot).mockReturnValue(true);
 
@@ -253,7 +259,7 @@ describe('GitHubRouterAdapter', () => {
 		});
 
 		it('fires reaction for comment events', async () => {
-			vi.mocked(findProjectByRepo).mockResolvedValue({ id: 'p1' } as never);
+			mockConfigProvider.findPrimaryProjectByRepo.mockResolvedValue({ id: 'p1' } as never);
 			vi.mocked(resolvePersonaIdentities).mockResolvedValue({} as never);
 			vi.mocked(sendAcknowledgeReaction).mockResolvedValue(undefined);
 
@@ -292,6 +298,8 @@ describe('GitHubRouterAdapter', () => {
 		});
 
 		it('returns null for unknown repo', async () => {
+			// No project is the primary for a repo CASCADE does not know.
+			mockConfigProvider.findPrimaryProjectByRepo.mockResolvedValue(undefined);
 			const project = await adapter.resolveProject({
 				projectIdentifier: 'other/repo',
 				eventType: 'pull_request',
@@ -693,8 +701,8 @@ describe('GitHubRouterAdapter', () => {
 	});
 
 	describe('per-request caching', () => {
-		it('calls findProjectByRepo only once across isSelfAuthored and sendReaction', async () => {
-			vi.mocked(findProjectByRepo).mockResolvedValue({ id: 'p1' } as never);
+		it('resolves the owning project only once across isSelfAuthored and sendReaction', async () => {
+			mockConfigProvider.findPrimaryProjectByRepo.mockResolvedValue({ id: 'p1' } as never);
 			vi.mocked(resolvePersonaIdentities).mockResolvedValue({
 				implementer: 'impl-bot',
 				reviewer: 'review-bot',
@@ -717,14 +725,14 @@ describe('GitHubRouterAdapter', () => {
 			// Give the async fire-and-forget in sendReaction time to execute
 			await vi.waitFor(() => expect(sendAcknowledgeReaction).toHaveBeenCalled());
 
-			// findProjectByRepo should have been called only once (cached for the second call)
-			expect(findProjectByRepo).toHaveBeenCalledTimes(1);
+			// Resolved once and cached for the second call.
+			expect(mockConfigProvider.findPrimaryProjectByRepo).toHaveBeenCalledTimes(1);
 			// resolvePersonaIdentities should have been called only once
 			expect(resolvePersonaIdentities).toHaveBeenCalledTimes(1);
 		});
 
 		it('calls resolvePersonaIdentities only once across isSelfAuthored and dispatchWithCredentials', async () => {
-			vi.mocked(findProjectByRepo).mockResolvedValue({ id: 'p1' } as never);
+			mockConfigProvider.findPrimaryProjectByRepo.mockResolvedValue({ id: 'p1' } as never);
 			vi.mocked(resolvePersonaIdentities).mockResolvedValue({
 				implementer: 'impl-bot',
 				reviewer: 'review-bot',
