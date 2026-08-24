@@ -145,17 +145,6 @@ The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatform
 
 ## Shared-key routing contract
 
-> ⚠️ **One gap remains before configuring a shared key in production.** There is
-> no discriminator field in the wizard yet (spec 024 plan 5), so the only way to
-> set one is an out-of-band write — and `buildIntegrationConfig` in
-> `web/src/components/projects/pm-providers/jira/wizard.ts` rebuilds the config
-> from wizard state without carrying `routing` through. The next wizard save on
-> that project wipes it, silently turning a scoped project back into the key's
-> default. Plan 5 owns that file and must thread the field when it adds the
-> input.
->
-> Routing (plan 2) and read-scoping + stamping (plan 3) are both complete.
-
 CASCADE historically assumed one project per PM board. The JIRA router resolved
 a project by **first match** on `projectKey`, so a second project on the same key
 never received an event — no error, no log, nothing in the webhook decision
@@ -274,6 +263,39 @@ The discriminator value is validated at save time: no `"` or `\` (both would
 break out of the quoted JQL value), and no whitespace for a **label**
 discriminator, since JIRA refuses to write such a label and the read clause
 would then match nothing.
+
+### Setting it up
+
+**Two teams, one JIRA board.**
+
+1. Decide the attribute that tells the teams' issues apart. A **label** is the
+   usual choice — JIRA creates labels on demand. A **component** also works but
+   must already exist on the JIRA project; JIRA will not create it, and the
+   resulting `createIssue` failure reports an issue-type problem rather than a
+   component one.
+2. In each project's PM wizard, open **Team routing** and set the kind and value
+   (`team-backend`, `Payments API`, …). Leave it as **None** on at most one
+   project — that project becomes the key's default and receives issues carrying
+   no other team's discriminator. Two projects both left on None is rejected at
+   save time.
+3. Have the teams apply the discriminator when they file. Issues carrying
+   neither are skipped with a decision reason naming the key and every
+   discriminator evaluated — visible in the webhook log, not silent.
+
+Work CASCADE creates is stamped automatically, so friction reports, alert cards
+and split children route back to the project that made them without anyone
+labelling them by hand.
+
+**Two projects, one GitHub repository.**
+
+1. On the **SCM** tab of each project, set **Repository role**. Exactly one is
+   the **Primary**; it receives events for pull requests CASCADE did not create
+   — a human's PR, or one opened before any project claimed it.
+2. Everything else routes by link: a PR a project opened belongs to that project
+   whatever the primary is, so each project's own work comes back to it.
+
+A repository with no primary is rejected at save time, because every unlinked
+event would then go nowhere.
 
 ### Save-time validation
 

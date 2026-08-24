@@ -155,12 +155,32 @@ Wizard architecture per `src/integrations/README.md`: provider-owned state slice
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
+- [x] AC #1 — `jira-routing-step.test.ts`: reducer stores kind+value, an emptied value clears the whole discriminator, `buildIntegrationConfig` omits `routing` when unset and emits a block that round-trips the REAL `jiraConfigSchema`, and a save → hydrate → re-save round trip preserves it (the wipe this plan closes).
+- [x] AC #2 — `scm-repo-primary.test.ts`: the role is omitted when untouched and when there is no repo, and sent when chosen. The existing error slot already renders `saveMutation.error.message` verbatim, so plan 4's named rejections surface as written — verified by reading the component, not assumed.
+- [x] AC #3 — `jiraManifest.wizardSpec` includes the routing step; `manifest-wizard-spec.test.ts` and `jira-wizard-generator.test.ts` updated to expect two custom steps in order, conformance green.
+- [x] AC #4 — 16 new tests (10 routing + 6 SCM payload).
+- [ ] AC #5 `[manual]` — deferred, see note below.
+- [x] AC #6 — `npm run typecheck` exit 0 (root and `web/`).
+- [x] AC #7 — `npm test` 11189 passed / 23 skipped, exit 0.
+- [x] AC #8 — `npm run lint` exit 0.
+- [x] AC #9 — README: "Setting it up" operator walkthrough for both topologies; the plan-2 caveat removed, since the wizard field it warned about now exists.
+
+**AC #5 deferred — `[manual]`.** The protocol needs `npm run dev:web` against a
+live dev API plus a JIRA project, which is not available in this session. The
+two controls are covered at reducer/payload level and both typecheck in the
+`web/` workspace, but their visual placement and usability are genuinely
+unverified. Recorded as a deferral rather than marked done.
+
+**Divergences (recorded):**
+- **Step ordering disagreed between manifest and wizard.** The plan says to place
+  the routing step after status-mapping; I did that in the manifest but put the
+  wizard step after custom-fields. The existing "one ProviderWizardStep per
+  wizardSpec entry, in the same order" test caught it. Aligned to the manifest.
+- **The SCM payload lives in a pure builder** (`scm-save-payload.ts`) rather than
+  inline in the component. Whether `repoPrimary` is ABSENT is load-bearing — it
+  is what stops an unrelated save from restating a shared repo's topology — and
+  absence is precisely what a DOM assertion sees worst.
+- **Three existing suites pinned the old shape** and were updated: the manifest
+  step list, the generator's "exactly one custom step", and the JIRA initial
+  state defaults. All are legitimate consequences of adding a step and two state
+  fields, not weakened assertions.
