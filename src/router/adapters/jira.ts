@@ -168,16 +168,15 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 			}
 		}
 
-		logger.info('JIRA event matched no owning project', {
-			projectKey,
-			issueKey,
-			reason: outcome.action === 'skip' ? outcome.message : 'resolved project missing from config',
-		});
-		return {
-			project: null,
-			reason: outcome.action === 'skip' ? outcome.message : `No project config for ${projectKey}`,
-			hadSiblings: true,
-		};
+		// The resolver is provider-agnostic and never sees the key, so it can only
+		// say "this board key". Name it here — the decision reason is the
+		// operator's whole diagnosis, and it has to identify what was being routed.
+		const reason =
+			outcome.action === 'skip'
+				? `JIRA key ${projectKey}: ${outcome.message}`
+				: `No project config for ${projectKey}`;
+		logger.info('JIRA event matched no owning project', { projectKey, issueKey, reason });
+		return { project: null, reason, hadSiblings: true };
 	}
 
 	isProcessableEvent(event: ParsedWebhookEvent): boolean {

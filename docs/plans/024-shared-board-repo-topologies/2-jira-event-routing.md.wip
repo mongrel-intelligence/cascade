@@ -209,13 +209,13 @@ n/a — all ACs auto-tested.
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
+- [x] AC #1 — `jira-project-routing.test.ts`: label + component discriminator tests assert BOTH sites agree (`event.projectId` from the parse path, `resolution.project.id` from the processor path).
+- [x] AC #2 — same file: `routes to the discriminator-less default when nothing matches`, and `skips with a reason naming the key and every evaluated discriminator` (asserts the reason contains `SHARED`, `team-fe`, `team-be`). **The key was missing on first run** — the pure resolver can only say "this board key", so the adapter now names it; caught by walking this AC, not by the original test.
+- [x] AC #3 — same file: ambiguous test asserts both claimants appear in the reason, `captureException` called exactly once across two identical events, tagged `source: pm_routing_ambiguous`.
+- [x] AC #4 — `jira-topology-validation.test.ts`: 9 matrix tests + 3 upsert-wiring tests. Mutation-proved: removing `assertJiraTopologyValid` from the upsert fails `rejects a conflicting JIRA save before writing anything`.
+- [x] AC #5 — `routes a lone project on the key exactly as before` (routes regardless of labels) + `leaves the decision reason untouched for adapters without the hook` + the pre-existing `tests/unit/router/adapters/jira.test.ts` `resolveProject` tests, unmodified and green.
+- [x] AC #6 — 20 new tests across the two files; every new branch covered.
+- [x] AC #7 — `npm run typecheck` exit 0.
+- [x] AC #8 — `npm test` 11121 passed / 23 skipped, 614 files, exit 0.
+- [x] AC #9 — `npm run lint` exit 0 (13 warnings, all pre-existing in untouched files).
+- [x] AC #10 — `src/integrations/README.md` "Shared-key routing contract" section added, carrying the plan-3 caveat. CLAUDE.md deliberately skipped: not in this plan's Documentation Impact, and provider-specific routing detail belongs with the PM architecture guide.

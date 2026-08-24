@@ -137,8 +137,11 @@ describe('JIRA project routing across shared keys', () => {
 			project('backend', { kind: 'label', value: 'team-be' }),
 		);
 
-		const { resolution } = await route(adapter, payload({ labels: ['team-be'] }));
+		const { event, resolution } = await route(adapter, payload({ labels: ['team-be'] }));
 
+		// Both resolution sites must agree — the parse path stamps projectId, the
+		// processor path resolves again. Drift between them is the original bug.
+		expect(event?.projectId).toBe('backend');
 		expect(resolution?.project?.id).toBe('backend');
 	});
 
@@ -173,8 +176,9 @@ describe('JIRA project routing across shared keys', () => {
 		const { resolution } = await route(adapter, payload({ labels: ['unrelated'] }));
 
 		expect(resolution?.project).toBeNull();
-		// The operator's only diagnosis surface — it must say what was evaluated,
-		// not merely that nothing happened.
+		// The operator's only diagnosis surface — it must say which key was being
+		// routed and what was evaluated, not merely that nothing happened.
+		expect(resolution?.reason).toContain(KEY);
 		expect(resolution?.reason).toContain('team-fe');
 		expect(resolution?.reason).toContain('team-be');
 	});
@@ -191,6 +195,9 @@ describe('JIRA project routing across shared keys', () => {
 
 		expect(first.resolution?.project).toBeNull();
 		expect(second.resolution?.project).toBeNull();
+		// The ambiguity itself is the decision reason, naming both claimants.
+		expect(first.resolution?.reason).toContain('frontend');
+		expect(first.resolution?.reason).toContain('backend');
 		expect(captureException).toHaveBeenCalledTimes(1);
 		expect(vi.mocked(captureException).mock.calls[0][1]).toMatchObject({
 			tags: { source: 'pm_routing_ambiguous' },
