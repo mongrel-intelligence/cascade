@@ -17,7 +17,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createElement, type ReactElement, useState } from 'react';
+import { createElement, type ReactElement, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button.js';
 import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
@@ -326,6 +326,19 @@ function JiraRoutingAdapter({ state, dispatch }: ProviderWizardStepProps): React
 	// `selectedKind` is view state, not config: it keeps the value input mounted
 	// while the box is empty, which the reducer treats as "no discriminator".
 	const [selectedKind, setSelectedKind] = useState<JiraRoutingKind | undefined>(undefined);
+	// Seed the view-state kind from a hydrated discriminator on the EDIT path.
+	// `buildEditState` reaches state via an asynchronous INIT_EDIT dispatch (it
+	// waits on the credentials query), so a `useState` initializer would read the
+	// pre-hydration '' and miss it. Without this seed, an operator clearing a
+	// saved value would drop `jiraRoutingKind` to '' and unmount the input they
+	// are editing — the Round 1 defect, still reachable on the edit path. Runs
+	// once: the `selectedKind === undefined` guard means it never overrides a
+	// dropdown choice the operator has already made (including an explicit None).
+	useEffect(() => {
+		if (selectedKind === undefined && state.jiraRoutingKind) {
+			setSelectedKind(state.jiraRoutingKind);
+		}
+	}, [selectedKind, state.jiraRoutingKind]);
 	return RoutingStep({
 		step: { kind: 'custom', id: 'jira-routing', component: 'RoutingStep' },
 		providerId: 'jira',
