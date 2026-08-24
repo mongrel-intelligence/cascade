@@ -8,7 +8,12 @@
  */
 
 import { isPmPostingEnabled, resolveUpdateChannel } from '../../config/updateChannel.js';
+import {
+	type PMRoutingIssueAttributes,
+	resolveProjectAmongSiblings,
+} from '../../integrations/pm/_shared/project-routing.js';
 import { withJiraCredentials } from '../../jira/client.js';
+import { captureException } from '../../sentry.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -16,7 +21,12 @@ import { buildWorkItemRunsLink, getDashboardUrl } from '../../utils/runLink.js';
 import { extractJiraContext, generateAckMessage } from '../ackMessageGenerator.js';
 import { postJiraAck, resolveJiraBotAccountId } from '../acknowledgments.js';
 import { loadProjectConfig, type RouterProjectConfig } from '../config.js';
-import type { AckResult, ParsedWebhookEvent, RouterPlatformAdapter } from '../platform-adapter.js';
+import type {
+	AckResult,
+	ParsedWebhookEvent,
+	ProjectResolution,
+	RouterPlatformAdapter,
+} from '../platform-adapter.js';
 import { resolveJiraCredentials } from '../platformClients/index.js';
 import type { CascadeJob, JiraJob } from '../queue.js';
 import { sendAcknowledgeReaction } from '../reactions.js';
@@ -29,13 +39,48 @@ const PROCESSABLE_EVENTS = [
 	'comment_updated',
 ];
 
+const NO_ROUTING_ATTRIBUTES: PMRoutingIssueAttributes = { labels: [], components: [] };
+
+/**
+ * Ambiguous routing is a configuration error, not an event error: the same
+ * misconfiguration re-fires on every webhook for the issue. Report once per
+ * issue per process so Sentry shows the problem without drowning in repeats —
+ * same rationale as `warnedMissingPricing` in `src/utils/llmMetrics.ts`.
+ */
+const reportedAmbiguousIssues = new Set<string>();
+
 /**
  * Extended parsed event for JIRA — carries the issue key and webhook event string.
+ *
+ * `projectId` is absent when routing produced no owner (spec 024): the event is
+ * still parsed so the processor can record WHY it was skipped, but no project
+ * owns it, so the ack/reaction paths must not fire.
  */
 interface JiraParsedEvent extends ParsedWebhookEvent {
 	issueKey: string;
 	webhookEvent: string;
-	projectId: string;
+	projectId?: string;
+	routingAttributes?: PMRoutingIssueAttributes;
+}
+
+/** Resolution plus whether the key is configured at all — see `resolveForKey`. */
+type JiraResolution = ProjectResolution & { hadSiblings: boolean };
+
+function extractRoutingAttributes(
+	fields: Record<string, unknown> | undefined,
+): PMRoutingIssueAttributes {
+	const rawLabels = fields?.labels;
+	const rawComponents = fields?.components;
+	return {
+		labels: Array.isArray(rawLabels)
+			? rawLabels.filter((l): l is string => typeof l === 'string')
+			: [],
+		components: Array.isArray(rawComponents)
+			? rawComponents
+					.map((c) => (c as Record<string, unknown> | null)?.name)
+					.filter((n): n is string => typeof n === 'string')
+			: [],
+	};
 }
 
 export class JiraRouterAdapter implements RouterPlatformAdapter {
@@ -53,9 +98,13 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		if (!jiraProjectKey) return null;
 		if (!PROCESSABLE_EVENTS.some((e) => webhookEvent.startsWith(e))) return null;
 
-		const config = await loadProjectConfig();
-		const project = config.projects.find((proj) => proj.jira?.projectKey === jiraProjectKey);
-		if (!project) return null;
+		const routingAttributes = extractRoutingAttributes(fields);
+		const resolved = await this.resolveForKey(jiraProjectKey, routingAttributes, issueKey);
+
+		// An unconfigured key is not our event at all — drop it at parse time,
+		// exactly as before. A key we DO serve that simply matched no sibling is
+		// different: keep parsing so the processor can record why it was skipped.
+		if (!resolved.hadSiblings) return null;
 
 		const isCommentEvent = webhookEvent.startsWith('comment_');
 
@@ -66,7 +115,68 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 			isCommentEvent,
 			issueKey,
 			webhookEvent,
-			projectId: project.id,
+			routingAttributes,
+			...(resolved.project ? { projectId: resolved.project.id } : {}),
+		};
+	}
+
+	/**
+	 * The single place a JIRA project key plus issue attributes become a project.
+	 * Both `parseWebhook` and `resolveProjectWithReason` route through it so the
+	 * two sites cannot drift — the drift that let a shared key silently shadow a
+	 * sibling in the first place.
+	 */
+	private async resolveForKey(
+		projectKey: string,
+		attributes: PMRoutingIssueAttributes,
+		issueKey: string,
+	): Promise<JiraResolution> {
+		const config = await loadProjectConfig();
+		const siblings = config.projects.filter((p) => p.jira?.projectKey === projectKey);
+		if (siblings.length === 0) {
+			return {
+				project: null,
+				reason: `No project config for identifier ${projectKey || '(unknown)'}`,
+				hadSiblings: false,
+			};
+		}
+
+		const outcome = resolveProjectAmongSiblings(
+			siblings.map((p) => ({
+				projectId: p.id,
+				discriminator: p.jira?.routing?.discriminator ?? null,
+			})),
+			attributes,
+		);
+
+		if (outcome.action === 'route') {
+			const project = siblings.find((p) => p.id === outcome.projectId);
+			if (project) return { project, hadSiblings: true };
+		}
+
+		if (outcome.action === 'skip' && outcome.reason === 'ambiguous') {
+			if (!reportedAmbiguousIssues.has(issueKey)) {
+				reportedAmbiguousIssues.add(issueKey);
+				captureException(new Error(`Ambiguous JIRA routing for ${issueKey || projectKey}`), {
+					tags: { source: 'pm_routing_ambiguous' },
+					extra: {
+						issueKey,
+						projectKey,
+						candidateProjectIds: outcome.candidateProjectIds,
+					},
+				});
+			}
+		}
+
+		logger.info('JIRA event matched no owning project', {
+			projectKey,
+			issueKey,
+			reason: outcome.action === 'skip' ? outcome.message : 'resolved project missing from config',
+		});
+		return {
+			project: null,
+			reason: outcome.action === 'skip' ? outcome.message : `No project config for ${projectKey}`,
+			hadSiblings: true,
 		};
 	}
 
@@ -82,7 +192,9 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 		const commentAuthorId = author?.accountId as string | undefined;
 		if (!commentAuthorId) return false;
 		try {
+			// Absent when routing found no owner — nothing to check against.
 			const projectId = (event as JiraParsedEvent).projectId;
+			if (!projectId) return false;
 			const botId = await resolveJiraBotAccountId(projectId);
 			return !!botId && commentAuthorId === botId;
 		} catch {
@@ -93,14 +205,26 @@ export class JiraRouterAdapter implements RouterPlatformAdapter {
 	sendReaction(event: ParsedWebhookEvent, payload: unknown): void {
 		if (!event.isCommentEvent) return;
 		const projectId = (event as JiraParsedEvent).projectId;
+		// No owning project ⇒ no credentials to react with, and acknowledging an
+		// event we are about to skip would be a lie to the operator.
+		if (!projectId) return;
 		void sendAcknowledgeReaction('jira', projectId, payload).catch((err) =>
 			logger.error('JIRA reaction error', { error: String(err) }),
 		);
 	}
 
+	async resolveProjectWithReason(event: ParsedWebhookEvent): Promise<ProjectResolution> {
+		const jiraEvent = event as JiraParsedEvent;
+		const { project, reason } = await this.resolveForKey(
+			event.projectIdentifier ?? '',
+			jiraEvent.routingAttributes ?? NO_ROUTING_ATTRIBUTES,
+			jiraEvent.issueKey ?? event.workItemId ?? '',
+		);
+		return project ? { project } : { project: null, reason: reason ?? '' };
+	}
+
 	async resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null> {
-		const config = await loadProjectConfig();
-		return config.projects.find((p) => p.jira?.projectKey === event.projectIdentifier) ?? null;
+		return (await this.resolveProjectWithReason(event)).project;
 	}
 
 	async dispatchWithCredentials(

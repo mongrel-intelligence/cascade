@@ -55,6 +55,17 @@ export interface ParsedWebhookEvent {
 // RouterPlatformAdapter interface
 // ---------------------------------------------------------------------------
 
+/**
+ * Outcome of project resolution when the adapter can explain a miss.
+ *
+ * A miss is not always "unknown identifier": once projects can share one, an
+ * event may match none of them, and the operator needs to know which candidates
+ * were evaluated and why each was rejected.
+ */
+export type ProjectResolution =
+	| { project: RouterProjectConfig; reason?: undefined }
+	| { project: null; reason: string };
+
 export interface RouterPlatformAdapter {
 	/** Platform identifier — used in log messages. */
 	readonly type: string;
@@ -88,6 +99,20 @@ export interface RouterPlatformAdapter {
 	 * Returns `null` when no project is found.
 	 */
 	resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null>;
+
+	/**
+	 * Resolve the project AND, on a miss, say why (spec 024).
+	 *
+	 * `resolveProject` can only answer "no project", which the processor turns
+	 * into a fixed `No project config for identifier X` — true when the
+	 * identifier is unknown, but actively misleading once several projects can
+	 * share one identifier and the event simply matched none of them.
+	 *
+	 * Optional by design: adapters that never share an identifier keep their
+	 * existing behaviour with no change, and the processor falls back to
+	 * `resolveProject` plus the original message.
+	 */
+	resolveProjectWithReason?(event: ParsedWebhookEvent): Promise<ProjectResolution>;
 
 	/**
 	 * Run the authoritative trigger dispatch inside platform credential scope.
