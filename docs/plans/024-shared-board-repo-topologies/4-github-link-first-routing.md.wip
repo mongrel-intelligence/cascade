@@ -6,7 +6,8 @@ plan_slug: github-link-first-routing
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [1-schema-and-resolver-seam.md]
-status: pending
+status: wip
+locked_at: e83e7d909270c32ef1b5968dfb4ae3783f32ed5c
 ---
 
 # 024/4: GitHub link-first routing and repo-sharing validation
