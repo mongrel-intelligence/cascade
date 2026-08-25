@@ -115,6 +115,16 @@ describe('open-source readiness', () => {
 		it('requires Node.js 22+', () => {
 			expect(pkg.engines.node).toBe('>=22.0.0');
 		});
+
+		it('root and web/ share the same zod major', () => {
+			// web/tsconfig.json compiles ../src/api and ../src/db; if the majors diverge,
+			// z.infer<> silently computes different types in backend vs frontend compilation.
+			const webPkg = JSON.parse(readRoot('web/package.json'));
+			const major = (range: string) => range.replace(/^[^\d]*/, '').split('.')[0];
+			expect(major(webPkg.dependencies.zod), 'bump zod in root and web/ together').toBe(
+				major(pkg.dependencies.zod),
+			);
+		});
 	});
 
 	describe('config/projects.json', () => {

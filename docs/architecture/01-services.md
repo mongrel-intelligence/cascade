@@ -139,6 +139,10 @@ The security scrub in step 8 prevents agent engines (which execute arbitrary LLM
 - **Webhook jobs** (`trello`, `github`, `jira`, `linear`, `sentry`) — call the provider-specific webhook processor, which re-runs trigger dispatch and executes the matched agent
 - **Dashboard jobs** (`manual-run`, `retry-run`, `debug-analysis`) — call `processDashboardJob()`, which loads project config and invokes the appropriate runner
 
+### Repository checkout
+
+Workers clone the target repository at runtime (`src/agents/shared/repository.ts` → `src/utils/repo.ts`); nothing from the host is mounted. When the job carries a `prNumber`, `setupRepository` fetches `+refs/pull/<N>/head:refs/remotes/pr/<N>` from `origin`, checks out `pr/<N>` detached, and — when `headSha` is also set — verifies that `git rev-parse HEAD` matches. This works for same-repo and external-fork PRs alike; the legacy `prBranch` field is kept for log readability but does not drive checkout, because fork branches do not exist on `origin` and a by-name checkout silently 404s. Any non-zero git exit throws — there is no warn-and-continue.
+
 ## Dashboard
 
 **Entry point**: `src/dashboard.ts`

@@ -181,7 +181,7 @@ cascade projects update <id> --rebuild-worker-image      # rebuild against a ref
 cascade projects update <id> --clear-dockerfile          # revert to the global default
 ```
 
-For deeper documentation on all of these topics, see [CLAUDE.md](./CLAUDE.md).
+For deeper documentation on all of these topics, see [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) and [Getting Started](./docs/getting-started.md).
 
 ---
 
