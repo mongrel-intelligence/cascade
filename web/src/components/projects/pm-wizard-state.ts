@@ -97,6 +97,11 @@ export interface WizardState {
 	jiraIssueTypes: Record<string, string>;
 	jiraLabels: Record<string, string>;
 	jiraCostFieldId: string;
+	// Spec 024: which issues on a shared JIRA project key belong to this
+	// project. Empty = the key's default owner, which is every project that
+	// does not share a key.
+	jiraRoutingKind: '' | 'label' | 'component';
+	jiraRoutingValue: string;
 	// Linear mappings
 	linearStatusMappings: Record<string, string>;
 	linearLabels: Record<string, string>;

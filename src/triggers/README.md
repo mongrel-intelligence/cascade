@@ -179,9 +179,10 @@ processPMWebhook(integration, payload, registry)
 ### GitHub webhook
 
 ```
-processGitHubWebhook(payload, eventType, registry, ackCommentId, triggerResult)
+processGitHubWebhook(payload, eventType, registry, ackCommentId, triggerResult, ..., projectId)
   └─ integration.parseWebhookPayload(payload)       → event
-  └─ integration.lookupProject(event.repo)          → project
+  └─ loadProjectConfigById(projectId)               → project   (link-first, spec 024;
+       falls back to integration.lookupProject(event.repo) for pre-024 jobs)
   └─ resolveTriggerResult(registry, ctx, triggerResult)   → result
   └─ check-suite handlers inspect aggregate check-run state before dispatch
   └─ maybePostAckComment(result, ...)               → PR or PM ack

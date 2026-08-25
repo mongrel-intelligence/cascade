@@ -30,6 +30,9 @@ describe('jiraManifest.wizardSpec', () => {
 			'credentials',
 			'container-pick',
 			'status-mapping',
+			// Spec 024 plan 5: the shared-key routing discriminator, placed after
+			// status mapping so it reads as a peer of the other scoping steps.
+			'custom',
 			'label-mapping',
 			'custom-field-mapping',
 			'custom',
@@ -37,10 +40,12 @@ describe('jiraManifest.wizardSpec', () => {
 		]);
 	});
 
-	it('includes a custom step resolving to IssueTypeMappingStep', () => {
+	it('resolves its custom steps to provider-owned components', () => {
 		const customSteps = (jiraManifest.wizardSpec?.steps ?? []).filter((s) => s.kind === 'custom');
-		expect(customSteps).toHaveLength(1);
-		expect((customSteps[0] as CustomStep).component).toBe('IssueTypeMappingStep');
+		expect(customSteps.map((s) => (s as CustomStep).component)).toEqual([
+			'RoutingStep',
+			'IssueTypeMappingStep',
+		]);
 	});
 
 	it('each step has a stable id', () => {

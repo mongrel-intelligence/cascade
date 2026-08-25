@@ -64,6 +64,15 @@ interface JiraConfig {
 	statuses: Record<string, string>;
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };
+	/**
+	 * Spec 024: which issues on a shared project key belong to this project.
+	 * Scopes what this adapter READS (JQL) and stamps what it WRITES, so the
+	 * two stay symmetric — an item this project creates carries the attribute
+	 * that routes its future events back here.
+	 */
+	routing?: {
+		discriminator: { kind: 'label' | 'component'; value: string };
+	};
 }
 
 /** Partial shape of a JIRA comment from the API */
@@ -216,7 +225,7 @@ export class JiraPMProvider implements PMProvider {
 				summary: config.title,
 				description: config.description ? markdownToAdf(config.description) : undefined,
 				issuetype: { name: issueType },
-				...(config.labels?.length ? { labels: config.labels } : {}),
+				...this.stampDiscriminator(config.labels),
 			});
 		} catch (err) {
 			throw await this.enrichCreateIssueError(err, projectKey, issueType);
@@ -288,6 +297,45 @@ export class JiraPMProvider implements PMProvider {
 		}
 	}
 
+	/**
+	 * The JQL fragment that narrows a shared board to this project's slice.
+	 *
+	 * Empty when no discriminator is configured, which keeps every existing
+	 * project's query byte-identical. The value is double-quoted for the same
+	 * reason the status clause is: an unquoted multi-word value would be parsed
+	 * as JQL syntax rather than as a value.
+	 */
+	private discriminatorJqlClause(): string {
+		const d = this.config.routing?.discriminator;
+		if (!d) return '';
+		const field = d.kind === 'label' ? 'labels' : 'component';
+		return ` AND ${field} = "${d.value}"`;
+	}
+
+	/**
+	 * Apply this project's discriminator to an issue it is creating, so the
+	 * events that issue later emits route back here rather than to a sibling.
+	 *
+	 * Labels dedupe — a caller that already passed the discriminator (a retry,
+	 * or a caller that knows the config) must not produce it twice. Components
+	 * are set outright, and the key is omitted entirely when unset: JIRA rejects
+	 * `components: []` on projects that have no components configured.
+	 */
+	private stampDiscriminator(labels: string[] | undefined): {
+		labels?: string[];
+		components?: Array<{ name: string }>;
+	} {
+		const d = this.config.routing?.discriminator;
+		if (d?.kind === 'label') {
+			const merged = labels?.includes(d.value) ? labels : [...(labels ?? []), d.value];
+			return { labels: merged };
+		}
+		const stamped: { labels?: string[]; components?: Array<{ name: string }> } = {};
+		if (labels?.length) stamped.labels = labels;
+		if (d?.kind === 'component') stamped.components = [{ name: d.value }];
+		return stamped;
+	}
+
 	async listWorkItems(
 		containerId: ContainerId | undefined,
 		filter?: ListWorkItemsFilter,
@@ -309,6 +357,9 @@ export class JiraPMProvider implements PMProvider {
 			const native = this.config.statuses?.[filter.status] ?? filter.status;
 			jql += ` AND status = "${native}"`;
 		}
+		// Must land BEFORE the ORDER BY: JQL requires the sort clause last, so an
+		// appended-at-the-end filter would be a syntax error rather than a filter.
+		jql += this.discriminatorJqlClause();
 		jql += ' ORDER BY created DESC';
 		const issues = await jiraClient.searchIssues(jql);
 		return issues.map((issue: JiraSearchIssue) => ({

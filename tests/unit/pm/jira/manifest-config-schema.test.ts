@@ -83,6 +83,48 @@ describe('jiraConfigSchema', () => {
 	});
 });
 
+describe('jiraConfigSchema — routing discriminator (spec 024)', () => {
+	const parse = (discriminator: unknown) =>
+		jiraConfigSchema.safeParse({
+			projectKey: 'SHARED',
+			baseUrl: 'https://test.atlassian.net',
+			statuses: {},
+			routing: { discriminator },
+		});
+
+	it('accepts a well-formed label discriminator', () => {
+		expect(parse({ kind: 'label', value: 'team-be' }).success).toBe(true);
+	});
+
+	it('accepts a component name containing spaces', () => {
+		// Components are free text and routinely contain spaces; only labels
+		// forbid them.
+		expect(parse({ kind: 'component', value: 'Payments API' }).success).toBe(true);
+	});
+
+	it('rejects a value containing a double quote', () => {
+		// The read path interpolates this into JQL inside double quotes. With AND
+		// binding tighter than OR, `x" OR project = "OTHER` turns the scoping
+		// clause into "(this project) OR (everything in OTHER)" — defeating the
+		// isolation the discriminator exists to provide.
+		expect(parse({ kind: 'component', value: 'x" OR project = "OTHER' }).success).toBe(false);
+	});
+
+	it('rejects a value containing a backslash', () => {
+		expect(parse({ kind: 'component', value: 'back\\slash' }).success).toBe(false);
+	});
+
+	it('rejects whitespace in a LABEL discriminator', () => {
+		// JIRA silently refuses to write a label with a space, which would leave
+		// the read clause matching nothing. Fail where the operator can see it.
+		expect(parse({ kind: 'label', value: 'team be' }).success).toBe(false);
+	});
+
+	it('rejects an empty value', () => {
+		expect(parse({ kind: 'label', value: '' }).success).toBe(false);
+	});
+});
+
 describe('jiraManifest exposes configSchema', () => {
 	it('jiraManifest.configSchema is the extracted jiraConfigSchema', () => {
 		expect(jiraManifest.configSchema).toBe(jiraConfigSchema);

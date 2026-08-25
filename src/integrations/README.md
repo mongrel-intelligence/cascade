@@ -143,6 +143,183 @@ The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatform
 
 ---
 
+## Shared-key routing contract
+
+CASCADE historically assumed one project per PM board. The JIRA router resolved
+a project by **first match** on `projectKey`, so a second project on the same key
+never received an event — no error, no log, nothing in the webhook decision
+reason to suggest a second project existed. Spec 024 replaces that guess with an
+explicit decision over the whole sibling set.
+
+### The discriminator
+
+An optional field on the JIRA integration config says which issues on a shared
+key belong to a project:
+
+```jsonc
+{ "projectKey": "CLFX", "routing": { "discriminator": { "kind": "label", "value": "team-be" } } }
+```
+
+`kind` is `label` or `component`. Matching is **exact and case-sensitive** —
+JIRA labels are case-sensitive, and a near-miss must fail loudly rather than
+route another team's work to you.
+
+### Sharing is opt-in
+
+If **no** project on a key declares a discriminator, the key keeps pre-024
+first-match routing — plus a `WARN` and a Sentry capture tagged
+**`pm_shared_key_unconfigured`** naming the project that wins and the ones being
+shadowed (once per key per process).
+
+This is deliberate. A pre-024 deployment with two projects on one key can only
+be in that state — the field did not exist — and applying the strict matrix to
+it would turn *"one project works, the other is shadowed"* into *"nothing works
+at all"*, and before plan 5 there was no wizard field to fix it with. The
+shadowing bug stays,
+but stops being silent. The strict matrix engages the moment **any** project on
+the key declares a discriminator.
+
+Save-time validation follows the same rule: a project **already registered** on
+a key may be re-saved even in a legacy duplicate state (it did not create the
+conflict), while a **new** project claiming a taken key without a discriminator
+is still rejected.
+
+### Resolution order
+
+Once opted in, `resolveProjectAmongSiblings` (`pm/_shared/project-routing.ts`)
+decides. It is pure and provider-agnostic, so Trello and Linear can adopt it
+unchanged:
+
+| Situation | Outcome |
+|---|---|
+| One sibling, no discriminator | **route** — the 1:1 topology, untouched |
+| Exactly one discriminator matches | **route** to that sibling |
+| More than one matches | **skip** `ambiguous` |
+| Nothing matches, exactly one sibling has no discriminator | **route** to it (the default) |
+| Nothing matches, several siblings have no discriminator | **skip** `ambiguous` |
+| Nothing matches, every sibling is discriminated | **skip** `no_match` |
+
+A lone sibling that **has** a discriminator does not get the 1:1 shortcut: it
+asked to be scoped, so an issue outside its scope is not handed to it merely for
+lack of a rival. Nothing is ever awarded by position — that is the silent
+misrouting this module exists to end.
+
+### Where a skip surfaces
+
+`JiraRouterAdapter.resolveProjectWithReason` (the optional adapter hook added by
+spec 024) returns the resolver's message, and `webhook-processor` records it as
+the webhook-log **decision reason**. That is the operator's diagnosis surface:
+it names the key and every discriminator evaluated, instead of the previous
+`No project config for identifier CLFX` — which was actively misleading, since
+config existed and simply matched nothing.
+
+The hook is optional. Adapters that never share an identifier omit it and keep
+today's message verbatim.
+
+Ambiguity additionally captures Sentry under tag **`pm_routing_ambiguous`**,
+deduped per issue per process — the same misconfiguration re-fires on every
+webhook for that issue.
+
+An event with no owning project also gets **no ack reaction**: acknowledging
+something about to be skipped tells the operator the opposite of the truth.
+
+### Scoping & stamping
+
+Routing alone makes sharing only half true. A scoped project must also see and
+produce only its own slice, or its agents pick up the sibling team's work and
+the issues it creates carry nothing to route their future events back.
+
+**Reads** — `listWorkItems` appends the discriminator to its JQL:
+
+| Discriminator | Clause |
+|---|---|
+| `label` / `team-be` | `AND labels = "team-be"` |
+| `component` / `Backend` | `AND component = "Backend"` |
+
+The clause lands **before** the `ORDER BY` — JQL requires the sort clause last,
+so an appended-at-the-end filter is a syntax error, not a filter. Values are
+double-quoted for the same reason the status clause quotes them: an unquoted
+multi-word value parses as syntax rather than as a value. With no discriminator
+the query is byte-identical to before spec 024.
+
+**Writes** — `createWorkItem` stamps every item the project creates, so friction
+reports, alert cards, and split children all route back on their own. A label
+discriminator is **dedup-appended** to the caller's labels (a retry, or a caller
+that already knows the config, must not produce it twice); a component
+discriminator sets `components`. The `components` key is omitted entirely when
+unset, because JIRA rejects `components: []` on projects that have none
+configured.
+
+Matching is exact and case-sensitive on both sides, so a label stamped on write
+is found by the read clause verbatim.
+
+> ⚠️ **A component discriminator must name a component that already exists on
+> the JIRA project.** Unlike labels, which JIRA creates on first use, an unknown
+> component makes `createIssue` fail with a 400 — and the resulting error
+> currently blames the issue-type mapping, because that is what
+> `enrichCreateIssueError` is written to diagnose. Create the component in JIRA
+> first, or use a label discriminator.
+
+The discriminator value is validated at save time: no `"` or `\` (both would
+break out of the quoted JQL value), and no whitespace for a **label**
+discriminator, since JIRA refuses to write such a label and the read clause
+would then match nothing.
+
+### Setting it up
+
+**Two teams, one JIRA board.**
+
+1. Decide the attribute that tells the teams' issues apart. A **label** is the
+   usual choice — JIRA creates labels on demand. A **component** also works but
+   must already exist on the JIRA project; JIRA will not create it, and the
+   resulting `createIssue` failure reports an issue-type problem rather than a
+   component one.
+2. In each project's PM wizard, open **Team routing** and set the kind and value
+   (`team-backend`, `Payments API`, …). Leave it as **None** on at most one
+   project — that project becomes the key's default and receives issues carrying
+   no other team's discriminator. A **new** project claiming a key that already
+   has a default is rejected at save time; two projects that were *already* on
+   the key before spec 024 are grandfathered and keep first-match routing with a
+   loud `pm_shared_key_unconfigured` warning until one of them declares a
+   discriminator (see *Sharing is opt-in* above).
+3. Have the teams apply the discriminator when they file. Issues carrying
+   neither are skipped with a decision reason naming the key and every
+   discriminator evaluated — visible in the webhook log, not silent.
+
+Work CASCADE creates is stamped automatically, so friction reports, alert cards
+and split children route back to the project that made them without anyone
+labelling them by hand.
+
+**Two projects, one GitHub repository.**
+
+1. On the **SCM** tab of each project, set **Repository role**. Exactly one is
+   the **Primary**; it receives events for pull requests CASCADE did not create
+   — a human's PR, or one opened before any project claimed it.
+2. Everything else routes by link: a PR a project opened belongs to that project
+   whatever the primary is, so each project's own work comes back to it.
+
+A repository with no primary is rejected at save time, because every unlinked
+event would then go nowhere.
+
+### Save-time validation
+
+`assertJiraTopologyValid` (`pm/_shared/topology-validation.ts`) runs inside
+`upsertProjectIntegration`, so an unroutable topology cannot be saved from any
+surface. Two rules, both derived from what the resolver can decide:
+
+1. A key may have **at most one** project without a discriminator (its default).
+2. **No two** projects may claim the same discriminator.
+
+A label and a component sharing a value do not collide — they are different
+facts about an issue. Re-saving an existing project does not conflict with
+itself. Rejections name the conflicting project and say what to add.
+
+> This validator throws `TRPCError` from the repository layer — a deliberate
+> layering exception, documented at the call site, so the message stays
+> operator-facing wherever the save originates.
+
+---
+
 ## Registration at startup
 
 Every runtime surface (router, worker, CLI bootstrap, dashboard) imports a single canonical entrypoint:

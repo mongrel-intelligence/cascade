@@ -118,6 +118,9 @@ const deferredBareJob: GitHubJob = {
 	payload: {},
 	eventType: 'pull_request',
 	repoFullName: 'owner/repo',
+	// projectId is required on GitHubJob (spec 024) — a re-check job carries the
+	// project the router resolved forward so the reschedule stays link-first.
+	projectId: 'p1',
 	receivedAt: new Date().toISOString(),
 	// NOTE: triggerResult intentionally absent — this is the "bare" re-check job
 	mergeabilityRecheckAttempt: 1,
@@ -169,6 +172,7 @@ describe('GitHubJob.mergeabilityRecheckAttempt type field', () => {
 			payload: {},
 			eventType: 'pull_request',
 			repoFullName: 'owner/repo',
+			projectId: 'p1',
 			receivedAt: '',
 			mergeabilityRecheckAttempt: 1,
 		};
@@ -183,6 +187,7 @@ describe('GitHubJob.mergeabilityRecheckAttempt type field', () => {
 			payload: {},
 			eventType: 'check_suite',
 			repoFullName: 'owner/repo',
+			projectId: 'p1',
 			receivedAt: '',
 			checkSuiteRecheckAttempt: 1,
 		};

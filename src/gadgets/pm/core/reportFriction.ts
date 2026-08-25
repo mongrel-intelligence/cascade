@@ -5,7 +5,7 @@ import {
 	appendQueuedFrictionReport,
 } from '../../../friction/sidecar.js';
 import type { FrictionReport } from '../../../friction/types.js';
-import { normalizeJiraAuthType } from '../../../jira/authType.js';
+import { buildJiraConfigFromEnv } from '../../../jira/config-from-env.js';
 import type { ProjectConfig } from '../../../types/index.js';
 import {
 	FRICTION_SIDECAR_ENV_VAR,
@@ -88,15 +88,11 @@ function projectFromEnv(): ProjectConfig {
 	} as ProjectConfig;
 
 	if (base.pm?.type === 'jira') {
-		return {
-			...base,
-			jira: {
-				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
-				baseUrl: process.env.CASCADE_JIRA_BASE_URL ?? process.env.JIRA_BASE_URL ?? '',
-				authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
-				statuses: parseJsonRecord(process.env.CASCADE_JIRA_STATUSES),
-			},
-		} as ProjectConfig;
+		// Shared with the cascade-tools synthesizer. These were independent
+		// hand-picked copies until spec 024, which is exactly how the routing
+		// discriminator reached one and not the other — friction reports were
+		// then filed unstamped and routed to the wrong project on a shared board.
+		return { ...base, jira: buildJiraConfigFromEnv() } as ProjectConfig;
 	}
 	if (base.pm?.type === 'linear') {
 		return {

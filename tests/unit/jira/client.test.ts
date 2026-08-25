@@ -376,6 +376,45 @@ describe('jiraClient', () => {
 	});
 
 	describe('createIssue', () => {
+		it('forwards a components field to the REST payload', async () => {
+			// Spec 024 plan 3 stamps a component discriminator onto created issues.
+			// `createIssue` takes an open field bag, so this needs no client change
+			// — but nothing pinned that, and a future narrowing of the signature
+			// would silently drop the discriminator instead of failing to compile.
+			mockIssues.createIssue.mockResolvedValue({ id: '1', key: 'TEST-3' });
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.createIssue({
+					project: { key: 'TEST' },
+					summary: 'Scoped',
+					issuetype: { name: 'Task' },
+					components: [{ name: 'Backend' }],
+				}),
+			);
+
+			expect(mockIssues.createIssue).toHaveBeenCalledWith(
+				expect.objectContaining({
+					fields: expect.objectContaining({ components: [{ name: 'Backend' }] }),
+				}),
+			);
+		});
+
+		it('omits components entirely when none are given', async () => {
+			// JIRA rejects `components: []` on projects without components.
+			mockIssues.createIssue.mockResolvedValue({ id: '1', key: 'TEST-4' });
+
+			await withJiraCredentials(creds, () =>
+				jiraClient.createIssue({
+					project: { key: 'TEST' },
+					summary: 'Plain',
+					issuetype: { name: 'Task' },
+				}),
+			);
+
+			const sent = mockIssues.createIssue.mock.calls[0][0] as { fields: Record<string, unknown> };
+			expect(sent.fields).not.toHaveProperty('components');
+		});
+
 		it('calls createIssue with the provided fields', async () => {
 			const newIssue = { id: '10001', key: 'TEST-2' };
 			mockIssues.createIssue.mockResolvedValue(newIssue);

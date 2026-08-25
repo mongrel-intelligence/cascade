@@ -190,6 +190,27 @@ describe('notifyTimeout', () => {
 		vi.restoreAllMocks();
 	});
 
+	it('comments as the project the router resolved, not the repo first-match', async () => {
+		// The timeout comment is posted with a project's GitHub token. On a
+		// shared repository (spec 024) the repo lookup returns the PRIMARY, which
+		// need not own this PR — the comment would come from the wrong bot.
+		await notifyTimeout(
+			{
+				type: 'github',
+				source: 'github',
+				payload: { pull_request: { number: 42 } },
+				eventType: 'pull_request',
+				repoFullName: 'owner/repo',
+				projectId: 'secondary',
+				receivedAt: new Date().toISOString(),
+			} as never,
+			defaultInfo,
+		);
+
+		expect(mockFindProjectById).toHaveBeenCalledWith('secondary');
+		expect(mockFindProjectByRepo).not.toHaveBeenCalled();
+	});
+
 	describe('Trello jobs', () => {
 		const trelloJob: TrelloJob = {
 			type: 'trello',

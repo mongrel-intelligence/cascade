@@ -9,7 +9,11 @@
 
 import { isPMFocusedAgent } from '../../agents/definitions/loader.js';
 import { getProjectGitHubToken } from '../../config/projects.js';
-import { findProjectByRepo } from '../../config/provider.js';
+import {
+	findPrimaryProjectByRepo,
+	findProjectById,
+	findProjectIdByRepoPr,
+} from '../../config/provider.js';
 import {
 	isPmPostingEnabled,
 	isScmPostingEnabled,
@@ -24,6 +28,7 @@ import {
 import { withPMCredentials, withPMProvider } from '../../pm/context.js';
 import { pmRegistry } from '../../pm/registry.js';
 import { captureException } from '../../sentry.js';
+import { parsePrNumberFromRef } from '../../triggers/github/utils.js';
 import type { TriggerRegistry } from '../../triggers/registry.js';
 import type { ProjectConfig, TriggerContext, TriggerResult } from '../../types/index.js';
 import { logger } from '../../utils/logging.js';
@@ -123,6 +128,42 @@ export const PROCESSABLE_EVENTS = [
 interface GitHubParsedEvent extends ParsedWebhookEvent {
 	repoFullName: string;
 	personaIdentities?: PersonaIdentities;
+	/**
+	 * The PR this event concerns, when it concerns one (spec 024).
+	 *
+	 * Extracted at parse time because `resolveProject` receives only the parsed
+	 * event, never the payload — and on a shared repository the PR is what says
+	 * which project owns the event.
+	 */
+	prNumber?: number;
+}
+
+/**
+ * Pull the PR number out of whichever shape this event uses.
+ *
+ * `check_suite` is the one that matters most and the one easiest to miss: it
+ * carries its PRs in a nested array rather than at the top level, and it is by
+ * far the highest-volume event CASCADE routes.
+ */
+function extractEventPRNumber(p: Record<string, unknown>): number | undefined {
+	const pr = p.pull_request as Record<string, unknown> | undefined;
+	if (typeof pr?.number === 'number') return pr.number;
+
+	const issue = p.issue as Record<string, unknown> | undefined;
+	if (issue?.pull_request && typeof issue.number === 'number') return issue.number;
+
+	const suite = p.check_suite as Record<string, unknown> | undefined;
+	if (!suite) return undefined;
+	const suitePRs = suite.pull_requests as Array<Record<string, unknown>> | undefined;
+	const first = suitePRs?.[0]?.number;
+	if (typeof first === 'number') return first;
+
+	// GitHub sends an EMPTY pull_requests array when checks run on the
+	// refs/pull/N/head virtual ref instead of the named branch — see
+	// src/triggers/github/utils.ts, which documents this and already ships the
+	// parser. Without this rung the highest-volume event resolves no link at
+	// all and quietly falls back to the repository's primary.
+	return parsePrNumberFromRef(suite.head_branch as string | undefined) ?? undefined;
 }
 
 function getGitHubDeliveryId(payload: Record<string, unknown>): string | undefined {
@@ -151,11 +192,46 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	 * Resolve the ProjectConfig for the given repo, caching the result for the
 	 * lifetime of this request adapter instance.
 	 */
-	private async findProjectCached(repoFullName: string): Promise<ProjectConfig | null> {
+	private async findProjectCached(
+		repoFullName: string,
+		prNumber?: number,
+	): Promise<ProjectConfig | null> {
 		if (this.cachedProject !== undefined) return this.cachedProject;
-		const project = (await findProjectByRepo(repoFullName)) ?? null;
+		const project = await this.resolveOwningProject(repoFullName, prNumber);
 		this.cachedProject = project;
 		return project;
+	}
+
+	/**
+	 * Which project owns this event, on a repository that may be shared.
+	 *
+	 * LINK-FIRST: a PR some project has already claimed belongs to that project
+	 * regardless of which one is the repository's primary — that is what makes a
+	 * secondary project's own PRs come back to it. Everything unlinked (a human's
+	 * PR, a freshly opened one) falls back to the primary, which is also the
+	 * whole of the single-project path: one project is its repo's primary, so
+	 * this resolves to it exactly as `findProjectByRepo` used to.
+	 */
+	private async resolveOwningProject(
+		repoFullName: string,
+		prNumber?: number,
+	): Promise<ProjectConfig | null> {
+		if (prNumber !== undefined) {
+			const linkedId = await findProjectIdByRepoPr(repoFullName, prNumber);
+			if (linkedId) {
+				const linked = await findProjectById(linkedId);
+				if (linked) return linked;
+				// The link outlived the project it pointed at. Falling through to the
+				// primary keeps the event moving, but the stale row is a real problem
+				// — say so rather than resolving silently.
+				logger.warn('PR link points at a project that no longer exists', {
+					repoFullName,
+					prNumber,
+					linkedProjectId: linkedId,
+				});
+			}
+		}
+		return (await findPrimaryProjectByRepo(repoFullName)) ?? null;
 	}
 
 	/**
@@ -196,6 +272,8 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		const isCommentEvent =
 			eventType === 'issue_comment' || eventType === 'pull_request_review_comment';
 
+		const prNumber = extractEventPRNumber(p);
+
 		// Extract work item ID (PR number as string, if available)
 		let workItemId: string | undefined;
 		const pr = p.pull_request as Record<string, unknown> | undefined;
@@ -213,6 +291,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			isCommentEvent,
 			actionId: getGitHubDeliveryId(p),
 			repoFullName,
+			...(prNumber !== undefined ? { prNumber } : {}),
 		};
 	}
 
@@ -229,7 +308,11 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 		const login = commentUser?.login as string | undefined;
 		if (!login) return false;
 		try {
-			const project = await this.findProjectCached((event as GitHubParsedEvent).repoFullName);
+			const gh = event as GitHubParsedEvent;
+			// Pass the PR through: on a shared repo the personas that decide
+			// "is this our own bot?" belong to the project that owns the PR, not
+			// to whichever project happens to be the repository's primary.
+			const project = await this.findProjectCached(gh.repoFullName, gh.prNumber);
 			if (!project) return false;
 			const personas = await this.resolvePersonaCached(project.id);
 			if (!personas) return false;
@@ -241,10 +324,10 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 
 	sendReaction(event: ParsedWebhookEvent, payload: unknown): void {
 		if (!event.isCommentEvent) return;
-		const repoFullName = (event as GitHubParsedEvent).repoFullName;
+		const { repoFullName, prNumber } = event as GitHubParsedEvent;
 		void (async () => {
 			try {
-				const project = await this.findProjectCached(repoFullName);
+				const project = await this.findProjectCached(repoFullName, prNumber);
 				if (!project) {
 					logger.warn('No project found for repo, skipping GitHub reaction', { repoFullName });
 					return;
@@ -266,23 +349,30 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	}
 
 	async resolveProject(event: ParsedWebhookEvent): Promise<RouterProjectConfig | null> {
-		const repoFullName = (event as GitHubParsedEvent).repoFullName;
+		const { repoFullName, prNumber } = event as GitHubParsedEvent;
+		// Same seam as the cached lookup above, so the dispatch pipeline and loop
+		// prevention cannot disagree about who owns the event.
+		const owner = await this.findProjectCached(repoFullName, prNumber);
+		if (!owner) return null;
 		const config = await loadProjectConfig();
-		return config.projects.find((p) => p.repo === repoFullName) ?? null;
+		return config.projects.find((p) => p.id === owner.id) ?? null;
 	}
 
 	async dispatchWithCredentials(
 		event: ParsedWebhookEvent,
 		payload: unknown,
-		_project: RouterProjectConfig,
+		project: RouterProjectConfig,
 		triggerRegistry: TriggerRegistry,
 	): Promise<TriggerResult | null> {
 		const config = await loadProjectConfig();
-		const fullProject = config.fullProjects.find(
-			(fp) => fp.repo === (event as GitHubParsedEvent).repoFullName,
-		);
+		// Use the project the pipeline already resolved (spec 024). Re-resolving
+		// by repo here would take the first match, so on a shared repository the
+		// agent would run with ANOTHER project's GitHub token, PM provider and
+		// trigger context while the work-item lock is held under the linked one.
+		const fullProject = config.fullProjects.find((fp) => fp.id === project.id);
 		if (!fullProject) {
-			logger.info('No project for GitHub repo, skipping dispatch', {
+			logger.info('No full project config for GitHub webhook, skipping dispatch', {
+				projectId: project.id,
 				repoFullName: (event as GitHubParsedEvent).repoFullName,
 			});
 			return null;
@@ -451,7 +541,7 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 	buildJob(
 		event: ParsedWebhookEvent,
 		payload: unknown,
-		_project: RouterProjectConfig,
+		project: RouterProjectConfig,
 		result: TriggerResult,
 		ackResult?: AckResult,
 	): CascadeJob {
@@ -465,6 +555,9 @@ export class GitHubRouterAdapter implements RouterPlatformAdapter {
 			payload,
 			eventType: event.eventType,
 			repoFullName: (event as GitHubParsedEvent).repoFullName,
+			// Carry the router's decision rather than making the worker re-derive
+			// it from the repo, which cannot see which project owns the PR.
+			projectId: project.id,
 			receivedAt: new Date().toISOString(),
 			triggerResult: isDeferredRecheck ? undefined : result,
 			ackCommentId: ackResult?.commentId as number | undefined,
