@@ -39,7 +39,7 @@ npm run db:migrate
 
 ## Hard invariants
 
-- Project config and secrets live **only** in Postgres (`project_integrations`, `project_credentials`). `config/projects.json` is seed data for `npm run db:seed`, never read at runtime. Never add an env-var fallback for a project-scoped secret.
+- Project config lives **only** in Postgres (`projects`, `project_integrations`, `agent_configs`, `agent_trigger_configs`); project secrets live in `project_credentials`. `config/projects.json` is seed data for `npm run db:seed`, never read at runtime. Never add an env-var fallback for a project-scoped secret.
 - Every project has **two** GitHub personas — `GITHUB_TOKEN_IMPLEMENTER` (writes code, opens PRs) and `GITHUB_TOKEN_REVIEWER` (reviews). Both required. Every SCM trigger handler filters self-events with `isCascadeBot(login)`; the loop-prevention rules are in [10-resilience](./docs/architecture/10-resilience.md).
 - Trigger events are `{category}:{event}` (`pm:status-changed`, `scm:check-suite-success`, `alerting:issue-alert`); per-project enablement lives in `agent_trigger_configs` (`cascade projects trigger-list` / `trigger-set`).
 - Schema changes are hand-written SQL in `src/db/migrations/NNNN_description.sql` plus a `meta/_journal.json` entry (unique `when`, `tag` = filename without `.sql`), applied with `npm run db:migrate`. Never edit an applied migration; never `drizzle-kit push` against a shared database.
@@ -68,7 +68,7 @@ Nothing loads these automatically — open the area doc before editing in that p
 
 ## Keeping this file small
 
-This file is pasted into every CASCADE agent prompt (this repo runs its own agents) and loaded into every Claude Code session. CI (`tests/unit/architecture-docs.test.ts`) fails it past 200 lines or half the worker inline budget, and rejects `@` imports — workers `cat` it raw.
+This file is loaded into every Claude Code session and injected into CASCADE runs whose context pipeline includes `contextFiles`. CI (`tests/unit/architecture-docs.test.ts`) fails it past 200 lines or half the worker inline budget, and rejects `@` imports — `readContextFiles` uses its raw contents.
 
 - Universal command, gotcha or invariant → here.
 - Path-scoped gotcha → `docs/areas/<area>.md` (≤ 60 lines; link the reference doc, don't restate it).

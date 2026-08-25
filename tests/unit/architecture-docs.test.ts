@@ -19,8 +19,9 @@ const EXTRA_ACTIVE_DOCS = [
 /**
  * Instruction-file budgets.
  *
- * CLAUDE.md is loaded into every interactive Claude Code session AND `cat`-injected
- * into every CASCADE worker prompt (`src/agents/utils/setup.ts:readContextFiles`).
+ * CLAUDE.md is loaded into every interactive Claude Code session and `cat`-injected
+ * whenever a CASCADE context pipeline runs the `contextFiles` step
+ * (`src/agents/utils/setup.ts:readContextFiles`).
  * Claude Code guidance: adherence drops past ~200 lines. The worker path offloads
  * the file out of the prompt once it exceeds `CONTEXT_OFFLOAD_CONFIG.inlineThreshold`
  * (`src/backends/shared/contextFiles.ts`); we keep half of that as headroom.
@@ -313,7 +314,7 @@ describe('Architecture documentation', () => {
 			const budget = CONTEXT_OFFLOAD_CONFIG.inlineThreshold * CLAUDE_MD_INLINE_BUDGET_SHARE;
 			expect(
 				tokens,
-				`CLAUDE.md ≈ ${tokens} tokens; budget is ${budget} (${CLAUDE_MD_INLINE_BUDGET_SHARE} × CONTEXT_OFFLOAD_CONFIG.inlineThreshold). Past the threshold src/backends/shared/contextFiles.ts silently offloads it out of every worker prompt.`,
+				`CLAUDE.md ≈ ${tokens} tokens; budget is ${budget} (${CLAUDE_MD_INLINE_BUDGET_SHARE} × CONTEXT_OFFLOAD_CONFIG.inlineThreshold). Past the threshold src/backends/shared/contextFiles.ts offloads it whenever the contextFiles step runs.`,
 			).toBeLessThan(budget);
 		});
 

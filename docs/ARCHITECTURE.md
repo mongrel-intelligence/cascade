@@ -2,7 +2,7 @@
 
 CASCADE is a PM-to-Code automation platform that connects project management tools (Trello, JIRA, Linear), source control (GitHub), and monitoring (Sentry) to AI-powered agents that autonomously implement features, review PRs, debug failures, and manage backlogs. Webhooks from external providers flow through a router, get queued in Redis, and are processed by ephemeral worker containers that run agents against cloned repositories.
 
-> **Relationship to CLAUDE.md**: `CLAUDE.md` is the short entry point every agent and Claude Code session loads — commands, gotchas, hard invariants and a pointer table. `docs/areas/` holds per-area working rules (imperatives plus links, read before editing that part of the tree). This document and its deep-dives cover the *system design* — how components fit together and why.
+> **Relationship to CLAUDE.md**: `CLAUDE.md` is the short entry point loaded by Claude Code and injected through CASCADE's `contextFiles` context step — commands, gotchas, hard invariants and a pointer table. `docs/areas/` holds per-area working rules (imperatives plus links, read before editing that part of the tree). This document and its deep-dives cover the *system design* — how components fit together and why.
 
 ## System Overview
 
