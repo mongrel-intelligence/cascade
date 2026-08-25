@@ -24,6 +24,11 @@ vi.mock('../../../../src/db/repositories/runsRepository.js', () => ({
 	listProjectsForOrg: vi.fn(),
 }));
 
+vi.mock('../../../../src/db/repositories/configRepository.js', () => ({
+	// Spec 024: create/update now consult the repository's siblings to settle
+	// primacy. These suites are not about topology — no siblings, no conflict.
+	findRepoSiblingsFromDb: vi.fn().mockResolvedValue([]),
+}));
 vi.mock('../../../../src/db/repositories/settingsRepository.js', () => ({
 	listProjectsFull: vi.fn(),
 	getProjectFull: vi.fn(),

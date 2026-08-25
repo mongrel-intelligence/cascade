@@ -66,7 +66,9 @@ npx vitest run tests/unit/triggers/trello/status-changed.test.ts
 TEST_DATABASE_URL=... npx vitest run --project integration tests/integration/<file>.test.ts
 ```
 
-Documentation drift guards live in `tests/unit/architecture-docs.test.ts` and run under `unit-core`. They check architecture deep-dive structure, active Markdown relative links (including links to archived `.md.done` specs), canonical trigger names such as `alerting:issue-alert`, current `cascade-tools` namespaces, and `CLAUDE.md`/`AGENTS.md` synchronization.
+The integration project discovers its database in this order (`tests/integration/helpers/db.ts`): `TEST_DATABASE_URL` in the environment → `TEST_DATABASE_URL` in `.cascade/env` → the Docker Compose Postgres at `127.0.0.1:5433` (`npm run test:db:up`) → the `cascade-postgres-test` container IP. The database is created if missing. **If none is reachable, integration tests silently skip** — check the run summary, not just the exit code. The full suite takes ~4 min; target one file while iterating.
+
+Documentation drift guards live in `tests/unit/architecture-docs.test.ts` and run under `unit-core`. They check architecture deep-dive structure, active Markdown relative links (including links to archived `.md.done` specs), canonical trigger names such as `alerting:issue-alert`, current `cascade-tools` namespaces, `CLAUDE.md`/`AGENTS.md` synchronization, and the instruction-file budget: `CLAUDE.md` must stay under 200 lines and under half of `CONTEXT_OFFLOAD_CONFIG.inlineThreshold` because CASCADE's `contextFiles` step injects it inline, must not use `@` imports, and — together with `docs/areas/*.md` — must not carry ticket IDs, spec numbers or dates; every area doc must be ≤ 60 lines, open with an `**Applies to:**` scope line, and be linked from `CLAUDE.md`.
 
 ---
 

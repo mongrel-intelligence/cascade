@@ -15,6 +15,14 @@ export interface RouterProjectConfig {
 	jira?: {
 		projectKey: string;
 		baseUrl: string;
+		/**
+		 * Spec 024: which issues on a shared project key belong to this project.
+		 * Absent ⇒ this project is the key's default. Must be threaded through
+		 * the projection below or the router cannot route by it at all.
+		 */
+		routing?: {
+			discriminator: { kind: 'label' | 'component'; value: string };
+		};
 	};
 	linear?: {
 		teamId: string;
@@ -131,6 +139,11 @@ export async function loadProjectConfig(): Promise<{
 							jira: {
 								projectKey: jiraConfig.projectKey,
 								baseUrl: jiraConfig.baseUrl,
+								// Hand-picked projection: a field omitted here is invisible to
+								// the router no matter what the DB holds. Same drift class as
+								// configMapper.buildJiraConfig (spec 024 plan 1) and MNG-1736's
+								// authType — the JIRA config crosses three such projections.
+								...(jiraConfig.routing && { routing: jiraConfig.routing }),
 							},
 						}),
 						...(linearConfig && {

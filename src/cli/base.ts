@@ -1,9 +1,12 @@
 import { execFileSync } from 'node:child_process';
-
 import { Command } from '@oclif/core';
 import { withGitHubToken } from '../github/client.js';
-import { normalizeJiraAuthType } from '../jira/authType.js';
 import { withJiraCredentials } from '../jira/client.js';
+import {
+	buildJiraConfigFromEnv,
+	resolveJiraAuthTypeFromEnv,
+	resolveJiraBaseUrlFromEnv,
+} from '../jira/config-from-env.js';
 import { withLinearCredentials } from '../linear/client.js';
 import { createPMProvider, withPMProvider } from '../pm/index.js';
 import type { PMType } from '../pm/types.js';
@@ -11,7 +14,7 @@ import { withTrelloCredentials } from '../trello/client.js';
 import type { ProjectConfig } from '../types/index.js';
 
 export function resolveJiraBaseUrl(): string | undefined {
-	return process.env.JIRA_BASE_URL || process.env.CASCADE_JIRA_BASE_URL;
+	return resolveJiraBaseUrlFromEnv();
 }
 
 /**
@@ -57,7 +60,7 @@ function wrapWithCredentialScopes(fn: () => Promise<void>): () => Promise<void> 
 		const prev = fn;
 		// Carry the injected JIRA auth mode into the credential scope so
 		// in-worker JIRA calls choose the correct host. Absent/unknown ⇒ 'basic'.
-		const jiraAuthType = normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE);
+		const jiraAuthType = resolveJiraAuthTypeFromEnv();
 		fn = () =>
 			withJiraCredentials(
 				{ email: jiraEmail, apiToken: jiraApiToken, baseUrl: jiraBaseUrl, authType: jiraAuthType },
@@ -91,19 +94,19 @@ function resolvePmType(): PMType {
  * Synthesize a minimal ProjectConfig shell from `CASCADE_*` env vars so
  * `createPMProvider` can construct the in-scope provider. Worker-spawned CLI
  * commands receive these env vars from `secretBuilder.augmentProjectSecrets`.
+ *
+ * There is no DB path here, so a field `augmentProjectSecrets` does not emit
+ * simply does not exist inside the worker — see `jira/config-from-env.ts`,
+ * which owns the JIRA half so this and the friction gadget cannot drift.
+ *
+ * Exported so the round trip can be tested against the real projection on both
+ * ends rather than a hand-built config on either.
  */
-function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
+export function synthesizeProjectFromEnv(pmType: PMType): ProjectConfig {
 	if (pmType === 'jira') {
-		const jiraStatuses = process.env.CASCADE_JIRA_STATUSES;
-		const jiraBaseUrl = resolveJiraBaseUrl();
 		return {
 			pm: { type: 'jira' },
-			jira: {
-				projectKey: process.env.CASCADE_JIRA_PROJECT_KEY ?? '',
-				baseUrl: jiraBaseUrl ?? '',
-				authType: normalizeJiraAuthType(process.env.CASCADE_JIRA_AUTH_TYPE),
-				statuses: jiraStatuses ? JSON.parse(jiraStatuses) : {},
-			},
+			jira: buildJiraConfigFromEnv(),
 		} as ProjectConfig;
 	}
 	if (pmType === 'linear') {

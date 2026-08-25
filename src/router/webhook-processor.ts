@@ -81,16 +81,22 @@ export async function processRouterWebhook(
 	// Step 5: Fire acknowledgment reaction (fire-and-forget)
 	adapter.sendReaction(event, payload);
 
-	// Step 6: Resolve project config
-	const project = await adapter.resolveProject(event);
+	// Step 6: Resolve project config. Adapters whose identifiers can be shared
+	// implement `resolveProjectWithReason` so a miss explains itself; the rest
+	// keep the original path and message unchanged (spec 024).
+	const resolution = adapter.resolveProjectWithReason
+		? await adapter.resolveProjectWithReason(event)
+		: { project: await adapter.resolveProject(event), reason: undefined };
+	const project = resolution.project;
 	if (!project) {
+		const decisionReason =
+			resolution.reason ??
+			`No project config for identifier ${event.projectIdentifier ?? '(unknown)'}`;
 		logger.info(`No project config found for ${adapter.type} event`, {
 			projectIdentifier: event.projectIdentifier,
+			decisionReason,
 		});
-		return {
-			shouldProcess: true,
-			decisionReason: `No project config for identifier ${event.projectIdentifier ?? '(unknown)'}`,
-		};
+		return { shouldProcess: true, decisionReason };
 	}
 
 	// Step 7: Dispatch triggers with credential scope

@@ -27,6 +27,13 @@ export interface JiraConfig {
 	 * mode. Absent ⇒ treated as `'basic'`. Later stories consume this field.
 	 */
 	authType?: JiraAuthType;
+	/**
+	 * Spec 024: which issues on a shared project key belong to this project.
+	 * Absent ⇒ this project is the key's default owner.
+	 */
+	routing?: {
+		discriminator: { kind: 'label' | 'component'; value: string };
+	};
 	statuses: Record<string, string>;
 	issueTypes?: Record<string, string>;
 	customFields?: { cost?: string };

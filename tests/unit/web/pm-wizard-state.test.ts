@@ -105,6 +105,10 @@ describe('provider state slices', () => {
 			jiraIssueTypes: {},
 			jiraLabels: PROVIDER_INITIAL_JIRA_LABELS,
 			jiraCostFieldId: '',
+			// Spec 024: empty means this project owns its JIRA key outright, which
+			// is every project that does not share one.
+			jiraRoutingKind: '',
+			jiraRoutingValue: '',
 		});
 	});
 

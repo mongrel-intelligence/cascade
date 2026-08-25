@@ -41,6 +41,22 @@ vi.mock('../../../src/triggers/github/integration.js', () => {
 	return { GitHubWebhookIntegration: vi.fn().mockImplementation(() => mockIntegration) };
 });
 
+// Spec 024: when the router stamps a projectId the worker resolves the project
+// link-first via loadProjectConfigById, not by repo. Returns an id distinct from
+// the repo-lookup mock above so the two paths can be told apart in assertions.
+vi.mock('../../../src/config/provider.js', () => ({
+	loadProjectConfigById: vi.fn().mockResolvedValue({
+		project: {
+			id: 'linked-project',
+			name: 'Linked',
+			repo: 'owner/repo',
+			baseBranch: 'main',
+			watchdogTimeoutMs: 120000,
+		},
+		config: { projects: [] },
+	}),
+}));
+
 vi.mock('../../../src/github/personas.js', () => ({
 	getPersonaToken: vi.fn().mockResolvedValue('gh-token-xxx'),
 	resolvePersonaIdentities: vi
@@ -101,6 +117,7 @@ vi.mock('../../../src/utils/index.js', () => ({
 
 // ── Imports ───────────────────────────────────────────────────────────────────
 
+import { loadProjectConfigById } from '../../../src/config/provider.js';
 import { scheduleCoalescedJob } from '../../../src/router/queue.js';
 import { captureException } from '../../../src/sentry.js';
 import { processGitHubWebhook } from '../../../src/triggers/github/webhook-handler.js';
@@ -217,6 +234,42 @@ describe('processGitHubWebhook — check-suite re-check rescheduling', () => {
 			30_000,
 		);
 		// Must NOT fire the mergeability_recheck_exhausted Sentry capture
+		expect(captureException).not.toHaveBeenCalled();
+	});
+
+	it('carries the router-stamped projectId forward onto the rescheduled re-check (link-first, spec 024)', async () => {
+		// The reviewer's concern (PR #1545): on a shared repository the rescheduled
+		// check-suite re-check must carry the ROUTER's link-first project forward,
+		// not flip to a repo-resolved sibling. handleRecheckResult stamps
+		// requireProjectId(project); because the worker now resolves `project` via
+		// loadProjectConfigById(projectId), that id is the link-first one.
+		//
+		// Dual mutation guard: this fails if handleRecheckResult drops projectId
+		// from the rescheduled job, OR if processGitHubWebhook resolves `project`
+		// by repo (lookupProject → 'project-1') instead of link-first.
+		const registry = makeRegistry(checkSuiteDeferredRecheckResult);
+		await processGitHubWebhook(
+			{},
+			'check_suite',
+			registry,
+			undefined,
+			undefined,
+			undefined,
+			false, // isRecheckJob (mergeability) = false
+			true, // isCheckSuiteRecheckJob = true
+			'linked-project', // the router's link-first stamp
+		);
+
+		expect(loadProjectConfigById).toHaveBeenCalledWith('linked-project');
+		expect(scheduleCoalescedJob).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: 'github',
+				projectId: 'linked-project',
+				checkSuiteRecheckAttempt: 1,
+			}),
+			'check-suite-success:owner/repo:pr-42:sha123',
+			30_000,
+		);
 		expect(captureException).not.toHaveBeenCalled();
 	});
 

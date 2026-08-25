@@ -13,6 +13,10 @@ class ConfigCache {
 	private projectByRepo = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByJiraKey = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private projectByLinearTeamId = new Map<string, CacheEntry<ProjectConfig | undefined>>();
+	// Spec 024 — shared topologies. Keyed the same way as their singular
+	// counterparts; the value is the whole sibling set / the repo's primary.
+	private projectsByJiraKey = new Map<string, CacheEntry<ProjectConfig[]>>();
+	private primaryProjectByRepo = new Map<string, CacheEntry<ProjectConfig | undefined>>();
 	private orgIdByProject = new Map<string, CacheEntry<string>>();
 	private ttlMs: number;
 
@@ -63,6 +67,24 @@ class ConfigCache {
 		this.projectByJiraKey.set(projectKey, this.makeEntry(project));
 	}
 
+	getProjectsByJiraKey(projectKey: string): ProjectConfig[] | null {
+		const entry = this.projectsByJiraKey.get(projectKey);
+		return this.isValid(entry) ? entry.data : null;
+	}
+
+	setProjectsByJiraKey(projectKey: string, siblings: ProjectConfig[]): void {
+		this.projectsByJiraKey.set(projectKey, this.makeEntry(siblings));
+	}
+
+	getPrimaryProjectByRepo(repo: string): ProjectConfig | undefined | null {
+		const entry = this.primaryProjectByRepo.get(repo);
+		return this.isValid(entry) ? entry.data : null;
+	}
+
+	setPrimaryProjectByRepo(repo: string, project: ProjectConfig | undefined): void {
+		this.primaryProjectByRepo.set(repo, this.makeEntry(project));
+	}
+
 	getProjectByLinearTeamId(teamId: string): ProjectConfig | undefined | null {
 		const entry = this.projectByLinearTeamId.get(teamId);
 		return this.isValid(entry) ? entry.data : null;
@@ -87,6 +109,8 @@ class ConfigCache {
 		this.projectByRepo.clear();
 		this.projectByJiraKey.clear();
 		this.projectByLinearTeamId.clear();
+		this.projectsByJiraKey.clear();
+		this.primaryProjectByRepo.clear();
 		this.orgIdByProject.clear();
 	}
 }

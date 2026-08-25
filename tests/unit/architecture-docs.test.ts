@@ -1,11 +1,14 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
+import { CONTEXT_OFFLOAD_CONFIG } from '../../src/config/claudeCodeConfig.js';
+import { estimateTokens } from '../../src/config/reviewConfig.js';
 import { TRIGGER_EVENTS } from '../../src/triggers/shared/events.js';
 
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const DOCS_ROOT = path.resolve(__dirname, '../../docs');
 const ARCH_DIR = path.join(DOCS_ROOT, 'architecture');
-const ROOT_DOCS = ['README.md', 'CLAUDE.md', 'AGENTS.md'];
+const AREAS_DIR = path.join(DOCS_ROOT, 'areas');
+const ROOT_DOCS = ['README.md', 'CLAUDE.md', 'AGENTS.md', 'SECURITY.md', 'CONTRIBUTING.md'];
 const EXTRA_ACTIVE_DOCS = [
 	'src/integrations/README.md',
 	'src/gadgets/README.md',
@@ -13,8 +16,36 @@ const EXTRA_ACTIVE_DOCS = [
 	'tests/README.md',
 ];
 
+/**
+ * Instruction-file budgets.
+ *
+ * CLAUDE.md is loaded into every interactive Claude Code session and `cat`-injected
+ * whenever a CASCADE context pipeline runs the `contextFiles` step
+ * (`src/agents/utils/setup.ts:readContextFiles`).
+ * Claude Code guidance: adherence drops past ~200 lines. The worker path offloads
+ * the file out of the prompt once it exceeds `CONTEXT_OFFLOAD_CONFIG.inlineThreshold`
+ * (`src/backends/shared/contextFiles.ts`); we keep half of that as headroom.
+ */
+const CLAUDE_MD_MAX_LINES = 200;
+const CLAUDE_MD_INLINE_BUDGET_SHARE = 0.5;
+/** Area docs are pointer layers: imperatives + links, never restatements. */
+const AREA_DOC_MAX_LINES = 60;
+/** Ticket IDs, spec/plan numbers and dates are history — they belong in CHANGELOG.md. */
+const NARRATIVE_PATTERNS = [
+	/\bMNG-\d+\b/,
+	/\bspec[ -]?\d{3}\b/i,
+	/\bplan \d{3}\b/i,
+	/\b20\d{2}-\d{2}-\d{2}\b/,
+];
+/** `@path` outside code spans is a Claude Code import; workers never expand it. */
+const CLAUDE_MD_IMPORT_PATTERN = /(^|\s)@(?:[~.]{0,2}\/\S+|[\w.-]+(?:\/\S+|\.md\b))/m;
+
 function readDoc(filePath: string): string {
 	return readFileSync(filePath, 'utf-8');
+}
+
+function stripCode(content: string): string {
+	return content.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
 }
 
 function extractMarkdownLinks(content: string): string[] {
@@ -257,14 +288,79 @@ describe('Architecture documentation', () => {
 				path.join(ARCH_DIR, '10-resilience.md'),
 				path.join(REPO_ROOT, 'src/integrations/README.md'),
 				path.join(REPO_ROOT, 'src/gadgets/README.md'),
-				path.join(REPO_ROOT, 'CLAUDE.md'),
-				path.join(REPO_ROOT, 'AGENTS.md'),
 				path.join(REPO_ROOT, 'CHANGELOG.md'),
 			];
 			const combined = docs.map(readDoc).join('\n');
 
 			for (const fact of requiredFacts) {
 				expect(combined, `friction docs should mention ${fact}`).toContain(fact);
+			}
+		});
+	});
+
+	describe('instruction files (CLAUDE.md + docs/areas)', () => {
+		const claudePath = path.join(REPO_ROOT, 'CLAUDE.md');
+		const claude = readDoc(claudePath);
+		const areaDocs = existsSync(AREAS_DIR) ? listMarkdownDocs(AREAS_DIR) : [];
+
+		it('CLAUDE.md stays inline for CASCADE workers and under the Claude Code line guidance', () => {
+			const lines = claude.split('\n').length;
+			expect(
+				lines,
+				`CLAUDE.md is ${lines} lines; keep it ≤ ${CLAUDE_MD_MAX_LINES} — move path-scoped content to docs/areas/`,
+			).toBeLessThanOrEqual(CLAUDE_MD_MAX_LINES);
+
+			const tokens = estimateTokens(claude);
+			const budget = CONTEXT_OFFLOAD_CONFIG.inlineThreshold * CLAUDE_MD_INLINE_BUDGET_SHARE;
+			expect(
+				tokens,
+				`CLAUDE.md ≈ ${tokens} tokens; budget is ${budget} (${CLAUDE_MD_INLINE_BUDGET_SHARE} × CONTEXT_OFFLOAD_CONFIG.inlineThreshold). Past the threshold src/backends/shared/contextFiles.ts offloads it whenever the contextFiles step runs.`,
+			).toBeLessThan(budget);
+		});
+
+		it('CLAUDE.md has no @-imports outside code spans', () => {
+			expect(
+				stripCode(claude),
+				'CASCADE workers cat CLAUDE.md raw, so @imports never expand there (and Claude Code loads them at launch anyway). Link the file in the pointer table instead.',
+			).not.toMatch(CLAUDE_MD_IMPORT_PATTERN);
+		});
+
+		it('CLAUDE.md and area docs carry no incident narrative', () => {
+			for (const filePath of [claudePath, ...areaDocs]) {
+				const content = readDoc(filePath);
+				for (const pattern of NARRATIVE_PATTERNS) {
+					expect(
+						content,
+						`${filePath} should not match ${pattern} — ticket IDs, spec numbers and dates belong in CHANGELOG.md`,
+					).not.toMatch(pattern);
+				}
+			}
+		});
+
+		it('docs/areas exists and every area doc is short and declares its scope', () => {
+			expect(areaDocs.length, 'docs/areas/ should hold at least one area doc').toBeGreaterThan(0);
+			for (const filePath of areaDocs) {
+				const content = readDoc(filePath);
+				const lines = content.split('\n').length;
+				expect(
+					lines,
+					`${filePath} is ${lines} lines; keep area docs ≤ ${AREA_DOC_MAX_LINES} — link the reference doc instead of restating it`,
+				).toBeLessThanOrEqual(AREA_DOC_MAX_LINES);
+
+				const firstBodyLine = content
+					.split('\n')
+					.find((line) => line.trim() && !line.startsWith('# '));
+				expect(
+					firstBodyLine,
+					`${filePath} should open with an "**Applies to:**" scope line`,
+				).toMatch(/^\*\*Applies to:\*\*/);
+			}
+		});
+
+		it('CLAUDE.md links every area doc', () => {
+			for (const filePath of areaDocs) {
+				const rel = `./docs/areas/${path.basename(filePath)}`;
+				expect(claude, `CLAUDE.md should point at ${rel}`).toContain(rel);
 			}
 		});
 	});

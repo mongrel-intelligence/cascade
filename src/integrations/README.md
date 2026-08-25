@@ -4,13 +4,7 @@
 
 CASCADE's PM providers (Trello, JIRA, Linear, and any future Asana/GitLab/ClickUp) are built on a **provider manifest** pattern. One file describes the provider end-to-end; one registry iterates manifests; a behavioral conformance harness guarantees each manifest satisfies its declared contracts.
 
-This document is the canonical guide for adding a new PM provider. Five specs shape it:
-
-- **Spec [006](../../docs/specs/006-pm-integration-plug-and-play.md.done)** — introduced the manifest pattern + wiring-level conformance (2026-04-15/16).
-- **Spec [009](../../docs/specs/009-pm-integration-hardening.md.done)** — hardened the contracts: branded ID types, manifest-owned config schemas (eliminating the #1138/#1142 drift class), unified `pm.discover` endpoint, behavioral conformance harness with in-memory lifecycle scenario, single registration entrypoint, and auth-header provenance enforcement.
-- **Spec [010](../../docs/specs/010-pm-integration-hardening-followups.md.done)** — follow-up cleanup: generic `pm.discovery.createLabel` / `createCustomField` mutation endpoints + manifest hooks, `currentUser` discovery capability, real shared React components for every `StandardStepKind`.
-- **Spec [011](../../docs/specs/011-pm-wizard-shared-migration.md.done)** — migrated all three production providers (Trello, JIRA, Linear) onto the shared step components; added a 7th `StandardStepKind: custom-field-mapping`; widened `container-pick` / `project-scope` / `webhook-url-display` with optional props; deleted the three legacy `pm-wizard-{trello,jira,linear}-steps.tsx` files.
-- **Spec [012](../../docs/specs/012-pm-webhook-manifest-migration.md.done)** — migrated each provider's webhook UX (programmatic create for Trello/JIRA, signing-secret + manual-setup for Linear) into its own manifest webhook step adapter. Deleted the legacy `WebhookStep` + `LinearWebhookInfoPanel` + supporting hooks. Every PM wizard step now renders via the manifest path without exception.
+This document is the canonical guide for adding a new PM provider. The history of how the contract evolved lives in [`CHANGELOG.md`](../../CHANGELOG.md).
 
 ---
 
@@ -62,9 +56,9 @@ See [`src/integrations/pm/manifest.ts`](./pm/manifest.ts) for the authoritative 
 | `isSelfAuthoredHook?` | Optional — returns `true` when the event was authored by CASCADE itself (for loop prevention). |
 | `createLabel?` | Optional — enables the wizard's "Create label" button. Called via the generic `pm.discovery.createLabel` tRPC endpoint; signature is `({credentials, containerId, name, color?}) => {id, name, color}`. |
 | `createCustomField?` | Optional — enables wizard-driven custom-field creation. Called via `pm.discovery.createCustomField`; signature is `({credentials, containerId, name}) => {id, name, type}`. JIRA fields are global (the hook ignores containerId). |
-| `configToCredentials?` | Optional — promotes non-secret connection fields from `project_integrations.config` into the credentials bag `createDiscoveryProvider` consumes. Signature: `(config: unknown) => Record<string, string>`. Invoked only on the `projectId` path of `pm.discovery.*`; `project_credentials` values win on key collisions. Declare this when your provider stores tenant/host info in config instead of credentials (JIRA's `baseUrl` → `base_url`). Without it, edit-mode wizard re-verification constructs a client with empty host info — see prod incident 2026-04-24. |
+| `configToCredentials?` | Optional — promotes non-secret connection fields from `project_integrations.config` into the credentials bag `createDiscoveryProvider` consumes. Signature: `(config: unknown) => Record<string, string>`. Invoked only on the `projectId` path of `pm.discovery.*`; `project_credentials` values win on key collisions. Declare this when your provider stores tenant/host info in config instead of credentials (JIRA's `baseUrl` → `base_url`). Without it, edit-mode wizard re-verification constructs a client with empty host info. |
 
-### Plan 009 hardened-contract fields (all optional; providers opt in)
+### Hardened-contract fields (all optional; providers opt in)
 
 | Field | What it does |
 |---|---|
@@ -72,7 +66,7 @@ See [`src/integrations/pm/manifest.ts`](./pm/manifest.ts) for the authoritative 
 | `configFixture?` | Sample config used by the harness's round-trip asserter. Must parse against `configSchema`. |
 | `discoveryCapabilities?` | `{ teams?, boards?, labels?, states?, projects?, containers?, customFields?, currentUser? }`. Each flag means "`adapter.discover(capability, args)` returns a list of that shape" (or a single `{id, name, displayName?}` object for `currentUser`). The generic `pm.discover` tRPC endpoint dispatches through this registry. |
 | `createDiscoveryProvider?` | `(opts) => PMProvider`. Factory producing a discovery-scoped adapter outside a project context (wizard setup, before the config is saved). Receives raw credentials from the wizard. |
-| `wizardSpec?` | `{ steps: Array<StandardStep \| CustomStep> }`. Declarative step list the shared wizard generator renders. Standard kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`. |
+| `wizardSpec?` | `{ steps: Array<StandardStep \| CustomStep> }`. Declarative step list the shared wizard generator renders. Standard kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`, `custom-field-mapping`. |
 | `lifecycle?` | `{ enabled: true, fixtureKey: string }`. Opts into the behavioral conformance harness's full lifecycle scenario. `fixtureKey` is looked up in the test-local `LIFECYCLE_FIXTURES` registry — the manifest doesn't import from `tests/helpers/`. |
 
 > **Discovery must return the _complete_ provider list.** A discovery capability that backs a wizard picker (e.g. `container-pick` for `projects` / `boards` / `teams`) must return **every** item from the provider, not just the first page. The dashboard picker filters **client-side** (the shared `Combobox` does the search locally), so a provider adapter that returns a truncated first page silently hides everything past it — the operator can neither see nor search for the missing entries. Provider adapters must therefore **paginate the underlying API** until it reports the last page. The reference case is JIRA's `jiraClient.searchProjects()` (`src/jira/client.ts`): JIRA's `/rest/api/3/project/search` endpoint is paginated, so the method loops on `isLast` / `startAt` (with a `MAX_PROJECT_PAGES` safety cap) to collect all projects before returning. (A server-side `query` param + async debounced picker is the scalable follow-up for orgs with thousands of items, but full pagination is the correct baseline.)
@@ -143,6 +137,183 @@ The in-worker `jiraClient` (`src/jira/client.ts`), the router-side `JiraPlatform
 
 ---
 
+## Shared-key routing contract
+
+CASCADE historically assumed one project per PM board. The JIRA router resolved
+a project by **first match** on `projectKey`, so a second project on the same key
+never received an event — no error, no log, nothing in the webhook decision
+reason to suggest a second project existed. Spec 024 replaces that guess with an
+explicit decision over the whole sibling set.
+
+### The discriminator
+
+An optional field on the JIRA integration config says which issues on a shared
+key belong to a project:
+
+```jsonc
+{ "projectKey": "CLFX", "routing": { "discriminator": { "kind": "label", "value": "team-be" } } }
+```
+
+`kind` is `label` or `component`. Matching is **exact and case-sensitive** —
+JIRA labels are case-sensitive, and a near-miss must fail loudly rather than
+route another team's work to you.
+
+### Sharing is opt-in
+
+If **no** project on a key declares a discriminator, the key keeps pre-024
+first-match routing — plus a `WARN` and a Sentry capture tagged
+**`pm_shared_key_unconfigured`** naming the project that wins and the ones being
+shadowed (once per key per process).
+
+This is deliberate. A pre-024 deployment with two projects on one key can only
+be in that state — the field did not exist — and applying the strict matrix to
+it would turn *"one project works, the other is shadowed"* into *"nothing works
+at all"*, and before plan 5 there was no wizard field to fix it with. The
+shadowing bug stays,
+but stops being silent. The strict matrix engages the moment **any** project on
+the key declares a discriminator.
+
+Save-time validation follows the same rule: a project **already registered** on
+a key may be re-saved even in a legacy duplicate state (it did not create the
+conflict), while a **new** project claiming a taken key without a discriminator
+is still rejected.
+
+### Resolution order
+
+Once opted in, `resolveProjectAmongSiblings` (`pm/_shared/project-routing.ts`)
+decides. It is pure and provider-agnostic, so Trello and Linear can adopt it
+unchanged:
+
+| Situation | Outcome |
+|---|---|
+| One sibling, no discriminator | **route** — the 1:1 topology, untouched |
+| Exactly one discriminator matches | **route** to that sibling |
+| More than one matches | **skip** `ambiguous` |
+| Nothing matches, exactly one sibling has no discriminator | **route** to it (the default) |
+| Nothing matches, several siblings have no discriminator | **skip** `ambiguous` |
+| Nothing matches, every sibling is discriminated | **skip** `no_match` |
+
+A lone sibling that **has** a discriminator does not get the 1:1 shortcut: it
+asked to be scoped, so an issue outside its scope is not handed to it merely for
+lack of a rival. Nothing is ever awarded by position — that is the silent
+misrouting this module exists to end.
+
+### Where a skip surfaces
+
+`JiraRouterAdapter.resolveProjectWithReason` (the optional adapter hook added by
+spec 024) returns the resolver's message, and `webhook-processor` records it as
+the webhook-log **decision reason**. That is the operator's diagnosis surface:
+it names the key and every discriminator evaluated, instead of the previous
+`No project config for identifier CLFX` — which was actively misleading, since
+config existed and simply matched nothing.
+
+The hook is optional. Adapters that never share an identifier omit it and keep
+today's message verbatim.
+
+Ambiguity additionally captures Sentry under tag **`pm_routing_ambiguous`**,
+deduped per issue per process — the same misconfiguration re-fires on every
+webhook for that issue.
+
+An event with no owning project also gets **no ack reaction**: acknowledging
+something about to be skipped tells the operator the opposite of the truth.
+
+### Scoping & stamping
+
+Routing alone makes sharing only half true. A scoped project must also see and
+produce only its own slice, or its agents pick up the sibling team's work and
+the issues it creates carry nothing to route their future events back.
+
+**Reads** — `listWorkItems` appends the discriminator to its JQL:
+
+| Discriminator | Clause |
+|---|---|
+| `label` / `team-be` | `AND labels = "team-be"` |
+| `component` / `Backend` | `AND component = "Backend"` |
+
+The clause lands **before** the `ORDER BY` — JQL requires the sort clause last,
+so an appended-at-the-end filter is a syntax error, not a filter. Values are
+double-quoted for the same reason the status clause quotes them: an unquoted
+multi-word value parses as syntax rather than as a value. With no discriminator
+the query is byte-identical to before spec 024.
+
+**Writes** — `createWorkItem` stamps every item the project creates, so friction
+reports, alert cards, and split children all route back on their own. A label
+discriminator is **dedup-appended** to the caller's labels (a retry, or a caller
+that already knows the config, must not produce it twice); a component
+discriminator sets `components`. The `components` key is omitted entirely when
+unset, because JIRA rejects `components: []` on projects that have none
+configured.
+
+Matching is exact and case-sensitive on both sides, so a label stamped on write
+is found by the read clause verbatim.
+
+> ⚠️ **A component discriminator must name a component that already exists on
+> the JIRA project.** Unlike labels, which JIRA creates on first use, an unknown
+> component makes `createIssue` fail with a 400 — and the resulting error
+> currently blames the issue-type mapping, because that is what
+> `enrichCreateIssueError` is written to diagnose. Create the component in JIRA
+> first, or use a label discriminator.
+
+The discriminator value is validated at save time: no `"` or `\` (both would
+break out of the quoted JQL value), and no whitespace for a **label**
+discriminator, since JIRA refuses to write such a label and the read clause
+would then match nothing.
+
+### Setting it up
+
+**Two teams, one JIRA board.**
+
+1. Decide the attribute that tells the teams' issues apart. A **label** is the
+   usual choice — JIRA creates labels on demand. A **component** also works but
+   must already exist on the JIRA project; JIRA will not create it, and the
+   resulting `createIssue` failure reports an issue-type problem rather than a
+   component one.
+2. In each project's PM wizard, open **Team routing** and set the kind and value
+   (`team-backend`, `Payments API`, …). Leave it as **None** on at most one
+   project — that project becomes the key's default and receives issues carrying
+   no other team's discriminator. A **new** project claiming a key that already
+   has a default is rejected at save time; two projects that were *already* on
+   the key before spec 024 are grandfathered and keep first-match routing with a
+   loud `pm_shared_key_unconfigured` warning until one of them declares a
+   discriminator (see *Sharing is opt-in* above).
+3. Have the teams apply the discriminator when they file. Issues carrying
+   neither are skipped with a decision reason naming the key and every
+   discriminator evaluated — visible in the webhook log, not silent.
+
+Work CASCADE creates is stamped automatically, so friction reports, alert cards
+and split children route back to the project that made them without anyone
+labelling them by hand.
+
+**Two projects, one GitHub repository.**
+
+1. On the **SCM** tab of each project, set **Repository role**. Exactly one is
+   the **Primary**; it receives events for pull requests CASCADE did not create
+   — a human's PR, or one opened before any project claimed it.
+2. Everything else routes by link: a PR a project opened belongs to that project
+   whatever the primary is, so each project's own work comes back to it.
+
+A repository with no primary is rejected at save time, because every unlinked
+event would then go nowhere.
+
+### Save-time validation
+
+`assertJiraTopologyValid` (`pm/_shared/topology-validation.ts`) runs inside
+`upsertProjectIntegration`, so an unroutable topology cannot be saved from any
+surface. Two rules, both derived from what the resolver can decide:
+
+1. A key may have **at most one** project without a discriminator (its default).
+2. **No two** projects may claim the same discriminator.
+
+A label and a component sharing a value do not collide — they are different
+facts about an issue. Re-saving an existing project does not conflict with
+itself. Rejections name the conflicting project and say what to add.
+
+> This validator throws `TRPCError` from the repository layer — a deliberate
+> layering exception, documented at the call site, so the message stays
+> operator-facing wherever the save originates.
+
+---
+
 ## Registration at startup
 
 Every runtime surface (router, worker, CLI bootstrap, dashboard) imports a single canonical entrypoint:
@@ -157,23 +328,9 @@ The PM barrel (`src/integrations/pm/index.ts`):
 1. Imports each provider's `index.js` (side effect: `registerPMProvider(manifest)`).
 2. Iterates `listPMProviders()` and mirrors each manifest's `pmIntegration` into the cross-category `integrationRegistry` — so `integration-validation.ts` and the capability resolver see PM providers alongside SCM + alerting.
 
-SCM (GitHub) and alerting (Sentry) integrations remain on the legacy `IntegrationModule` pattern — the manifest pattern is PM-only (spec 006 scope). Both self-register via their own `register.ts` side-effect modules, transitively pulled in by the entrypoint.
+SCM (GitHub) and alerting (Sentry) integrations remain on the legacy `IntegrationModule` pattern — the manifest pattern is PM-only. Both self-register via their own `register.ts` side-effect modules, transitively pulled in by the entrypoint.
 
 `pmRegistry` (`src/pm/registry.ts`) still exists as a **read-only delegate** over `pmProviderRegistry` — the ~9 unmigrated call sites (webhook handlers, manual runner, credential scope, lifecycle, GitHub adapter) keep working without changes. Prefer `getPMProvider(id)` / `listPMProviders()` from `src/integrations/pm/registry.ts` in new code.
-
-### Behavioral contract fields (spec 009/1)
-
-The manifest accepts four optional fields beyond the wiring contracts — each opts the provider into a behavioral assertion group in the conformance harness:
-
-| Field | Purpose | Harness assertion |
-|---|---|---|
-| `configSchema: z.ZodType` | Declarative Zod schema for the persisted integration config | Round-trip identity: parse → serialize → re-parse → deep-equal |
-| `discoveryCapabilities: { teams?, boards?, labels?, states?, projects?, customFields?, containers? }` | Which discovery queries the adapter can serve | Each declared capability returns an array from `adapter.discover(k, args)` |
-| `wizardSpec: { steps: [...] }` | Declarative list of standard wizard steps | Rendered by the generator at `web/src/components/projects/pm-providers/generator.tsx` |
-| `lifecycle: { enabled: true, fixture? }` | Opt into the full lifecycle scenario | Harness runs `runLifecycleScenario` (create → list → move → checklist → comment → delete) |
-| `createDiscoveryProvider: (opts?) => PMProvider` | Factory producing a discovery-scoped adapter outside a project context | Powers the generic `pm.discover` tRPC endpoint |
-
-All fields are optional; legacy manifests that don't declare them skip the corresponding harness groups. Plans 2/3/4 flip each real provider on individually.
 
 ---
 
@@ -192,59 +349,22 @@ All fields are optional; legacy manifests that don't declare them skip the corre
 - `triggerHandlers` have unique names
 - `platformClientFactory(projectId)` returns an object with `postComment` + `deleteComment`
 - `pmIntegration.type` is wired
-- `dispatchPMAck` (the consolidated PM-ack helper at `src/router/pm-ack-dispatch.ts`) reaches this provider without throwing — pinned by the per-provider assertion added in spec 017 plan 1
+- `dispatchPMAck` (the consolidated PM-ack helper at `src/router/pm-ack-dispatch.ts`) reaches this provider without throwing
+
+Declaring the optional hardened-contract fields opts a manifest into further groups: `configSchema` + `configFixture` → round-trip identity (parse → serialize → re-parse → deep-equal); `discoveryCapabilities` → each declared capability returns a list from `adapter.discover(k, args)`; `lifecycle` → the full `runLifecycleScenario` (create → list → move → checklist → comment → delete) against the fixture registered under `fixtureKey`; `createDiscoveryProvider` → powers the generic `pm.discover` endpoint. Manifests that omit a field skip that group.
 
 A `TestProvider` fixture in `tests/helpers/testPMProvider.ts` is the minimal reference implementation — copy its shape when starting a new provider. The harness runs against TestProvider + Trello + JIRA + Linear.
 
-### PM-ack dispatch coverage invariant (spec 017 plan 1)
+### PM-ack dispatch coverage invariant
 
 Router-side PM acknowledgment posting (the comment that says "🔧 On it" on the PM card when a PM-focused agent like `backlog-manager` starts work, triggered from a GitHub webhook) goes through **one** code path: `dispatchPMAck` in `src/router/pm-ack-dispatch.ts`. That helper looks up the provider in the manifest registry and invokes `manifest.platformClientFactory(projectId).postComment(workItemId, message)` directly — **no `pmType` literal branching anywhere on the dispatch surface**.
 
-The consolidation closed a parallel-path drift incident verified live on 2026-04-29 (`ucho`): the router-adapter's local helper had Trello + JIRA branches but no Linear branch, so PM-focused agents triggered against Linear-based projects silently skipped their ack with `WARN: Unknown PM type for PM-focused agent ack, skipping` (24× per day in prod). A sibling helper at `src/triggers/shared/pm-ack.ts` had all three branches; both now delegate to `dispatchPMAck`.
+It replaced two parallel helpers that had drifted apart — one had Trello + JIRA branches but no Linear branch, so Linear projects silently skipped the ack. Both legacy call sites now delegate to `dispatchPMAck`.
 
 A new PM provider lands the dispatch path **for free** the moment its manifest is registered — no edits to `pm-ack-dispatch.ts` or to either of the call sites. Failure modes:
 - Provider's `platformClientFactory` returns a client whose `postComment` throws → conformance harness's `dispatchPMAck reaches this provider without throwing` assertion fails in CI with a precise per-provider message.
 - A future maintainer adds `if (pmType === 'asana')` branching to either call site → the static guard at `tests/unit/router/pm-ack-dispatch.test.ts` (PM-ack dispatch surface: no literal pm-type branching) fails loudly with a file:line citation.
 - Project pinned to a `pm.type` that's no longer in the registry (configuration error) → `dispatchPMAck` logs at ERROR + captures Sentry under tag `pm_ack_unknown_pm_type` (no longer a silent WARN).
-
-### Provider migration status (plan 009 — PM integration hardening)
-
-| Provider | configSchema | discoveryCapabilities | wizardSpec | lifecycle | Branded IDs on adapter |
-|---|---|---|---|---|---|
-| **Trello** (plan 009/2) | ✅ `trelloConfigSchema` | ✅ boards, labels, customFields | ✅ 5 standard steps | ✅ `lifecycle.fixtureKey: 'trello'` | ✅ move/addLabel/removeLabel/listWorkItems |
-| **JIRA** (plan 009/3) | ✅ `jiraConfigSchema` | ✅ projects, states, labels (empty — JIRA is free-form), customFields | ✅ 5 standard steps | ✅ `lifecycle.fixtureKey: 'jira'` | ✅ move/addLabel/removeLabel/listWorkItems |
-| **Linear** (plan 009/4) | ✅ `linearConfigSchema` (locks #1138/#1142) | ✅ teams, states, labels, projects | ✅ 6 standard steps (includes project-scope from spec 005) | ✅ `lifecycle.fixtureKey: 'linear'` | ✅ move/addLabel/removeLabel/listWorkItems (locks #1117/#1137/#1139) |
-| **Fake** (plan 009/1, test fixture) | ✅ | ✅ all | ✅ | ✅ | N/A (the fake parses branded IDs internally) |
-
-All three real providers are now on the hardened contracts. Plan 009/4 also ships `tests/unit/pm/linear/regression-2026-04.test.ts` — 12 tests, one set per 2026-04 bug class, that fail loudly if any of the six classes regresses. See `linearManifest` at `src/integrations/pm/linear/manifest.ts` for the reference migration (Linear's surface area is the richest).
-
-### Post-spec-010 additions (2026-04-18)
-
-| Area | Change |
-|---|---|
-| Mutations | Generic `pm.discovery.createLabel` / `pm.discovery.createCustomField` tRPC endpoints dispatch through the manifest's optional `createLabel` / `createCustomField` hooks. Five previous caller sites (Trello/JIRA label + custom-field wizards + Linear label wizard) now consume the generic endpoints. |
-| Discovery | `currentUser` capability added to `DiscoveryCapability`. All three real providers declare it (Trello via `/members/me`, JIRA via `/rest/api/3/myself`, Linear via `viewer`). The wizard's verify-button flow reads it through the unified `pm.discovery.discover` endpoint instead of per-provider procedures. |
-| Wizard UI | Six real shared step components live at `web/src/components/projects/pm-providers/steps/*.tsx`, one per `StandardStepKind`. A new provider with purely-standard steps renders its wizard through `renderStandardStep` + `STANDARD_STEP_COMPONENTS` with zero per-provider step code. |
-| Shared surface guard | `tests/unit/integrations/new-provider-surface.test.ts` now also pins the six step-component files — new providers should consume them, not fork them. |
-
-### Post-spec-011 additions (2026-04-18)
-
-| Area | Change |
-|---|---|
-| Wizard migration | All three production providers (Trello, JIRA, Linear) now render every standard wizard step through the shared components. The three legacy `pm-wizard-{trello,jira,linear}-steps.tsx` files are **deleted**. Zero per-provider step UI outside of explicit `kind: 'custom'` steps (Trello OAuth, JIRA issue-type). |
-| Parent wizard | `pm-wizard.tsx` now iterates over `manifestDef.steps` dynamically — the old spec-006-era "3 hardcoded stepIndex slots" layout is gone. Each manifest step gets its own WizardStep slot. The legacy `WebhookStep` was retained temporarily for programmatic webhook registration (Trello/JIRA) and signing-secret UX (Linear); it was fully migrated into the manifest path in spec 012 (see Post-spec-012 additions below). |
-| 7th StandardStepKind | `custom-field-mapping` shared component (with optional `onCreateCustomField` + `fieldDefaults` props) wires `manifest.createCustomField`. Trello and JIRA use it; Linear doesn't have a custom-field concept. |
-| Shared-component widenings (additive) | `container-pick` and `project-scope` support optional `searchable: boolean` (renders via cmdk `Combobox`). `webhook-url-display` supports optional inline signing-secret input (`secretFieldRole` / `secretValue` / `onSecretChange`). `label-mapping` supports optional `labelDefaults?` to pre-populate the Create input + thread color. `custom-field-mapping` supports optional `fieldDefaults?`. |
-| Shared surface guard | Step-component file pin extended to seven entries. |
-
-### Post-spec-012 additions (2026-04-18+)
-
-| Area | Change |
-|---|---|
-| Webhook-UX migration complete | Every PM wizard step, without exception, renders via the manifest path. Trello, JIRA, and Linear each own their webhook step via a per-provider adapter (`pm-providers/<provider>/webhook-step.tsx`) — Fragment composition around the shared `WebhookUrlDisplayStep`. Trello + JIRA compose with programmatic "Create Webhook" button + active-webhooks list + delete + curl fallback (via existing `webhooks.create/list/delete({trelloOnly|jiraOnly:true})` tRPC endpoints). Linear composes with info banner + `ProjectSecretField` (`LINEAR_WEBHOOK_SECRET`) + 5-step manual setup instructions. |
-| Legacy deletions | `WebhookStep` + `LinearWebhookInfoPanel` + `useWebhookManagement` + `useLinearWebhookInfo` all deleted. `pm-wizard-common-steps.tsx` now only exports `SaveStep`. Legacy test file `pm-wizard-webhooks-step.test.ts` deleted — assertions moved into per-provider adapter tests. |
-| Parent-wizard filter | The `-webhook` id-skip filter (stopgap from plan 011/4) is gone. `renderedManifestSteps = manifestDef.steps.map(...)` — no filter. |
-| New-provider guarantee | Adding a PM provider requires zero edits to `pm-wizard.tsx`, `pm-wizard-common-steps.tsx`, or `pm-wizard-hooks.ts`. New providers add one import to the frontend barrel (`web/src/components/projects/pm-providers/index.ts`) — the symmetric counterpart of the backend barrel — and `pm-wizard.tsx` picks it up automatically. The provider picker, edit hydration dispatch (`ProviderWizardDefinition.buildEditState`), config serialization (`ProviderWizardDefinition.buildIntegrationConfig`), verification-button readiness (`areCredentialsReadyFromMetadata`), mutation auth path (`buildProviderAuthArgFromMetadata`), and save credential persistence are all metadata/provider-definition driven; no shared edits required beyond the barrel import. **Shared dashboard state** (`pm-wizard-state.ts`) must still compose the new provider's state slice and action type — see step 4 of "Adding a new PM provider" below. |
 
 ---
 
@@ -339,7 +459,7 @@ Spec 009 AC #10: **a new PM provider PR should not need to edit shared router / 
 
 2. **Wire the backend manifest** via a single import in `src/integrations/pm/index.ts` (`import './<provider>/index.js';`). No other backend file needs to change — the `single-entrypoint` test guards this.
 
-3. **Frontend folder** at `web/src/components/projects/pm-providers/<provider>/`: `wizard.ts` (`ProviderWizardDefinition` with `auth`, `credentialPersistence`, `formatVerificationDisplay`, `buildIntegrationConfig`, `buildEditState`, and `useProviderHooks` if the provider needs discovery / label creation / custom-field creation / webhook registration), `state.ts` for the provider-owned wizard state slice/actions/reducer/defaults, `hooks.ts` for provider-owned discovery/mutation/auth/webhook wrappers, `auth.ts` for reusable auth metadata when useful, and `index.ts` for side-effect registration (`registerProviderWizard(<provider>ProviderWizard)`). For shared wizard steps declared on `manifest.wizardSpec`, the generator in `pm-providers/generator.tsx` dispatches directly to the real shared step components at `pm-providers/steps/*.tsx` — there are **seven** kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`, `custom-field-mapping`. A provider with purely standard steps writes **zero** per-provider step components; Trello, JIRA, and Linear all use the shared components for every standard kind. Provide `providerHooks` (returned from `useProviderHooks`) to forward discovery data + mutation callbacks into the shared components; the generator spreads `ctx.providerHooks` as props. Unknown step `kind` values still warn-and-render a placeholder. **Provider-specific UI** ships either as (a) `kind: 'custom'` steps declared on the manifest and resolved to provider-folder components (Trello OAuth popup, JIRA issue-type mapping), or (b) Fragment compositions around a shared step when the base UX is standard but needs augmentation (Trello/JIRA webhook steps compose `WebhookUrlDisplayStep` + programmatic Create UX + active-webhook normalization; Linear composes `WebhookUrlDisplayStep` + `ProjectSecretField` + setup instructions — see `pm-providers/{trello,jira,linear}/webhook-step.tsx` for the reference composition pattern). Shared `pm-wizard-hooks.ts` remains limited to metadata-driven verification/save shells and provider-agnostic mutation factories.
+3. **Frontend folder** at `web/src/components/projects/pm-providers/<provider>/`: `wizard.ts` (`ProviderWizardDefinition` with `auth`, `credentialPersistence`, `formatVerificationDisplay`, `buildIntegrationConfig`, `buildEditState`, and `useProviderHooks` if the provider needs discovery / label creation / custom-field creation / webhook registration), `state.ts` for the provider-owned wizard state slice/actions/reducer/defaults, `hooks.ts` for provider-owned discovery/mutation/auth/webhook wrappers, `auth.ts` for reusable auth metadata when useful, and `index.ts` for side-effect registration (`registerProviderWizard(<provider>ProviderWizard)`). For shared wizard steps declared on `manifest.wizardSpec`, the generator in `pm-providers/generator.tsx` dispatches directly to the real shared step components at `pm-providers/steps/*.tsx` — there are **seven** kinds: `credentials`, `container-pick`, `status-mapping`, `label-mapping`, `webhook-url-display`, `project-scope`, `custom-field-mapping`. A provider with purely standard steps writes **zero** per-provider step components; Trello, JIRA, and Linear all use the shared components for every standard kind. Provide `providerHooks` (returned from `useProviderHooks`) to forward discovery data + mutation callbacks into the shared components; the generator spreads `ctx.providerHooks` as props. Unknown step `kind` values still warn-and-render a placeholder. The shared steps accept optional widenings: `container-pick` / `project-scope` take `searchable` (cmdk `Combobox`), `webhook-url-display` takes an inline signing-secret input (`secretFieldRole` / `secretValue` / `onSecretChange`), `label-mapping` takes `labelDefaults`, and `custom-field-mapping` takes `fieldDefaults`; the generator dispatches through `renderStandardStep` + `STANDARD_STEP_COMPONENTS`. **Provider-specific UI** ships either as (a) `kind: 'custom'` steps declared on the manifest and resolved to provider-folder components (Trello OAuth popup, JIRA issue-type mapping), or (b) Fragment compositions around a shared step when the base UX is standard but needs augmentation (Trello/JIRA webhook steps compose `WebhookUrlDisplayStep` + programmatic Create UX + active-webhook normalization; Linear composes `WebhookUrlDisplayStep` + `ProjectSecretField` + setup instructions — see `pm-providers/{trello,jira,linear}/webhook-step.tsx` for the reference composition pattern). Shared `pm-wizard-hooks.ts` remains limited to metadata-driven verification/save shells and provider-agnostic mutation factories.
 
 4. **Update shared dashboard state** in `web/src/components/projects/pm-wizard-state.ts`. This is the one shared dashboard file a new provider must edit while `WizardState` remains an aggregate type:
    - Import the provider's state-slice helpers from `pm-providers/<provider>/state.ts`.
@@ -356,7 +476,7 @@ Spec 009 AC #10: **a new PM provider PR should not need to edit shared router / 
 
 7. **Run the conformance harness**: `npx vitest run --project unit-core tests/unit/integrations/pm-conformance.test.ts`. Behavioral contracts run against your provider automatically once `configSchema` / `discoveryCapabilities` / `lifecycle` are declared. Failures name the contract.
 
-8. **Provider-specific unit tests** in `tests/unit/pm/<provider>/` — adapter tests (vi.mock the client), config-schema round-trip, discovery shape, wizardSpec, adapter branded IDs.
+8. **Provider-specific unit tests** in `tests/unit/pm/<provider>/` — adapter tests (vi.mock the client), config-schema round-trip, discovery shape, wizardSpec, adapter branded IDs. Linear's `tests/unit/pm/linear/regression-2026-04.test.ts` (one test set per past bug class) is the model for pinning fixed bugs.
 
 The shared orchestration files (`pm-wizard.tsx`, `pm-wizard-hooks.ts`, `pm-wizard-common-steps.tsx`) require zero edits beyond the barrel import in step 5. The `new-provider-surface` snapshot test proves your PR does not modify shared router / worker / CLI / dashboard orchestration or central schema files. The one deliberate shared-dashboard exception is `pm-wizard-state.ts` for provider-specific state fields and reducer actions (step 4 above).
 
