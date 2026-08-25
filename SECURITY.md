@@ -22,7 +22,7 @@ Please include:
 
 Cascade incorporates several security measures:
 
-- **Credential encryption at rest**: AES-256-GCM encryption for all stored credentials when `CREDENTIAL_MASTER_KEY` is configured. See [CLAUDE.md](./CLAUDE.md#credential-encryption-at-rest) for details.
+- **Credential encryption at rest**: AES-256-GCM encryption for all stored credentials when `CREDENTIAL_MASTER_KEY` is configured. See [Configuration and Credentials](./docs/architecture/08-config-credentials.md#credential-encryption) for details.
 - **Dual-persona model**: Separate GitHub bot accounts for implementation and review prevent self-approval and feedback loops.
 - **No env var fallback for secrets**: All project credentials are stored in the database — no secrets in environment variables or config files.
 - **Session-based auth**: HTTP-only cookies with bcrypt password hashing for dashboard access.

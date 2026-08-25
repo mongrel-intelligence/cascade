@@ -92,7 +92,7 @@ The backend adapter drains pending sidecar events after the engine returns, incl
 The router queues `cascade-jobs` and `cascade-dashboard-jobs` with `attempts: 4` and exponential backoff. Dispatch errors before a worker container starts are classified in `src/router/dispatch-error-classifier.ts`:
 
 - Transient: Docker socket `ECONNREFUSED` / `ECONNRESET` / `ENOTFOUND`, registry HTTP 429, container-name HTTP 409, and `SLOT_WAIT_TIMEOUT`.
-- Terminal: validation errors (`TypeError`, `ZodError`) and image-not-found after fallback exhaustion.
+- Terminal: validation errors (`TypeError`, `ZodError`) and image-not-found after fallback exhaustion. These are wrapped in BullMQ's `UnrecoverableError`, which skips the retry budget entirely.
 
 Post-enqueue dispatch failures (Docker socket errors, slot-wait timeouts, container failures) flow through the BullMQ `failed` event and call `releaseLocksForFailedJob`, releasing the work-item lock, agent-type counter, and recently-dispatched mark. Webhook logs distinguish healthy backpressure (`Awaiting worker slot`) from the wedged-lock canary (`Work item locked (no active dispatch)`). Enqueue/schedule failures that occur before a BullMQ job exists are handled differently — see the split below.
 
@@ -168,6 +168,8 @@ Both GitHub persona usernames (implementer + reviewer) are resolved and cached. 
 
 - `respond-to-review` only fires when the **reviewer** persona submits `changes_requested`
 - `respond-to-pr-comment` skips @mentions from **any** known persona
+- `check-suite-success` looks for an approving review from the **reviewer** persona specifically
+- Every SCM trigger handler filters self-events with `isCascadeBot(login)`; the one deliberate exemption is the self-directed `review_requested` case described in [03-trigger-system](./03-trigger-system.md)
 - Trello/JIRA handlers check their bot member/account IDs similarly
 
 ### Self-authored event filtering
@@ -192,7 +194,7 @@ See [08-config-credentials](./08-config-credentials.md) — AES-256-GCM encrypti
 
 Periodic scan for Docker containers that outlived their expected lifetime (watchdog timeout + buffer). Orphans are killed and their run records marked as failed.
 
-When a worker container exits non-zero, the router inspects it before Docker AutoRemove can reap it and writes a grep-stable error reason: `Worker crashed with exit code N · OOMKilled=<true|false> · reason="<State.Error>"`. `OOMKilled=true` is the definitive cgroup OOM signal; exit 137 without that marker means something else sent the signal.
+When a worker container exits non-zero, the router inspects it before Docker AutoRemove can reap it and writes a grep-stable error reason: `Worker crashed with exit code N · OOMKilled=<true|false> · reason="<State.Error>"`. `OOMKilled=true` is the definitive cgroup OOM signal; exit 137 without that marker means something else sent the signal. The string is produced by `formatCrashReason` in `src/router/active-workers.ts` and pinned by `tests/unit/router/container-manager-diagnostics.test.ts` — keep it grep-stable. The `[WorkerManager] Resolved spawn settings` log line emitted at every spawn records both `projectWatchdogTimeoutMs` and `globalWorkerTimeoutMs`, so a post-mortem can confirm whether the per-project override actually won.
 
 ## Worker Lifecycle Internals
 

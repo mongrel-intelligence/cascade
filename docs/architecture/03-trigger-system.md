@@ -219,6 +219,14 @@ Each trigger in a YAML agent definition can declare a `contextPipeline` — an o
 | `pipelineSnapshot` | Fetch PM workflow/pipeline state and emit the single authoritative `PipelineSnapshotSummary` JSON context for backlog-manager |
 | `alertingIssue` | Fetch Sentry issue and event details |
 
+### prContext budget and debugging
+
+The review agent receives a compact per-file diff context, not full file contents. `REVIEW_DIFF_CONTEXT_TOKEN_LIMIT` (`src/config/reviewConfig.ts`, 200k tokens) caps the whole context and each file gets at most 10 % of it. GitHub's changed-file API supplies the file list and change counts; patch bodies come from the checked-out workspace via `git diff origin/<base>...HEAD`. Files that cannot fit or cannot be locally verified (deleted, binary/no text patch, local diff failure or empty patch, oversized patch, budget exhausted) are listed under `SKIPPED FILES` with instructions to fetch on demand via `cascade-tools scm get-pr-diff --prNumber <N> --path <path>` (add `--outputFile <path>` for large or one-line JSON diffs that would truncate stdout), `Read`, or `Grep`.
+
+When a review misses something, check the `PR context prepared` log entry: `included` / `skipped` / `skipReasons`, `patchSources`, `totalDiffTokens`, `perFileTokenCap`, and `localGitMismatches` (GitHub's API patch differed from the local one). Also check the context-offload logs if the diff was written under `.cascade/context/`.
+
+CI check status is informational, not fatal: `fetchPRContextStep` wraps only `getCheckSuiteStatus` in a try/catch. If the reviewer PAT lacks the **Actions: Read** permission, the Actions API returns 403 and the `GetPRChecks` injection degrades to an explicit "CI check status UNAVAILABLE" message (deliberately distinct from "No CI checks configured") plus a `WARN CI check status unavailable` log. `getPR` and `getPRDiff` stay fatal — a review without the PR itself is meaningless.
+
 ## Shared Agent Execution
 
 `src/triggers/shared/agent-execution.ts`
@@ -249,7 +257,7 @@ This includes:
 - Work-item and PR traceability in `agent-work-items.ts`: create/update work-item records, maintain PR/work-item links before and after execution, fetch PR titles, and backfill run PR numbers.
 - Agent execution in `agent-execution-runtime.ts`: call `runAgent()` with the resolved input plus project, config, and remaining budget.
 - Post-run PM behavior in `agent-pm-summary.ts` and `agent-execution-lifecycle.ts`: post review/output summaries to the PM work item, handle artifacts, post budget warnings, clean up processing state, and call `handleSuccess` or `handleFailure`.
-- Follow-up dispatch in `agent-execution-followups.ts`: dispatch review after a successful implementation PR once CI is passing and the review dedup key is claimed, and chain backlog-manager after a successful splitting run when the auto label/capacity checks allow it.
+- Follow-up dispatch in `agent-execution-followups.ts`: dispatch review after a successful implementation PR once CI is passing and the review dedup key is claimed (`claimReviewDispatch` — the same key the `check-suite-success` trigger uses, so the two paths cannot double-enqueue; this fires before the container exits, so review dispatch does not depend on GitHub webhook timing), and chain backlog-manager after a successful splitting run when the auto label/capacity checks allow it.
 - Auto-debug in `agent-auto-debug.ts`: fire-and-forget debug analysis for eligible failed or timed-out runs after callbacks and follow-up dispatch complete. It calls the shared `triggerDebugAnalysis()` runner, whose running/failed lifecycle is durable and cross-process — see [Debug-analysis status](#debug-analysis-status-durable-cross-process) below.
 
 Credential scoping still happens before the facade runs. PM webhook handling enters provider credentials and PM provider scope before dispatch; GitHub and Sentry use `webhook-execution.ts` / `credential-scope.ts` to inject LLM keys, PM credentials, PM provider scope, and GitHub persona tokens as needed.

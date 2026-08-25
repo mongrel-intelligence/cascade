@@ -15,7 +15,7 @@ bug fixes that restore behavior already described in docs.
 
 #### What to Check
 
-- **CLAUDE.md / AGENTS.md** — Developer conventions, setup steps, commands
+- **CLAUDE.md / AGENTS.md** — universal conventions, commands and invariants only. These files are injected into every agent prompt, so keep them short: area-specific detail belongs in the repo's docs, and ticket IDs, dates or incident narrative belong in a changelog
 - **README.md** — User-facing overview, installation, usage
 - **docs/** — Architecture guides, feature documentation
 - **JSDoc / inline comments** — Function signatures, complex logic explanations
@@ -36,7 +36,7 @@ RipGrep(pattern="@param|@returns", glob="src/path/to/file.ts")
 
 Before marking your work complete, verify:
 - [ ] Public API changes are reflected in JSDoc (params, return types, thrown errors)
-- [ ] New env vars or config options are documented in CLAUDE.md or README
+- [ ] New env vars or config options are documented where the repo catalogues them (`.env.example`, docs/, or README) — add to CLAUDE.md only when it is a universal setup step
 - [ ] New architectural patterns are noted in the relevant docs/ file
 - [ ] Removed/renamed features no longer appear in docs as current behavior
 
