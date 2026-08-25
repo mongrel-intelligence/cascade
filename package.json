@@ -76,7 +76,7 @@
 		"eta": "^4.5.0",
 		"execa": "^9.6.1",
 		"fastest-levenshtein": "^1.0.16",
-		"hono": "^4.12.32",
+		"hono": "^4.13.4",
 		"jira.js": "^5.3.0",
 		"js-yaml": "^4.3.1",
 		"llmist": "^16.0.4",
