@@ -499,10 +499,10 @@ async function resolveRepoPrimary(
 	const incumbent = siblings.find((s) => s.repoPrimary);
 
 	// An update that does not mention the role must not change it. The SCM tab
-	// sends `repo` on every save and cannot yet send a role (that toggle is plan
-	// 5), so demanding one here would reject every save on a shared repository —
-	// including the primary's own, while telling it to demote itself, which the
-	// zero-primary rule below would then also refuse.
+	// ships a role toggle (spec 024 plan 5) but omits it from the save payload
+	// when the operator has not touched it, so demanding one here would reject
+	// every such save — including the primary's own, while telling it to demote
+	// itself, which the zero-primary rule below would then also refuse.
 	if (requested === undefined && self) return self.repoPrimary;
 
 	// Checked before the no-siblings shortcut: the partial unique index forbids

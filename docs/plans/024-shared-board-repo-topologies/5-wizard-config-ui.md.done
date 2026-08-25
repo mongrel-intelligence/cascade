@@ -6,7 +6,8 @@ plan_slug: wizard-config-ui
 level: plan
 parent_spec: docs/specs/024-shared-board-repo-topologies.md
 depends_on: [2-jira-event-routing.md, 4-github-link-first-routing.md]
-status: pending
+status: done
+locked_at: 3b5973a620e658896309cd64f1cbe1e4177417c3
 ---
 
 # 024/5: Dashboard configuration — routing discriminator and primary repo
@@ -154,12 +155,39 @@ Wizard architecture per `src/integrations/README.md`: provider-owned state slice
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- [ ] AC #1
-- [ ] AC #2
-- [ ] AC #3
-- [ ] AC #4
-- [ ] AC #5
-- [ ] AC #6
-- [ ] AC #7
-- [ ] AC #8
-- [ ] AC #9
+- [x] AC #1 — `jira-routing-step.test.ts`: reducer stores kind+value, an emptied value clears the whole discriminator, `buildIntegrationConfig` omits `routing` when unset and emits a block that round-trips the REAL `jiraConfigSchema`, and a save → hydrate → re-save round trip preserves it (the wipe this plan closes).
+- [x] AC #2 — `scm-repo-primary.test.ts` pins the payload (role omitted when untouched and when there is no repo, sent when chosen); `scm-tab-render.test.ts` renders the real component under jsdom and pins that a plan-4 rejection appears verbatim in the save slot, mutation-proved against both a message wrap and a lost `repoPrimary` read.
+- [x] AC #3 — `jiraManifest.wizardSpec` includes the routing step; `manifest-wizard-spec.test.ts` and `jira-wizard-generator.test.ts` updated to expect two custom steps in order, conformance green.
+- [x] AC #4 — 27 new tests (15 routing/serialization, 6 SCM payload, 5 SCM render, 6 env round-trip incl. the one-synthesizer guard).
+- [ ] AC #5 `[manual]` — deferred: the protocol needs `npm run dev:web` against a live dev API and a JIRA project, neither available in this session. Both controls are covered at reducer/payload level and the SCM one now renders under jsdom, but visual placement and usability are genuinely unverified. Round 1 found a UX defect here that this pass would have caught — the value input unmounted mid-edit — so this is a real gap, not a formality.
+- [x] AC #6 — `npm run typecheck` exit 0 (root and `web/`).
+- [x] AC #7 — `npm test` 11205 passed / 23 skipped, exit 0.
+- [x] AC #8 — `npm run lint` exit 0.
+- [x] AC #9 — README: "Setting it up" operator walkthrough for both topologies; the plan-2 caveat removed, since the wizard field it warned about now exists.
+
+**Review — three rounds, four must-fixes, converged at round 3.**
+
+**Round 1 — one must-fix, and it invalidated this plan's premise.** `cascade-tools` commands do not read the database; they rebuild the project from env vars, and `augmentProjectSecrets` emitted no `routing`. So inside every worker `config.routing` was undefined: `stampDiscriminator` stamped nothing and `discriminatorJqlClause` returned `''`. An agent's created work items matched no sibling on their next webhook and were handed to the key's DEFAULT project — one team's work silently becoming another's — while its list calls saw every sibling's issues. **The ninth hand-picked projection in this spec's territory**, and the operator prose added by this same plan asserted the broken behaviour verbatim. Removing the caveat would have been actively dangerous.
+
+**Round 2 — three must-fixes.**
+- **A tenth projection.** `reportFriction.ts` had its own env→config synthesizer, a near-clone dropping `routing`, on the DEFAULT engine path. Perversely asymmetric: immediate filing was unstamped, but the sidecar drain re-filed via the DB project and stamped correctly. Collapsed both onto `src/jira/config-from-env.ts` with a static guard, rather than adding a third copy that would have guaranteed an eleventh.
+- **AC #2 was marked done on a false premise.** I recorded the render assertion as uncoverable "because the dashboard suites have no DOM harness". They do — `project-worker-image.test.ts` renders in the same directory. I claimed impossibility without checking.
+- **Lint had regressed 13 → 14**; the round-1 fix pushed `secretBuilder` past the complexity threshold. Extracted `injectJiraConfig`.
+
+**Round 3 — converged.** Verified the friction path now stamps by executing it, that the static guard fails on a new reader, and that collapsing two synthesizers with *opposite* baseUrl precedence changed nothing reachable.
+
+**The pattern worth recording:** three of the four must-fixes were verification failures rather than coding ones — an AC claimed on an unchecked premise, and a render test that **passed a wrap mutation** because it queried by text and found a second, untouched error slot. That last one looked like coverage and was not, which is the same shape as five of plan 4's seven must-fixes.
+
+**Divergences (recorded):**
+- **Step ordering disagreed between manifest and wizard.** The plan says to place
+  the routing step after status-mapping; I did that in the manifest but put the
+  wizard step after custom-fields. The existing "one ProviderWizardStep per
+  wizardSpec entry, in the same order" test caught it. Aligned to the manifest.
+- **The SCM payload lives in a pure builder** (`scm-save-payload.ts`) rather than
+  inline in the component. Whether `repoPrimary` is ABSENT is load-bearing — it
+  is what stops an unrelated save from restating a shared repo's topology — and
+  absence is precisely what a DOM assertion sees worst.
+- **Three existing suites pinned the old shape** and were updated: the manifest
+  step list, the generator's "exactly one custom step", and the JIRA initial
+  state defaults. All are legitimate consequences of adding a step and two state
+  fields, not weakened assertions.

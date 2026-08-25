@@ -4,6 +4,7 @@
  * `CopyButton` lives at `@/components/ui/copy-button.js` (extracted during
  * PM wizard styling restoration).
  */
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	AlertCircle,
@@ -18,9 +19,11 @@ import { useEffect, useState } from 'react';
 import { CopyButton } from '@/components/ui/copy-button.js';
 import { Input } from '@/components/ui/input.js';
 import { Label } from '@/components/ui/label.js';
+import { NativeSelect } from '@/components/ui/native-select.js';
 import { API_URL } from '@/lib/api.js';
 import { trpc, trpcClient } from '@/lib/trpc.js';
 import { ProjectSecretField } from './project-secret-field.js';
+import { buildScmSavePayload } from './scm-save-payload.js';
 
 // ============================================================================
 // GitHub Credential Slots (replaces the old CredentialSelector dropdowns)
@@ -334,6 +337,12 @@ interface SCMTabProject {
 	repo?: string | null;
 	baseBranch?: string | null;
 	branchPrefix?: string | null;
+	/**
+	 * Spec 024. Declared rather than cast at the read site: a cast would turn a
+	 * renamed field or a new upstream projection into `undefined → true`, so a
+	 * SECONDARY project would display "Primary" with no compile error.
+	 */
+	repoPrimary?: boolean;
 }
 
 export function SCMTab({ projectId, project }: { projectId: string; project?: SCMTabProject }) {
@@ -343,22 +352,35 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 	const [repo, setRepo] = useState(project?.repo ?? '');
 	const [baseBranch, setBaseBranch] = useState(project?.baseBranch ?? 'main');
 	const [branchPrefix, setBranchPrefix] = useState(project?.branchPrefix ?? 'feature/');
+	// Spec 024: undefined means "not touched", which is what keeps an unrelated
+	// save from restating (and so potentially changing) a shared repository's
+	// topology. Seeded from the stored value so the control shows the truth.
+	const [repoPrimaryChoice, setRepoPrimaryChoice] = useState<boolean | undefined>(undefined);
 
 	useEffect(() => {
 		setRepo(project?.repo ?? '');
 		setBaseBranch(project?.baseBranch ?? 'main');
 		setBranchPrefix(project?.branchPrefix ?? 'feature/');
+		setRepoPrimaryChoice(undefined);
 	}, [project?.repo, project?.baseBranch, project?.branchPrefix]);
+
+	const storedRepoPrimary = project?.repoPrimary ?? true;
+	const displayedRepoPrimary = repoPrimaryChoice ?? storedRepoPrimary;
 
 	const saveMutation = useMutation({
 		mutationFn: async () => {
 			// Save project-level SCM fields
-			await trpcClient.projects.update.mutate({
-				id: projectId,
-				repo: repo || undefined,
-				baseBranch,
-				branchPrefix,
-			});
+			await trpcClient.projects.update.mutate(
+				buildScmSavePayload({
+					projectId,
+					repo,
+					baseBranch,
+					branchPrefix,
+					// The CHOICE, not the displayed value: undefined means untouched,
+					// which is what keeps an unrelated save from restating the role.
+					repoPrimary: repoPrimaryChoice,
+				}),
+			);
 
 			// Note: triggers are intentionally omitted — they are managed via the Agent Configs tab
 			const result = await trpcClient.projects.integrations.upsert.mutate({
@@ -397,6 +419,27 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 						placeholder="owner/repo"
 					/>
 				</div>
+				{repo && (
+					<div className="space-y-2">
+						<Label htmlFor="scm-repo-role">Repository role</Label>
+						<NativeSelect
+							id="scm-repo-role"
+							value={displayedRepoPrimary ? 'primary' : 'secondary'}
+							onChange={(e) => setRepoPrimaryChoice(e.target.value === 'primary')}
+						>
+							<option value="primary">
+								Primary — receives events for PRs CASCADE did not create
+							</option>
+							<option value="secondary">
+								Secondary — shares a repository owned by another project
+							</option>
+						</NativeSelect>
+						<p className="text-xs text-muted-foreground">
+							Only one project per repository can be the primary. Leave this as Primary unless
+							another project already owns this repository.
+						</p>
+					</div>
+				)}
 				<div className="grid grid-cols-2 gap-4">
 					<div className="space-y-2">
 						<Label htmlFor="scm-baseBranch">Base Branch</Label>
@@ -444,7 +487,9 @@ export function SCMTab({ projectId, project }: { projectId: string; project?: SC
 				</button>
 				{saveMutation.isSuccess && <span className="text-sm text-muted-foreground">Saved</span>}
 				{saveMutation.isError && (
-					<span className="text-sm text-destructive">{saveMutation.error.message}</span>
+					<span data-testid="scm-save-error" className="text-sm text-destructive">
+						{saveMutation.error.message}
+					</span>
 				)}
 			</div>
 

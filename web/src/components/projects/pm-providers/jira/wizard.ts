@@ -17,7 +17,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createElement, type ReactElement } from 'react';
+import { createElement, type ReactElement, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button.js';
 import { Label } from '@/components/ui/label.js';
 import { API_URL } from '@/lib/api.js';
@@ -33,6 +33,7 @@ import type { ProviderWizardDefinition, ProviderWizardStepProps } from '../types
 import { jiraAuthMetadata, jiraCredentialPersistence } from './auth.js';
 import { useJiraCustomFieldCreation, useJiraDiscovery } from './hooks.js';
 import { IssueTypeMappingStep } from './issue-type-step.js';
+import { type JiraRoutingKind, RoutingStep } from './routing-step.js';
 import type { JiraWizardAuthType } from './state.js';
 import { JiraWebhookAdapter, normalizeJiraActiveWebhooks } from './webhook-step.js';
 
@@ -321,6 +322,35 @@ function JiraIssueTypeAdapter({
 	});
 }
 
+function JiraRoutingAdapter({ state, dispatch }: ProviderWizardStepProps): ReactElement {
+	// `selectedKind` is view state, not config: it keeps the value input mounted
+	// while the box is empty, which the reducer treats as "no discriminator".
+	const [selectedKind, setSelectedKind] = useState<JiraRoutingKind | undefined>(undefined);
+	// Seed the view-state kind from a hydrated discriminator on the EDIT path.
+	// `buildEditState` reaches state via an asynchronous INIT_EDIT dispatch (it
+	// waits on the credentials query), so a `useState` initializer would read the
+	// pre-hydration '' and miss it. Without this seed, an operator clearing a
+	// saved value would drop `jiraRoutingKind` to '' and unmount the input they
+	// are editing — the Round 1 defect, still reachable on the edit path. Runs
+	// once: the `selectedKind === undefined` guard means it never overrides a
+	// dropdown choice the operator has already made (including an explicit None).
+	useEffect(() => {
+		if (selectedKind === undefined && state.jiraRoutingKind) {
+			setSelectedKind(state.jiraRoutingKind);
+		}
+	}, [selectedKind, state.jiraRoutingKind]);
+	return RoutingStep({
+		step: { kind: 'custom', id: 'jira-routing', component: 'RoutingStep' },
+		providerId: 'jira',
+		routingKind: state.jiraRoutingKind,
+		routingValue: state.jiraRoutingValue,
+		selectedKind,
+		onSelectedKindChange: setSelectedKind,
+		onRoutingChange: (kind: JiraRoutingKind, value: string) =>
+			dispatch({ type: 'SET_JIRA_ROUTING_DISCRIMINATOR', kind, value }),
+	});
+}
+
 // Plan 012/2: the jira-webhook step's Component is now `JiraWebhookAdapter`
 // (imported from `./webhook-step.js`), a Fragment composing the shared
 // WebhookUrlDisplayStep with JIRA-specific UX: active-webhooks list,
@@ -353,6 +383,14 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			title: 'Status mapping',
 			Component: JiraStatusMappingAdapter,
 			isComplete: (state) => Object.keys(state.jiraStatusMappings).length > 0,
+		},
+		{
+			id: 'jira-routing',
+			title: 'Team routing',
+			Component: JiraRoutingAdapter,
+			// Always complete: sharing a board is opt-in, and a project that owns
+			// its key outright is correctly configured with this left empty.
+			isComplete: () => true,
 		},
 		{
 			id: 'jira-labels',
@@ -390,6 +428,17 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		...(Object.keys(state.jiraIssueTypes).length > 0 ? { issueTypes: state.jiraIssueTypes } : {}),
 		...(Object.keys(state.jiraLabels).length > 0 ? { labels: state.jiraLabels } : {}),
 		...(state.jiraCostFieldId ? { customFields: { cost: state.jiraCostFieldId } } : {}),
+		// Spec 024. Omitted entirely when unset so a project that does not share
+		// a board saves a config byte-identical to before this plan — and so a
+		// value set here is not silently dropped by the next save, which is the
+		// bug that made the discriminator unconfigurable in practice.
+		...(state.jiraRoutingKind && state.jiraRoutingValue
+			? {
+					routing: {
+						discriminator: { kind: state.jiraRoutingKind, value: state.jiraRoutingValue },
+					},
+				}
+			: {}),
 	}),
 
 	buildSaveTriggerConfigs: ({ state, workflowStatuses, existingConfigs }) =>
@@ -403,6 +452,9 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 		const statuses = initialConfig.statuses as Record<string, string> | undefined;
 		const issueTypes = initialConfig.issueTypes as Record<string, string> | undefined;
 		const labels = initialConfig.labels as Record<string, string> | undefined;
+		const discriminator = (
+			initialConfig.routing as { discriminator?: { kind?: string; value?: string } } | undefined
+		)?.discriminator;
 
 		return {
 			provider: 'jira',
@@ -416,6 +468,11 @@ export const jiraProviderWizard: ProviderWizardDefinition = {
 			...(labels ? { jiraLabels: labels } : {}),
 			jiraCostFieldId:
 				(initialConfig.customFields as Record<string, string> | undefined)?.cost ?? '',
+			jiraRoutingKind:
+				discriminator?.kind === 'label' || discriminator?.kind === 'component'
+					? discriminator.kind
+					: '',
+			jiraRoutingValue: discriminator?.value ?? '',
 			hasStoredCredentials:
 				configuredKeys.has('JIRA_EMAIL') && configuredKeys.has('JIRA_API_TOKEN'),
 		};

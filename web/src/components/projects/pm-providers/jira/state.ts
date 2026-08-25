@@ -44,6 +44,14 @@ export interface JiraWizardStateSlice {
 	jiraIssueTypes: Record<string, string>;
 	jiraLabels: Record<string, string>;
 	jiraCostFieldId: string;
+	/**
+	 * Spec 024: which issues on a SHARED JIRA project key belong to this
+	 * project. Empty kind means the project is the key's default owner, which
+	 * is every project that does not share a key — so the wizard adds no
+	 * required input.
+	 */
+	jiraRoutingKind: '' | 'label' | 'component';
+	jiraRoutingValue: string;
 }
 
 interface VerificationState {
@@ -63,7 +71,12 @@ export type JiraWizardAction =
 	| { type: 'SET_JIRA_ISSUE_TYPE'; key: string; value: string }
 	| { type: 'SET_JIRA_LABEL'; key: string; value: string }
 	| { type: 'SET_JIRA_COST_FIELD'; id: string }
-	| { type: 'ADD_JIRA_PROJECT_CUSTOM_FIELD'; field: { id: string; name: string; custom: boolean } };
+	| { type: 'ADD_JIRA_PROJECT_CUSTOM_FIELD'; field: { id: string; name: string; custom: boolean } }
+	| {
+			type: 'SET_JIRA_ROUTING_DISCRIMINATOR';
+			kind: '' | 'label' | 'component';
+			value: string;
+	  };
 
 export function createInitialJiraState(): JiraWizardStateSlice {
 	return {
@@ -78,6 +91,8 @@ export function createInitialJiraState(): JiraWizardStateSlice {
 		jiraIssueTypes: {},
 		jiraLabels: { ...INITIAL_JIRA_LABELS },
 		jiraCostFieldId: '',
+		jiraRoutingKind: '',
+		jiraRoutingValue: '',
 	};
 }
 
@@ -122,6 +137,17 @@ export function jiraWizardReducer<T extends JiraWizardStateSlice & VerificationS
 			};
 		case 'SET_JIRA_PROJECTS':
 			return { ...state, jiraProjects: action.projects };
+		case 'SET_JIRA_ROUTING_DISCRIMINATOR': {
+			// An empty value clears the whole discriminator rather than leaving a
+			// kind behind: a kind without a value serialises to a routing block the
+			// backend schema rejects, and clearing the field plainly means "no
+			// scoping". Routing is non-secret config, so unlike the credential
+			// cases this does not invalidate a verification result.
+			const value = action.value;
+			return value
+				? { ...state, jiraRoutingKind: action.kind, jiraRoutingValue: value }
+				: { ...state, jiraRoutingKind: '', jiraRoutingValue: '' };
+		}
 		case 'SET_JIRA_PROJECT_KEY':
 			return {
 				...state,
