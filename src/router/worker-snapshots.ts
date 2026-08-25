@@ -9,6 +9,7 @@
 import Docker from 'dockerode';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
+import { resolvePullAuthConfig } from './registry-auth.js';
 import { registerSnapshot } from './snapshot-manager.js';
 
 const docker = new Docker();
@@ -287,7 +288,13 @@ export function pullImageOnce(imageName: string, timeoutMs = IMAGE_PULL_TIMEOUT_
 	if (existing) return existing;
 
 	const promise = (async () => {
-		const pullStream = (await docker.pull(imageName)) as NodeJS.ReadableStream;
+		// Private registries need explicit auth on every pull — dockerode sends
+		// none by default and the daemon has no login of its own.
+		const authconfig = resolvePullAuthConfig(imageName);
+		const pullStream = (await docker.pull(
+			imageName,
+			authconfig ? { authconfig } : {},
+		)) as NodeJS.ReadableStream;
 		await new Promise<void>((resolve, reject) => {
 			const timer = setTimeout(() => {
 				reject(new Error(`pull timeout after ${timeoutMs}ms for ${imageName}`));

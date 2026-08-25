@@ -12,6 +12,7 @@ const {
 	mockImageInspect,
 	mockLoggerWarn,
 	mockRegisterSnapshot,
+	mockResolvePullAuthConfig,
 } = vi.hoisted(() => ({
 	mockCaptureException: vi.fn(),
 	mockContainerCommit: vi.fn(),
@@ -24,6 +25,7 @@ const {
 	mockImageInspect: vi.fn(),
 	mockLoggerWarn: vi.fn(),
 	mockRegisterSnapshot: vi.fn(),
+	mockResolvePullAuthConfig: vi.fn(),
 }));
 
 vi.mock('dockerode', () => ({
@@ -48,6 +50,10 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 vi.mock('../../../src/router/snapshot-manager.js', () => ({
 	registerSnapshot: (...args: unknown[]) => mockRegisterSnapshot(...args),
+}));
+
+vi.mock('../../../src/router/registry-auth.js', () => ({
+	resolvePullAuthConfig: (...args: unknown[]) => mockResolvePullAuthConfig(...args),
 }));
 
 import {
@@ -352,14 +358,28 @@ describe('pullImageOnce', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockDockerPull.mockResolvedValue({} as never);
+		mockResolvePullAuthConfig.mockReturnValue(undefined);
 		mockFollowProgress.mockImplementation(((_stream: unknown, cb: (err: Error | null) => void) =>
 			cb(null)) as never);
 	});
 
 	it('resolves when the pull stream completes without error', async () => {
 		await expect(pullImageOnce('img:latest')).resolves.toBeUndefined();
-		expect(mockDockerPull).toHaveBeenCalledWith('img:latest');
+		expect(mockDockerPull).toHaveBeenCalledWith('img:latest', {});
 		expect(mockFollowProgress).toHaveBeenCalledTimes(1);
+	});
+
+	it('pulls anonymously (no authconfig key) when no registry credentials resolve', async () => {
+		await pullImageOnce('img:latest');
+		expect(mockResolvePullAuthConfig).toHaveBeenCalledWith('img:latest');
+		expect(mockDockerPull).toHaveBeenCalledWith('img:latest', {});
+	});
+
+	it('passes the resolved authconfig to docker.pull for private registries', async () => {
+		const authconfig = { username: 'bot', password: 'secret', serveraddress: 'ghcr.io' };
+		mockResolvePullAuthConfig.mockReturnValue(authconfig);
+		await pullImageOnce('ghcr.io/acme/worker:latest');
+		expect(mockDockerPull).toHaveBeenCalledWith('ghcr.io/acme/worker:latest', { authconfig });
 	});
 
 	it('rejects when the pull stream emits an error', async () => {
@@ -395,8 +415,8 @@ describe('pullImageOnce', () => {
 	it('does NOT deduplicate calls for different images', async () => {
 		await Promise.all([pullImageOnce('a:latest'), pullImageOnce('b:latest')]);
 		expect(mockDockerPull).toHaveBeenCalledTimes(2);
-		expect(mockDockerPull).toHaveBeenNthCalledWith(1, 'a:latest');
-		expect(mockDockerPull).toHaveBeenNthCalledWith(2, 'b:latest');
+		expect(mockDockerPull).toHaveBeenNthCalledWith(1, 'a:latest', {});
+		expect(mockDockerPull).toHaveBeenNthCalledWith(2, 'b:latest', {});
 	});
 
 	it('clears the in-flight cache after settling so the next call pulls fresh', async () => {
