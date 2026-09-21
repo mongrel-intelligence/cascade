@@ -259,7 +259,8 @@ Architecture docs (`04-agent-system.md`, `05-engine-backends.md`, `adding-engine
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
-- divergence (autonomous run, task 6): the adapter's fail-closed path needs `pushedChangesAlternatives` on `completionRequirements`, so this plan forwards it in `secretOrchestrator.ts` (one line) and takes that line's ownership from plan 2; the shared real-git helper `tests/helpers/tempGitRepo.ts` was added here for the repo-state tests.
+- divergence (autonomous run, task 6): the adapter's fail-closed path needs `pushedChangesAlternatives` on `completionRequirements`, so this plan forwards it in `secretOrchestrator.ts` (one line) and takes that line's ownership from plan 2; the shared real-git helper `tests/helpers/tempGitRepo.ts` was added here for the repo-state tests; plan 2's Summary, Depends On and task 4 text were adjusted to match.
+- review round 1 (autonomous run, fresh-context `z:local-review` gate): 0 must-fix. Applied should-fix: `readRepoState` git calls carry a 10 s timeout (fail-closed on a wedged git); the CLI-spawn test budgets live once in `tests/helpers/cliSpawnBudget.ts` with the per-test budget strictly above the spawn budget; both new helpers are indexed in `tests/README.md`. Applied suggestions: `applyCompletionEvidence` reads only the PR sidecar (no double git shell-out per turn), `RepoStateEvidence` carries `initialHeadSha` so outcome checks are pure functions of evidence, rejection-reason constants pin the evaluator tests, `getCompletionFailure` no longer re-narrows requirements. Deferred: returning the evaluation from `getCompletionFailure` to avoid the success-path re-evaluation (💡, cosmetic); consolidating the three near-identical CLI spawn wrappers (🕰️ pre-existing, adhoc candidate); folding `hasUncommittedChanges` onto `readRepoState` (noted in plan 2, task 5).
 - [x] AC #1
 - [x] AC #2
 - [x] AC #3

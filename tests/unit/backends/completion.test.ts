@@ -11,6 +11,11 @@ import {
 	type CompletionEvidence,
 	evaluatePushedChanges,
 	getCompletionFailure,
+	REJECTION_NO_PUSH,
+	REJECTION_NO_RESPONSE,
+	REJECTION_REPO_STATE_UNAVAILABLE,
+	REJECTION_RESPONSE_MALFORMED,
+	REJECTION_TREE_DIRTY,
 	readCompletionEvidence,
 	readRepoState,
 } from '../../../src/backends/completion.js';
@@ -246,6 +251,7 @@ describe('readRepoState', () => {
 		expect(readRepoState(repo.dir, initial)).toEqual({
 			clean: true,
 			headSha: initial,
+			initialHeadSha: initial,
 			headUnchanged: true,
 		});
 	});
@@ -265,6 +271,7 @@ describe('readRepoState', () => {
 		expect(readRepoState(repo.dir, initial)).toEqual({
 			clean: true,
 			headSha: next,
+			initialHeadSha: initial,
 			headUnchanged: false,
 		});
 	});
@@ -292,7 +299,7 @@ describe('readRepoState', () => {
 		expect(readCompletionEvidence({ initialHeadSha: initial }).repoState).toBeUndefined();
 		expect(
 			readCompletionEvidence({ repoDir: repo.dir, initialHeadSha: initial }).repoState,
-		).toEqual({ clean: true, headSha: initial, headUnchanged: true });
+		).toEqual({ clean: true, headSha: initial, initialHeadSha: initial, headUnchanged: true });
 	});
 });
 
@@ -301,14 +308,14 @@ const RESPONSE = {
 	kind: 'top-level' as const,
 	command: 'cascade-tools scm post-pr-comment',
 };
-const CLEAN_REPO = { clean: true, headSha: 'aaa', headUnchanged: true };
+const CLEAN_REPO = { clean: true, headSha: 'aaa', initialHeadSha: 'aaa', headUnchanged: true };
 const WITH_ALTERNATIVE = {
 	requiresPushedChanges: true,
 	pushedChangesAlternatives: ['pr-response'] as const,
 };
 const NO_PUSH_REJECTION = {
 	outcome: 'pushed-changes',
-	reason: expect.stringMatching(/no pushed-changes sidecar/),
+	reason: REJECTION_NO_PUSH,
 };
 
 describe('evaluatePushedChanges', () => {
@@ -378,10 +385,7 @@ describe('evaluatePushedChanges', () => {
 			),
 		).toEqual({
 			satisfiedBy: null,
-			rejections: [
-				NO_PUSH_REJECTION,
-				{ outcome: 'pr-response', reason: expect.stringMatching(/uncommitted changes/) },
-			],
+			rejections: [NO_PUSH_REJECTION, { outcome: 'pr-response', reason: REJECTION_TREE_DIRTY }],
 		});
 	});
 
@@ -392,14 +396,14 @@ describe('evaluatePushedChanges', () => {
 				evidenceWith({
 					hasAuthoritativePRResponse: true,
 					prResponse: RESPONSE,
-					repoState: { clean: true, headSha: 'bbb', headUnchanged: false },
+					repoState: { clean: true, headSha: 'bbb', initialHeadSha: 'aaa', headUnchanged: false },
 				}),
 			),
 		).toEqual({
 			satisfiedBy: null,
 			rejections: [
 				NO_PUSH_REJECTION,
-				{ outcome: 'pr-response', reason: expect.stringMatching(/HEAD moved.*bbb/) },
+				{ outcome: 'pr-response', reason: expect.stringMatching(/HEAD moved from aaa to bbb/) },
 			],
 		});
 	});
@@ -414,7 +418,7 @@ describe('evaluatePushedChanges', () => {
 			satisfiedBy: null,
 			rejections: [
 				NO_PUSH_REJECTION,
-				{ outcome: 'pr-response', reason: expect.stringMatching(/repository state unavailable/) },
+				{ outcome: 'pr-response', reason: REJECTION_REPO_STATE_UNAVAILABLE },
 			],
 		});
 	});
@@ -429,7 +433,7 @@ describe('evaluatePushedChanges', () => {
 			satisfiedBy: null,
 			rejections: [
 				NO_PUSH_REJECTION,
-				{ outcome: 'pr-response', reason: expect.stringMatching(/malformed/) },
+				{ outcome: 'pr-response', reason: REJECTION_RESPONSE_MALFORMED },
 			],
 		});
 	});
@@ -439,10 +443,7 @@ describe('evaluatePushedChanges', () => {
 			evaluatePushedChanges(WITH_ALTERNATIVE, evidenceWith({ repoState: CLEAN_REPO })),
 		).toEqual({
 			satisfiedBy: null,
-			rejections: [
-				NO_PUSH_REJECTION,
-				{ outcome: 'pr-response', reason: expect.stringMatching(/no PR response recorded/) },
-			],
+			rejections: [NO_PUSH_REJECTION, { outcome: 'pr-response', reason: REJECTION_NO_RESPONSE }],
 		});
 	});
 });

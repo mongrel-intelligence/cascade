@@ -17,6 +17,8 @@ export const COMPLETION_ERROR_NO_PM_WRITE =
 export const PR_RESPONSE_KINDS = ['top-level', 'inline-reply'] as const;
 export type PRResponseKind = (typeof PR_RESPONSE_KINDS)[number];
 const DEFAULT_PR_RESPONSE_COMMAND = 'cascade-tools scm post-pr-comment';
+/** A wedged git must fail the comment-only outcome closed, not block the worker turn. */
+const GIT_STATE_TIMEOUT_MS = 10_000;
 
 export const REJECTION_NO_PUSH =
 	'no pushed-changes sidecar (cascade-tools session finish never recorded a push)';
@@ -61,6 +63,7 @@ export interface PRResponseEvidence {
 export interface RepoStateEvidence {
 	clean: boolean;
 	headSha: string;
+	initialHeadSha: string;
 	headUnchanged: boolean;
 }
 
@@ -131,6 +134,7 @@ export function readRepoState(
 		cwd: repoDir,
 		encoding: 'utf-8' as const,
 		stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'],
+		timeout: GIT_STATE_TIMEOUT_MS,
 	};
 	try {
 		const status = execFileSync('git', ['status', '--porcelain'], gitOptions);
@@ -138,6 +142,7 @@ export function readRepoState(
 		return {
 			clean: status.trim().length === 0,
 			headSha,
+			initialHeadSha,
 			headUnchanged: headSha === initialHeadSha,
 		};
 	} catch {
@@ -201,31 +206,22 @@ export type PushedChangesEvaluation =
 	| { satisfiedBy: PushedChangesOutcome }
 	| { satisfiedBy: null; rejections: OutcomeRejection[] };
 
-type OutcomeCheck = (
-	requirements: CompletionRequirements,
-	evidence: CompletionEvidence,
-) => string | undefined;
+type OutcomeCheck = (evidence: CompletionEvidence) => string | undefined;
 
-function rejectPRResponse(
-	requirements: CompletionRequirements,
-	evidence: CompletionEvidence,
-): string | undefined {
+function rejectPRResponse(evidence: CompletionEvidence): string | undefined {
 	if (evidence.prResponseSidecarMalformed) return REJECTION_RESPONSE_MALFORMED;
 	if (!evidence.prResponse) return REJECTION_NO_RESPONSE;
 	if (!evidence.repoState) return REJECTION_REPO_STATE_UNAVAILABLE;
 	if (!evidence.repoState.clean) return REJECTION_TREE_DIRTY;
 	if (!evidence.repoState.headUnchanged) {
-		return rejectionHeadMoved(
-			requirements.initialHeadSha ?? 'run start',
-			evidence.repoState.headSha,
-		);
+		return rejectionHeadMoved(evidence.repoState.initialHeadSha, evidence.repoState.headSha);
 	}
 	return undefined;
 }
 
 /** One check per outcome, each returning the rejection reason or `undefined` when satisfied. */
 const OUTCOME_CHECKS: Record<PushedChangesOutcome, OutcomeCheck> = {
-	'pushed-changes': (_requirements, evidence) =>
+	'pushed-changes': (evidence) =>
 		evidence.hasAuthoritativePushedChanges ? undefined : REJECTION_NO_PUSH,
 	'pr-response': rejectPRResponse,
 };
@@ -246,7 +242,7 @@ export function evaluatePushedChanges(
 	];
 	const rejections: OutcomeRejection[] = [];
 	for (const outcome of outcomes) {
-		const reason = OUTCOME_CHECKS[outcome](requirements, evidence);
+		const reason = OUTCOME_CHECKS[outcome](evidence);
 		if (!reason) return { satisfiedBy: outcome };
 		rejections.push({ outcome, reason });
 	}
@@ -292,21 +288,27 @@ export interface CompletionFailure {
 }
 
 /** The error a run records when every pushed-changes outcome is rejected. */
-export function resolvePushedChangesError(requirements: CompletionRequirements): string {
+export function resolvePushedChangesError(
+	requirements: Pick<CompletionRequirements, 'pushedChangesAlternatives'>,
+): string {
 	return requirements.pushedChangesAlternatives?.length
 		? COMPLETION_ERROR_NO_PUSH_OR_RESPONSE
 		: COMPLETION_ERROR_NO_PUSH;
 }
 
 function pushedChangesFailure(
-	requirements: CompletionRequirements,
+	pushedChangesAlternatives: readonly PushedChangesAlternative[] | undefined,
 	evidence: CompletionEvidence,
 	rejections: OutcomeRejection[],
 ): CompletionFailure {
-	const continuationPrompt = requirements.pushedChangesAlternatives?.length
+	const continuationPrompt = pushedChangesAlternatives?.length
 		? buildPushedChangesContinuationPrompt(rejections, evidence)
 		: CONTINUATION_PROMPT_NO_PUSH;
-	return { error: resolvePushedChangesError(requirements), continuationPrompt, rejections };
+	return {
+		error: resolvePushedChangesError({ pushedChangesAlternatives }),
+		continuationPrompt,
+		rejections,
+	};
 }
 
 export function getCompletionFailure(
@@ -329,9 +331,13 @@ export function getCompletionFailure(
 		};
 	}
 
-	const pushedChanges = requirements ? evaluatePushedChanges(requirements, evidence) : undefined;
-	if (requirements && pushedChanges?.satisfiedBy === null) {
-		return pushedChangesFailure(requirements, evidence, pushedChanges.rejections);
+	const pushedChanges = evaluatePushedChanges(requirements, evidence);
+	if (pushedChanges?.satisfiedBy === null) {
+		return pushedChangesFailure(
+			requirements?.pushedChangesAlternatives,
+			evidence,
+			pushedChanges.rejections,
+		);
 	}
 
 	if (requirements?.requiresPMWrite && !evidence.hasPMWrite) {
@@ -346,14 +352,15 @@ export function getCompletionFailure(
 }
 
 /**
- * Read sidecar files and upgrade text-based PR evidence to authoritative.
- * Shared across Claude Code and OpenCode backends.
+ * Read the PR sidecar and upgrade text-based PR evidence to authoritative.
+ * Shared across Claude Code and OpenCode backends. Only the PR sidecar is read here so a
+ * turn does not shell out for repository state twice.
  */
 export function applyCompletionEvidence(
 	result: AgentEngineResult,
 	completionRequirements: CompletionRequirements | undefined,
 ): AgentEngineResult {
-	const evidence = readCompletionEvidence(completionRequirements);
+	const evidence = readCompletionEvidence({ prSidecarPath: completionRequirements?.prSidecarPath });
 	if (!evidence.prUrl) return result;
 	return {
 		...result,

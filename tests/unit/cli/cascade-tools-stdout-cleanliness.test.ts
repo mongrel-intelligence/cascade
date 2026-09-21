@@ -22,10 +22,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-
-/** CLI boot (oclif + dist) takes 2-5 s cold and more under full-suite CPU pressure; keep the
- *  vitest per-test budget equal to the spawn budget instead of the 5 s default. */
-const CLI_SPAWN_TIMEOUT_MS = 30_000;
+import { CLI_SPAWN_TIMEOUT_MS, CLI_TEST_TIMEOUT_MS } from '../../helpers/cliSpawnBudget.js';
 
 const REPO_ROOT = resolve(__dirname, '../../..');
 const BIN = resolve(REPO_ROOT, 'bin/cascade-tools.js');
@@ -90,7 +87,7 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			expect(stdout).not.toMatch(LOG_LEVEL_PREFIX);
 			expect(stdout).not.toContain('[cascade]');
 		},
-		CLI_SPAWN_TIMEOUT_MS,
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -107,7 +104,7 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			// At least one cascade-emitted log line landed in the file.
 			expect(fileContent).toContain('[cascade]');
 		},
-		CLI_SPAWN_TIMEOUT_MS,
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -129,6 +126,6 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			expect(stdout).not.toContain(ESC);
 			expect(stdout).not.toContain('[cascade]');
 		},
-		CLI_SPAWN_TIMEOUT_MS,
+		CLI_TEST_TIMEOUT_MS,
 	);
 });

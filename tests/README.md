@@ -38,7 +38,9 @@ tests/helpers/
 ├── trpcTestHarness.ts    # tRPC caller factory + ownership mock + error assertion
 ├── mockDb.ts             # Drizzle query-chain mock builder
 ├── mockPMProvider.ts     # PMProvider stub factory
-└── mockPersonas.ts       # GitHub bot-identity stub helpers
+├── mockPersonas.ts       # GitHub bot-identity stub helpers
+├── tempGitRepo.ts        # Throwaway real git repository (commit / writeFile / cleanup)
+└── cliSpawnBudget.ts     # Timeouts for tests that spawn the built cascade-tools CLI
 ```
 
 ---

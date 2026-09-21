@@ -19,10 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-
-/** CLI boot (oclif + dist) takes 2-5 s cold and more under full-suite CPU pressure; keep the
- *  vitest per-test budget equal to the spawn budget instead of the 5 s default. */
-const CLI_SPAWN_TIMEOUT_MS = 30_000;
+import { CLI_SPAWN_TIMEOUT_MS, CLI_TEST_TIMEOUT_MS } from '../../helpers/cliSpawnBudget.js';
 
 const REPO_ROOT = resolve(__dirname, '../../..');
 const BIN = resolve(REPO_ROOT, 'bin/cascade-tools.js');
@@ -70,7 +67,7 @@ describe('cascade-tools --help — topic summaries', () => {
 			expect(stdout).toMatch(/alerting\s+Inspect Sentry alerting/i);
 			expect(stdout).toMatch(/session\s+End the agent session/i);
 		},
-		CLI_SPAWN_TIMEOUT_MS,
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -86,6 +83,6 @@ describe('cascade-tools --help — topic summaries', () => {
 			expect(stdout).not.toContain(`--workItemId '"abc123"'`);
 			expect(stdout).not.toContain(`--workItemId 'abc123'`);
 		},
-		CLI_SPAWN_TIMEOUT_MS,
+		CLI_TEST_TIMEOUT_MS,
 	);
 });

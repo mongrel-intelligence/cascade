@@ -165,7 +165,8 @@ Existing `secretOrchestrator` coverage lives in `tests/unit/backends/adapter.tes
 - `checkPushedChangesHook(state)` returns `FinishValidationError | { pushedChangesOutcome }`:
   1. If `state.hooks.pushedChangesAlternatives?.includes('pr-response') && state.prResponse && state.initialHeadSha` and `!hasUncommittedChanges() && !hasUnpushedCommits(prBranch) && !hasNewCommits(initialHeadSha)` → `logger.info('[Finish] comment-only outcome accepted', { url, kind })`, outcome `'pr-response'`.
   2. Otherwise the existing three checks run unchanged in order; when alternatives are declared, the `uncommitted_changes` and `no_new_commits` messages are replaced by the two-way texts (constants: `FINISH_ERROR_DIRTY_WITH_RESPONSE`, `FINISH_ERROR_NOTHING_TO_FINISH`); when a response is recorded the message begins with "Your PR response was already posted at {url} — do not post it again." A passing strict path reports `'pushed-changes'`.
-- `validateFinish` propagates the outcome. `cli/session/finish.ts` reads `readCompletionEvidence({ prResponseSidecarPath: process.env[PR_RESPONSE_SIDECAR_ENV_VAR], … }).prResponse` into the state and writes the pushed-changes sidecar only when `result.pushedChangesOutcome === 'pushed-changes'`. `gadgets/Finish.ts` does the same with `getPRResponse()`.
+- `validateFinish` propagates the outcome.
+- While here, make `hasUncommittedChanges` delegate to plan 1's `readRepoState` (`src/backends/completion.ts`) so the tree keeps one clean-tree check instead of a third ad-hoc `git status --porcelain` (plan 1 review suggestion). `cli/session/finish.ts` reads `readCompletionEvidence({ prResponseSidecarPath: process.env[PR_RESPONSE_SIDECAR_ENV_VAR], … }).prResponse` into the state and writes the pushed-changes sidecar only when `result.pushedChangesOutcome === 'pushed-changes'`. `gadgets/Finish.ts` does the same with `getPRResponse()`.
 
 ---
 
