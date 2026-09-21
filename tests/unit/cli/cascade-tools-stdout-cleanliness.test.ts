@@ -23,6 +23,10 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+/** CLI boot (oclif + dist) takes 2-5 s cold and more under full-suite CPU pressure; keep the
+ *  vitest per-test budget equal to the spawn budget instead of the 5 s default. */
+const CLI_SPAWN_TIMEOUT_MS = 30_000;
+
 const REPO_ROOT = resolve(__dirname, '../../..');
 const BIN = resolve(REPO_ROOT, 'bin/cascade-tools.js');
 const DIST = resolve(REPO_ROOT, 'dist/cli/bootstrap.js');
@@ -56,7 +60,7 @@ function runCascadeTools(
 		cwd: REPO_ROOT,
 		encoding: 'utf-8',
 		env,
-		timeout: 30_000,
+		timeout: CLI_SPAWN_TIMEOUT_MS,
 	});
 	return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status };
 }
@@ -86,6 +90,7 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			expect(stdout).not.toMatch(LOG_LEVEL_PREFIX);
 			expect(stdout).not.toContain('[cascade]');
 		},
+		CLI_SPAWN_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -102,6 +107,7 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			// At least one cascade-emitted log line landed in the file.
 			expect(fileContent).toContain('[cascade]');
 		},
+		CLI_SPAWN_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -116,12 +122,13 @@ describe('cascade-tools — stdout is reserved for the JSON envelope', () => {
 			const result = spawnSync(
 				'node',
 				[BIN, 'pm', 'read-work-item', '--workItemId', 'NOT-A-REAL-WORK-ITEM'],
-				{ cwd: REPO_ROOT, encoding: 'utf-8', env, timeout: 30_000 },
+				{ cwd: REPO_ROOT, encoding: 'utf-8', env, timeout: CLI_SPAWN_TIMEOUT_MS },
 			);
 			const stdout = result.stdout ?? '';
 			expect(stdout).toMatch(ENVELOPE_START);
 			expect(stdout).not.toContain(ESC);
 			expect(stdout).not.toContain('[cascade]');
 		},
+		CLI_SPAWN_TIMEOUT_MS,
 	);
 });
