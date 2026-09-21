@@ -1,0 +1,269 @@
+---
+id: 025
+slug: pr-comment-completion-and-codex-resume
+plan: 1
+plan_slug: completion-alternatives
+level: plan
+parent_spec: docs/specs/025-pr-comment-completion-and-codex-resume.md
+depends_on: []
+status: pending
+---
+
+# 025/1: Completion alternatives — shared, fail-closed evaluation
+
+> Part 1 of 3 in the 025-pr-comment-completion-and-codex-resume plan. Parent spec: resolve `docs/specs/025-pr-comment-completion-and-codex-resume.md*` (it may have been renamed `.done`).
+
+## Summary
+
+This plan teaches the shared completion contract to express **alternative valid outcomes** for the pushed-changes requirement, without changing what any agent experiences yet. A profile may declare `pushedChangesAlternatives: [pr-response]` next to `requiresPushedChanges: true`; the shared evaluator then accepts *either* authoritative pushed-change evidence *or* an authoritative PR-response record combined with a clean, unchanged repository. Missing, malformed, or contradictory evidence satisfies neither branch. The evaluation is engine-agnostic (it lives in `completion.ts`, consumed by the shared continuation loop and by post-processing) and contains no agent-name conditional.
+
+It ships **dormant**: no profile opts in (plan 3), and no tool writes the PR-response sidecar yet (plan 2). What is reviewable in isolation is the model (schema flag, requirement/evidence types), the fail-closed evaluator with its per-outcome rejection reasons, the outcome-aware continuation prompt (which already tells a resumed session not to repeat a recorded response), and the log lines that name the outcome that succeeded or why each alternative was rejected. The duplicated pushed-changes check in `postProcess.ts` is replaced by the shared evaluator so the adapter and the continuation loop cannot drift.
+
+Plan 2 produces the evidence (sidecar writers, `session finish` acceptance, env plumbing); plan 3 opts the PR-comment agent in, adjusts its guidance, and adds the end-to-end proof plus documentation.
+
+**Components delivered:**
+- `src/agents/definitions/schema.ts` — `pushedChangesAlternatives` finish-hook flag (+ refinement)
+- `src/agents/definitions/profiles.ts` — flag threaded into `FinishHookFlags`
+- `src/backends/completion.ts` — PR-response evidence, repo-state evidence, `evaluatePushedChanges`, outcome-aware failure/prompt
+- `src/backends/shared/continuationLoop.ts` — outcome logging on success, rejection reasons on continuation/failure
+- `src/backends/postProcess.ts` + `src/backends/adapter.ts` — post-run gate uses the shared evaluator
+
+**Files owned (exclusive to this plan within this spec):**
+- `src/agents/definitions/schema.ts`
+- `src/agents/definitions/profiles.ts`
+- `src/backends/completion.ts`
+- `src/backends/shared/continuationLoop.ts`
+- `src/backends/postProcess.ts`
+- `src/backends/adapter.ts`
+- `tests/unit/backends/completion.test.ts`
+- `tests/unit/backends/shared-continuationLoop.test.ts`
+- `tests/unit/backends/postProcess.test.ts`
+- `tests/unit/agents/definitions/schema.test.ts`
+- `tests/unit/agents/definitions/profiles.test.ts`
+
+**Shared surfaces (append-only, conflicts are trivial):**
+- `CHANGELOG.md` (one block under *Unreleased → Changed*)
+
+**Deferred to later plans in this spec:**
+- Writing the PR-response sidecar from `cascade-tools scm post-pr-comment` / `reply-to-review-comment`, the `CASCADE_PR_RESPONSE_SIDECAR_PATH` env var, sidecar path creation, and `session finish` accepting the comment-only outcome — plan 2.
+- `respond-to-pr-comment.yaml` opting in, task-prompt guidance, end-to-end tests, architecture docs — plan 3.
+
+---
+
+## Spec ACs satisfied by this plan
+
+- Spec AC #1 (question → completes without commit) — **partial (this plan: the evaluator accepts the `pr-response` outcome; plan 2 produces the evidence; plan 3 opts the agent in)**
+- Spec AC #2 (changed files, not pushed → no completion) — **partial (this plan: the `pr-response` branch requires a clean tree and unchanged HEAD and yields an actionable pushed-change reason; plan 2 mirrors it in `session finish`; plan 3 proves it end to end)**
+- Spec AC #3 (pushed changes still complete under the strict path) — **full (regression pin: `pushed-changes` remains the first-checked branch and the only branch when no alternative is declared)**
+- Spec AC #5 (missing / malformed / inconsistent evidence satisfies no alternative; actionable reason) — **full**
+- Spec AC #6 (a recorded response is not repeated on continuation) — **partial (this plan: the continuation prompt names the recorded response URL and says not to post again; plan 3 adds the task guidance and the e2e assertion)**
+- Spec AC #7 (identical across native-tool engines) — **partial (this plan: one evaluator, consumed by the shared loop every native-tool engine already uses; plan 3 adds the structural parity test)**
+- Spec AC #8 (agents that require pushed changes today keep failing without a push; nothing inherits the alternative) — **partial (this plan: schema refinement + evaluator only consults alternatives that are declared; plan 3 pins that only `respond-to-pr-comment` declares one)**
+- Spec AC #11 (logs identify the satisfied outcome or why each alternative was rejected) — **full**
+
+---
+
+## Depends On
+
+- Nothing inside this spec. The Codex resume grammar fix (spec AC #9) and the build-time grammar probe (spec AC #10) were delivered ahead of this plan set in PR #1553 and PR #1554; this plan does not touch `src/backends/codex/**`.
+
+---
+
+## Detailed Task List (TDD)
+
+### 1. Finish-hook flag: `pushedChangesAlternatives`
+
+**Tests first** (`tests/unit/agents/definitions/schema.test.ts`):
+
+- `accepts pushedChangesAlternatives: [pr-response] next to requiresPushedChanges: true` — unit — parse a definition whose `hooks.finish.scm` is `{ requiresPushedChanges: true, pushedChangesAlternatives: ['pr-response'] }` → parse succeeds and the value round-trips. Expected red: `ZodError: Unrecognized key(s) in object: 'pushedChangesAlternatives'` (or strip-then-`undefined`, depending on strictness — assert the round-trip so either failure mode is red).
+- `rejects an unknown alternative name` — unit — `pushedChangesAlternatives: ['comment']` → parse throws mentioning `pr-response`. Expected red: parse succeeds (no enum yet).
+- `rejects pushedChangesAlternatives without requiresPushedChanges: true` — unit — `{ pushedChangesAlternatives: ['pr-response'] }` alone, and with `requiresPushedChanges: false` → parse throws `pushedChangesAlternatives requires requiresPushedChanges: true`. Expected red: parse succeeds.
+- `rejects an empty pushedChangesAlternatives list` — unit — `[]` → throws. Expected red: parse succeeds.
+
+**Tests first** (`tests/unit/agents/definitions/profiles.test.ts`):
+
+- `resolveFinishHooks threads pushedChangesAlternatives through` — unit — definition with the flag → `profile.finishHooks.pushedChangesAlternatives` equals `['pr-response']`; a definition without it → `undefined` (extend the existing "returns finishHooks from definition" test with the new key so the `toEqual` shape stays exhaustive). Expected red: `expected undefined to equal ['pr-response']`.
+
+**Implementation** (`src/agents/definitions/schema.ts`, `src/agents/definitions/profiles.ts`):
+- `export const PUSHED_CHANGES_ALTERNATIVES = ['pr-response'] as const;`
+  `export type PushedChangesAlternative = (typeof PUSHED_CHANGES_ALTERNATIVES)[number];`
+- `ScmFinishSchema` gains `pushedChangesAlternatives: z.array(z.enum(PUSHED_CHANGES_ALTERNATIVES)).min(1).optional()`.
+- The refinement (`pushedChangesAlternatives` ⇒ `requiresPushedChanges === true`) is attached at the `FinishHooksSchema` level with `superRefine` so `ScmFinishSchema` stays a plain `ZodObject` (its `z.infer` feeds `FinishHookFlags`).
+- `resolveFinishHooks` copies `scm?.pushedChangesAlternatives`. Nothing else in `profiles.ts` changes (`needsGitStateStopHooks` keeps keying off `requiresPushedChanges`).
+
+### 2. Evidence model: PR response + repository state
+
+**Tests first** (`tests/unit/backends/completion.test.ts`, new `describe('readCompletionEvidence — pr-response')` and `describe('readRepoState')`):
+
+- `reads a well-formed PR-response sidecar` — unit — sidecar `{ source: 'cascade-tools scm post-pr-comment', url: 'https://github.com/o/r/pull/7#issuecomment-1', kind: 'top-level', id: 1, prNumber: 7 }` → `evidence.hasAuthoritativePRResponse === true`, `evidence.prResponse` equals `{ url, kind: 'top-level', command: 'cascade-tools scm post-pr-comment' }`, `evidence.prResponseSidecarMalformed === false`. Expected red: `TypeError`/`expected undefined to be true`.
+- `accepts the inline-reply kind` — unit — `kind: 'inline-reply'` → `prResponse.kind === 'inline-reply'`. Expected red: as above.
+- `treats a sidecar without url as malformed, not as evidence` — unit — `{ kind: 'top-level' }` → `hasAuthoritativePRResponse === false`, `prResponseSidecarMalformed === true`. Expected red: `expected undefined to be false`.
+- `treats an unknown kind as malformed` — unit — `{ url: '…', kind: 'edit' }` → malformed. Expected red: as above.
+- `treats invalid JSON as malformed` — unit — file content `{not json` → malformed, no throw. Expected red: as above.
+- `reports no PR response when the sidecar path is unset or the file is missing` — unit — `prResponseSidecarPath` undefined / nonexistent → `hasAuthoritativePRResponse === false`, `prResponseSidecarMalformed === false`. Expected red: `expected undefined to be false`.
+- `readRepoState: clean tree at the initial commit` — unit — `git init` + one commit in a temp dir, `initialHeadSha` = that commit → `{ clean: true, headSha: <sha>, headUnchanged: true }`. Expected red: `readRepoState is not a function`.
+- `readRepoState: uncommitted change ⇒ clean=false` — unit — write a file → `clean === false`, `headUnchanged === true`. Expected red: as above.
+- `readRepoState: new commit ⇒ headUnchanged=false` — unit — second commit → `headUnchanged === false`, `clean === true`. Expected red: as above.
+- `readRepoState: untracked file counts as dirty` — unit — untracked file only → `clean === false` (git status --porcelain lists `??`). Expected red: as above.
+- `readRepoState: not a git repository ⇒ undefined` — unit — plain temp dir → `undefined`, no throw. Expected red: as above.
+- `readCompletionEvidence attaches repoState only when repoDir and initialHeadSha are both given` — unit — requirements with `repoDir` but no `initialHeadSha` → `evidence.repoState === undefined`. Expected red: `expected <object> to be undefined` (once `readRepoState` exists) — i.e. write this test after the reader so its red is the guard, not the missing function.
+
+**Implementation** (`src/backends/completion.ts`):
+- `export const PR_RESPONSE_KINDS = ['top-level', 'inline-reply'] as const; export type PRResponseKind = (typeof PR_RESPONSE_KINDS)[number];`
+- `export interface PRResponseEvidence { url: string; kind: PRResponseKind; command: string }`
+- `export interface RepoStateEvidence { clean: boolean; headSha: string; headUnchanged: boolean }`
+- `CompletionRequirements` gains `pushedChangesAlternatives?: readonly PushedChangesAlternative[]`, `prResponseSidecarPath?: string`, `repoDir?: string`, `initialHeadSha?: string` (the latter two are populated by plan 2; here they are consumed).
+- `CompletionEvidence` gains `hasAuthoritativePRResponse: boolean`, `prResponse?: PRResponseEvidence`, `prResponseSidecarMalformed: boolean`, `repoState?: RepoStateEvidence`.
+- `export function readRepoState(repoDir: string, initialHeadSha: string): RepoStateEvidence | undefined` — `execFileSync('git', ['status', '--porcelain'], { cwd: repoDir })` and `execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir })`; any thrown error → `undefined`. No shell, no interpolation.
+- `readCompletionEvidence` reads the PR-response sidecar with the same `readJsonSidecar` helper; a parsed object with a non-empty string `url` and `kind ∈ PR_RESPONSE_KINDS` is evidence (`command` defaults to `'cascade-tools scm post-pr-comment'` when `source` is absent); a file that exists but fails that check sets `prResponseSidecarMalformed = true`. It calls `readRepoState` only when both `repoDir` and `initialHeadSha` are set.
+
+### 3. Evaluator: `evaluatePushedChanges`
+
+**Tests first** (`tests/unit/backends/completion.test.ts`, `describe('evaluatePushedChanges')`) — build `CompletionEvidence` objects directly (no filesystem):
+
+- `returns undefined when pushed changes are not required` — unit — `{ requiresPushedChanges: undefined }` → `undefined`. Expected red: `evaluatePushedChanges is not a function`.
+- `pushed-changes evidence satisfies the requirement` — unit — `hasAuthoritativePushedChanges: true` → `{ satisfiedBy: 'pushed-changes' }`. Expected red: as above.
+- `without alternatives, a PR response alone is rejected` — unit — no `pushedChangesAlternatives`, `hasAuthoritativePRResponse: true`, clean/unchanged repo → `satisfiedBy: null`, exactly one rejection `{ outcome: 'pushed-changes', reason: /no pushed-changes sidecar/ }`. Expected red: as above.
+- `pr-response with a clean, unchanged repository satisfies the requirement` — unit — alternatives `['pr-response']`, response present, `repoState: { clean: true, headUnchanged: true }` → `{ satisfiedBy: 'pr-response' }`. Expected red: as above.
+- `pushed-changes wins when both branches are satisfied` — unit — both true → `satisfiedBy: 'pushed-changes'`. Expected red: as above.
+- `pr-response is rejected when the tree is dirty` — unit — `clean: false` → `satisfiedBy: null`; rejections contain `{ outcome: 'pr-response', reason: /uncommitted changes/ }` **and** `{ outcome: 'pushed-changes', … }`. Expected red: as above.
+- `pr-response is rejected when HEAD moved` — unit — `headUnchanged: false` → reason `/HEAD moved/`. Expected red: as above.
+- `pr-response is rejected when repository state is unavailable` — unit — `repoState: undefined` → reason `/repository state unavailable/`. Expected red: as above.
+- `pr-response is rejected when the sidecar is malformed, naming the malformation` — unit — `prResponseSidecarMalformed: true` → reason `/malformed/`. Expected red: as above.
+- `pr-response is rejected when nothing was recorded` — unit — → reason `/no PR response recorded/`. Expected red: as above.
+
+**Implementation** (`src/backends/completion.ts`):
+- `export type PushedChangesOutcome = 'pushed-changes' | PushedChangesAlternative;`
+- `export interface OutcomeRejection { outcome: PushedChangesOutcome; reason: string }`
+- `export type PushedChangesEvaluation = { satisfiedBy: PushedChangesOutcome } | { satisfiedBy: null; rejections: OutcomeRejection[] }`
+- `export function evaluatePushedChanges(requirements: CompletionRequirements | undefined, evidence: CompletionEvidence): PushedChangesEvaluation | undefined`
+  - `undefined` unless `requirements?.requiresPushedChanges`.
+  - Branch order: `'pushed-changes'` first, then each declared alternative in declaration order. First satisfied branch wins. When none is satisfied, return every branch's rejection reason (one per branch, in the same order).
+  - Reason strings are constants exported from the module (no inline literals at call sites), e.g. `REJECTION_NO_PUSH`, `REJECTION_NO_RESPONSE`, `REJECTION_RESPONSE_MALFORMED`, `REJECTION_TREE_DIRTY`, `REJECTION_HEAD_MOVED` (interpolating the two SHAs), `REJECTION_REPO_STATE_UNAVAILABLE`.
+
+### 4. Failure + continuation prompt
+
+**Tests first** (`tests/unit/backends/completion.test.ts`, `describe('getCompletionFailure — pushed-changes alternatives')`):
+
+- `keeps the legacy no-push error and prompt when no alternative is declared` — unit — `requiresPushedChanges: true`, no evidence → `error === COMPLETION_ERROR_NO_PUSH` and the prompt is byte-identical to today's text (assert against the exported constant introduced for it, `CONTINUATION_PROMPT_NO_PUSH`). Expected red: `expected <new message> to be <legacy>` once the alternative-aware path exists — write it first so it is green-then-guarded; its purpose is the AC #8 regression pin.
+- `returns undefined when the pr-response branch is satisfied` — unit — → `undefined`. Expected red: returns the no-push failure.
+- `with alternatives and no evidence, names both ways to finish` — unit — → `error === COMPLETION_ERROR_NO_PUSH_OR_RESPONSE`; prompt matches `/cascade-tools scm post-pr-comment/`, `/reply-to-review-comment/`, `/commit(,)? (and )?push/`, and `/cascade-tools session finish/`. Expected red: `error` is `COMPLETION_ERROR_NO_PUSH`.
+- `with a recorded response but a modified repository, tells the session not to repeat the response` — unit — response present, `clean: false` → prompt contains the response URL, `/do not post (it|another)/i`, and `/commit and push|revert/`. Expected red: prompt lacks the URL.
+- `exposes the rejections on the failure` — unit — `failure.rejections` equals the evaluator's rejection list. Expected red: `rejections` undefined.
+
+**Implementation** (`src/backends/completion.ts`):
+- `export const COMPLETION_ERROR_NO_PUSH_OR_RESPONSE = 'Agent completed but neither authoritative pushed changes nor a substantive PR response with an unchanged repository were recorded';`
+- `export const CONTINUATION_PROMPT_NO_PUSH` = the existing literal, unchanged.
+- `CompletionFailure` gains `rejections?: OutcomeRejection[]`.
+- `getCompletionFailure` replaces its inline pushed-changes check with `evaluatePushedChanges`; when `satisfiedBy === null`:
+  - no alternatives declared → legacy error + `CONTINUATION_PROMPT_NO_PUSH` (unchanged behaviour);
+  - alternatives declared → `COMPLETION_ERROR_NO_PUSH_OR_RESPONSE`, `rejections`, and `buildPushedChangesContinuationPrompt(evaluation, evidence)`:
+    - response recorded (`evidence.prResponse`) → *"CASCADE completion check failed: your PR response was already posted at {url} — do not post it again. The repository was modified after run start but no push was recorded ({reasons}). Continue from the current session: either commit and push the intended changes and then run `cascade-tools session finish`, or revert the working tree to the run-start state if the reply was the whole answer, then finish."*
+    - nothing recorded → *"CASCADE completion check failed: neither a PR response nor pushed changes were recorded. If the comment asked a question, reply with `cascade-tools scm post-pr-comment` (or `cascade-tools scm reply-to-review-comment` for an inline thread) without changing the repository, then run `cascade-tools session finish`. If it asked for code changes, commit and push them, then finish."*
+  - The ordering of the other checks (`requiresPR`, `requiresReview`, `requiresPMWrite`) is unchanged.
+
+### 5. Continuation loop logging
+
+**Tests first** (`tests/unit/backends/shared-continuationLoop.test.ts`):
+
+- `logs the satisfied pushed-changes outcome on completion` — unit — requirements with `requiresPushedChanges` and a pushed-changes sidecar → `logWriter` called with `'INFO'`, `/completion check passed/`, and data `{ pushedChangesOutcome: 'pushed-changes' }`. Expected red: no INFO call with that message.
+- `logs pr-response as the satisfied outcome` — unit — alternatives + response sidecar + temp git repo (clean) → `{ pushedChangesOutcome: 'pr-response' }`. Expected red: as above.
+- `includes per-outcome rejections in the continuation warning` — unit — alternatives, no evidence → the existing WARN carries `rejections` with two entries. Expected red: WARN data lacks `rejections`.
+- `includes rejections in the exhausted-turns failure log and the result error` — unit — max turns 0 → result `error === COMPLETION_ERROR_NO_PUSH_OR_RESPONSE`, WARN/ERROR data has `rejections`. Expected red: error is the legacy string.
+
+**Implementation** (`src/backends/shared/continuationLoop.ts`):
+- `decideContinuation` computes `evidence` once, then `failure = getCompletionFailure(requirements, evidence)`. On success, when `evaluatePushedChanges(requirements, evidence)` is defined, log `INFO` `${engineLabel} completion check passed` with `{ pushedChangesOutcome }`. On continuation and on exhaustion, add `rejections: failure.rejections` to the existing log payloads. Signature and return shape unchanged.
+
+### 6. Post-run gate uses the shared evaluator
+
+**Tests first** (`tests/unit/backends/postProcess.test.ts`):
+
+- `fails the result with the alternative-aware error when the evaluation rejects every outcome` — unit — `options.pushedChangesEvaluation = { satisfiedBy: null, rejections: [...] }`, `options.pushedChangesError = COMPLETION_ERROR_NO_PUSH_OR_RESPONSE` → `result.success === false`, `result.error === COMPLETION_ERROR_NO_PUSH_OR_RESPONSE`, WARN log includes `rejections`. Expected red: `TypeError` / result stays successful.
+- `keeps the result successful when the evaluation is satisfied by pr-response` — unit — `{ satisfiedBy: 'pr-response' }` → unchanged. Expected red: n/a-green is acceptable only after the previous test is red-then-green; assert the log names the outcome so it has its own red (`expected logger.info to have been called with pushedChangesOutcome`).
+- `leaves the result alone when no evaluation is supplied` — unit — legacy call shape → unchanged (pin for engines/paths that pass nothing). Expected red: none expected; keep as regression pin.
+
+Also in `tests/unit/backends/adapter.test.ts` (owned here): extend the existing post-processing expectation so the adapter passes `pushedChangesEvaluation` derived from `evaluatePushedChanges(executionPlan.completionRequirements, evidence)` only when `pushedChangesSidecarPath` is defined (mirrors the current `hasAuthoritativePushedChanges` guard). Expected red: `expected postProcessResult to have been called with objectContaining({ pushedChangesEvaluation })`.
+
+**Implementation** (`src/backends/postProcess.ts`, `src/backends/adapter.ts`):
+- `postProcessResult` options: replace `hasAuthoritativePushedChanges?: boolean` with `pushedChangesEvaluation?: PushedChangesEvaluation` and `pushedChangesError?: string`; the pushed-changes block becomes `if (options?.requiresPushedChanges && result.success && options.pushedChangesEvaluation?.satisfiedBy === null) { warn(…rejections); result.success = false; result.error = options.pushedChangesError ?? COMPLETION_ERROR_NO_PUSH }`. On a satisfied evaluation, `logger.info('… completion outcome', { pushedChangesOutcome })`.
+- `adapter.ts` computes `const failure = getCompletionFailure(executionPlan.completionRequirements, completionEvidence)` and passes `pushedChangesEvaluation` + `pushedChangesError: failure?.error` (only when `pushedChangesSidecarPath !== undefined`). Everything else it passes stays as is.
+
+---
+
+## Test Plan
+
+### Unit tests
+- [ ] `tests/unit/agents/definitions/schema.test.ts`: 4 tests — flag parsing, enum, refinement, non-empty
+- [ ] `tests/unit/agents/definitions/profiles.test.ts`: 1 test (+ shape extension) — pass-through
+- [ ] `tests/unit/backends/completion.test.ts`: ~26 tests — sidecar reading (6), repo state (6), evaluator (10), failure/prompt (5)
+- [ ] `tests/unit/backends/shared-continuationLoop.test.ts`: 4 tests — outcome + rejection logging
+- [ ] `tests/unit/backends/postProcess.test.ts`: 3 tests — evaluator-driven gate
+- [ ] `tests/unit/backends/adapter.test.ts`: 1 extension — evaluation wiring
+
+### Integration tests
+- [ ] none required — repo-state evidence is exercised against real temp git repositories in the unit project (same approach as `tests/unit/gadgets/session/core/finish-real-git.test.ts`).
+
+### Acceptance tests
+- [ ] Per-plan ACs 1–7 below map one-to-one onto the unit groups above.
+
+---
+
+## Manual Verification (for `[manual]`-tagged ACs only)
+
+*n/a — all ACs auto-tested.*
+
+---
+
+## Acceptance Criteria (per-plan, testable)
+
+1. A definition may declare `hooks.finish.scm.pushedChangesAlternatives: [pr-response]` only alongside `requiresPushedChanges: true`; any other shape (unknown name, empty list, missing/false `requiresPushedChanges`) is rejected at load time. (spec AC #8)
+2. `readCompletionEvidence` exposes PR-response evidence only from a sidecar with a non-empty `url` and a known `kind`; any other existing file is reported as malformed, and repository state is attached only when both `repoDir` and `initialHeadSha` are supplied. (spec AC #5)
+3. `evaluatePushedChanges` returns `pushed-changes` for authoritative push evidence, `pr-response` only for a recorded response with `clean && headUnchanged`, and otherwise `satisfiedBy: null` with one reason per declared branch; alternatives that are not declared are never consulted. (spec ACs #3, #5, #8)
+4. `getCompletionFailure` is byte-for-byte unchanged for profiles without alternatives, and for profiles with alternatives returns the `NO_PUSH_OR_RESPONSE` error, the rejections, and a continuation prompt that names the recorded response URL and forbids re-posting whenever a response exists. (spec ACs #2, #6, #8)
+5. `decideContinuation` logs the satisfied pushed-changes outcome on success and the per-outcome rejections on continuation and exhaustion. (spec AC #11)
+6. `postProcessResult` fails a run only through the shared evaluation and reports the same rejections; the adapter no longer computes a separate pushed-changes verdict. (spec ACs #7, #11)
+7. No file under `src/backends/completion.ts`, `continuationLoop.ts`, or `postProcess.ts` references an agent type by name (grep guard in `completion.test.ts`: source must not match `/respond-to-pr-comment|prComment/`). (spec strategic decision 4)
+8. All new/modified code has corresponding tests.
+9. `npm run build` passes.
+10. `npm test` passes.
+11. `npm run lint` and `npm run typecheck` pass.
+12. All documentation listed in Documentation Impact has been updated.
+
+**Partial-state criterion:**
+- No built-in agent declares `pushedChangesAlternatives` after this plan; `evaluatePushedChanges` therefore only ever evaluates the `pushed-changes` branch at runtime, and every agent's completion behaviour is observably unchanged (pinned by the legacy-prompt test and the existing continuation-loop suite).
+
+---
+
+## Documentation Impact (this plan only)
+
+| File | Change |
+|---|---|
+| `CHANGELOG.md` | *Unreleased → Changed*: the completion contract can express pushed-changes alternatives (`pushedChangesAlternatives`); evaluation is shared, fail-closed, and logs the satisfied outcome or every rejection. Note that no built-in agent opts in yet. |
+
+Architecture docs (`04-agent-system.md`, `05-engine-backends.md`, `adding-engines.md`) are updated in plan 3 once the behaviour is live for an agent; documenting a dormant flag would describe nothing an operator can observe.
+
+---
+
+## Out of Scope (this plan)
+
+- Producing PR-response evidence (sidecar writers, env var, `session finish` acceptance) — plan 2.
+- Opting `respond-to-pr-comment` in, its prompt guidance, end-to-end tests, architecture docs — plan 3.
+- Spec-level exclusions: comment pre-classification, changes to other agents' completion contracts, prompt/model/iteration changes, workflow engines, Codex redesign beyond continuation compatibility, historical-run retries, schema changes, credential/redaction work.
+
+---
+
+## Progress
+
+<!-- /implement updates these as it works. Do not edit manually. -->
+- [ ] AC #1
+- [ ] AC #2
+- [ ] AC #3
+- [ ] AC #4
+- [ ] AC #5
+- [ ] AC #6
+- [ ] AC #7
+- [ ] AC #8
+- [ ] AC #9
+- [ ] AC #10
+- [ ] AC #11
+- [ ] AC #12
