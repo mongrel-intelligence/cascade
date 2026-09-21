@@ -93,7 +93,7 @@ docs: update self-hosting guide
 refactor(agents): extract shared prompt builder
 ```
 
-This is enforced by commitlint via lefthook pre-commit hooks.
+This is enforced by commitlint via the lefthook `commit-msg` hook.
 
 ## Pull Request Workflow
 
@@ -117,7 +117,7 @@ This is enforced by commitlint via lefthook pre-commit hooks.
 
 ## Project Structure
 
-See [CLAUDE.md](./CLAUDE.md) for a detailed architecture overview. Key directories:
+See [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) for a detailed architecture overview. Key directories:
 
 - `src/router/` — Webhook receiver (enqueues jobs to Redis)
 - `src/triggers/` — Event handlers (Trello, JIRA, Linear, GitHub)

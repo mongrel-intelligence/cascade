@@ -621,7 +621,7 @@ describe('spawnWorker — stale snapshot (image not found fallback)', () => {
 		await spawnWorker(makeJob() as never);
 
 		expect(mockDockerPull).toHaveBeenCalledTimes(1);
-		expect(mockDockerPull).toHaveBeenCalledWith('base-worker:latest');
+		expect(mockDockerPull).toHaveBeenCalledWith('base-worker:latest', {});
 		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
 		// Snapshot invalidation only applies to stale snapshots; base-image
 		// recovery does not touch the snapshot registry.

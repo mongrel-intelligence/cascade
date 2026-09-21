@@ -425,7 +425,7 @@ describe('spawnWorker', () => {
 		await spawnWorker(makeJob({ id: 'job-pull-heal' }) as never);
 
 		expect(mockDockerPull).toHaveBeenCalledTimes(1);
-		expect(mockDockerPull).toHaveBeenCalledWith('test-worker:latest');
+		expect(mockDockerPull).toHaveBeenCalledWith('test-worker:latest', {});
 		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
 
 		resolveWait();
@@ -521,7 +521,7 @@ describe('spawnWorker', () => {
 
 		// The custom digest — not just the global default — is pulled-on-missing.
 		expect(mockDockerPull).toHaveBeenCalledTimes(1);
-		expect(mockDockerPull).toHaveBeenCalledWith('sha256:abc');
+		expect(mockDockerPull).toHaveBeenCalledWith('sha256:abc', {});
 		expect(mockDockerCreateContainer).toHaveBeenCalledTimes(2);
 
 		resolveWait();
