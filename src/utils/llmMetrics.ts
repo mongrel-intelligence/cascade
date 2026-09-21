@@ -60,12 +60,14 @@ export const MODEL_PRICING: Record<
 	// OpenAI — Codex CLI models (per developers.openai.com/codex/pricing, 2026-05-11).
 	// Rates are public metered API prices; we display API-equivalent cost regardless of
 	// subscription plan, consistent with how Anthropic Pro/Max users see costs for claude-code.
-	// GPT-5.6 family (GA 2026-07-09, per developers.openai.com/api/docs/pricing): three
-	// Sol/Terra/Luna tiers, 1M context on all three, cached-input reads at the standard 90%
-	// discount. There is no GPT-5.6 Codex-specific model — Codex runs these same three tiers.
-	'openai:gpt-5.6-sol': { input: 5.0, output: 30.0, cachedInput: 0.5 },
-	'openai:gpt-5.6-terra': { input: 2.5, output: 15.0, cachedInput: 0.25 },
-	'openai:gpt-5.6-luna': { input: 1.0, output: 6.0, cachedInput: 0.1 },
+	// GPT-6 Astra (GA 2026-09-03) and the GPT-5.6 Sol/Terra/Luna tiers, per
+	// developers.openai.com/api/docs/pricing as of 2026-09-21. 1M context on all four,
+	// cached-input reads at the standard 90% discount. Codex runs these same models —
+	// there is no Codex-specific variant of any of them.
+	'openai:gpt-6-astra': { input: 10.0, output: 50.0, cachedInput: 1.0 },
+	'openai:gpt-5.6-sol': { input: 4.0, output: 20.0, cachedInput: 0.4 },
+	'openai:gpt-5.6-terra': { input: 2.0, output: 12.0, cachedInput: 0.2 },
+	'openai:gpt-5.6-luna': { input: 0.2, output: 1.2, cachedInput: 0.02 },
 	'openai:gpt-5.5': { input: 5.0, output: 30.0, cachedInput: 0.5 },
 	'openai:gpt-5.4': { input: 2.5, output: 15.0, cachedInput: 0.25 },
 	// gpt-5.4-mini: rates from developers.openai.com/api/docs/models/gpt-5.4-mini (2026-05-11).

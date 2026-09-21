@@ -153,8 +153,8 @@ describe('resolveCodexModel', () => {
 		expect(resolveCodexModel(`openai:${DEFAULT_CODEX_MODEL}`)).toBe(DEFAULT_CODEX_MODEL);
 	});
 
-	it('passes through the GPT-5.6 Sol/Terra/Luna tiers (bare and openai:-prefixed)', () => {
-		for (const id of ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+	it('passes through GPT-6 Astra and the GPT-5.6 tiers (bare and openai:-prefixed)', () => {
+		for (const id of ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
 			expect(resolveCodexModel(id)).toBe(id);
 			expect(resolveCodexModel(`openai:${id}`)).toBe(id);
 		}
@@ -488,7 +488,8 @@ describe('buildArgs', () => {
 		reasoningEffort: undefined,
 	};
 
-	it('does not include -c search=true when webSearch is false', () => {
+	it('disables the web search tool explicitly when webSearch is false', () => {
+		// Codex defaults `web_search` to cached/live, so silence is not "off".
 		const args = buildArgs(
 			makeInput(),
 			{ ...baseSettings, webSearch: false },
@@ -496,11 +497,12 @@ describe('buildArgs', () => {
 			'/tmp/last.json',
 			'/tmp/output-schema.json',
 		);
-		expect(args).not.toContain('--search');
-		expect(args).not.toContain('search=true');
+		expect(args[args.indexOf('web_search="disabled"') - 1]).toBe('-c');
+		expect(args).not.toContain('--enable');
 	});
 
-	it('includes --enable web_search when webSearch is true', () => {
+	it('enables live web search through the top-level web_search config when webSearch is true', () => {
+		// `[features].web_search` (`--enable web_search`) is deprecated in the pinned CLI.
 		const args = buildArgs(
 			makeInput(),
 			{ ...baseSettings, webSearch: true },
@@ -508,8 +510,8 @@ describe('buildArgs', () => {
 			'/tmp/last.json',
 			'/tmp/output-schema.json',
 		);
-		expect(args).toContain('--enable');
-		expect(args).toContain('web_search');
+		expect(args[args.indexOf('web_search="live"') - 1]).toBe('-c');
+		expect(args).not.toContain('--enable');
 	});
 
 	it('bypasses interactive hook trust unless blockGitPush is explicitly false (claude-code parity)', () => {

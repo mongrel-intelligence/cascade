@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { CODEX_MODEL_IDS } from '../../../src/backends/codex/models.js';
-import { calculateCost } from '../../../src/utils/llmMetrics.js';
+import { calculateCost, MODEL_PRICING } from '../../../src/utils/llmMetrics.js';
 
 /**
  * Pricing-table coverage for the Codex engine.
@@ -58,6 +58,30 @@ describe('codex pricing coverage', () => {
 			outputTokens: 1_000_000,
 		});
 		expect(spark).toBeCloseTo(codex, 6);
+	});
+
+	it('prices GPT-6 Astra and the GPT-5.6 tiers at the published API rates', () => {
+		// developers.openai.com/api/docs/pricing as of 2026-09-21, USD per 1M tokens.
+		expect(MODEL_PRICING['openai:gpt-6-astra']).toEqual({
+			input: 10.0,
+			output: 50.0,
+			cachedInput: 1.0,
+		});
+		expect(MODEL_PRICING['openai:gpt-5.6-sol']).toEqual({
+			input: 4.0,
+			output: 20.0,
+			cachedInput: 0.4,
+		});
+		expect(MODEL_PRICING['openai:gpt-5.6-terra']).toEqual({
+			input: 2.0,
+			output: 12.0,
+			cachedInput: 0.2,
+		});
+		expect(MODEL_PRICING['openai:gpt-5.6-luna']).toEqual({
+			input: 0.2,
+			output: 1.2,
+			cachedInput: 0.02,
+		});
 	});
 
 	it('gpt-5.5 has a cachedInput rate (not undefined)', () => {
