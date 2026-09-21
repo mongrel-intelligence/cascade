@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -16,6 +15,7 @@ import {
 	readRepoState,
 } from '../../../src/backends/completion.js';
 import type { AgentEngineResult } from '../../../src/backends/types.js';
+import { createTempGitRepo, type TempGitRepo } from '../../helpers/tempGitRepo.js';
 
 describe('applyCompletionEvidence', () => {
 	it('returns result unchanged when no sidecar exists', () => {
@@ -230,45 +230,20 @@ describe('readCompletionEvidence — pr-response', () => {
 });
 
 describe('readRepoState', () => {
-	let repoDir: string;
-
-	function git(...args: string[]): string {
-		return execFileSync('git', ['-c', 'commit.gpgsign=false', ...args], {
-			cwd: repoDir,
-			encoding: 'utf-8',
-			stdio: ['ignore', 'pipe', 'ignore'],
-		}).trim();
-	}
-
-	function commit(message: string): string {
-		git('add', '-A');
-		git(
-			'-c',
-			'user.name=t',
-			'-c',
-			'user.email=t@t',
-			'commit',
-			'-q',
-			'--allow-empty',
-			'-m',
-			message,
-		);
-		return git('rev-parse', 'HEAD');
-	}
+	let repo: TempGitRepo;
 
 	beforeEach(() => {
-		repoDir = mkdtempSync(join(tmpdir(), 'cascade-repo-state-'));
-		git('init', '-q');
+		repo = createTempGitRepo('cascade-repo-state-');
 	});
 
 	afterEach(() => {
-		rmSync(repoDir, { recursive: true, force: true });
+		repo.cleanup();
 	});
 
 	it('reports a clean tree at the initial commit', () => {
-		const initial = commit('a');
+		const initial = repo.commit('a');
 
-		expect(readRepoState(repoDir, initial)).toEqual({
+		expect(readRepoState(repo.dir, initial)).toEqual({
 			clean: true,
 			headSha: initial,
 			headUnchanged: true,
@@ -276,18 +251,18 @@ describe('readRepoState', () => {
 	});
 
 	it('reports an uncommitted change as dirty', () => {
-		const initial = commit('a');
-		writeFileSync(join(repoDir, 'f.txt'), 'x');
-		git('add', 'f.txt');
+		const initial = repo.commit('a');
+		repo.writeFile('f.txt', 'x');
+		repo.git('add', 'f.txt');
 
-		expect(readRepoState(repoDir, initial)).toMatchObject({ clean: false, headUnchanged: true });
+		expect(readRepoState(repo.dir, initial)).toMatchObject({ clean: false, headUnchanged: true });
 	});
 
 	it('reports a new commit as HEAD moved', () => {
-		const initial = commit('a');
-		const next = commit('b');
+		const initial = repo.commit('a');
+		const next = repo.commit('b');
 
-		expect(readRepoState(repoDir, initial)).toEqual({
+		expect(readRepoState(repo.dir, initial)).toEqual({
 			clean: true,
 			headSha: next,
 			headUnchanged: false,
@@ -295,10 +270,10 @@ describe('readRepoState', () => {
 	});
 
 	it('counts an untracked file as dirty', () => {
-		const initial = commit('a');
-		writeFileSync(join(repoDir, 'untracked.txt'), 'x');
+		const initial = repo.commit('a');
+		repo.writeFile('untracked.txt', 'x');
 
-		expect(readRepoState(repoDir, initial)?.clean).toBe(false);
+		expect(readRepoState(repo.dir, initial)?.clean).toBe(false);
 	});
 
 	it('returns undefined outside a git repository', () => {
@@ -311,15 +286,13 @@ describe('readRepoState', () => {
 	});
 
 	it('attaches repoState to evidence only when repoDir and initialHeadSha are both given', () => {
-		const initial = commit('a');
+		const initial = repo.commit('a');
 
-		expect(readCompletionEvidence({ repoDir }).repoState).toBeUndefined();
+		expect(readCompletionEvidence({ repoDir: repo.dir }).repoState).toBeUndefined();
 		expect(readCompletionEvidence({ initialHeadSha: initial }).repoState).toBeUndefined();
-		expect(readCompletionEvidence({ repoDir, initialHeadSha: initial }).repoState).toEqual({
-			clean: true,
-			headSha: initial,
-			headUnchanged: true,
-		});
+		expect(
+			readCompletionEvidence({ repoDir: repo.dir, initialHeadSha: initial }).repoState,
+		).toEqual({ clean: true, headSha: initial, headUnchanged: true });
 	});
 });
 
