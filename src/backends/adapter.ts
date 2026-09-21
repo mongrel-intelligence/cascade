@@ -6,7 +6,11 @@ import { finalizeEngineRun, tryUpdateRunPlanResolution } from '../agents/shared/
 import { createAgentLogger } from '../agents/utils/logging.js';
 import { recordInitialComment } from '../gadgets/sessionState.js';
 import type { AgentInput, AgentResult, CascadeConfig, ProjectConfig } from '../types/index.js';
-import { readCompletionEvidence } from './completion.js';
+import {
+	evaluatePushedChanges,
+	readCompletionEvidence,
+	resolvePushedChangesError,
+} from './completion.js';
 import { postProcessResult } from './postProcess.js';
 import { createProgressMonitor } from './progress.js';
 import { buildProgressMonitorConfig, isGitHubAckComment } from './progressLifecycle.js';
@@ -181,7 +185,8 @@ export async function executeWithEngine(
 				}
 				// biome-ignore lint/style/noNonNullAssertion: result is always defined when execute() did not throw
 				await hydrateNativeToolSidecars(result!, prSidecarPath, reviewSidecarPath);
-				const completionEvidence = readCompletionEvidence(executionPlan.completionRequirements);
+				const completionRequirements = executionPlan.completionRequirements ?? {};
+				const completionEvidence = readCompletionEvidence(completionRequirements);
 
 				postProcessResult(result, agentType, engine, input, identifier, {
 					requiresPR: profile.finishHooks.requiresPR,
@@ -189,10 +194,11 @@ export async function executeWithEngine(
 					requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
 					requiresPMWrite: profile.finishHooks.requiresPMWrite,
 					hasAuthoritativeReview: completionEvidence.hasAuthoritativeReview,
-					hasAuthoritativePushedChanges:
+					pushedChangesEvaluation:
 						pushedChangesSidecarPath !== undefined
-							? completionEvidence.hasAuthoritativePushedChanges
+							? evaluatePushedChanges(completionRequirements, completionEvidence)
 							: undefined,
+					pushedChangesError: resolvePushedChangesError(completionRequirements),
 					hasPMWrite: pmWriteSidecarPath !== undefined ? completionEvidence.hasPMWrite : undefined,
 				});
 			} finally {

@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
+import type { PushedChangesAlternative } from '../agents/definitions/schema.js';
 import type { AgentEngineResult } from './types.js';
 
 export const COMPLETION_ERROR_NO_PR =
@@ -11,16 +13,58 @@ export const COMPLETION_ERROR_NO_PUSH =
 export const COMPLETION_ERROR_NO_PM_WRITE =
 	'Agent completed but no PM write (checklist creation) was recorded';
 
+/** Kinds of PR response that count as a substantive reply: a new top-level comment or an inline review reply. */
+export const PR_RESPONSE_KINDS = ['top-level', 'inline-reply'] as const;
+export type PRResponseKind = (typeof PR_RESPONSE_KINDS)[number];
+const DEFAULT_PR_RESPONSE_COMMAND = 'cascade-tools scm post-pr-comment';
+/** A wedged git must fail the comment-only outcome closed, not block the worker turn. */
+const GIT_STATE_TIMEOUT_MS = 10_000;
+
+export const REJECTION_NO_PUSH =
+	'no pushed-changes sidecar (cascade-tools session finish never recorded a push)';
+export const REJECTION_NO_RESPONSE =
+	'no PR response recorded (post-pr-comment / reply-to-review-comment never succeeded)';
+export const REJECTION_RESPONSE_MALFORMED =
+	'PR response sidecar is malformed (missing url or unknown kind)';
+export const REJECTION_TREE_DIRTY =
+	'PR response recorded but the working tree has uncommitted changes';
+export const REJECTION_REPO_STATE_UNAVAILABLE =
+	'PR response recorded but repository state unavailable (repoDir/initialHeadSha missing or git failed)';
+
+function rejectionHeadMoved(initialHeadSha: string, currentHeadSha: string): string {
+	return `PR response recorded but HEAD moved from ${initialHeadSha} to ${currentHeadSha} without a recorded push`;
+}
+
 export interface CompletionRequirements {
 	requiresPR?: boolean;
 	requiresReview?: boolean;
 	requiresPushedChanges?: boolean;
+	/** Outcomes that satisfy `requiresPushedChanges` instead of a push (declared per profile). */
+	pushedChangesAlternatives?: readonly PushedChangesAlternative[];
 	requiresPMWrite?: boolean;
 	prSidecarPath?: string;
 	reviewSidecarPath?: string;
 	pushedChangesSidecarPath?: string;
+	prResponseSidecarPath?: string;
 	pmWriteSidecarPath?: string;
+	/** Repository the run works in; with `initialHeadSha`, enables repository-state evidence. */
+	repoDir?: string;
+	/** HEAD at run start; the comment-only outcome requires HEAD to still be here. */
+	initialHeadSha?: string;
 	maxContinuationTurns?: number;
+}
+
+export interface PRResponseEvidence {
+	url: string;
+	kind: PRResponseKind;
+	command: string;
+}
+
+export interface RepoStateEvidence {
+	clean: boolean;
+	headSha: string;
+	initialHeadSha: string;
+	headUnchanged: boolean;
 }
 
 export interface CompletionEvidence {
@@ -37,6 +81,12 @@ export interface CompletionEvidence {
 	pushedCommand?: string;
 	ackCommentDeleted?: boolean;
 	hasPMWrite: boolean;
+	hasAuthoritativePRResponse: boolean;
+	prResponse?: PRResponseEvidence;
+	/** A PR-response sidecar exists but fails the contract — evidence of nothing. */
+	prResponseSidecarMalformed: boolean;
+	/** Present only when both `repoDir` and `initialHeadSha` were supplied and git answered. */
+	repoState?: RepoStateEvidence;
 }
 
 function readJsonSidecar(path: string | undefined): Record<string, unknown> | undefined {
@@ -57,11 +107,55 @@ function readStringProp(
 	return typeof value === 'string' && value ? value : undefined;
 }
 
+function isPRResponseKind(value: string | undefined): value is PRResponseKind {
+	return (PR_RESPONSE_KINDS as readonly string[]).includes(value ?? '');
+}
+
+function readPRResponseSidecar(path: string | undefined): {
+	response?: PRResponseEvidence;
+	malformed: boolean;
+} {
+	if (!path || !existsSync(path)) return { malformed: false };
+	const data = readJsonSidecar(path);
+	const url = readStringProp(data, 'url');
+	const kind = readStringProp(data, 'kind');
+	if (!url || !isPRResponseKind(kind)) return { malformed: true };
+	return {
+		response: { url, kind, command: readStringProp(data, 'source') ?? DEFAULT_PR_RESPONSE_COMMAND },
+		malformed: false,
+	};
+}
+
+export function readRepoState(
+	repoDir: string,
+	initialHeadSha: string,
+): RepoStateEvidence | undefined {
+	const gitOptions = {
+		cwd: repoDir,
+		encoding: 'utf-8' as const,
+		stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'],
+		timeout: GIT_STATE_TIMEOUT_MS,
+	};
+	try {
+		const status = execFileSync('git', ['status', '--porcelain'], gitOptions);
+		const headSha = execFileSync('git', ['rev-parse', 'HEAD'], gitOptions).trim();
+		return {
+			clean: status.trim().length === 0,
+			headSha,
+			initialHeadSha,
+			headUnchanged: headSha === initialHeadSha,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
 export function readCompletionEvidence(requirements?: CompletionRequirements): CompletionEvidence {
 	const prSidecar = readJsonSidecar(requirements?.prSidecarPath);
 	const reviewSidecar = readJsonSidecar(requirements?.reviewSidecarPath);
 	const pushedChangesSidecar = readJsonSidecar(requirements?.pushedChangesSidecarPath);
 	const pmWriteSidecar = readJsonSidecar(requirements?.pmWriteSidecarPath);
+	const prResponseSidecar = readPRResponseSidecar(requirements?.prResponseSidecarPath);
 
 	const prUrl = readStringProp(prSidecar, 'prUrl');
 	const prCommand = readStringProp(prSidecar, 'source') ?? 'cascade-tools scm create-pr';
@@ -72,6 +166,10 @@ export function readCompletionEvidence(requirements?: CompletionRequirements): C
 	const pushedHeadSha = readStringProp(pushedChangesSidecar, 'headSha');
 	const pushedCommand =
 		readStringProp(pushedChangesSidecar, 'source') ?? 'cascade-tools session finish';
+	const repoState =
+		requirements?.repoDir && requirements.initialHeadSha
+			? readRepoState(requirements.repoDir, requirements.initialHeadSha)
+			: undefined;
 
 	return {
 		hasAuthoritativePR: Boolean(prUrl),
@@ -90,12 +188,127 @@ export function readCompletionEvidence(requirements?: CompletionRequirements): C
 				? reviewSidecar.ackCommentDeleted
 				: undefined,
 		hasPMWrite: Boolean(pmWriteSidecar),
+		hasAuthoritativePRResponse: Boolean(prResponseSidecar.response),
+		prResponse: prResponseSidecar.response,
+		prResponseSidecarMalformed: prResponseSidecar.malformed,
+		repoState,
 	};
+}
+
+export type PushedChangesOutcome = 'pushed-changes' | PushedChangesAlternative;
+
+export interface OutcomeRejection {
+	outcome: PushedChangesOutcome;
+	reason: string;
+}
+
+export type PushedChangesEvaluation =
+	| { satisfiedBy: PushedChangesOutcome }
+	| { satisfiedBy: null; rejections: OutcomeRejection[] };
+
+type OutcomeCheck = (evidence: CompletionEvidence) => string | undefined;
+
+function rejectPRResponse(evidence: CompletionEvidence): string | undefined {
+	if (evidence.prResponseSidecarMalformed) return REJECTION_RESPONSE_MALFORMED;
+	if (!evidence.prResponse) return REJECTION_NO_RESPONSE;
+	if (!evidence.repoState) return REJECTION_REPO_STATE_UNAVAILABLE;
+	if (!evidence.repoState.clean) return REJECTION_TREE_DIRTY;
+	if (!evidence.repoState.headUnchanged) {
+		return rejectionHeadMoved(evidence.repoState.initialHeadSha, evidence.repoState.headSha);
+	}
+	return undefined;
+}
+
+/** One check per outcome, each returning the rejection reason or `undefined` when satisfied. */
+const OUTCOME_CHECKS: Record<PushedChangesOutcome, OutcomeCheck> = {
+	'pushed-changes': (evidence) =>
+		evidence.hasAuthoritativePushedChanges ? undefined : REJECTION_NO_PUSH,
+	'pr-response': rejectPRResponse,
+};
+
+/**
+ * Decide whether `requiresPushedChanges` is met. The push branch is checked first, then
+ * each declared alternative in order; the first satisfied branch wins. When none is
+ * satisfied every branch reports its reason, so operators can see why each was rejected.
+ */
+export function evaluatePushedChanges(
+	requirements: CompletionRequirements | undefined,
+	evidence: CompletionEvidence,
+): PushedChangesEvaluation | undefined {
+	if (!requirements?.requiresPushedChanges) return undefined;
+	const outcomes: PushedChangesOutcome[] = [
+		'pushed-changes',
+		...(requirements.pushedChangesAlternatives ?? []),
+	];
+	const rejections: OutcomeRejection[] = [];
+	for (const outcome of outcomes) {
+		const reason = OUTCOME_CHECKS[outcome](evidence);
+		if (!reason) return { satisfiedBy: outcome };
+		rejections.push({ outcome, reason });
+	}
+	return { satisfiedBy: null, rejections };
+}
+
+export const COMPLETION_ERROR_NO_PUSH_OR_RESPONSE =
+	'Agent completed but neither authoritative pushed changes nor a substantive PR response with an unchanged repository were recorded';
+
+export const CONTINUATION_PROMPT_NO_PUSH =
+	'CASCADE completion check failed: no authoritative pushed changes were recorded for this task. Continue from the current session, commit and push the required changes, confirm the push succeeded, and only then finish.';
+
+/**
+ * Continuation guidance when a profile accepts a PR response instead of a push. A response
+ * that is already recorded is named so the resumed session never posts it a second time.
+ */
+export function buildPushedChangesContinuationPrompt(
+	rejections: OutcomeRejection[],
+	evidence: CompletionEvidence,
+): string {
+	const reasons = rejections
+		.map((rejection) => `${rejection.outcome}: ${rejection.reason}`)
+		.join('; ');
+	if (evidence.prResponse) {
+		return (
+			`CASCADE completion check failed: your PR response was already posted at ${evidence.prResponse.url} — do not post it again. ` +
+			`It did not complete the run because: ${reasons}. Continue from the current session: either commit and push the intended changes and then run \`cascade-tools session finish\`, ` +
+			'or revert the working tree to the run-start state if the reply was the whole answer, then finish.'
+		);
+	}
+	return (
+		`CASCADE completion check failed: neither a PR response nor pushed changes were recorded (${reasons}). ` +
+		'If the comment asked a question, reply with `cascade-tools scm post-pr-comment` (or `cascade-tools scm reply-to-review-comment` for an inline thread) without changing the repository, then run `cascade-tools session finish`. ' +
+		'If it asked for code changes, commit and push them, then finish.'
+	);
 }
 
 export interface CompletionFailure {
 	error: string;
 	continuationPrompt: string;
+	/** Why each pushed-changes outcome was rejected (present only for that requirement). */
+	rejections?: OutcomeRejection[];
+}
+
+/** The error a run records when every pushed-changes outcome is rejected. */
+export function resolvePushedChangesError(
+	requirements: Pick<CompletionRequirements, 'pushedChangesAlternatives'>,
+): string {
+	return requirements.pushedChangesAlternatives?.length
+		? COMPLETION_ERROR_NO_PUSH_OR_RESPONSE
+		: COMPLETION_ERROR_NO_PUSH;
+}
+
+function pushedChangesFailure(
+	pushedChangesAlternatives: readonly PushedChangesAlternative[] | undefined,
+	evidence: CompletionEvidence,
+	rejections: OutcomeRejection[],
+): CompletionFailure {
+	const continuationPrompt = pushedChangesAlternatives?.length
+		? buildPushedChangesContinuationPrompt(rejections, evidence)
+		: CONTINUATION_PROMPT_NO_PUSH;
+	return {
+		error: resolvePushedChangesError({ pushedChangesAlternatives }),
+		continuationPrompt,
+		rejections,
+	};
 }
 
 export function getCompletionFailure(
@@ -118,12 +331,13 @@ export function getCompletionFailure(
 		};
 	}
 
-	if (requirements?.requiresPushedChanges && !evidence.hasAuthoritativePushedChanges) {
-		return {
-			error: COMPLETION_ERROR_NO_PUSH,
-			continuationPrompt:
-				'CASCADE completion check failed: no authoritative pushed changes were recorded for this task. Continue from the current session, commit and push the required changes, confirm the push succeeded, and only then finish.',
-		};
+	const pushedChanges = evaluatePushedChanges(requirements, evidence);
+	if (pushedChanges?.satisfiedBy === null) {
+		return pushedChangesFailure(
+			requirements?.pushedChangesAlternatives,
+			evidence,
+			pushedChanges.rejections,
+		);
 	}
 
 	if (requirements?.requiresPMWrite && !evidence.hasPMWrite) {
@@ -138,14 +352,15 @@ export function getCompletionFailure(
 }
 
 /**
- * Read sidecar files and upgrade text-based PR evidence to authoritative.
- * Shared across Claude Code and OpenCode backends.
+ * Read the PR sidecar and upgrade text-based PR evidence to authoritative.
+ * Shared across Claude Code and OpenCode backends. Only the PR sidecar is read here so a
+ * turn does not shell out for repository state twice.
  */
 export function applyCompletionEvidence(
 	result: AgentEngineResult,
 	completionRequirements: CompletionRequirements | undefined,
 ): AgentEngineResult {
-	const evidence = readCompletionEvidence(completionRequirements);
+	const evidence = readCompletionEvidence({ prSidecarPath: completionRequirements?.prSidecarPath });
 	if (!evidence.prUrl) return result;
 	return {
 		...result,

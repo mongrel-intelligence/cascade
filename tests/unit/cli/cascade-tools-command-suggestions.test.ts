@@ -26,6 +26,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CLI_SPAWN_TIMEOUT_MS, CLI_TEST_TIMEOUT_MS } from '../../helpers/cliSpawnBudget.js';
 
 const REPO_ROOT = resolve(__dirname, '../../..');
 const BIN = resolve(REPO_ROOT, 'bin/cascade-tools.js');
@@ -48,7 +49,7 @@ function runCascadeTools(args: string[]): SpawnResult {
 		cwd: REPO_ROOT,
 		encoding: 'utf-8',
 		env,
-		timeout: 30_000,
+		timeout: CLI_SPAWN_TIMEOUT_MS,
 	});
 	return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status };
 }
@@ -106,6 +107,7 @@ describe('cascade-tools command_not_found hook (MNG-1442)', () => {
 			expect(result.stderr).toContain('unknown-command');
 			expect(result.stderr).not.toContain('{"success"');
 		},
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -124,6 +126,7 @@ describe('cascade-tools command_not_found hook (MNG-1442)', () => {
 			expect(env.error.expected).toContain('read-work-item');
 			expect(env.error.expected).not.toContain('create-pr');
 		},
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -141,6 +144,7 @@ describe('cascade-tools command_not_found hook (MNG-1442)', () => {
 				expect.arrayContaining(['alerting', 'pm', 'scm', 'session']),
 			);
 		},
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -157,6 +161,7 @@ describe('cascade-tools command_not_found hook (MNG-1442)', () => {
 			expect(env.error.expected).toContain('read-work-item');
 			expect(env.error.expected).not.toContain('create-pr');
 		},
+		CLI_TEST_TIMEOUT_MS,
 	);
 
 	it.skipIf(!built)(
@@ -183,5 +188,6 @@ describe('cascade-tools command_not_found hook (MNG-1442)', () => {
 			expect(env.success).toBe(false);
 			expect(env.error.type).toBe('unknown-flag');
 		},
+		CLI_TEST_TIMEOUT_MS,
 	);
 });

@@ -207,6 +207,7 @@ describe('getAgentProfile', () => {
 			requiresPR: undefined,
 			requiresReview: undefined,
 			requiresPushedChanges: undefined,
+			pushedChangesAlternatives: undefined,
 			blockGitPush: undefined,
 		});
 	});
@@ -216,7 +217,12 @@ describe('getAgentProfile', () => {
 			makeDefinition({
 				hooks: {
 					finish: {
-						scm: { requiresPR: true, requiresReview: false, requiresPushedChanges: true },
+						scm: {
+							requiresPR: true,
+							requiresReview: false,
+							requiresPushedChanges: true,
+							pushedChangesAlternatives: ['pr-response'],
+						},
 					},
 				},
 			}),
@@ -227,6 +233,7 @@ describe('getAgentProfile', () => {
 		expect(profile.finishHooks.requiresPR).toBe(true);
 		expect(profile.finishHooks.requiresReview).toBe(false);
 		expect(profile.finishHooks.requiresPushedChanges).toBe(true);
+		expect(profile.finishHooks.pushedChangesAlternatives).toEqual(['pr-response']);
 	});
 
 	// ============================================================================
