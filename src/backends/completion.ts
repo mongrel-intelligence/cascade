@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
+import type { PushedChangesAlternative } from '../agents/definitions/schema.js';
 import type { AgentEngineResult } from './types.js';
 
 export const COMPLETION_ERROR_NO_PR =
@@ -11,16 +13,55 @@ export const COMPLETION_ERROR_NO_PUSH =
 export const COMPLETION_ERROR_NO_PM_WRITE =
 	'Agent completed but no PM write (checklist creation) was recorded';
 
+/** Kinds of PR response that count as a substantive reply: a new top-level comment or an inline review reply. */
+export const PR_RESPONSE_KINDS = ['top-level', 'inline-reply'] as const;
+export type PRResponseKind = (typeof PR_RESPONSE_KINDS)[number];
+const DEFAULT_PR_RESPONSE_COMMAND = 'cascade-tools scm post-pr-comment';
+
+export const REJECTION_NO_PUSH =
+	'no pushed-changes sidecar (cascade-tools session finish never recorded a push)';
+export const REJECTION_NO_RESPONSE =
+	'no PR response recorded (post-pr-comment / reply-to-review-comment never succeeded)';
+export const REJECTION_RESPONSE_MALFORMED =
+	'PR response sidecar is malformed (missing url or unknown kind)';
+export const REJECTION_TREE_DIRTY =
+	'PR response recorded but the working tree has uncommitted changes';
+export const REJECTION_REPO_STATE_UNAVAILABLE =
+	'PR response recorded but repository state unavailable (repoDir/initialHeadSha missing or git failed)';
+
+function rejectionHeadMoved(initialHeadSha: string, currentHeadSha: string): string {
+	return `PR response recorded but HEAD moved from ${initialHeadSha} to ${currentHeadSha} without a recorded push`;
+}
+
 export interface CompletionRequirements {
 	requiresPR?: boolean;
 	requiresReview?: boolean;
 	requiresPushedChanges?: boolean;
+	/** Outcomes that satisfy `requiresPushedChanges` instead of a push (declared per profile). */
+	pushedChangesAlternatives?: readonly PushedChangesAlternative[];
 	requiresPMWrite?: boolean;
 	prSidecarPath?: string;
 	reviewSidecarPath?: string;
 	pushedChangesSidecarPath?: string;
+	prResponseSidecarPath?: string;
 	pmWriteSidecarPath?: string;
+	/** Repository the run works in; with `initialHeadSha`, enables repository-state evidence. */
+	repoDir?: string;
+	/** HEAD at run start; the comment-only outcome requires HEAD to still be here. */
+	initialHeadSha?: string;
 	maxContinuationTurns?: number;
+}
+
+export interface PRResponseEvidence {
+	url: string;
+	kind: PRResponseKind;
+	command: string;
+}
+
+export interface RepoStateEvidence {
+	clean: boolean;
+	headSha: string;
+	headUnchanged: boolean;
 }
 
 export interface CompletionEvidence {
@@ -37,6 +78,12 @@ export interface CompletionEvidence {
 	pushedCommand?: string;
 	ackCommentDeleted?: boolean;
 	hasPMWrite: boolean;
+	hasAuthoritativePRResponse: boolean;
+	prResponse?: PRResponseEvidence;
+	/** A PR-response sidecar exists but fails the contract — evidence of nothing. */
+	prResponseSidecarMalformed: boolean;
+	/** Present only when both `repoDir` and `initialHeadSha` were supplied and git answered. */
+	repoState?: RepoStateEvidence;
 }
 
 function readJsonSidecar(path: string | undefined): Record<string, unknown> | undefined {
@@ -57,11 +104,53 @@ function readStringProp(
 	return typeof value === 'string' && value ? value : undefined;
 }
 
+function isPRResponseKind(value: string | undefined): value is PRResponseKind {
+	return (PR_RESPONSE_KINDS as readonly string[]).includes(value ?? '');
+}
+
+function readPRResponseSidecar(path: string | undefined): {
+	response?: PRResponseEvidence;
+	malformed: boolean;
+} {
+	if (!path || !existsSync(path)) return { malformed: false };
+	const data = readJsonSidecar(path);
+	const url = readStringProp(data, 'url');
+	const kind = readStringProp(data, 'kind');
+	if (!url || !isPRResponseKind(kind)) return { malformed: true };
+	return {
+		response: { url, kind, command: readStringProp(data, 'source') ?? DEFAULT_PR_RESPONSE_COMMAND },
+		malformed: false,
+	};
+}
+
+export function readRepoState(
+	repoDir: string,
+	initialHeadSha: string,
+): RepoStateEvidence | undefined {
+	const gitOptions = {
+		cwd: repoDir,
+		encoding: 'utf-8' as const,
+		stdio: ['ignore', 'pipe', 'ignore'] as ['ignore', 'pipe', 'ignore'],
+	};
+	try {
+		const status = execFileSync('git', ['status', '--porcelain'], gitOptions);
+		const headSha = execFileSync('git', ['rev-parse', 'HEAD'], gitOptions).trim();
+		return {
+			clean: status.trim().length === 0,
+			headSha,
+			headUnchanged: headSha === initialHeadSha,
+		};
+	} catch {
+		return undefined;
+	}
+}
+
 export function readCompletionEvidence(requirements?: CompletionRequirements): CompletionEvidence {
 	const prSidecar = readJsonSidecar(requirements?.prSidecarPath);
 	const reviewSidecar = readJsonSidecar(requirements?.reviewSidecarPath);
 	const pushedChangesSidecar = readJsonSidecar(requirements?.pushedChangesSidecarPath);
 	const pmWriteSidecar = readJsonSidecar(requirements?.pmWriteSidecarPath);
+	const prResponseSidecar = readPRResponseSidecar(requirements?.prResponseSidecarPath);
 
 	const prUrl = readStringProp(prSidecar, 'prUrl');
 	const prCommand = readStringProp(prSidecar, 'source') ?? 'cascade-tools scm create-pr';
@@ -72,6 +161,10 @@ export function readCompletionEvidence(requirements?: CompletionRequirements): C
 	const pushedHeadSha = readStringProp(pushedChangesSidecar, 'headSha');
 	const pushedCommand =
 		readStringProp(pushedChangesSidecar, 'source') ?? 'cascade-tools session finish';
+	const repoState =
+		requirements?.repoDir && requirements.initialHeadSha
+			? readRepoState(requirements.repoDir, requirements.initialHeadSha)
+			: undefined;
 
 	return {
 		hasAuthoritativePR: Boolean(prUrl),
@@ -90,7 +183,74 @@ export function readCompletionEvidence(requirements?: CompletionRequirements): C
 				? reviewSidecar.ackCommentDeleted
 				: undefined,
 		hasPMWrite: Boolean(pmWriteSidecar),
+		hasAuthoritativePRResponse: Boolean(prResponseSidecar.response),
+		prResponse: prResponseSidecar.response,
+		prResponseSidecarMalformed: prResponseSidecar.malformed,
+		repoState,
 	};
+}
+
+export type PushedChangesOutcome = 'pushed-changes' | PushedChangesAlternative;
+
+export interface OutcomeRejection {
+	outcome: PushedChangesOutcome;
+	reason: string;
+}
+
+export type PushedChangesEvaluation =
+	| { satisfiedBy: PushedChangesOutcome }
+	| { satisfiedBy: null; rejections: OutcomeRejection[] };
+
+type OutcomeCheck = (
+	requirements: CompletionRequirements,
+	evidence: CompletionEvidence,
+) => string | undefined;
+
+function rejectPRResponse(
+	requirements: CompletionRequirements,
+	evidence: CompletionEvidence,
+): string | undefined {
+	if (evidence.prResponseSidecarMalformed) return REJECTION_RESPONSE_MALFORMED;
+	if (!evidence.prResponse) return REJECTION_NO_RESPONSE;
+	if (!evidence.repoState) return REJECTION_REPO_STATE_UNAVAILABLE;
+	if (!evidence.repoState.clean) return REJECTION_TREE_DIRTY;
+	if (!evidence.repoState.headUnchanged) {
+		return rejectionHeadMoved(
+			requirements.initialHeadSha ?? 'run start',
+			evidence.repoState.headSha,
+		);
+	}
+	return undefined;
+}
+
+/** One check per outcome, each returning the rejection reason or `undefined` when satisfied. */
+const OUTCOME_CHECKS: Record<PushedChangesOutcome, OutcomeCheck> = {
+	'pushed-changes': (_requirements, evidence) =>
+		evidence.hasAuthoritativePushedChanges ? undefined : REJECTION_NO_PUSH,
+	'pr-response': rejectPRResponse,
+};
+
+/**
+ * Decide whether `requiresPushedChanges` is met. The push branch is checked first, then
+ * each declared alternative in order; the first satisfied branch wins. When none is
+ * satisfied every branch reports its reason, so operators can see why each was rejected.
+ */
+export function evaluatePushedChanges(
+	requirements: CompletionRequirements | undefined,
+	evidence: CompletionEvidence,
+): PushedChangesEvaluation | undefined {
+	if (!requirements?.requiresPushedChanges) return undefined;
+	const outcomes: PushedChangesOutcome[] = [
+		'pushed-changes',
+		...(requirements.pushedChangesAlternatives ?? []),
+	];
+	const rejections: OutcomeRejection[] = [];
+	for (const outcome of outcomes) {
+		const reason = OUTCOME_CHECKS[outcome](requirements, evidence);
+		if (!reason) return { satisfiedBy: outcome };
+		rejections.push({ outcome, reason });
+	}
+	return { satisfiedBy: null, rejections };
 }
 
 export interface CompletionFailure {

@@ -257,8 +257,8 @@ Architecture docs (`04-agent-system.md`, `05-engine-backends.md`, `adding-engine
 
 <!-- /implement updates these as it works. Do not edit manually. -->
 - [x] AC #1
-- [ ] AC #2
-- [ ] AC #3
+- [x] AC #2
+- [x] AC #3
 - [ ] AC #4
 - [ ] AC #5
 - [ ] AC #6
