@@ -19,6 +19,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { CLI_SPAWN_TIMEOUT_MS, CLI_TEST_TIMEOUT_MS } from '../../helpers/cliSpawnBudget.js';
 
 const REPO_ROOT = resolve(__dirname, '../../..');
 const BIN = resolve(REPO_ROOT, 'bin/cascade-tools.js');
@@ -34,7 +35,7 @@ function runHelp(args: string[]): { stdout: string; stderr: string; code: number
 		cwd: REPO_ROOT,
 		encoding: 'utf-8',
 		env,
-		timeout: 30_000,
+		timeout: CLI_SPAWN_TIMEOUT_MS,
 	});
 	return { stdout: result.stdout ?? '', stderr: result.stderr ?? '', code: result.status };
 }
@@ -44,36 +45,44 @@ describe('cascade-tools --help — topic summaries', () => {
 	// from ../dist/cli/bootstrap.js). Skip with a clear message if not built.
 	const built = existsSync(DIST);
 
-	it.skipIf(!built)('topic descriptions are explicit, not borrowed from gadgets', () => {
-		const { stdout, code } = runHelp(['--help']);
-		expect(code).toBe(0);
+	it.skipIf(!built)(
+		'topic descriptions are explicit, not borrowed from gadgets',
+		() => {
+			const { stdout, code } = runHelp(['--help']);
+			expect(code).toBe(0);
 
-		// Must NOT borrow gadget descriptions. These are the first-gadget
-		// descriptions that prod showed leaking into topic lines.
-		expect(stdout).not.toMatch(
-			/pm\s+(?:Add a checklist|Read a work item|Post a comment|Update a work item|Create a new work item|List all work items|Move a work item)/,
-		);
-		expect(stdout).not.toMatch(/scm\s+Create a GitHub pull request\./);
-		expect(stdout).not.toMatch(/alerting\s+Retrieve full details for an alerting event/);
-		expect(stdout).not.toMatch(/session\s+Call this gadget when you have completed all tasks/);
+			// Must NOT borrow gadget descriptions. These are the first-gadget
+			// descriptions that prod showed leaking into topic lines.
+			expect(stdout).not.toMatch(
+				/pm\s+(?:Add a checklist|Read a work item|Post a comment|Update a work item|Create a new work item|List all work items|Move a work item)/,
+			);
+			expect(stdout).not.toMatch(/scm\s+Create a GitHub pull request\./);
+			expect(stdout).not.toMatch(/alerting\s+Retrieve full details for an alerting event/);
+			expect(stdout).not.toMatch(/session\s+Call this gadget when you have completed all tasks/);
 
-		// Must contain canonical topic summaries for every discovered topic.
-		expect(stdout).toContain('TOPICS');
-		expect(stdout).toMatch(/pm\s+Read and write PM work items/i);
-		expect(stdout).toMatch(/scm\s+Interact with GitHub PRs/i);
-		expect(stdout).toMatch(/alerting\s+Inspect Sentry alerting/i);
-		expect(stdout).toMatch(/session\s+End the agent session/i);
-	});
+			// Must contain canonical topic summaries for every discovered topic.
+			expect(stdout).toContain('TOPICS');
+			expect(stdout).toMatch(/pm\s+Read and write PM work items/i);
+			expect(stdout).toMatch(/scm\s+Interact with GitHub PRs/i);
+			expect(stdout).toMatch(/alerting\s+Inspect Sentry alerting/i);
+			expect(stdout).toMatch(/session\s+End the agent session/i);
+		},
+		CLI_TEST_TIMEOUT_MS,
+	);
 
-	it.skipIf(!built)('per-gadget --help is unaffected (topic-summary fix is additive)', () => {
-		const { stdout, code } = runHelp(['pm', 'read-work-item', '--help']);
-		expect(code).toBe(0);
-		// Spot-check: the gadget's own description / flags are still rendered.
-		expect(stdout).toContain('Read a work item');
-		expect(stdout).toContain('--workItemId');
-		expect(stdout).toContain('--[no-]includeComments');
-		expect(stdout).toContain('cascade-tools pm read-work-item --workItemId abc123');
-		expect(stdout).not.toContain(`--workItemId '"abc123"'`);
-		expect(stdout).not.toContain(`--workItemId 'abc123'`);
-	});
+	it.skipIf(!built)(
+		'per-gadget --help is unaffected (topic-summary fix is additive)',
+		() => {
+			const { stdout, code } = runHelp(['pm', 'read-work-item', '--help']);
+			expect(code).toBe(0);
+			// Spot-check: the gadget's own description / flags are still rendered.
+			expect(stdout).toContain('Read a work item');
+			expect(stdout).toContain('--workItemId');
+			expect(stdout).toContain('--[no-]includeComments');
+			expect(stdout).toContain('cascade-tools pm read-work-item --workItemId abc123');
+			expect(stdout).not.toContain(`--workItemId '"abc123"'`);
+			expect(stdout).not.toContain(`--workItemId 'abc123'`);
+		},
+		CLI_TEST_TIMEOUT_MS,
+	);
 });

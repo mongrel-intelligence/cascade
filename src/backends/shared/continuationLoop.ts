@@ -15,6 +15,7 @@
 import {
 	applyCompletionEvidence,
 	type CompletionRequirements,
+	evaluatePushedChanges,
 	getCompletionFailure,
 	readCompletionEvidence,
 } from '../completion.js';
@@ -26,7 +27,8 @@ export type ContinuationDecision =
 
 /**
  * Check completion requirements and decide whether to continue or return a final result.
- * Logs the continuation warning when a new turn is needed.
+ * Logs which pushed-changes outcome satisfied the check, or why each outcome was rejected,
+ * so a run log alone explains the decision.
  *
  * Extracted from claude-code/index.ts so both Claude Code and OpenCode can share
  * the same decision logic.
@@ -41,14 +43,28 @@ export function decideContinuation(
 	toolCallCount: number,
 	engineLabel: string,
 ): ContinuationDecision {
-	const completionFailure = getCompletionFailure(
-		completionRequirements,
-		readCompletionEvidence(completionRequirements),
-	);
+	const evidence = readCompletionEvidence(completionRequirements);
+	const completionFailure = getCompletionFailure(completionRequirements, evidence);
 	if (!completionFailure) {
+		const pushedChanges = evaluatePushedChanges(completionRequirements, evidence);
+		if (pushedChanges?.satisfiedBy) {
+			logWriter('INFO', `${engineLabel} completion check passed`, {
+				pushedChangesOutcome: pushedChanges.satisfiedBy,
+			});
+		}
 		return { done: true, result: { ...result, cost: totalCost } };
 	}
+	const rejectionDetails = completionFailure.rejections
+		? { rejections: completionFailure.rejections }
+		: {};
 	if (continuationTurns >= maxContinuationTurns) {
+		logWriter('WARN', `${engineLabel} completion check failed; continuation turns exhausted`, {
+			reason: completionFailure.error,
+			continuationTurns,
+			maxContinuationTurns,
+			toolCallCount,
+			...rejectionDetails,
+		});
 		return {
 			done: true,
 			result: { ...result, success: false, error: completionFailure.error, cost: totalCost },
@@ -59,6 +75,7 @@ export function decideContinuation(
 		continuationTurn: continuationTurns + 1,
 		maxContinuationTurns,
 		toolCallCount,
+		...rejectionDetails,
 	});
 	return { done: false, promptText: completionFailure.continuationPrompt };
 }

@@ -3,11 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
+	COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
+	type CompletionRequirements,
+} from '../../../src/backends/completion.js';
+import {
 	type ContinuationTurnContext,
 	decideContinuation,
 	runContinuationLoop,
 } from '../../../src/backends/shared/continuationLoop.js';
 import type { AgentEngineResult } from '../../../src/backends/types.js';
+import { createTempGitRepo } from '../../helpers/tempGitRepo.js';
 
 function makeSuccessResult(overrides: Partial<AgentEngineResult> = {}): AgentEngineResult {
 	return {
@@ -132,7 +137,14 @@ describe('decideContinuation', () => {
 			);
 			expect(decision.result.cost).toBe(0.25);
 		}
-		expect(logWriter).not.toHaveBeenCalled();
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'TestEngine completion check failed; continuation turns exhausted',
+			expect.objectContaining({
+				reason: 'Agent completed but no authoritative PR creation was recorded',
+				continuationTurns: 2,
+			}),
+		);
 	});
 
 	it('uses engine label in warning log message', () => {
@@ -433,5 +445,117 @@ describe('runContinuationLoop', () => {
 		expect(capturedContexts[0].isContinuation).toBe(false);
 		expect(capturedContexts[1].promptText).toContain('completion check failed');
 		expect(capturedContexts[1].isContinuation).toBe(true);
+	});
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// decideContinuation — pushed-changes outcomes (spec 025)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('decideContinuation — pushed-changes outcomes', () => {
+	const WITH_ALTERNATIVE: CompletionRequirements = {
+		requiresPushedChanges: true,
+		pushedChangesAlternatives: ['pr-response'],
+	};
+
+	function decideWith(requirements: CompletionRequirements, continuationTurns = 0) {
+		const logWriter = vi.fn();
+		const decision = decideContinuation(
+			makeSuccessResult(),
+			requirements,
+			continuationTurns,
+			2,
+			0.05,
+			logWriter,
+			1,
+			'TestEngine',
+		);
+		return { decision, logWriter };
+	}
+
+	it('logs the satisfied pushed-changes outcome on completion', () => {
+		const dir = mkdtempSync(join(tmpdir(), 'continuation-outcome-'));
+		const pushedChangesSidecarPath = join(dir, 'pushed.json');
+		writeFileSync(pushedChangesSidecarPath, JSON.stringify({ branch: 'feature', headSha: 'abc' }));
+		try {
+			const { decision, logWriter } = decideWith({
+				requiresPushedChanges: true,
+				pushedChangesSidecarPath,
+			});
+
+			expect(decision.done).toBe(true);
+			expect(logWriter).toHaveBeenCalledWith(
+				'INFO',
+				'TestEngine completion check passed',
+				expect.objectContaining({ pushedChangesOutcome: 'pushed-changes' }),
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it('logs pr-response as the satisfied outcome', () => {
+		const repo = createTempGitRepo('continuation-outcome-repo-');
+		const sidecarDir = mkdtempSync(join(tmpdir(), 'continuation-outcome-sidecar-'));
+		const prResponseSidecarPath = join(sidecarDir, 'pr-response.json');
+		writeFileSync(
+			prResponseSidecarPath,
+			JSON.stringify({ url: 'https://github.com/o/r/pull/7#issuecomment-1', kind: 'top-level' }),
+		);
+		try {
+			const initialHeadSha = repo.commit('start');
+			const { decision, logWriter } = decideWith({
+				...WITH_ALTERNATIVE,
+				prResponseSidecarPath,
+				repoDir: repo.dir,
+				initialHeadSha,
+			});
+
+			expect(decision.done).toBe(true);
+			expect(logWriter).toHaveBeenCalledWith(
+				'INFO',
+				'TestEngine completion check passed',
+				expect.objectContaining({ pushedChangesOutcome: 'pr-response' }),
+			);
+		} finally {
+			repo.cleanup();
+			rmSync(sidecarDir, { recursive: true, force: true });
+		}
+	});
+
+	it('includes per-outcome rejections in the continuation warning', () => {
+		const { decision, logWriter } = decideWith(WITH_ALTERNATIVE);
+
+		expect(decision.done).toBe(false);
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'TestEngine completion check failed; continuing session',
+			expect.objectContaining({
+				reason: COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
+				rejections: [
+					expect.objectContaining({ outcome: 'pushed-changes' }),
+					expect.objectContaining({ outcome: 'pr-response' }),
+				],
+			}),
+		);
+	});
+
+	it('logs the rejections when turns are exhausted and fails with the alternative-aware error', () => {
+		const { decision, logWriter } = decideWith(WITH_ALTERNATIVE, 2);
+
+		expect(decision.done).toBe(true);
+		if (decision.done) {
+			expect(decision.result.success).toBe(false);
+			expect(decision.result.error).toBe(COMPLETION_ERROR_NO_PUSH_OR_RESPONSE);
+		}
+		expect(logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'TestEngine completion check failed; continuation turns exhausted',
+			expect.objectContaining({
+				reason: COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
+				continuationTurns: 2,
+				rejections: expect.arrayContaining([expect.objectContaining({ outcome: 'pr-response' })]),
+			}),
+		);
 	});
 });

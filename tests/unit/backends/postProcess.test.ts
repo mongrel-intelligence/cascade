@@ -12,6 +12,7 @@ vi.mock('../../../src/sentry.js', () => ({
 	captureException: vi.fn(),
 }));
 
+import { COMPLETION_ERROR_NO_PUSH_OR_RESPONSE } from '../../../src/backends/completion.js';
 import { postProcessResult } from '../../../src/backends/postProcess.js';
 import type { AgentEngine, AgentEngineResult } from '../../../src/backends/types.js';
 import { captureException } from '../../../src/sentry.js';
@@ -249,14 +250,22 @@ describe('postProcessResult', () => {
 	});
 
 	describe('pushed-changes validation for agents with requiresPushedChanges', () => {
-		it('marks as failed when requiresPushedChanges agent succeeds without authoritative push evidence', () => {
+		const REJECTED_EVALUATION = {
+			satisfiedBy: null,
+			rejections: [
+				{ outcome: 'pushed-changes' as const, reason: 'no pushed-changes sidecar' },
+				{ outcome: 'pr-response' as const, reason: 'no PR response recorded' },
+			],
+		};
+
+		it('marks as failed with the legacy error when the evaluation rejects every outcome and no error is supplied', () => {
 			const result = makeResult({ success: true });
 			const engine = makeEngine();
 			const input = makeInput();
 
 			postProcessResult(result, 'respond-to-review', engine, input, 'review-pr-123', {
 				requiresPushedChanges: true,
-				hasAuthoritativePushedChanges: false,
+				pushedChangesEvaluation: REJECTED_EVALUATION,
 			});
 
 			expect(result.success).toBe(false);
@@ -265,14 +274,52 @@ describe('postProcessResult', () => {
 			);
 		});
 
-		it('passes through when requiresPushedChanges agent has authoritative push evidence', () => {
+		it('fails with the supplied alternative-aware error and logs every rejection', () => {
+			const result = makeResult({ success: true });
+			const engine = makeEngine();
+			const input = makeInput();
+
+			postProcessResult(result, 'respond-to-pr-comment', engine, input, 'comment-pr-123', {
+				requiresPushedChanges: true,
+				pushedChangesEvaluation: REJECTED_EVALUATION,
+				pushedChangesError: COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
+			});
+
+			expect(result.success).toBe(false);
+			expect(result.error).toBe(COMPLETION_ERROR_NO_PUSH_OR_RESPONSE);
+			expect(logger.warn).toHaveBeenCalledWith(
+				'respond-to-pr-comment agent completed without authoritative pushed-change evidence',
+				expect.objectContaining({ rejections: REJECTED_EVALUATION.rejections }),
+			);
+		});
+
+		it('keeps the result successful and logs the outcome when the evaluation is satisfied', () => {
+			for (const satisfiedBy of ['pushed-changes', 'pr-response'] as const) {
+				const result = makeResult({ success: true });
+				const engine = makeEngine();
+				const input = makeInput();
+
+				postProcessResult(result, 'respond-to-ci', engine, input, 'ci-pr-123', {
+					requiresPushedChanges: true,
+					pushedChangesEvaluation: { satisfiedBy },
+				});
+
+				expect(result.success).toBe(true);
+				expect(result.error).toBeUndefined();
+				expect(logger.info).toHaveBeenCalledWith(
+					'respond-to-ci agent satisfied the pushed-changes requirement',
+					expect.objectContaining({ pushedChangesOutcome: satisfiedBy }),
+				);
+			}
+		});
+
+		it('leaves the result alone when no evaluation is supplied', () => {
 			const result = makeResult({ success: true });
 			const engine = makeEngine();
 			const input = makeInput();
 
 			postProcessResult(result, 'respond-to-ci', engine, input, 'ci-pr-123', {
 				requiresPushedChanges: true,
-				hasAuthoritativePushedChanges: true,
 			});
 
 			expect(result.success).toBe(true);

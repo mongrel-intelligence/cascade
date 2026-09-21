@@ -108,6 +108,7 @@ import { resolveModelConfig } from '../../../src/agents/shared/modelResolution.j
 import { setupRepository } from '../../../src/agents/shared/repository.js';
 import { createAgentLogger } from '../../../src/agents/utils/logging.js';
 import { executeWithEngine } from '../../../src/backends/adapter.js';
+import { COMPLETION_ERROR_NO_PUSH_OR_RESPONSE } from '../../../src/backends/completion.js';
 import { createProgressMonitor } from '../../../src/backends/progress.js';
 import type { AgentEngine } from '../../../src/backends/types.js';
 import { getAllProjectCredentials } from '../../../src/config/provider.js';
@@ -661,6 +662,31 @@ describe('executeWithEngine', () => {
 		expect(logger.warn).toHaveBeenCalledWith(
 			'respond-to-review agent completed without authoritative pushed-change evidence',
 			expect.objectContaining({ engine: 'opencode' }),
+		);
+	});
+
+	it('fails closed with the alternative-aware error when a profile declares pr-response but no evidence exists', async () => {
+		setupMocks();
+		mockGetAgentProfile.mockReturnValue(
+			makeMockProfile({
+				finishHooks: { requiresPushedChanges: true, pushedChangesAlternatives: ['pr-response'] },
+			}),
+		);
+		const engine = makeMockBackend('opencode');
+		vi.mocked(engine.execute).mockResolvedValue({ success: true, output: 'Done' });
+
+		const result = await executeWithEngine(engine, 'respond-to-pr-comment', makeInput());
+
+		expect(result.success).toBe(false);
+		expect(result.error).toBe(COMPLETION_ERROR_NO_PUSH_OR_RESPONSE);
+		expect(logger.warn).toHaveBeenCalledWith(
+			'respond-to-pr-comment agent completed without authoritative pushed-change evidence',
+			expect.objectContaining({
+				rejections: [
+					expect.objectContaining({ outcome: 'pushed-changes' }),
+					expect.objectContaining({ outcome: 'pr-response' }),
+				],
+			}),
 		);
 	});
 

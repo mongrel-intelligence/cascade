@@ -5,6 +5,7 @@ import {
 	COMPLETION_ERROR_NO_PR,
 	COMPLETION_ERROR_NO_PUSH,
 	COMPLETION_ERROR_NO_REVIEW,
+	type PushedChangesEvaluation,
 } from './completion.js';
 import type { AgentEngine, AgentEngineResult } from './types.js';
 
@@ -23,7 +24,10 @@ export function postProcessResult(
 		requiresPushedChanges?: boolean;
 		requiresPMWrite?: boolean;
 		hasAuthoritativeReview?: boolean;
-		hasAuthoritativePushedChanges?: boolean;
+		/** Shared pushed-changes verdict (`evaluatePushedChanges`); absent when no sidecar was expected. */
+		pushedChangesEvaluation?: PushedChangesEvaluation;
+		/** Error recorded when every pushed-changes outcome is rejected; defaults to the legacy no-push error. */
+		pushedChangesError?: string;
 		hasPMWrite?: boolean;
 	},
 ): void {
@@ -66,17 +70,23 @@ export function postProcessResult(
 		result.error = COMPLETION_ERROR_NO_REVIEW;
 	}
 
-	if (
-		options?.requiresPushedChanges &&
-		result.success &&
-		options.hasAuthoritativePushedChanges === false
-	) {
-		logger.warn(`${agentType} agent completed without authoritative pushed-change evidence`, {
-			identifier,
-			engine: engine.definition.id,
-		});
-		result.success = false;
-		result.error = COMPLETION_ERROR_NO_PUSH;
+	if (options?.requiresPushedChanges && result.success && options.pushedChangesEvaluation) {
+		const evaluation = options.pushedChangesEvaluation;
+		if (evaluation.satisfiedBy === null) {
+			logger.warn(`${agentType} agent completed without authoritative pushed-change evidence`, {
+				identifier,
+				engine: engine.definition.id,
+				rejections: evaluation.rejections,
+			});
+			result.success = false;
+			result.error = options.pushedChangesError ?? COMPLETION_ERROR_NO_PUSH;
+		} else {
+			logger.info(`${agentType} agent satisfied the pushed-changes requirement`, {
+				identifier,
+				engine: engine.definition.id,
+				pushedChangesOutcome: evaluation.satisfiedBy,
+			});
+		}
 	}
 
 	if (options?.requiresPMWrite && result.success && options.hasPMWrite === false) {

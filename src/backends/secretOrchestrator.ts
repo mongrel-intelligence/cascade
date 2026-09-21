@@ -221,6 +221,7 @@ export async function buildExecutionPlan(
 		requiresPR: profile.finishHooks.requiresPR,
 		requiresReview: profile.finishHooks.requiresReview,
 		requiresPushedChanges: profile.finishHooks.requiresPushedChanges,
+		pushedChangesAlternatives: profile.finishHooks.pushedChangesAlternatives,
 		requiresPMWrite: profile.finishHooks.requiresPMWrite,
 		prSidecarPath,
 		reviewSidecarPath,
