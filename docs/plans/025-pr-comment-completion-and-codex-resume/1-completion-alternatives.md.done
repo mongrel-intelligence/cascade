@@ -6,7 +6,7 @@ plan_slug: completion-alternatives
 level: plan
 parent_spec: docs/specs/025-pr-comment-completion-and-codex-resume.md
 depends_on: []
-status: wip
+status: done
 locked_at: ddcef0cd7b5be3c10ce57a9fa1e345a9578e4276
 ---
 
