@@ -253,9 +253,61 @@ export function evaluatePushedChanges(
 	return { satisfiedBy: null, rejections };
 }
 
+export const COMPLETION_ERROR_NO_PUSH_OR_RESPONSE =
+	'Agent completed but neither authoritative pushed changes nor a substantive PR response with an unchanged repository were recorded';
+
+export const CONTINUATION_PROMPT_NO_PUSH =
+	'CASCADE completion check failed: no authoritative pushed changes were recorded for this task. Continue from the current session, commit and push the required changes, confirm the push succeeded, and only then finish.';
+
+/**
+ * Continuation guidance when a profile accepts a PR response instead of a push. A response
+ * that is already recorded is named so the resumed session never posts it a second time.
+ */
+export function buildPushedChangesContinuationPrompt(
+	rejections: OutcomeRejection[],
+	evidence: CompletionEvidence,
+): string {
+	const reasons = rejections
+		.map((rejection) => `${rejection.outcome}: ${rejection.reason}`)
+		.join('; ');
+	if (evidence.prResponse) {
+		return (
+			`CASCADE completion check failed: your PR response was already posted at ${evidence.prResponse.url} — do not post it again. ` +
+			`It did not complete the run because: ${reasons}. Continue from the current session: either commit and push the intended changes and then run \`cascade-tools session finish\`, ` +
+			'or revert the working tree to the run-start state if the reply was the whole answer, then finish.'
+		);
+	}
+	return (
+		`CASCADE completion check failed: neither a PR response nor pushed changes were recorded (${reasons}). ` +
+		'If the comment asked a question, reply with `cascade-tools scm post-pr-comment` (or `cascade-tools scm reply-to-review-comment` for an inline thread) without changing the repository, then run `cascade-tools session finish`. ' +
+		'If it asked for code changes, commit and push them, then finish.'
+	);
+}
+
 export interface CompletionFailure {
 	error: string;
 	continuationPrompt: string;
+	/** Why each pushed-changes outcome was rejected (present only for that requirement). */
+	rejections?: OutcomeRejection[];
+}
+
+function pushedChangesFailure(
+	requirements: CompletionRequirements,
+	evidence: CompletionEvidence,
+	rejections: OutcomeRejection[],
+): CompletionFailure {
+	if (!requirements.pushedChangesAlternatives?.length) {
+		return {
+			error: COMPLETION_ERROR_NO_PUSH,
+			continuationPrompt: CONTINUATION_PROMPT_NO_PUSH,
+			rejections,
+		};
+	}
+	return {
+		error: COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
+		continuationPrompt: buildPushedChangesContinuationPrompt(rejections, evidence),
+		rejections,
+	};
 }
 
 export function getCompletionFailure(
@@ -278,12 +330,9 @@ export function getCompletionFailure(
 		};
 	}
 
-	if (requirements?.requiresPushedChanges && !evidence.hasAuthoritativePushedChanges) {
-		return {
-			error: COMPLETION_ERROR_NO_PUSH,
-			continuationPrompt:
-				'CASCADE completion check failed: no authoritative pushed changes were recorded for this task. Continue from the current session, commit and push the required changes, confirm the push succeeded, and only then finish.',
-		};
+	const pushedChanges = requirements ? evaluatePushedChanges(requirements, evidence) : undefined;
+	if (requirements && pushedChanges?.satisfiedBy === null) {
+		return pushedChangesFailure(requirements, evidence, pushedChanges.rejections);
 	}
 
 	if (requirements?.requiresPMWrite && !evidence.hasPMWrite) {

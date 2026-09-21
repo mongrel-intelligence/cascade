@@ -6,8 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
 	applyCompletionEvidence,
+	COMPLETION_ERROR_NO_PUSH,
+	COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
+	CONTINUATION_PROMPT_NO_PUSH,
 	type CompletionEvidence,
 	evaluatePushedChanges,
+	getCompletionFailure,
 	readCompletionEvidence,
 	readRepoState,
 } from '../../../src/backends/completion.js';
@@ -319,22 +323,22 @@ describe('readRepoState', () => {
 	});
 });
 
-describe('evaluatePushedChanges', () => {
-	const RESPONSE = {
-		url: RESPONSE_URL,
-		kind: 'top-level' as const,
-		command: 'cascade-tools scm post-pr-comment',
-	};
-	const CLEAN_REPO = { clean: true, headSha: 'aaa', headUnchanged: true };
-	const WITH_ALTERNATIVE = {
-		requiresPushedChanges: true,
-		pushedChangesAlternatives: ['pr-response'] as const,
-	};
-	const NO_PUSH_REJECTION = {
-		outcome: 'pushed-changes',
-		reason: expect.stringMatching(/no pushed-changes sidecar/),
-	};
+const RESPONSE = {
+	url: RESPONSE_URL,
+	kind: 'top-level' as const,
+	command: 'cascade-tools scm post-pr-comment',
+};
+const CLEAN_REPO = { clean: true, headSha: 'aaa', headUnchanged: true };
+const WITH_ALTERNATIVE = {
+	requiresPushedChanges: true,
+	pushedChangesAlternatives: ['pr-response'] as const,
+};
+const NO_PUSH_REJECTION = {
+	outcome: 'pushed-changes',
+	reason: expect.stringMatching(/no pushed-changes sidecar/),
+};
 
+describe('evaluatePushedChanges', () => {
 	it('returns undefined when pushed changes are not required', () => {
 		expect(evaluatePushedChanges(undefined, evidenceWith({}))).toBeUndefined();
 		expect(evaluatePushedChanges({ requiresPR: true }, evidenceWith({}))).toBeUndefined();
@@ -467,5 +471,64 @@ describe('evaluatePushedChanges', () => {
 				{ outcome: 'pr-response', reason: expect.stringMatching(/no PR response recorded/) },
 			],
 		});
+	});
+});
+
+describe('getCompletionFailure — pushed-changes alternatives', () => {
+	it('keeps the legacy no-push error and prompt when no alternative is declared', () => {
+		const failure = getCompletionFailure({ requiresPushedChanges: true }, evidenceWith({}));
+
+		expect(failure?.error).toBe(COMPLETION_ERROR_NO_PUSH);
+		expect(failure?.continuationPrompt).toBe(CONTINUATION_PROMPT_NO_PUSH);
+	});
+
+	it('returns undefined when the pr-response branch is satisfied', () => {
+		expect(
+			getCompletionFailure(
+				WITH_ALTERNATIVE,
+				evidenceWith({
+					hasAuthoritativePRResponse: true,
+					prResponse: RESPONSE,
+					repoState: CLEAN_REPO,
+				}),
+			),
+		).toBeUndefined();
+	});
+
+	it('with alternatives and no evidence, names both ways to finish', () => {
+		const failure = getCompletionFailure(WITH_ALTERNATIVE, evidenceWith({ repoState: CLEAN_REPO }));
+
+		expect(failure?.error).toBe(COMPLETION_ERROR_NO_PUSH_OR_RESPONSE);
+		expect(failure?.continuationPrompt).toMatch(/cascade-tools scm post-pr-comment/);
+		expect(failure?.continuationPrompt).toMatch(/reply-to-review-comment/);
+		expect(failure?.continuationPrompt).toMatch(/commit and push/);
+		expect(failure?.continuationPrompt).toMatch(/cascade-tools session finish/);
+	});
+
+	it('with a recorded response but a modified repository, tells the session not to repeat the response', () => {
+		const failure = getCompletionFailure(
+			WITH_ALTERNATIVE,
+			evidenceWith({
+				hasAuthoritativePRResponse: true,
+				prResponse: RESPONSE,
+				repoState: { ...CLEAN_REPO, clean: false },
+			}),
+		);
+
+		expect(failure?.error).toBe(COMPLETION_ERROR_NO_PUSH_OR_RESPONSE);
+		expect(failure?.continuationPrompt).toContain(RESPONSE_URL);
+		expect(failure?.continuationPrompt).toMatch(/do not post (it|another)/i);
+		expect(failure?.continuationPrompt).toMatch(/commit and push|revert/);
+	});
+
+	it('exposes the rejections on the failure', () => {
+		const evidence = evidenceWith({ repoState: CLEAN_REPO });
+		const evaluation = evaluatePushedChanges(WITH_ALTERNATIVE, evidence);
+		const failure = getCompletionFailure(WITH_ALTERNATIVE, evidence);
+
+		expect(evaluation).toMatchObject({ satisfiedBy: null });
+		expect(failure?.rejections).toEqual(
+			evaluation?.satisfiedBy === null ? evaluation.rejections : undefined,
+		);
 	});
 });
