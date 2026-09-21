@@ -611,7 +611,7 @@ function buildCodexTurnResult(options: {
 }
 
 export function buildArgs(
-	input: AgentExecutionPlan,
+	input: Pick<AgentExecutionPlan, 'repoDir' | 'blockGitPush'>,
 	settings: ReturnType<typeof resolveCodexSettings>,
 	model: string,
 	lastMessagePath: string,
@@ -620,7 +620,6 @@ export function buildArgs(
 ): string[] {
 	const args = [
 		'exec',
-		...(sessionId ? ['resume', sessionId] : []),
 		'--json',
 		'--ignore-user-config',
 		'--ignore-rules',
@@ -637,13 +636,14 @@ export function buildArgs(
 		outputSchemaPath,
 		'-c',
 		`approval_policy=${tomlString(settings.approvalPolicy)}`,
+		// Codex defaults `web_search` to cached/live and deprecated `[features].web_search`,
+		// so the mode is always passed explicitly: webSearch=false must really remove the tool.
+		'-c',
+		`web_search=${tomlString(settings.webSearch ? 'live' : 'disabled')}`,
 	];
 
 	if (settings.reasoningEffort) {
 		args.push('-c', `model_reasoning_effort=${tomlString(settings.reasoningEffort)}`);
-	}
-	if (settings.webSearch) {
-		args.push('--enable', 'web_search');
 	}
 	if (input.blockGitPush ?? true) {
 		// CASCADE owns and rewrites this per-run hook, so no interactive trust prompt is possible
@@ -652,6 +652,9 @@ export function buildArgs(
 		// bypassed) for every agent except the four PR-branch opt-outs that set blockGitPush: false.
 		args.push('--dangerously-bypass-hook-trust');
 	}
+	// `-C` and `-s` are parent-only `codex exec` options: the CLI rejects them after the
+	// `resume` subcommand, so the subcommand and its stdin prompt marker always go last.
+	if (sessionId) args.push('resume', sessionId);
 	args.push('-');
 
 	return args;

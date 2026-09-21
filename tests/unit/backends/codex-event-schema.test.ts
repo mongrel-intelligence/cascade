@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
@@ -8,7 +8,23 @@ import { parseCodexEvent } from '../../../src/backends/codex/jsonlParser.js';
 
 type JsonRecord = Record<string, unknown>;
 
-const FIXTURE_DIR = resolve('tests/fixtures/codex/0.145.0');
+const WORKER_DOCKERFILE = resolve('Dockerfile.worker');
+const CODEX_PIN_RE = /@openai\/codex@(\S+)/;
+
+function pinnedCodexVersion(): string {
+	const match = readFileSync(WORKER_DOCKERFILE, 'utf8').match(CODEX_PIN_RE);
+	if (!match) throw new Error('Dockerfile.worker no longer pins @openai/codex');
+	return match[1];
+}
+
+const PINNED_CODEX_VERSION = pinnedCodexVersion();
+const FIXTURE_DIR = resolve('tests/fixtures/codex', PINNED_CODEX_VERSION);
+if (!existsSync(FIXTURE_DIR)) {
+	throw new Error(
+		`Missing ${FIXTURE_DIR}: Dockerfile.worker pins @openai/codex@${PINNED_CODEX_VERSION}, ` +
+			'regenerate the schema + exec-stream fixtures for that version (see Dockerfile.worker).',
+	);
+}
 const SCHEMA_PATH = resolve(FIXTURE_DIR, 'codex_app_server_protocol.v2.schemas.json');
 const STREAM_PATH = resolve(FIXTURE_DIR, 'exec-stream.jsonl');
 
@@ -65,9 +81,9 @@ describe('Codex exec JSONL schema drift', () => {
 				textParts: [],
 				toolCall: null,
 				usage: {
-					inputTokens: 22058,
+					inputTokens: 12442,
 					outputTokens: 6,
-					cachedTokens: 0,
+					cachedTokens: 4480,
 					reasoningTokens: 0,
 				},
 				error: undefined,
