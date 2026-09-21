@@ -160,7 +160,7 @@ Native-tool engines do not provision their own shell environment — they execut
 | `python` / `python3` | apt `python3` + `python-is-python3` | Both names resolve to the same Debian-owned Python 3. Use either for `python -c 'import json'` etc.; do not `pip install` at runtime. |
 | `jq`, `rg`, `fd`, `git`, `tmux`, `cascade-tools`, `ast-grep` (`sg`) | apt + curl + npm install in the worker image | Prefer these over hand-rolled equivalents in shell commands. |
 | Playwright Chromium | `npm install -g @playwright/test@<pin> && playwright install --with-deps chromium` | Browser cache lives at `$PLAYWRIGHT_BROWSERS_PATH` (`/ms-playwright`), readable and writable by the unprivileged `node` user. |
-| Agent engine CLIs | `@anthropic-ai/claude-code`, `@openai/codex`, `opencode-ai` | All pinned versions. |
+| Agent engine CLIs | `@anthropic-ai/claude-code`, `@openai/codex`, `opencode-ai` | All pinned versions. The image build ends by re-parsing CASCADE's own Codex argv with the pinned CLI (`dist/backends/codex/grammarSmokeCli.js`, model-free), so a Codex bump that changes the `exec` grammar fails the build instead of the first continuation turn. |
 
 **Env propagation.** Native-tool engines sanitize subprocess env via `src/backends/shared/envFilter.ts`. `PLAYWRIGHT_BROWSERS_PATH` is allowlisted as an exact match so the bake-in cache is reachable from agent shells; the broader `PLAYWRIGHT_*` prefix is intentionally not allowed, preserving the defense-in-depth posture for the rest of Playwright's env surface.
 
