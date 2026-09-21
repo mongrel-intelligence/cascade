@@ -267,8 +267,9 @@ Architecture docs (`04-agent-system.md`, `05-engine-backends.md`, `adding-engine
 - [x] AC #5
 - [x] AC #6
 - [x] AC #7
-- [ ] AC #8
-- [ ] AC #9
-- [ ] AC #10
-- [ ] AC #11
-- [ ] AC #12
+- [x] AC #8
+- [x] AC #9
+- [x] AC #10
+- [x] AC #11
+- [x] AC #12
+- verification (autonomous run): `npm run lint`, `npm run typecheck` and the four unit projects green (624 files / 11275 tests, run with `--maxWorkers=4` because an unrelated vitest+docker run on the host pushed load average past 80 and timed out CLI-spawn tests at vitest's 5 s default); the three `cascade-tools` spawn tests now carry a per-test budget equal to their 30 s spawn budget (separate `test(cli)` commit, outside this plan's file list, per the house rule that flaky equals failing).
