@@ -137,7 +137,7 @@ sequenceDiagram
 4. **Progress monitoring** (`src/backends/progressMonitor.ts`) — Timer-based progress updates posted to PM card and/or GitHub PR comment
 5. **Engine execution** — `beforeExecute()` → `execute()` → `afterExecute()`
 6. **Completion verification** (`src/backends/completion.ts`) — Check sidecar files for PR/review/push evidence
-7. **Continuation loop** (`src/backends/shared/continuationLoop.ts`) — Re-invoke engine if completion requirements not met
+7. **Continuation loop** (`src/backends/shared/continuationLoop.ts`) — Re-invoke engine if completion requirements not met. Codex continuation turns resume the recorded thread with `codex exec <options> resume <threadId> -`; `-C`/`--cd` and `-s`/`--sandbox` are parent-only `exec` options, so the subcommand must come after every option.
 8. **Finalization** — Update run record with status, duration, cost, logs; upload logs
 
 ### LLM call logging

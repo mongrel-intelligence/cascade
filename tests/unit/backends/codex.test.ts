@@ -583,7 +583,34 @@ describe('buildArgs', () => {
 		);
 
 		expect(initialArgs).not.toContain('--ephemeral');
-		expect(resumeArgs.slice(0, 4)).toEqual(['exec', 'resume', 'th_abc', '--json']);
+		expect(initialArgs).not.toContain('resume');
+		expect(initialArgs.at(-1)).toBe('-');
+		expect(resumeArgs.slice(-3)).toEqual(['resume', 'th_abc', '-']);
+	});
+
+	it('keeps every exec option ahead of the resume subcommand', () => {
+		// `-C`/`--cd` and `-s`/`--sandbox` are parent-only `codex exec` options, not clap
+		// globals: the pinned CLI rejects them after `resume` with "unexpected argument".
+		const initialArgs = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: true, reasoningEffort: 'high' },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+		);
+		const resumeArgs = buildArgs(
+			makeInput(),
+			{ ...baseSettings, webSearch: true, reasoningEffort: 'high' },
+			'model-x',
+			'/tmp/last.json',
+			'/tmp/output-schema.json',
+			'th_abc',
+		);
+		const resumeIndex = resumeArgs.indexOf('resume');
+
+		expect(resumeArgs[0]).toBe('exec');
+		expect(resumeArgs.slice(1, resumeIndex)).toEqual(initialArgs.slice(1, -1));
+		expect(resumeArgs.slice(resumeIndex)).toEqual(['resume', 'th_abc', '-']);
 	});
 });
 
@@ -720,7 +747,8 @@ describe('CodexEngine', () => {
 				});
 			})
 			.mockImplementationOnce((_cmd: string, args: string[]) => {
-				expect(args.slice(0, 4)).toEqual(['exec', 'resume', 'th_resume_123', '--json']);
+				expect(args[0]).toBe('exec');
+				expect(args.slice(-3)).toEqual(['resume', 'th_resume_123', '-']);
 				const outputPath = args[args.indexOf('-o') + 1];
 				return createMockChild({
 					stdoutLines: [

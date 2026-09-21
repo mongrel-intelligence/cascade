@@ -620,7 +620,6 @@ export function buildArgs(
 ): string[] {
 	const args = [
 		'exec',
-		...(sessionId ? ['resume', sessionId] : []),
 		'--json',
 		'--ignore-user-config',
 		'--ignore-rules',
@@ -652,6 +651,9 @@ export function buildArgs(
 		// bypassed) for every agent except the four PR-branch opt-outs that set blockGitPush: false.
 		args.push('--dangerously-bypass-hook-trust');
 	}
+	// `-C` and `-s` are parent-only `codex exec` options: the CLI rejects them after the
+	// `resume` subcommand, so the subcommand and its stdin prompt marker always go last.
+	if (sessionId) args.push('resume', sessionId);
 	args.push('-');
 
 	return args;
