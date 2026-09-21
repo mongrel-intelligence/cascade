@@ -226,10 +226,19 @@ const TrailingHooksSchema = z.object({
 });
 
 // --- Finish hook schemas ---
+/**
+ * Outcomes that may satisfy `requiresPushedChanges` instead of a push.
+ * `pr-response`: a new top-level PR comment or inline review reply was recorded and the
+ * repository is clean and still at the run-start HEAD.
+ */
+export const PUSHED_CHANGES_ALTERNATIVES = ['pr-response'] as const;
+export type PushedChangesAlternative = (typeof PUSHED_CHANGES_ALTERNATIVES)[number];
+
 const ScmFinishSchema = z.object({
 	requiresPR: z.boolean().optional(),
 	requiresReview: z.boolean().optional(),
 	requiresPushedChanges: z.boolean().optional(),
+	pushedChangesAlternatives: z.array(z.enum(PUSHED_CHANGES_ALTERNATIVES)).min(1).optional(),
 	blockGitPush: z.boolean().optional(),
 });
 
@@ -237,10 +246,20 @@ const PmFinishSchema = z.object({
 	requiresPMWrite: z.boolean().optional(),
 });
 
-const FinishHooksSchema = z.object({
-	scm: ScmFinishSchema.optional(),
-	pm: PmFinishSchema.optional(),
-});
+const FinishHooksSchema = z
+	.object({
+		scm: ScmFinishSchema.optional(),
+		pm: PmFinishSchema.optional(),
+	})
+	.superRefine((hooks, ctx) => {
+		if (hooks.scm?.pushedChangesAlternatives && hooks.scm.requiresPushedChanges !== true) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				path: ['scm', 'pushedChangesAlternatives'],
+				message: 'pushedChangesAlternatives requires requiresPushedChanges: true',
+			});
+		}
+	});
 
 // --- Lifecycle hook schema ---
 /**

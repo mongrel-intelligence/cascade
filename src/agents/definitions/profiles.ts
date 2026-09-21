@@ -89,6 +89,7 @@ function resolveFinishHooks(def: AgentDefinition): FinishHookFlags {
 		requiresPR: scm?.requiresPR,
 		requiresReview: scm?.requiresReview,
 		requiresPushedChanges: scm?.requiresPushedChanges,
+		pushedChangesAlternatives: scm?.pushedChangesAlternatives,
 		blockGitPush: scm?.blockGitPush,
 		requiresPMWrite: pm?.requiresPMWrite,
 	};

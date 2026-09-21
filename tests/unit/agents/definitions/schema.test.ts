@@ -382,6 +382,63 @@ describe.concurrent('AgentDefinitionSchema', () => {
 		}
 	});
 
+	it('accepts pushedChangesAlternatives: [pr-response] next to requiresPushedChanges: true', () => {
+		const good = {
+			...validDefinition,
+			hooks: {
+				finish: {
+					scm: { requiresPushedChanges: true, pushedChangesAlternatives: ['pr-response'] },
+				},
+			},
+		};
+		const result = AgentDefinitionSchema.safeParse(good);
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.data.hooks?.finish?.scm?.pushedChangesAlternatives).toEqual(['pr-response']);
+		}
+	});
+
+	it('rejects an unknown pushedChangesAlternatives name', () => {
+		const bad = {
+			...validDefinition,
+			hooks: {
+				finish: { scm: { requiresPushedChanges: true, pushedChangesAlternatives: ['comment'] } },
+			},
+		};
+		const result = AgentDefinitionSchema.safeParse(bad);
+		expect(result.success).toBe(false);
+		if (!result.success) {
+			expect(JSON.stringify(result.error.issues)).toContain('pr-response');
+		}
+	});
+
+	it('rejects pushedChangesAlternatives without requiresPushedChanges: true', () => {
+		const shapes = [
+			{ pushedChangesAlternatives: ['pr-response'] },
+			{ requiresPushedChanges: false, pushedChangesAlternatives: ['pr-response'] },
+		];
+		for (const scm of shapes) {
+			const result = AgentDefinitionSchema.safeParse({
+				...validDefinition,
+				hooks: { finish: { scm } },
+			});
+			expect(result.success).toBe(false);
+			if (!result.success) {
+				expect(result.error.issues.map((issue) => issue.message)).toContain(
+					'pushedChangesAlternatives requires requiresPushedChanges: true',
+				);
+			}
+		}
+	});
+
+	it('rejects an empty pushedChangesAlternatives list', () => {
+		const result = AgentDefinitionSchema.safeParse({
+			...validDefinition,
+			hooks: { finish: { scm: { requiresPushedChanges: true, pushedChangesAlternatives: [] } } },
+		});
+		expect(result.success).toBe(false);
+	});
+
 	it('rejects overlapping required and optional capabilities', () => {
 		const bad = {
 			...validDefinition,
