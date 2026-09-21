@@ -36,6 +36,8 @@ Plan 2 produces the evidence (sidecar writers, `session finish` acceptance, env 
 - `src/backends/shared/continuationLoop.ts`
 - `src/backends/postProcess.ts`
 - `src/backends/adapter.ts`
+- `src/backends/secretOrchestrator.ts` (one line only: forwards `pushedChangesAlternatives` from the profile into `completionRequirements`; plan 2 owns every other change there)
+- `tests/helpers/tempGitRepo.ts` (shared real-git helper, reused by plans 2 and 3)
 - `tests/unit/backends/completion.test.ts`
 - `tests/unit/backends/shared-continuationLoop.test.ts`
 - `tests/unit/backends/postProcess.test.ts`
@@ -187,7 +189,8 @@ Also in `tests/unit/backends/adapter.test.ts` (owned here): extend the existing 
 
 **Implementation** (`src/backends/postProcess.ts`, `src/backends/adapter.ts`):
 - `postProcessResult` options: replace `hasAuthoritativePushedChanges?: boolean` with `pushedChangesEvaluation?: PushedChangesEvaluation` and `pushedChangesError?: string`; the pushed-changes block becomes `if (options?.requiresPushedChanges && result.success && options.pushedChangesEvaluation?.satisfiedBy === null) { warn(…rejections); result.success = false; result.error = options.pushedChangesError ?? COMPLETION_ERROR_NO_PUSH }`. On a satisfied evaluation, `logger.info('… completion outcome', { pushedChangesOutcome })`.
-- `adapter.ts` computes `const failure = getCompletionFailure(executionPlan.completionRequirements, completionEvidence)` and passes `pushedChangesEvaluation` + `pushedChangesError: failure?.error` (only when `pushedChangesSidecarPath !== undefined`). Everything else it passes stays as is.
+- `adapter.ts` passes `pushedChangesEvaluation: evaluatePushedChanges(requirements, evidence)` (only when `pushedChangesSidecarPath !== undefined`) and `pushedChangesError: resolvePushedChangesError(requirements)` — a small exported helper in `completion.ts` that `pushedChangesFailure` shares, so the adapter never picks up a PR/review failure's error by mistake. Everything else it passes stays as is.
+- `secretOrchestrator.ts` forwards `profile.finishHooks.pushedChangesAlternatives` into the `completionRequirements` object so the worker-side evaluator and the adapter's error resolution see the declared alternatives (plan 2 adds `prResponseSidecarPath`, `repoDir` and `initialHeadSha`).
 
 ---
 
@@ -256,13 +259,14 @@ Architecture docs (`04-agent-system.md`, `05-engine-backends.md`, `adding-engine
 ## Progress
 
 <!-- /implement updates these as it works. Do not edit manually. -->
+- divergence (autonomous run, task 6): the adapter's fail-closed path needs `pushedChangesAlternatives` on `completionRequirements`, so this plan forwards it in `secretOrchestrator.ts` (one line) and takes that line's ownership from plan 2; the shared real-git helper `tests/helpers/tempGitRepo.ts` was added here for the repo-state tests.
 - [x] AC #1
 - [x] AC #2
 - [x] AC #3
 - [x] AC #4
 - [x] AC #5
-- [ ] AC #6
-- [ ] AC #7
+- [x] AC #6
+- [x] AC #7
 - [ ] AC #8
 - [ ] AC #9
 - [ ] AC #10

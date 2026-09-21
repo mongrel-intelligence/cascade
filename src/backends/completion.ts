@@ -291,23 +291,22 @@ export interface CompletionFailure {
 	rejections?: OutcomeRejection[];
 }
 
+/** The error a run records when every pushed-changes outcome is rejected. */
+export function resolvePushedChangesError(requirements: CompletionRequirements): string {
+	return requirements.pushedChangesAlternatives?.length
+		? COMPLETION_ERROR_NO_PUSH_OR_RESPONSE
+		: COMPLETION_ERROR_NO_PUSH;
+}
+
 function pushedChangesFailure(
 	requirements: CompletionRequirements,
 	evidence: CompletionEvidence,
 	rejections: OutcomeRejection[],
 ): CompletionFailure {
-	if (!requirements.pushedChangesAlternatives?.length) {
-		return {
-			error: COMPLETION_ERROR_NO_PUSH,
-			continuationPrompt: CONTINUATION_PROMPT_NO_PUSH,
-			rejections,
-		};
-	}
-	return {
-		error: COMPLETION_ERROR_NO_PUSH_OR_RESPONSE,
-		continuationPrompt: buildPushedChangesContinuationPrompt(rejections, evidence),
-		rejections,
-	};
+	const continuationPrompt = requirements.pushedChangesAlternatives?.length
+		? buildPushedChangesContinuationPrompt(rejections, evidence)
+		: CONTINUATION_PROMPT_NO_PUSH;
+	return { error: resolvePushedChangesError(requirements), continuationPrompt, rejections };
 }
 
 export function getCompletionFailure(

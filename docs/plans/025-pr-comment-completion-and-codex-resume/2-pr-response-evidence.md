@@ -17,7 +17,7 @@ status: pending
 
 Plan 1 defined what counts as a comment-only completion; this plan makes the system produce that evidence and lets the agent finish on it. `cascade-tools scm post-pr-comment` and `cascade-tools scm reply-to-review-comment` record a successful new response in a PR-response sidecar (`CASCADE_PR_RESPONSE_SIDECAR_PATH`), while `cascade-tools scm update-pr-comment` records nothing — editing the acknowledgment or a progress comment is never a substantive response. The sidecar path is created and injected only for profiles that declare the `pr-response` alternative, and its env var is allowlisted so it actually reaches engine subprocesses. The in-process gadgets used by the SDK engine record the same fact in session state so `Finish` behaves identically there.
 
-`cascade-tools session finish` (and the in-process `Finish` gadget) learn the same rule the shared evaluator applies: when the profile declares the alternative, a recorded response with a clean tree, no unpushed commits, and HEAD still at the run-start SHA is a valid finish; in that case the pushed-changes sidecar is **not** written, because nothing was pushed. Otherwise the strict push path is unchanged, with rejection messages that now name both ways to finish. `secretOrchestrator` populates the new `CompletionRequirements` fields (`pushedChangesAlternatives`, `prResponseSidecarPath`, `repoDir`, `initialHeadSha`) so the worker-side evaluation from plan 1 runs on real data.
+`cascade-tools session finish` (and the in-process `Finish` gadget) learn the same rule the shared evaluator applies: when the profile declares the alternative, a recorded response with a clean tree, no unpushed commits, and HEAD still at the run-start SHA is a valid finish; in that case the pushed-changes sidecar is **not** written, because nothing was pushed. Otherwise the strict push path is unchanged, with rejection messages that now name both ways to finish. `secretOrchestrator` populates the remaining new `CompletionRequirements` fields (`prResponseSidecarPath`, `repoDir`, `initialHeadSha`; plan 1 already forwards `pushedChangesAlternatives`) so the worker-side evaluation from plan 1 runs on real data.
 
 Still dormant for users: no built-in profile declares the alternative until plan 3.
 
@@ -75,7 +75,7 @@ Still dormant for users: no built-in profile declares the alternative until plan
 
 ## Depends On
 
-- Plan 1 (completion-alternatives) — provides `PushedChangesAlternative`, the `CompletionRequirements` fields (`pushedChangesAlternatives`, `prResponseSidecarPath`, `repoDir`, `initialHeadSha`), `PR_RESPONSE_KINDS` / `PRResponseKind`, and `readCompletionEvidence` reading the response sidecar (reused by the `session finish` CLI).
+- Plan 1 (completion-alternatives) — provides `PushedChangesAlternative`, the `CompletionRequirements` fields (`pushedChangesAlternatives`, `prResponseSidecarPath`, `repoDir`, `initialHeadSha`), `PR_RESPONSE_KINDS` / `PRResponseKind`, `readCompletionEvidence` reading the response sidecar (reused by the `session finish` CLI), and the shared real-git test helper `tests/helpers/tempGitRepo.ts`.
 
 ---
 
@@ -137,7 +137,7 @@ Existing `secretOrchestrator` coverage lives in `tests/unit/backends/adapter.tes
 
 **Implementation** (`src/backends/sidecarManager.ts`, `src/backends/secretOrchestrator.ts`):
 - `createCompletionArtifacts` adds `prResponseSidecarPath` (`cascade-pr-response-sidecar-<pid>-<ts>.json`) when `needsNativeToolRuntime && profile.finishHooks.pushedChangesAlternatives?.includes('pr-response')`, injects the env var, returns it.
-- `export function buildCompletionRequirements(...)`: returns the `CompletionRequirements` object (moved from `secretOrchestrator.ts`) with the four new fields. `initialHeadSha` is `input.headSha` — the same value the CLI already receives as `CASCADE_INITIAL_HEAD_SHA`, so the worker-side and CLI-side "HEAD unchanged" checks agree by construction. (Deriving it from `git rev-parse HEAD` would newly enforce the no-new-commits rule on PM-triggered runs — a behaviour change outside this spec.)
+- `export function buildCompletionRequirements(...)`: returns the `CompletionRequirements` object (moved from `secretOrchestrator.ts`) with the remaining three new fields (`prResponseSidecarPath`, `repoDir`, `initialHeadSha`); plan 1 already forwards `pushedChangesAlternatives`. `initialHeadSha` is `input.headSha` — the same value the CLI already receives as `CASCADE_INITIAL_HEAD_SHA`, so the worker-side and CLI-side "HEAD unchanged" checks agree by construction. (Deriving it from `git rev-parse HEAD` would newly enforce the no-new-commits rule on PM-triggered runs — a behaviour change outside this spec.)
 - `secretOrchestrator.ts` calls the helper; nothing else changes there.
 
 ### 5. `session finish` accepts the comment-only outcome

@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -503,5 +503,20 @@ describe('getCompletionFailure — pushed-changes alternatives', () => {
 		expect(failure?.rejections).toEqual(
 			evaluation?.satisfiedBy === null ? evaluation.rejections : undefined,
 		);
+	});
+});
+
+describe('completion logic is agent-agnostic', () => {
+	it('never references an agent type by name', () => {
+		const sharedCompletionFiles = [
+			'src/backends/completion.ts',
+			'src/backends/shared/continuationLoop.ts',
+			'src/backends/postProcess.ts',
+		];
+		for (const file of sharedCompletionFiles) {
+			expect(readFileSync(resolve(file), 'utf8'), file).not.toMatch(
+				/respond-to-pr-comment|prComment/,
+			);
+		}
 	});
 });
