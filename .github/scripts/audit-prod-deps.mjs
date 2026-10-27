@@ -51,26 +51,38 @@ function runAudit() {
 }
 
 function advisoryId(via) {
-	if (typeof via !== 'object' || !via.url) return null;
+	// `typeof null === 'object'`, so guard against a null/array `via` entry and a
+	// non-string `url` before dereferencing — npm's real output never emits these,
+	// but a security gate should not throw on an unexpected shape.
+	if (!via || typeof via !== 'object' || typeof via.url !== 'string') return null;
 	return via.url.split('/advisories/')[1] || null;
 }
 
 function collectGatingAdvisories(report) {
 	const found = new Map(); // GHSA id -> { title, severity }
+	const unidentified = []; // gating vulns with no resolvable GHSA id
 	const vulns = Object.values(report.vulnerabilities ?? {}).filter((v) => GATING.has(v.severity));
 	for (const vuln of vulns) {
+		let keyed = false;
 		for (const via of vuln.via ?? []) {
 			const id = advisoryId(via);
 			if (id) {
+				keyed = true;
 				found.set(id, { title: via.title ?? id, severity: via.severity ?? vuln.severity });
 			}
 		}
+		// A gating advisory with no resolvable GHSA id (e.g. a `via` list of only
+		// strings) can be matched against neither the allowlist nor a fix. Fail
+		// closed and surface it rather than let it slip through unblocked.
+		if (!keyed) {
+			unidentified.push({ name: vuln.name ?? '(unknown package)', severity: vuln.severity });
+		}
 	}
-	return found;
+	return { found, unidentified };
 }
 
 const report = runAudit();
-const advisories = collectGatingAdvisories(report);
+const { found: advisories, unidentified } = collectGatingAdvisories(report);
 
 const blocking = [...advisories].filter(([id]) => !ALLOWLIST.has(id));
 const deferred = [...advisories].filter(([id]) => ALLOWLIST.has(id));
@@ -83,10 +95,15 @@ if (deferred.length > 0) {
 	}
 }
 
-if (blocking.length > 0) {
+if (blocking.length > 0 || unidentified.length > 0) {
 	console.error('\nBlocking high/critical production advisories (not allowlisted):');
 	for (const [id, info] of blocking) {
 		console.error(`  - ${id} [${info.severity}] ${info.title}`);
+	}
+	for (const info of unidentified) {
+		console.error(
+			`  - ${info.name} [${info.severity}] (no GHSA id in audit output; cannot be allowlisted)`,
+		);
 	}
 	console.error('\nFix the advisory or, if it is intentionally deferred, add it to the');
 	console.error('ALLOWLIST in .github/scripts/audit-prod-deps.mjs with a tracking reference.');
