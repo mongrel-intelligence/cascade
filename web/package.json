@@ -37,6 +37,12 @@
 		"@vitejs/plugin-react": "^6.0.4",
 		"tailwindcss": "^4.1.7",
 		"typescript": "^5.7.2",
-		"vite": "^8.1.5"
+		"vite": "^8.3.5"
+	},
+	"overrides": {
+		"seroval": "^1.6.3",
+		"nanoid": "^3.3.18",
+		"source-map-js": "^1.2.2",
+		"postcss-selector-parser": "^6.1.5"
 	}
 }
