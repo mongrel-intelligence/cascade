@@ -4,6 +4,10 @@ All notable user-visible changes to CASCADE are documented here. The format is l
 
 ## Unreleased
 
+### Security
+
+- **Remediated the remaining root-workspace moderate and dev-only advisories (non-gating backend hygiene)** ([MNG-1799](https://linear.app/mongrel/issue/MNG-1799), follows [MNG-1796](https://linear.app/mongrel/issue/MNG-1796)). Direct bumps: `hono` `^4.13.4 → ^4.13.11` (clears the `toSSG()`/`serveStatic` path-traversal, `parseBody()` DoS, query-parser cache-key and `hono/jsx` XSS advisories) and the `vitest` / `@vitest/coverage-v8` devDependencies `→ ^3.2.7` (UI-server arbitrary file read). New `overrides` force the transitive trees up: `@opentelemetry/core` / `@opentelemetry/resources` / `@opentelemetry/sdk-trace-base` `>=2.8.0` (W3C Baggage unbounded-allocation, via `@sentry/node`), `shell-quote ^1.11.0` (`quote()` command injection, via `concurrently`), `tinypool >=2.1.2` (prototype-pollution RCE gadget) and `esbuild ^0.25.0` — the `esbuild` override is what clears the `@esbuild-kit/core-utils` / `@esbuild-kit/esm-loader` dev-server-request chain under `drizzle-kit` **without** `npm audit fix --force`, which would downgrade `drizzle-kit` to `0.18.1`; `drizzle-kit` stays at `^0.31.9`. `npm audit` critical count drops 4 → 0 and the moderate count drops 9 → 2; residual dev-only moderates and the separately-tracked CI-gating production highs are out of scope.
+
 ### Added
 
 - **GPT-6 Astra (`gpt-6-astra`) is selectable for the Codex engine.** It appears in the Codex model dropdown and CLI model validation, and is priced at the published API rates (per 1M tokens: $10 input, $1 cached input, $50 output) so run costs stay populated. The worker image's Codex CLI had to move to 0.155.1 for this — older CLIs have no catalog entry for Astra and fall back to generic model metadata (see *Changed*).
