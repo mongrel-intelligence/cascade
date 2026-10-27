@@ -13,8 +13,8 @@ export const webhookLogsRouter = router({
 			z.object({
 				source: z.string().optional(),
 				eventType: z.string().optional(),
-				receivedAfter: z.string().datetime().optional(),
-				receivedBefore: z.string().datetime().optional(),
+				receivedAfter: z.iso.datetime().optional(),
+				receivedBefore: z.iso.datetime().optional(),
 				limit: z.number().min(1).max(200).default(50),
 				offset: z.number().min(0).default(0),
 			}),

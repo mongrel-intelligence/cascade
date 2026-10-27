@@ -65,8 +65,8 @@ export const runsRouter = router({
 				projectId: z.string().optional(),
 				status: z.array(z.string()).optional(),
 				agentType: z.string().optional(),
-				startedAfter: z.string().datetime().optional(),
-				startedBefore: z.string().datetime().optional(),
+				startedAfter: z.iso.datetime().optional(),
+				startedBefore: z.iso.datetime().optional(),
 				limit: z.number().min(1).max(100).default(50),
 				offset: z.number().min(0).default(0),
 				sort: z.enum(['startedAt', 'durationMs', 'costUsd']).default('startedAt'),
@@ -94,8 +94,8 @@ export const runsRouter = router({
 				projectId: z.string().optional(),
 				status: z.array(z.string()).optional(),
 				agentType: z.string().optional(),
-				startedAfter: z.string().datetime().optional(),
-				startedBefore: z.string().datetime().optional(),
+				startedAfter: z.iso.datetime().optional(),
+				startedBefore: z.iso.datetime().optional(),
 				limit: z.number().min(1).max(100).default(50),
 				offset: z.number().min(0).default(0),
 				sort: z.enum(['startedAt', 'durationMs', 'costUsd']).default('startedAt'),
@@ -116,35 +116,31 @@ export const runsRouter = router({
 			});
 		}),
 
-	getById: protectedProcedure
-		.input(z.object({ id: z.string().uuid() }))
-		.query(async ({ ctx, input }) => {
-			const run = await getRunById(input.id);
-			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+	getById: protectedProcedure.input(z.object({ id: z.uuid() })).query(async ({ ctx, input }) => {
+		const run = await getRunById(input.id);
+		if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
 
-			// Verify org access
-			if (run.projectId && ctx.user?.role !== 'superadmin') {
-				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
-				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
-			}
+		// Verify org access
+		if (run.projectId && ctx.user?.role !== 'superadmin') {
+			if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+			await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+		}
 
-			return run;
-		}),
+		return run;
+	}),
 
-	getLogs: protectedProcedure
-		.input(z.object({ runId: z.string().uuid() }))
-		.query(async ({ ctx, input }) => {
-			const run = await getRunById(input.runId);
-			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
-			if (run.projectId && ctx.user?.role !== 'superadmin') {
-				if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
-				await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
-			}
-			return getRunLogs(input.runId);
-		}),
+	getLogs: protectedProcedure.input(z.object({ runId: z.uuid() })).query(async ({ ctx, input }) => {
+		const run = await getRunById(input.runId);
+		if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
+		if (run.projectId && ctx.user?.role !== 'superadmin') {
+			if (!ctx.effectiveOrgId) throw new TRPCError({ code: 'UNAUTHORIZED' });
+			await verifyProjectOrgAccess(run.projectId, ctx.effectiveOrgId);
+		}
+		return getRunLogs(input.runId);
+	}),
 
 	listLlmCalls: protectedProcedure
-		.input(z.object({ runId: z.string().uuid() }))
+		.input(z.object({ runId: z.uuid() }))
 		.query(async ({ ctx, input }) => {
 			const run = await getRunById(input.runId);
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -193,7 +189,7 @@ export const runsRouter = router({
 		}),
 
 	getLlmCall: protectedProcedure
-		.input(z.object({ runId: z.string().uuid(), callNumber: z.number() }))
+		.input(z.object({ runId: z.uuid(), callNumber: z.number() }))
 		.query(async ({ ctx, input }) => {
 			const run = await getRunById(input.runId);
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -207,7 +203,7 @@ export const runsRouter = router({
 		}),
 
 	getDebugAnalysis: protectedProcedure
-		.input(z.object({ runId: z.string().uuid() }))
+		.input(z.object({ runId: z.uuid() }))
 		.query(async ({ ctx, input }) => {
 			const run = await getRunById(input.runId);
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -220,7 +216,7 @@ export const runsRouter = router({
 		}),
 
 	getDebugAnalysisStatus: protectedProcedure
-		.input(z.object({ runId: z.string().uuid() }))
+		.input(z.object({ runId: z.uuid() }))
 		.query(async ({ ctx, input }) => {
 			const run = await getRunById(input.runId);
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -257,7 +253,7 @@ export const runsRouter = router({
 		}),
 
 	triggerDebugAnalysis: protectedProcedure
-		.input(z.object({ runId: z.string().uuid() }))
+		.input(z.object({ runId: z.uuid() }))
 		.mutation(async ({ ctx, input }) => {
 			const run = await getRunById(input.runId);
 			if (!run) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -486,7 +482,7 @@ export const runsRouter = router({
 	retry: protectedProcedure
 		.input(
 			z.object({
-				runId: z.string().uuid(),
+				runId: z.uuid(),
 				model: z.string().optional(),
 			}),
 		)
@@ -554,7 +550,7 @@ export const runsRouter = router({
 	cancel: protectedProcedure
 		.input(
 			z.object({
-				runId: z.string().uuid(),
+				runId: z.uuid(),
 				reason: z.string().optional(),
 			}),
 		)

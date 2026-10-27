@@ -45,7 +45,7 @@ const trelloCredsInput = z.object({
 const jiraCredsInput = z.object({
 	email: z.string().min(1),
 	apiToken: z.string().min(1),
-	baseUrl: z.string().url(),
+	baseUrl: z.url(),
 	/**
 	 * Optional JIRA auth mode. Non-secret connection setting mirroring
 	 * `baseUrl` (NOT a credential). Threaded into `withJiraCredentials` so

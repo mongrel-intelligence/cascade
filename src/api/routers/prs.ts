@@ -59,7 +59,7 @@ export const prsRouter = router({
 		.input(
 			z.object({
 				projectId: z.string(),
-				dateFrom: z.string().datetime().optional(),
+				dateFrom: z.iso.datetime().optional(),
 				agentType: z.string().optional(),
 				status: z.string().optional(),
 			}),
@@ -77,7 +77,7 @@ export const prsRouter = router({
 		.input(
 			z.object({
 				projectId: z.string(),
-				dateFrom: z.string().datetime().optional(),
+				dateFrom: z.iso.datetime().optional(),
 				agentType: z.string().optional(),
 				status: z.string().optional(),
 			}),
