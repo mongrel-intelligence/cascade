@@ -18,7 +18,7 @@ export const PROJECT_DEFAULTS = {
 
 const AgentEngineConfigSchema = z.object({
 	default: z.string().default(PROJECT_DEFAULTS.agentEngine),
-	overrides: z.record(z.string()).default({}),
+	overrides: z.record(z.string(), z.string()).default({}),
 });
 
 /**
@@ -81,7 +81,7 @@ export const ProjectConfigSchema = z.object({
 	linear: linearConfigSchema.optional(),
 
 	model: z.string().default(PROJECT_DEFAULTS.model),
-	agentModels: z.record(z.string()).optional(),
+	agentModels: z.record(z.string(), z.string()).optional(),
 	maxIterations: z.number().int().positive().default(PROJECT_DEFAULTS.maxIterations),
 	watchdogTimeoutMs: z.number().int().positive().default(PROJECT_DEFAULTS.watchdogTimeoutMs), // 30 min max job duration
 	progressModel: z.string().default(PROJECT_DEFAULTS.progressModel),

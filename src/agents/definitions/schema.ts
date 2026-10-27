@@ -352,7 +352,15 @@ export const AgentDefinitionSchema = z.object({
  * Partial update schema for agent definitions.
  * Allows updating individual top-level fields without requiring the full definition.
  */
-export const DefinitionPatchSchema = AgentDefinitionSchema.partial();
+export const DefinitionPatchSchema = AgentDefinitionSchema.partial().extend({
+	// zod 4 still applies `.default()` under `.partial()`, so a patch that omits
+	// these fields would be parsed with `triggers: []` / `requiredContext: []`
+	// injected and then silently overwrite the stored values on merge. Re-declare
+	// them as plain optionals so a partial update only carries the keys the caller
+	// actually sent (restores the pre-zod-4 patch semantics).
+	triggers: z.array(SupportedTriggerSchema).optional(),
+	requiredContext: z.array(ContextStepNameSchema).optional(),
+});
 
 export type AgentDefinition = z.infer<typeof AgentDefinitionSchema>;
 

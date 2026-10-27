@@ -48,7 +48,9 @@ const TriggerEventSchema = z
  * Trigger parameters: flat key-value map with primitive values only.
  * Nested objects are not supported.
  */
-const TriggerParametersSchema = z.record(z.union([z.string(), z.boolean(), z.number()])).optional();
+const TriggerParametersSchema = z
+	.record(z.string(), z.union([z.string(), z.boolean(), z.number()]))
+	.optional();
 
 // ============================================================================
 // Router

@@ -87,7 +87,7 @@
 		"tree-kill": "^1.2.2",
 		"trello.js": "^1.2.8",
 		"zangief": "^1.0.5",
-		"zod": "^3.25.0"
+		"zod": "^4.6.7"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.10",
@@ -152,6 +152,7 @@
 		"@opentelemetry/sdk-trace-base": ">=2.8.0",
 		"shell-quote": "^1.11.0",
 		"tinypool": ">=2.1.2",
-		"esbuild": "^0.25.0"
+		"esbuild": "^0.25.0",
+		"zod": "^4.6.7"
 	}
 }
