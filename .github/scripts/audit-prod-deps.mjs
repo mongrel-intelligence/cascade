@@ -58,23 +58,75 @@ function advisoryId(via) {
 	return via.url.split('/advisories/')[1] || null;
 }
 
+/**
+ * Resolve a vulnerability's `via` list to the leaf advisory objects that gate it.
+ *
+ * npm represents a package that *hard-depends* on a vulnerable dependency as its
+ * own gating entry whose `via` lists the dependency *name* (a string) rather than
+ * the advisory object. Left unresolved, such a parent carries no GHSA id and
+ * would fail closed in `collectGatingAdvisories` even when the underlying leaf
+ * advisory is allowlisted — silently defeating the GHSA-keyed allowlist if a
+ * deferred advisory (e.g. `zod`) ever gains a hard-dependency production
+ * dependent. Walking the string references back to each named package's own
+ * `vulnerabilities` entry lets the allowlist apply transitively, so a deferred
+ * advisory can't resurface through its dependents.
+ *
+ * Only gating parents are followed (npm propagates severity upward as the max
+ * over a chain, so a sub-gate parent can never carry a gating leaf). `unresolved`
+ * is set when a `via` entry can't be followed to an advisory object at all, so
+ * the caller can still fail closed on a genuinely unkeyable advisory.
+ */
+function resolveLeafAdvisories(vuln, vulnerabilities, seen = new Set()) {
+	if (vuln.name) {
+		if (seen.has(vuln.name)) return { advisories: [], unresolved: false }; // via cycle guard
+		seen.add(vuln.name);
+	}
+	const advisories = [];
+	let unresolved = false;
+	for (const via of vuln.via ?? []) {
+		const resolved = resolveVia(via, vulnerabilities, seen);
+		advisories.push(...resolved.advisories);
+		if (resolved.unresolved) unresolved = true;
+	}
+	return { advisories, unresolved };
+}
+
+/** Resolve a single `via` entry to its leaf advisory object(s). */
+function resolveVia(via, vulnerabilities, seen) {
+	// An advisory object is already a resolved leaf.
+	if (via && typeof via === 'object') return { advisories: [via], unresolved: false };
+	// A string names a dependent package whose own advisory lives in the map.
+	const parent = typeof via === 'string' ? vulnerabilities[via] : undefined;
+	// Neither an advisory object nor a known package — surface it (fail closed).
+	if (!parent) return { advisories: [], unresolved: true };
+	// Sub-gate parents can't carry a gating leaf; skip them so resolution never
+	// pulls a below-threshold advisory into the gate.
+	if (!GATING.has(parent.severity)) return { advisories: [], unresolved: false };
+	return resolveLeafAdvisories(parent, vulnerabilities, seen);
+}
+
 function collectGatingAdvisories(report) {
+	const vulnerabilities = report.vulnerabilities ?? {};
 	const found = new Map(); // GHSA id -> { title, severity }
 	const unidentified = []; // gating vulns with no resolvable GHSA id
-	const vulns = Object.values(report.vulnerabilities ?? {}).filter((v) => GATING.has(v.severity));
+	const vulns = Object.values(vulnerabilities).filter((v) => GATING.has(v.severity));
 	for (const vuln of vulns) {
+		// Follow string `via` references back to their leaf advisory so the
+		// GHSA-keyed allowlist applies transitively, instead of a dependent
+		// package failing closed and defeating the allowlist for a deferred dep.
+		const { advisories, unresolved } = resolveLeafAdvisories(vuln, vulnerabilities);
 		let keyed = false;
-		for (const via of vuln.via ?? []) {
+		for (const via of advisories) {
 			const id = advisoryId(via);
 			if (id) {
 				keyed = true;
 				found.set(id, { title: via.title ?? id, severity: via.severity ?? vuln.severity });
 			}
 		}
-		// A gating advisory with no resolvable GHSA id (e.g. a `via` list of only
-		// strings) can be matched against neither the allowlist nor a fix. Fail
-		// closed and surface it rather than let it slip through unblocked.
-		if (!keyed) {
+		// Fail closed: a gating vuln we can't key to any GHSA id — even after
+		// following `via` references back to the leaf advisory — can be matched
+		// against neither the allowlist nor a fix, so surface it as blocking.
+		if (!keyed || unresolved) {
 			unidentified.push({ name: vuln.name ?? '(unknown package)', severity: vuln.severity });
 		}
 	}
