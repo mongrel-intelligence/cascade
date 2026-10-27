@@ -150,9 +150,15 @@ describe('open-source readiness', () => {
 	});
 
 	describe('CI configuration', () => {
-		it('includes npm audit step', () => {
-			const content = readRoot('.github/workflows/ci.yml');
-			expect(content).toContain('npm audit');
+		it('includes a production-dependency audit step backed by npm audit', () => {
+			// The gate runs through a wrapper script that allowlists narrowly-tracked,
+			// deferred advisories while still failing on any other high/critical one.
+			const workflow = readRoot('.github/workflows/ci.yml');
+			expect(workflow).toContain('.github/scripts/audit-prod-deps.mjs');
+
+			const auditScript = readRoot('.github/scripts/audit-prod-deps.mjs');
+			expect(auditScript).toContain('npm audit');
+			expect(auditScript).toContain('--audit-level=high');
 		});
 	});
 

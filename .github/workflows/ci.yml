@@ -40,7 +40,9 @@ jobs:
         run: npm run lint
 
       - name: Audit production dependencies
-        run: npm audit --omit=dev --audit-level=high
+        # Fails on any high/critical advisory except narrowly allowlisted,
+        # tracked ones (keyed by GHSA id). See .github/scripts/audit-prod-deps.mjs.
+        run: node .github/scripts/audit-prod-deps.mjs
 
       - name: Run tests with coverage
         run: npm run test:coverage
