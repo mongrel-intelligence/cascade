@@ -169,7 +169,7 @@ export const usersRouter = router({
 	create: adminProcedure
 		.input(
 			z.object({
-				email: z.string().email(),
+				email: z.email(),
 				name: z.string().min(1),
 				password: z.string().min(12),
 				role: z.enum(['member', 'admin', 'superadmin']).optional(),
@@ -229,7 +229,7 @@ export const usersRouter = router({
 	addExistingUserToOrg: adminProcedure
 		.input(
 			z.object({
-				email: z.string().email(),
+				email: z.email(),
 				role: z.enum(['member', 'admin']).optional(),
 			}),
 		)
@@ -269,7 +269,7 @@ export const usersRouter = router({
 			z.object({
 				id: z.string(),
 				name: z.string().min(1).optional(),
-				email: z.string().email().optional(),
+				email: z.email().optional(),
 				role: z.enum(['member', 'admin', 'superadmin']).optional(),
 				password: z.string().min(12).optional(),
 			}),

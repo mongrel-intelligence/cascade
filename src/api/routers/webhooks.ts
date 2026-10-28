@@ -144,7 +144,7 @@ export const webhooksRouter = router({
 		.input(
 			z.object({
 				projectId: z.string(),
-				callbackBaseUrl: z.string().url().optional(),
+				callbackBaseUrl: z.url().optional(),
 				oneTimeTokens: oneTimeTokensSchema,
 			}),
 		)
@@ -196,7 +196,7 @@ export const webhooksRouter = router({
 		.input(
 			z.object({
 				projectId: z.string(),
-				callbackBaseUrl: z.string().url(),
+				callbackBaseUrl: z.url(),
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
 				jiraOnly: z.boolean().optional(),
@@ -240,7 +240,7 @@ export const webhooksRouter = router({
 		.input(
 			z.object({
 				projectId: z.string(),
-				callbackBaseUrl: z.string().url(),
+				callbackBaseUrl: z.url(),
 				trelloOnly: z.boolean().optional(),
 				githubOnly: z.boolean().optional(),
 				jiraOnly: z.boolean().optional(),

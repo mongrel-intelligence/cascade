@@ -881,8 +881,8 @@ export const projectsRouter = router({
 					projectId: z.string(),
 					category: z.enum(['pm', 'scm', 'alerting']),
 					provider: z.string().min(1),
-					config: z.record(z.unknown()),
-					triggers: z.record(z.boolean()).optional(),
+					config: z.record(z.string(), z.unknown()),
+					triggers: z.record(z.string(), z.boolean()).optional(),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {
@@ -902,7 +902,10 @@ export const projectsRouter = router({
 				z.object({
 					projectId: z.string(),
 					category: z.enum(['pm', 'scm', 'alerting']),
-					triggers: z.record(z.union([z.boolean(), z.string().nullable(), z.record(z.boolean())])),
+					triggers: z.record(
+						z.string(),
+						z.union([z.boolean(), z.string().nullable(), z.record(z.string(), z.boolean())]),
+					),
 				}),
 			)
 			.mutation(async ({ ctx, input }) => {

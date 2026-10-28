@@ -24,7 +24,7 @@ export const jiraConfigSchema = z
 		projectKey: z.string().min(1),
 
 		/** JIRA cloud base URL (e.g. "https://acme.atlassian.net"). */
-		baseUrl: z.string().url(),
+		baseUrl: z.url(),
 
 		/**
 		 * Optional JIRA authentication mode. Non-secret connection setting

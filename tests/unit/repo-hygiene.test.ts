@@ -150,9 +150,18 @@ describe('open-source readiness', () => {
 	});
 
 	describe('CI configuration', () => {
-		it('includes npm audit step', () => {
-			const content = readRoot('.github/workflows/ci.yml');
-			expect(content).toContain('npm audit');
+		const PROD_AUDIT = 'npm audit --omit=dev --audit-level=high';
+		const ciRunLines = () =>
+			readRoot('.github/workflows/ci.yml')
+				.split('\n')
+				.map((line) => line.trim());
+
+		it('gates root production dependencies on high-severity advisories', () => {
+			expect(ciRunLines()).toContain(`run: ${PROD_AUDIT}`);
+		});
+
+		it('gates web/ production dependencies on high-severity advisories', () => {
+			expect(ciRunLines()).toContain(`run: cd web && ${PROD_AUDIT}`);
 		});
 	});
 
