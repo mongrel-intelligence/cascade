@@ -30,6 +30,12 @@ export interface PRDetails {
 	baseRef: string;
 	merged: boolean;
 	mergeable: boolean | null;
+	/**
+	 * GitHub's mergeable_state field. Values: 'clean', 'dirty', 'unstable',
+	 * 'blocked', 'behind', 'unknown', or null if not yet computed.
+	 * 'dirty' indicates merge conflicts. Optional for backward compat with mocks.
+	 */
+	mergeableState?: string | null;
 	user: { login: string };
 	/**
 	 * Full name (`owner/repo`) of the PR's head repository, or `null` when the
@@ -199,6 +205,7 @@ export const githubClient = {
 			baseRef: data.base.ref,
 			merged: data.merged ?? false,
 			mergeable: data.mergeable ?? null,
+			mergeableState: (data as { mergeable_state?: string }).mergeable_state ?? null,
 			user: { login: data.user?.login || 'unknown' },
 			headRepoFullName,
 			isFork,

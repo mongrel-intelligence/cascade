@@ -118,6 +118,7 @@ describe('githubClient', () => {
 				baseRef: 'main',
 				merged: false,
 				mergeable: null,
+				mergeableState: null,
 				user: { login: 'test-user' },
 				// No head/base repo objects in this payload → treated as non-fork.
 				headRepoFullName: null,
@@ -224,6 +225,31 @@ describe('githubClient', () => {
 
 			expect(result.merged).toBe(false);
 			expect(result.user).toEqual({ login: 'unknown' });
+		});
+
+		it('extracts mergeable_state from API response', async () => {
+			mockPulls.get.mockResolvedValue({
+				data: {
+					number: 42,
+					title: 'Conflicting PR',
+					body: null,
+					state: 'open',
+					html_url: 'url',
+					head: { ref: 'feat', sha: 'abc' },
+					base: { ref: 'main' },
+					merged: false,
+					mergeable: false,
+					mergeable_state: 'dirty',
+					user: { login: 'author' },
+				},
+			});
+
+			const result = await withGitHubToken('test-token', () =>
+				githubClient.getPR('owner', 'repo', 42),
+			);
+
+			expect(result.mergeable).toBe(false);
+			expect(result.mergeableState).toBe('dirty');
 		});
 	});
 
