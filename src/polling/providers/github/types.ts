@@ -389,9 +389,101 @@ export function buildSyntheticMergedPRPayload(
 }
 
 /**
+ * Synthetic pull_request synchronize payload for conflict detection.
+ * Uses 'synchronize' action to trigger PRConflictDetectedTrigger without
+ * matching PROpenedTrigger (which only matches 'opened').
+ */
+export interface SyntheticPRConflictPayload {
+	_eventType: 'pull_request';
+	_deliveryId: string;
+	action: 'synchronize';
+	number: number;
+	pull_request: {
+		number: number;
+		title: string;
+		body: string | null;
+		html_url: string;
+		state: 'open';
+		draft: boolean;
+		head: {
+			ref: string;
+			sha: string;
+		};
+		base: {
+			ref: string;
+		};
+		user: {
+			login: string;
+		};
+	};
+	repository: {
+		full_name: string;
+		html_url: string;
+	};
+	sender: {
+		login: string;
+	};
+}
+
+/**
+ * Build a synthetic PR conflict payload.
+ */
+export function buildSyntheticPRConflictPayload(
+	pr: GitHubPullRequest,
+	repoFullName: string,
+	baseSha: string,
+): SyntheticPRConflictPayload {
+	return {
+		_eventType: 'pull_request',
+		_deliveryId: `poll:pr_conflict:${pr.number}:${pr.head.sha}:${baseSha}`,
+		action: 'synchronize',
+		number: pr.number,
+		pull_request: {
+			number: pr.number,
+			title: pr.title,
+			body: pr.body,
+			html_url: pr.html_url,
+			state: 'open',
+			draft: false,
+			head: {
+				ref: pr.head.ref,
+				sha: pr.head.sha,
+			},
+			base: {
+				ref: pr.base.ref,
+			},
+			user: {
+				login: pr.user.login,
+			},
+		},
+		repository: {
+			full_name: repoFullName,
+			html_url: `https://github.com/${repoFullName}`,
+		},
+		sender: {
+			login: pr.user.login,
+		},
+	};
+}
+
+/**
+ * Build dedup key for PR conflict check.
+ * Format: github:{repo}:pr_conflict_check:{pr}:{head_sha}:{base_sha}
+ */
+export function buildPRConflictCheckDedupKey(
+	repoFullName: string,
+	prNumber: number,
+	headSha: string,
+	baseSha: string,
+): string {
+	return `github:${repoFullName}:pr_conflict_check:${prNumber}:${headSha}:${baseSha}`;
+}
+
+/**
  * Union type for all synthetic GitHub payloads.
  */
 export type SyntheticGitHubPayload =
 	| SyntheticCheckSuitePayload
 	| SyntheticPRReviewPayload
-	| SyntheticMergedPRPayload;
+	| SyntheticMergedPRPayload
+	| SyntheticPRConflictPayload;
