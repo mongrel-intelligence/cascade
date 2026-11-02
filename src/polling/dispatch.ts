@@ -21,6 +21,8 @@ export type PollingEventType =
 	| 'status_changed'
 	| 'pr_review'
 	| 'merged_pr'
+	| 'pr_conflict'
+	| 'pr_conflict_checked'
 	| 'ignored';
 
 /** Result of a polling dispatch attempt. */
