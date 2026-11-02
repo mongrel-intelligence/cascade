@@ -22,6 +22,7 @@ import { handleGitHubRepoColdStart, handleJiraColdStart } from './cold-start.js'
 import { pollingConfig } from './config.js';
 import { pollCheckSuitesForRepo } from './providers/github/check-suite-poller.js';
 import { pollMergedPRsForRepo } from './providers/github/merged-pr-poller.js';
+import { pollPRConflictsForRepo } from './providers/github/pr-conflict-poller.js';
 import { pollPRReviewsForRepo } from './providers/github/pr-review-poller.js';
 import {
 	type JiraApiClient,
@@ -295,6 +296,34 @@ async function pollGitHubProject(
 	);
 	stats.emitted += prReviewResult.emitted;
 	stats.errors += prReviewResult.errors;
+
+	// Poll PR conflicts (uses openPRs from review poller)
+	// Skip if review poller failed (no list) — openPRs is empty and errors > 0
+	if (prReviewResult.openPRs.length > 0 || prReviewResult.errors === 0) {
+		try {
+			const conflictResult = await pollPRConflictsForRepo(
+				project.id,
+				owner,
+				repoName,
+				octokit,
+				adapter,
+				triggerRegistry,
+				prReviewResult.openPRs,
+			);
+			stats.emitted += conflictResult.emitted;
+			stats.errors += conflictResult.errors;
+		} catch (error) {
+			stats.errors++;
+			logger.error('Failed to poll PR conflicts', {
+				projectId: project.id,
+				repo: `${owner}/${repoName}`,
+				error: String(error),
+			});
+			captureException(error instanceof Error ? error : new Error(String(error)), {
+				tags: { source: 'polling_pr_conflicts', projectId: project.id },
+			});
+		}
+	}
 
 	// Poll merged PRs
 	const mergedPRResult = await pollMergedPRsForRepo(

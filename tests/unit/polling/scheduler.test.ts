@@ -79,7 +79,15 @@ vi.mock('../../../src/polling/providers/github/check-suite-poller.js', () => ({
 }));
 
 vi.mock('../../../src/polling/providers/github/pr-review-poller.js', () => ({
-	pollPRReviewsForRepo: vi.fn().mockResolvedValue({ emitted: 0, errors: 0, total: 0, skipped: 0 }),
+	pollPRReviewsForRepo: vi
+		.fn()
+		.mockResolvedValue({ emitted: 0, errors: 0, total: 0, skipped: 0, openPRs: [] }),
+}));
+
+vi.mock('../../../src/polling/providers/github/pr-conflict-poller.js', () => ({
+	pollPRConflictsForRepo: vi
+		.fn()
+		.mockResolvedValue({ emitted: 0, errors: 0, total: 0, skipped: 0 }),
 }));
 
 vi.mock('../../../src/polling/providers/github/merged-pr-poller.js', () => ({
@@ -130,6 +138,8 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 import { Queue, Worker } from 'bullmq';
 import { getProjectGitHubToken } from '../../../src/config/projects.js';
+import { pollPRConflictsForRepo } from '../../../src/polling/providers/github/pr-conflict-poller.js';
+import { pollPRReviewsForRepo } from '../../../src/polling/providers/github/pr-review-poller.js';
 import { startPollingScheduler, stopPollingScheduler } from '../../../src/polling/scheduler.js';
 
 describe('startPollingScheduler', () => {
@@ -283,6 +293,128 @@ describe('stopPollingScheduler', () => {
 		await stopPollingScheduler();
 
 		expect(mockLoggerInfo).toHaveBeenCalledWith('Polling scheduler stopped');
+	});
+});
+
+describe('conflict poller integration', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockPollingEnabled = true;
+		process.env.REDIS_URL = 'redis://localhost:6379';
+	});
+
+	afterEach(async () => {
+		await stopPollingScheduler();
+	});
+
+	it('passes openPRs from review poller to conflict poller', async () => {
+		const mockOpenPRs = [
+			{ number: 1, draft: false, head: { sha: 'abc' }, base: { ref: 'main' } },
+			{ number: 2, draft: true, head: { sha: 'def' }, base: { ref: 'main' } },
+		];
+		vi.mocked(pollPRReviewsForRepo).mockResolvedValueOnce({
+			emitted: 0,
+			errors: 0,
+			total: 0,
+			skipped: 0,
+			openPRs: mockOpenPRs as never,
+		});
+		vi.mocked(getProjectGitHubToken).mockResolvedValueOnce('token');
+		mockLoadProjectConfig.mockResolvedValueOnce({
+			fullProjects: [{ id: 'p1', name: 'Test', repo: 'owner/repo' }],
+		});
+
+		await startPollingScheduler();
+		const workerCallback = vi.mocked(Worker).mock.calls[0][1] as () => Promise<void>;
+		await workerCallback();
+
+		expect(pollPRConflictsForRepo).toHaveBeenCalledWith(
+			'p1',
+			'owner',
+			'repo',
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			mockOpenPRs,
+		);
+	});
+
+	it('skips conflict poller when review poller failed (openPRs empty with errors)', async () => {
+		vi.mocked(pollPRReviewsForRepo).mockResolvedValueOnce({
+			emitted: 0,
+			errors: 1, // Failed
+			total: 0,
+			skipped: 0,
+			openPRs: [], // Empty due to failure
+		});
+		vi.mocked(getProjectGitHubToken).mockResolvedValueOnce('token');
+		mockLoadProjectConfig.mockResolvedValueOnce({
+			fullProjects: [{ id: 'p1', name: 'Test', repo: 'owner/repo' }],
+		});
+
+		await startPollingScheduler();
+		const workerCallback = vi.mocked(Worker).mock.calls[0][1] as () => Promise<void>;
+		await workerCallback();
+
+		expect(pollPRConflictsForRepo).not.toHaveBeenCalled();
+	});
+
+	it('runs conflict poller when openPRs is empty but no errors (no PRs in repo)', async () => {
+		vi.mocked(pollPRReviewsForRepo).mockResolvedValueOnce({
+			emitted: 0,
+			errors: 0,
+			total: 0,
+			skipped: 0,
+			openPRs: [], // Empty but no errors - valid, repo has no open PRs
+		});
+		vi.mocked(getProjectGitHubToken).mockResolvedValueOnce('token');
+		mockLoadProjectConfig.mockResolvedValueOnce({
+			fullProjects: [{ id: 'p1', name: 'Test', repo: 'owner/repo' }],
+		});
+
+		await startPollingScheduler();
+		const workerCallback = vi.mocked(Worker).mock.calls[0][1] as () => Promise<void>;
+		await workerCallback();
+
+		expect(pollPRConflictsForRepo).toHaveBeenCalledWith(
+			'p1',
+			'owner',
+			'repo',
+			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+			[],
+		);
+	});
+
+	it('isolates conflict poller exception from other pollers', async () => {
+		vi.mocked(pollPRReviewsForRepo).mockResolvedValueOnce({
+			emitted: 1,
+			errors: 0,
+			total: 1,
+			skipped: 0,
+			openPRs: [{ number: 1 }] as never,
+		});
+		vi.mocked(pollPRConflictsForRepo).mockRejectedValueOnce(new Error('Conflict poller crashed'));
+		vi.mocked(getProjectGitHubToken).mockResolvedValueOnce('token');
+		mockLoadProjectConfig.mockResolvedValueOnce({
+			fullProjects: [{ id: 'p1', name: 'Test', repo: 'owner/repo' }],
+		});
+
+		await startPollingScheduler();
+		const workerCallback = vi.mocked(Worker).mock.calls[0][1] as () => Promise<void>;
+
+		// Should not throw - exception is caught
+		await expect(workerCallback()).resolves.not.toThrow();
+
+		// Should log the error
+		expect(mockLoggerError).toHaveBeenCalledWith(
+			'Failed to poll PR conflicts',
+			expect.objectContaining({
+				projectId: 'p1',
+				error: 'Error: Conflict poller crashed',
+			}),
+		);
 	});
 });
 

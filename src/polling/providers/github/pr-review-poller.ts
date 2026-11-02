@@ -27,6 +27,8 @@ export interface PRReviewPollResult {
 	emitted: number;
 	skipped: number;
 	errors: number;
+	/** Open PRs fetched this cycle, passed to conflict poller. */
+	openPRs: GitHubPullRequest[];
 }
 
 /**
@@ -94,6 +96,7 @@ export async function pollPRReviewsForRepo(
 		emitted: 0,
 		skipped: 0,
 		errors: 0,
+		openPRs: [],
 	};
 
 	// Get watermark
@@ -116,6 +119,7 @@ export async function pollPRReviewsForRepo(
 			title: pr.title,
 			body: pr.body,
 			state: pr.state as 'open' | 'closed',
+			draft: pr.draft ?? false,
 			html_url: pr.html_url,
 			head: {
 				ref: pr.head.ref,
@@ -133,8 +137,12 @@ export async function pollPRReviewsForRepo(
 		}));
 	} catch (error) {
 		logger.error('Failed to fetch open PRs', { repoFullName, error: String(error) });
-		return result;
+		result.errors++;
+		return result; // openPRs stays empty on fetch failure
 	}
+
+	// Store openPRs for conflict poller (even if empty or no reviews found)
+	result.openPRs = openPRs;
 
 	if (openPRs.length === 0) {
 		// Update watermark to now even if no PRs

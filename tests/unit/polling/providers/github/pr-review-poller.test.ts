@@ -78,6 +78,7 @@ function createMockPR(
 		title: string;
 		body: string | null;
 		state: string;
+		draft: boolean;
 		html_url: string;
 		head: { ref: string; sha: string };
 		base: { ref: string };
@@ -86,7 +87,7 @@ function createMockPR(
 		updated_at: string;
 	}> = {},
 ) {
-	return {
+	const result: Record<string, unknown> = {
 		number: overrides.number ?? 42,
 		title: overrides.title ?? 'Test PR',
 		body: overrides.body ?? 'PR body',
@@ -98,6 +99,11 @@ function createMockPR(
 		merged_at: overrides.merged_at ?? null,
 		updated_at: overrides.updated_at ?? new Date().toISOString(),
 	};
+	// Only include draft if explicitly provided (simulates API behavior where field may be absent)
+	if ('draft' in overrides) {
+		result.draft = overrides.draft;
+	}
+	return result;
 }
 
 /**
@@ -445,6 +451,85 @@ describe('pollPRReviewsForRepo', () => {
 
 			expect(result.total).toBe(0);
 			expect(dispatchAndRecord).not.toHaveBeenCalled();
+		});
+	});
+
+	describe('open PR fetch failure', () => {
+		it('returns errors >= 1 and empty openPRs when list fetch fails', async () => {
+			const octokit = {
+				pulls: {
+					list: vi.fn().mockRejectedValue(new Error('GitHub API error')),
+					listReviews: vi.fn(),
+				},
+			} as unknown as Parameters<typeof pollPRReviewsForRepo>[3];
+
+			const result = await pollPRReviewsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result.errors).toBeGreaterThanOrEqual(1);
+			expect(result.openPRs).toEqual([]);
+		});
+	});
+
+	describe('openPRs draft field mapping', () => {
+		it('maps draft: true from API response to openPRs item', async () => {
+			const draftPR = createMockPR({ number: 42, draft: true });
+			const octokit = createMockOctokit([draftPR], new Map());
+
+			const result = await pollPRReviewsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result.openPRs).toHaveLength(1);
+			expect(result.openPRs[0].draft).toBe(true);
+		});
+
+		it('defaults draft to false when undefined in API response', async () => {
+			// API response without draft field
+			const prWithoutDraft = createMockPR({ number: 42 });
+			expect('draft' in prWithoutDraft).toBe(false);
+
+			const octokit = createMockOctokit([prWithoutDraft], new Map());
+
+			const result = await pollPRReviewsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result.openPRs).toHaveLength(1);
+			expect(result.openPRs[0].draft).toBe(false);
+		});
+
+		it('returns openPRs even when no reviews are found', async () => {
+			const pr = createMockPR({ number: 42 });
+			const octokit = createMockOctokit([pr], new Map());
+
+			const result = await pollPRReviewsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result.openPRs).toHaveLength(1);
+			expect(result.openPRs[0].number).toBe(42);
 		});
 	});
 });
