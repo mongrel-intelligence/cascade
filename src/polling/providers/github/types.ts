@@ -55,6 +55,7 @@ export interface GitHubPullRequest {
 	title: string;
 	body: string | null;
 	state: 'open' | 'closed';
+	draft?: boolean;
 	html_url: string;
 	head: {
 		ref: string;
@@ -444,7 +445,7 @@ export function buildSyntheticPRConflictPayload(
 			body: pr.body,
 			html_url: pr.html_url,
 			state: 'open',
-			draft: false,
+			draft: pr.draft ?? false,
 			head: {
 				ref: pr.head.ref,
 				sha: pr.head.sha,

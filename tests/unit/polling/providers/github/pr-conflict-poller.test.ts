@@ -85,12 +85,14 @@ function createMockOpenPR(
 	number: number,
 	headSha = `head-sha-${number}`,
 	baseRef = 'main',
+	draft = false,
 ): Parameters<typeof pollPRConflictsForRepo>[6][0] {
 	return {
 		number,
 		title: `PR #${number}`,
 		body: null,
 		state: 'open',
+		draft,
 		html_url: `https://github.com/owner/repo/pull/${number}`,
 		head: { ref: 'feature', sha: headSha },
 		base: { ref: baseRef },
@@ -424,6 +426,36 @@ describe('pollPRConflictsForRepo', () => {
 			'pr_conflict',
 			'github:owner/repo:pr_conflict_check:42:abc123:def456',
 			expect.anything(),
+			expect.anything(),
+			expect.anything(),
+		);
+	});
+
+	it('preserves draft status in synthetic payload', async () => {
+		const draftPR = createMockOpenPR(99, 'head-sha-99', 'main', true);
+		const prDetails = new Map([[99, { mergeable: false, mergeableState: 'dirty' }]]);
+		const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+		await pollPRConflictsForRepo(
+			'project-1',
+			'owner',
+			'repo',
+			octokit,
+			mockAdapter,
+			mockTriggerRegistry,
+			[draftPR],
+		);
+
+		expect(mockDispatchAndRecord).toHaveBeenCalledWith(
+			'project-1',
+			'github',
+			'pr_conflict',
+			expect.any(String),
+			expect.objectContaining({
+				pull_request: expect.objectContaining({
+					draft: true,
+				}),
+			}),
 			expect.anything(),
 			expect.anything(),
 		);
