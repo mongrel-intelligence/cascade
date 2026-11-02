@@ -18,7 +18,6 @@
  */
 
 import type { Octokit } from '@octokit/rest';
-import type { PRDetails } from '../../../github/client.js';
 import type { RouterPlatformAdapter } from '../../../router/platform-adapter.js';
 import type { TriggerRegistry } from '../../../triggers/registry.js';
 import { logger } from '../../../utils/logging.js';
@@ -70,14 +69,14 @@ async function fetchBaseSha(
 }
 
 /**
- * Fetch PR details including mergeable state.
+ * Fetch PR mergeable state only.
  */
-async function fetchPRDetails(
+async function fetchMergeableState(
 	octokit: Octokit,
 	owner: string,
 	repo: string,
 	prNumber: number,
-): Promise<PRDetails | null> {
+): Promise<{ mergeable: boolean | null; mergeableState: string | null } | null> {
 	try {
 		const { data } = await octokit.pulls.get({
 			owner,
@@ -85,21 +84,11 @@ async function fetchPRDetails(
 			pull_number: prNumber,
 		});
 		return {
-			number: data.number,
-			title: data.title,
-			body: data.body,
-			state: data.state,
-			htmlUrl: data.html_url,
-			headRef: data.head.ref,
-			headSha: data.head.sha,
-			baseRef: data.base.ref,
-			merged: data.merged ?? false,
 			mergeable: data.mergeable ?? null,
 			mergeableState: (data as { mergeable_state?: string }).mergeable_state ?? null,
-			user: { login: data.user?.login || 'unknown' },
 		};
 	} catch (error) {
-		logger.error('Failed to fetch PR details', {
+		logger.error('Failed to fetch PR mergeable state', {
 			owner,
 			repo,
 			prNumber,
@@ -193,27 +182,27 @@ export async function pollPRConflictsForRepo(
 			continue;
 		}
 
-		// Fetch PR details to get mergeable state
-		const details = await fetchPRDetails(octokit, owner, repo, pr.number);
-		if (!details) {
+		// Fetch PR mergeable state
+		const state = await fetchMergeableState(octokit, owner, repo, pr.number);
+		if (!state) {
 			result.errors++;
 			continue;
 		}
 
 		// If mergeable is null or state is unknown, skip without recording
 		// Will retry next cycle
-		if (details.mergeable === null || details.mergeableState === 'unknown') {
+		if (state.mergeable === null || state.mergeableState === 'unknown') {
 			logger.debug('PR mergeable state not yet computed, will retry', {
 				prNumber: pr.number,
-				mergeable: details.mergeable,
-				mergeableState: details.mergeableState,
+				mergeable: state.mergeable,
+				mergeableState: state.mergeableState,
 			});
 			result.skipped++;
 			continue;
 		}
 
 		// Check for conflicts
-		if (details.mergeableState === 'dirty') {
+		if (state.mergeableState === 'dirty') {
 			// Dispatch conflict event immediately and record
 			const payload = buildSyntheticPRConflictPayload(pr, repoFullName, baseSha);
 			const dispatchResult = await dispatchAndRecord(
