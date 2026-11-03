@@ -22,7 +22,10 @@ import {
 	batchRecordWithoutDispatch,
 	dispatchAndRecord,
 } from '../../../../../src/polling/dispatch.js';
-import { pollPRConflictsForRepo } from '../../../../../src/polling/providers/github/pr-conflict-poller.js';
+import {
+	pollPRConflictsForRepo,
+	resetSettledHeadTracking,
+} from '../../../../../src/polling/providers/github/pr-conflict-poller.js';
 import type { RouterPlatformAdapter } from '../../../../../src/router/platform-adapter.js';
 import type { TriggerRegistry } from '../../../../../src/triggers/registry.js';
 
@@ -111,6 +114,7 @@ const mockBatchRecordWithoutDispatch = batchRecordWithoutDispatch as ReturnType<
 describe('pollPRConflictsForRepo', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		resetSettledHeadTracking(); // Clear settled-head tracking between tests
 		mockBatchCheckLedger.mockResolvedValue(new Set());
 		mockDispatchAndRecord.mockResolvedValue({
 			recorded: true,
@@ -186,11 +190,23 @@ describe('pollPRConflictsForRepo', () => {
 		expect(mockBatchRecordWithoutDispatch).toHaveBeenCalled();
 	});
 
-	it('dispatches event for dirty (conflicting) PR', async () => {
+	it('dispatches event for dirty (conflicting) PR after head is settled', async () => {
 		const pr1 = createMockOpenPR(1);
 		const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
 		const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
 
+		// Cycle 1: deferred (head not settled)
+		await pollPRConflictsForRepo(
+			'project-1',
+			'owner',
+			'repo',
+			octokit,
+			mockAdapter,
+			mockTriggerRegistry,
+			[pr1],
+		);
+
+		// Cycle 2: head settled, dispatches
 		const result = await pollPRConflictsForRepo(
 			'project-1',
 			'owner',
@@ -289,7 +305,7 @@ describe('pollPRConflictsForRepo', () => {
 		]);
 	});
 
-	it('records conflict immediately, not batched', async () => {
+	it('records conflict immediately, not batched (after head settled)', async () => {
 		const pr1 = createMockOpenPR(1);
 		const pr2 = createMockOpenPR(2, 'head-sha-2');
 		const prDetails = new Map([
@@ -298,6 +314,22 @@ describe('pollPRConflictsForRepo', () => {
 		]);
 		const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
 
+		// Cycle 1: pr1 deferred (head not settled), pr2 recorded as clean
+		await pollPRConflictsForRepo(
+			'project-1',
+			'owner',
+			'repo',
+			octokit,
+			mockAdapter,
+			mockTriggerRegistry,
+			[pr1, pr2],
+		);
+		mockBatchRecordWithoutDispatch.mockClear();
+
+		// Cycle 2: pr1 head settled, dispatches; pr2 in ledger
+		mockBatchCheckLedger.mockResolvedValue(
+			new Set(['github:owner/repo:pr_conflict_check:2:head-sha-2:base-sha-123']),
+		);
 		await pollPRConflictsForRepo(
 			'project-1',
 			'owner',
@@ -320,13 +352,8 @@ describe('pollPRConflictsForRepo', () => {
 			expect.anything(),
 		);
 
-		// Clean PR recorded in batch (not via dispatchAndRecord)
-		expect(mockBatchRecordWithoutDispatch).toHaveBeenCalledWith('project-1', 'github', [
-			{
-				eventType: 'pr_conflict_checked',
-				dedupKey: expect.stringContaining('pr_conflict_check:2'),
-			},
-		]);
+		// pr2 was in ledger, no batch record this cycle
+		expect(mockBatchRecordWithoutDispatch).not.toHaveBeenCalled();
 	});
 
 	it('fetches base SHA once per distinct base branch', async () => {
@@ -405,11 +432,23 @@ describe('pollPRConflictsForRepo', () => {
 		expect(result.emitted).toBe(0);
 	});
 
-	it('uses correct dedup key format', async () => {
+	it('uses correct dedup key format (after head settled)', async () => {
 		const pr1 = createMockOpenPR(42, 'abc123');
 		const prDetails = new Map([[42, { mergeable: false, mergeableState: 'dirty' }]]);
 		const octokit = createMockOctokit(new Map([['main', 'def456']]), prDetails);
 
+		// Cycle 1: deferred
+		await pollPRConflictsForRepo(
+			'project-1',
+			'owner',
+			'repo',
+			octokit,
+			mockAdapter,
+			mockTriggerRegistry,
+			[pr1],
+		);
+
+		// Cycle 2: settled, dispatches
 		await pollPRConflictsForRepo(
 			'project-1',
 			'owner',
@@ -431,11 +470,23 @@ describe('pollPRConflictsForRepo', () => {
 		);
 	});
 
-	it('preserves draft status in synthetic payload', async () => {
+	it('preserves draft status in synthetic payload (after head settled)', async () => {
 		const draftPR = createMockOpenPR(99, 'head-sha-99', 'main', true);
 		const prDetails = new Map([[99, { mergeable: false, mergeableState: 'dirty' }]]);
 		const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
 
+		// Cycle 1: deferred
+		await pollPRConflictsForRepo(
+			'project-1',
+			'owner',
+			'repo',
+			octokit,
+			mockAdapter,
+			mockTriggerRegistry,
+			[draftPR],
+		);
+
+		// Cycle 2: settled, dispatches
 		await pollPRConflictsForRepo(
 			'project-1',
 			'owner',
@@ -459,5 +510,340 @@ describe('pollPRConflictsForRepo', () => {
 			expect.anything(),
 			expect.anything(),
 		);
+	});
+
+	describe('settled-head check', () => {
+		it('defers dispatch on first cycle seeing a dirty PR (head not settled)', async () => {
+			const pr1 = createMockOpenPR(1);
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			const result = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// First time seeing PR: deferred, not dispatched
+			expect(result.skipped).toBe(1);
+			expect(result.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+			// No ledger write either
+			expect(mockBatchRecordWithoutDispatch).not.toHaveBeenCalled();
+		});
+
+		it('dispatches on second cycle when head SHA is unchanged (settled)', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: deferred
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 2: same head SHA, should dispatch
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result2.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+
+		it('defers again when head SHA changes between cycles', async () => {
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: head-sha-A
+			const pr1A = createMockOpenPR(1, 'head-sha-A');
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1A],
+			);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 2: head changed to head-sha-B - deferred again
+			const pr1B = createMockOpenPR(1, 'head-sha-B');
+			mockBatchCheckLedger.mockResolvedValue(new Set()); // Reset ledger mock
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1B],
+			);
+
+			expect(result2.skipped).toBe(1);
+			expect(result2.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 3: same head-sha-B - now dispatches
+			const result3 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1B],
+			);
+
+			expect(result3.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+
+		it('dispatches in cycle 2 when PR was unknown (null mergeable) in cycle 1 with same head', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), new Map());
+
+			// Cycle 1: mergeable state unknown (API returns null)
+			(octokit.pulls.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+				data: {
+					number: 1,
+					mergeable: null,
+					mergeable_state: 'unknown',
+				},
+			});
+
+			const result1 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result1.skipped).toBe(1);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 2: same head, now dirty - should dispatch (head was tracked in cycle 1)
+			(octokit.pulls.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+				data: {
+					number: 1,
+					mergeable: false,
+					mergeable_state: 'dirty',
+				},
+			});
+
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result2.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+
+		it('cleans up tracking when PR is no longer in openPRs', async () => {
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: PR 1 is open
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: PR 1 is closed (not in openPRs), PR 2 is open
+			const pr2 = createMockOpenPR(2, 'head-sha-2');
+			prDetails.set(2, { mergeable: true, mergeableState: 'clean' });
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr2],
+			);
+
+			// Cycle 3: PR 1 reopened with same head - should defer (tracking was cleaned)
+			prDetails.set(1, { mergeable: false, mergeableState: 'dirty' });
+			mockBatchCheckLedger.mockResolvedValue(new Set()); // Fresh ledger
+			vi.mocked(mockDispatchAndRecord).mockClear();
+			const result3 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Should defer because tracking was cleared
+			expect(result3.skipped).toBe(1);
+			expect(result3.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+		});
+
+		it('tracks clean PRs for future dirty checks', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), new Map());
+
+			// Cycle 1: PR is clean
+			(octokit.pulls.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+				data: {
+					number: 1,
+					mergeable: true,
+					mergeable_state: 'clean',
+				},
+			});
+
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: same head, now dirty - should dispatch (was tracked while clean)
+			mockBatchCheckLedger.mockResolvedValue(new Set()); // Fresh ledger check
+			(octokit.pulls.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+				data: {
+					number: 1,
+					mergeable: false,
+					mergeable_state: 'dirty',
+				},
+			});
+
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result2.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+
+		it('resetSettledHeadTracking clears all tracking', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: deferred
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Reset tracking
+			resetSettledHeadTracking();
+
+			// Cycle 2: should defer again (tracking cleared)
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result2.skipped).toBe(1);
+			expect(result2.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+		});
+
+		it('resetSettledHeadTracking can clear specific PR', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const pr2 = createMockOpenPR(2, 'head-sha-2');
+			const prDetails = new Map([
+				[1, { mergeable: false, mergeableState: 'dirty' }],
+				[2, { mergeable: false, mergeableState: 'dirty' }],
+			]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: both deferred
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1, pr2],
+			);
+
+			// Reset only PR 1
+			resetSettledHeadTracking('owner/repo', 1);
+
+			// Cycle 2: PR 1 defers, PR 2 dispatches
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1, pr2],
+			);
+
+			// PR 1 skipped (tracking cleared), PR 2 emitted (tracking intact)
+			expect(result2.skipped).toBe(1);
+			expect(result2.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledWith(
+				'project-1',
+				'github',
+				'pr_conflict',
+				expect.stringContaining('pr_conflict_check:2'),
+				expect.anything(),
+				expect.anything(),
+				expect.anything(),
+			);
+		});
 	});
 });
