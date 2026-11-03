@@ -8,6 +8,14 @@ vi.mock('../../../../../src/polling/dispatch.js', () => ({
 	batchRecordWithoutDispatch: vi.fn().mockResolvedValue(1),
 }));
 
+vi.mock('../../../../../src/router/work-item-lock.js', () => ({
+	isWorkItemLocked: vi.fn().mockResolvedValue({ locked: false }),
+}));
+
+vi.mock('../../../../../src/triggers/github/utils.js', () => ({
+	resolveWorkItemId: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../../../src/utils/logging.js', () => ({
 	logger: {
 		info: vi.fn(),
@@ -27,6 +35,8 @@ import {
 	resetSettledHeadTracking,
 } from '../../../../../src/polling/providers/github/pr-conflict-poller.js';
 import type { RouterPlatformAdapter } from '../../../../../src/router/platform-adapter.js';
+import { isWorkItemLocked } from '../../../../../src/router/work-item-lock.js';
+import { resolveWorkItemId } from '../../../../../src/triggers/github/utils.js';
 import type { TriggerRegistry } from '../../../../../src/triggers/registry.js';
 
 const mockAdapter = {
@@ -110,6 +120,8 @@ function createMockOpenPR(
 const mockBatchCheckLedger = batchCheckLedger as ReturnType<typeof vi.fn>;
 const mockDispatchAndRecord = dispatchAndRecord as ReturnType<typeof vi.fn>;
 const mockBatchRecordWithoutDispatch = batchRecordWithoutDispatch as ReturnType<typeof vi.fn>;
+const mockIsWorkItemLocked = isWorkItemLocked as ReturnType<typeof vi.fn>;
+const mockResolveWorkItemId = resolveWorkItemId as ReturnType<typeof vi.fn>;
 
 describe('pollPRConflictsForRepo', () => {
 	beforeEach(() => {
@@ -123,6 +135,8 @@ describe('pollPRConflictsForRepo', () => {
 			enqueued: true,
 		});
 		mockBatchRecordWithoutDispatch.mockResolvedValue(1);
+		mockIsWorkItemLocked.mockResolvedValue({ locked: false });
+		mockResolveWorkItemId.mockResolvedValue(undefined); // Default: no work item linked
 	});
 
 	it('returns zero result for empty PR list', async () => {
@@ -955,6 +969,249 @@ describe('pollPRConflictsForRepo', () => {
 
 			expect(resultB.emitted).toBe(1);
 			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('lock pre-check', () => {
+		it('skips dispatch when work item is locked (no trigger evaluation, no ledger write)', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Setup: work item linked and locked
+			mockResolveWorkItemId.mockResolvedValue('KAN-63');
+			mockIsWorkItemLocked.mockResolvedValue({ locked: true, reason: 'active run exists' });
+
+			// Cycle 1: settle the head
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: settled, but locked
+			const result = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result.skipped).toBe(1);
+			expect(result.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+			expect(mockBatchRecordWithoutDispatch).not.toHaveBeenCalled();
+			expect(mockIsWorkItemLocked).toHaveBeenCalledWith('project-1', 'KAN-63', 'resolve-conflicts');
+		});
+
+		it('dispatches normally when no work item is linked (no lock protection)', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// No work item linked
+			mockResolveWorkItemId.mockResolvedValue(undefined);
+
+			// Cycle 1: settle the head
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: settled, no work item - dispatches
+			const result = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+			// Lock check should not be called when no work item
+			expect(mockIsWorkItemLocked).not.toHaveBeenCalled();
+		});
+
+		it('dispatches when lock released in next cycle', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			mockResolveWorkItemId.mockResolvedValue('KAN-63');
+
+			// Cycle 1: settle the head
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: settled but locked
+			mockIsWorkItemLocked.mockResolvedValue({ locked: true, reason: 'active run' });
+			const result2 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+			expect(result2.skipped).toBe(1);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 3: lock released
+			mockIsWorkItemLocked.mockResolvedValue({ locked: false });
+			mockBatchCheckLedger.mockResolvedValue(new Set()); // Fresh ledger
+			const result3 = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result3.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+
+		it('clean and unsettled PRs never call the lock check', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: true, mergeableState: 'clean' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			mockResolveWorkItemId.mockResolvedValue('KAN-63');
+
+			// Cycle 1: clean PR
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Lock check not called for clean PRs
+			expect(mockIsWorkItemLocked).not.toHaveBeenCalled();
+			expect(mockResolveWorkItemId).not.toHaveBeenCalled();
+
+			// Reset mocks
+			vi.clearAllMocks();
+			mockResolveWorkItemId.mockResolvedValue('KAN-63');
+
+			// Cycle 2: dirty but head changed (unsettled)
+			prDetails.set(1, { mergeable: false, mergeableState: 'dirty' });
+			const pr1Changed = createMockOpenPR(1, 'head-sha-2'); // Different head
+			mockBatchCheckLedger.mockResolvedValue(new Set());
+
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1Changed],
+			);
+
+			// Lock check not called for unsettled PRs
+			expect(mockIsWorkItemLocked).not.toHaveBeenCalled();
+			expect(mockResolveWorkItemId).not.toHaveBeenCalled();
+		});
+
+		it('counts error and skips when resolveWorkItemId throws (fail-closed)', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: settle the head
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: resolveWorkItemId throws
+			mockResolveWorkItemId.mockRejectedValue(new Error('DB connection failed'));
+
+			const result = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result.errors).toBe(1);
+			expect(result.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+			expect(mockBatchRecordWithoutDispatch).not.toHaveBeenCalled();
+		});
+
+		it('counts error and skips when isWorkItemLocked throws (fail-closed)', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			mockResolveWorkItemId.mockResolvedValue('KAN-63');
+
+			// Cycle 1: settle the head
+			await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: isWorkItemLocked throws
+			mockIsWorkItemLocked.mockRejectedValue(new Error('Redis connection failed'));
+
+			const result = await pollPRConflictsForRepo(
+				'project-1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(result.errors).toBe(1);
+			expect(result.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+			expect(mockBatchRecordWithoutDispatch).not.toHaveBeenCalled();
 		});
 	});
 });

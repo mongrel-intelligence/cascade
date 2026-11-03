@@ -19,6 +19,8 @@
 
 import type { Octokit } from '@octokit/rest';
 import type { RouterPlatformAdapter } from '../../../router/platform-adapter.js';
+import { isWorkItemLocked } from '../../../router/work-item-lock.js';
+import { resolveWorkItemId } from '../../../triggers/github/utils.js';
 import type { TriggerRegistry } from '../../../triggers/registry.js';
 import { logger } from '../../../utils/logging.js';
 import { batchCheckLedger, batchRecordWithoutDispatch, dispatchAndRecord } from '../../dispatch.js';
@@ -287,7 +289,52 @@ export async function pollPRConflictsForRepo(
 				continue;
 			}
 
-			// Head SHA is settled - dispatch conflict event immediately and record
+			// Head SHA is settled - check work-item lock before dispatch
+			// This prevents burning the attempt counter when another resolve-conflicts
+			// run is already active for this work item.
+			let workItemId: string | undefined;
+			try {
+				workItemId = await resolveWorkItemId(projectId, pr.number);
+			} catch (err) {
+				// Fail-closed: skip this PR, count as error, no ledger write
+				logger.error('Failed to resolve workItemId for lock check', {
+					prNumber: pr.number,
+					error: String(err),
+				});
+				result.errors++;
+				continue;
+			}
+
+			if (workItemId) {
+				try {
+					// Use the same key derivation as checkDispatchLocks:
+					// effectiveLockKey = result.lockKey ?? result.workItemId
+					// buildResolveConflictsResult sets no lockKey, so it's workItemId
+					const lockStatus = await isWorkItemLocked(projectId, workItemId, 'resolve-conflicts');
+					if (lockStatus.locked) {
+						logger.info('PR conflict skipped: work item locked', {
+							prNumber: pr.number,
+							workItemId,
+							reason: lockStatus.reason,
+						});
+						result.skipped++;
+						// No ledger write, no trigger evaluation
+						continue;
+					}
+				} catch (err) {
+					// Fail-closed: skip this PR, count as error, no ledger write
+					logger.error('Failed to check work-item lock', {
+						prNumber: pr.number,
+						workItemId,
+						error: String(err),
+					});
+					result.errors++;
+					continue;
+				}
+			}
+			// No workItemId: proceed to dispatch (no lock protection exists)
+
+			// Dispatch conflict event immediately and record
 			const payload = buildSyntheticPRConflictPayload(pr, repoFullName, baseSha);
 			const dispatchResult = await dispatchAndRecord(
 				projectId,
