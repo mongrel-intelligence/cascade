@@ -30,7 +30,7 @@ import {
 
 /**
  * Tracks head SHA seen in the previous cycle for each PR.
- * Key: `${repoFullName}#${prNumber}`
+ * Key: `${projectId}:${repoFullName}#${prNumber}`
  * Value: head SHA from previous cycle
  *
  * A PR is "settled" when its current head SHA equals the value stored here,
@@ -38,23 +38,36 @@ import {
  * dispatching conflict events for PRs that are actively being pushed to,
  * which would burn the attempt counter without a real agent run (the worker
  * rejects stale SHAs).
+ *
+ * The key includes projectId to isolate tracking between projects that share
+ * the same repository (each project polls independently and must defer its
+ * own first sighting of a dirty PR).
  */
 const lastSeenHeadSha = new Map<string, string>();
 
 /**
  * Build the key for lastSeenHeadSha map.
+ * Includes projectId to prevent cross-project pollution when repos are shared.
  */
-function buildSettledKey(repoFullName: string, prNumber: number): string {
-	return `${repoFullName}#${prNumber}`;
+function buildSettledKey(projectId: string, repoFullName: string, prNumber: number): string {
+	return `${projectId}:${repoFullName}#${prNumber}`;
 }
 
 /**
  * Reset settled-head tracking for a specific PR or all PRs.
  * Exported for testing.
+ *
+ * @param projectId - Required when resetting a specific PR
+ * @param repoFullName - Required when resetting a specific PR
+ * @param prNumber - Required when resetting a specific PR
  */
-export function resetSettledHeadTracking(repoFullName?: string, prNumber?: number): void {
-	if (repoFullName !== undefined && prNumber !== undefined) {
-		lastSeenHeadSha.delete(buildSettledKey(repoFullName, prNumber));
+export function resetSettledHeadTracking(
+	projectId?: string,
+	repoFullName?: string,
+	prNumber?: number,
+): void {
+	if (projectId !== undefined && repoFullName !== undefined && prNumber !== undefined) {
+		lastSeenHeadSha.delete(buildSettledKey(projectId, repoFullName, prNumber));
 	} else {
 		lastSeenHeadSha.clear();
 	}
@@ -158,20 +171,25 @@ export async function pollPRConflictsForRepo(
 		errors: 0,
 	};
 
+	// Prefix for this project+repo combination (used in cleanup)
+	const keyPrefix = `${projectId}:${repoFullName}#`;
+
 	if (openPRs.length === 0) {
-		// Clean up tracking for this repo since no open PRs exist
+		// Clean up tracking for this project+repo since no open PRs exist
 		for (const key of lastSeenHeadSha.keys()) {
-			if (key.startsWith(`${repoFullName}#`)) {
+			if (key.startsWith(keyPrefix)) {
 				lastSeenHeadSha.delete(key);
 			}
 		}
 		return result;
 	}
 
-	// Clean up tracking for PRs no longer in openPRs
-	const currentPRKeys = new Set(openPRs.map((pr) => buildSettledKey(repoFullName, pr.number)));
+	// Clean up tracking for PRs no longer in openPRs (scoped to this project)
+	const currentPRKeys = new Set(
+		openPRs.map((pr) => buildSettledKey(projectId, repoFullName, pr.number)),
+	);
 	for (const key of lastSeenHeadSha.keys()) {
-		if (key.startsWith(`${repoFullName}#`) && !currentPRKeys.has(key)) {
+		if (key.startsWith(keyPrefix) && !currentPRKeys.has(key)) {
 			lastSeenHeadSha.delete(key);
 		}
 	}
@@ -226,7 +244,7 @@ export async function pollPRConflictsForRepo(
 		// Update settled-head tracking FIRST, before any continue/skip paths.
 		// This ensures every open PR's head SHA is recorded every cycle,
 		// regardless of ledger state, API errors, or mergeable state.
-		const settledKey = buildSettledKey(repoFullName, pr.number);
+		const settledKey = buildSettledKey(projectId, repoFullName, pr.number);
 		const previousHeadSha = lastSeenHeadSha.get(settledKey);
 		lastSeenHeadSha.set(settledKey, pr.head.sha);
 

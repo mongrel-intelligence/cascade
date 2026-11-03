@@ -817,8 +817,8 @@ describe('pollPRConflictsForRepo', () => {
 				[pr1, pr2],
 			);
 
-			// Reset only PR 1
-			resetSettledHeadTracking('owner/repo', 1);
+			// Reset only PR 1 for project-1
+			resetSettledHeadTracking('project-1', 'owner/repo', 1);
 
 			// Cycle 2: PR 1 defers, PR 2 dispatches
 			const result2 = await pollPRConflictsForRepo(
@@ -844,6 +844,117 @@ describe('pollPRConflictsForRepo', () => {
 				expect.anything(),
 				expect.anything(),
 			);
+		});
+
+		it('two projects sharing same repo do not share settled state', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: Project A sees PR 1, defers
+			await pollPRConflictsForRepo(
+				'project-A',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 1 (continued): Project B sees same PR 1 with same head
+			// Should ALSO defer (not reuse Project A's tracking)
+			const resultB = await pollPRConflictsForRepo(
+				'project-B',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(resultB.skipped).toBe(1);
+			expect(resultB.emitted).toBe(0);
+			expect(mockDispatchAndRecord).not.toHaveBeenCalled();
+
+			// Cycle 2: Both projects see settled head, both dispatch
+			mockBatchCheckLedger.mockResolvedValue(new Set()); // Fresh ledger
+			await pollPRConflictsForRepo(
+				'project-A',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
+
+			await pollPRConflictsForRepo(
+				'project-B',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(2);
+		});
+
+		it('cleanup for project A does not remove project B entries', async () => {
+			const pr1 = createMockOpenPR(1, 'head-sha-1');
+			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
+			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
+
+			// Cycle 1: Both projects see PR 1
+			await pollPRConflictsForRepo(
+				'project-A',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+			await pollPRConflictsForRepo(
+				'project-B',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			// Cycle 2: Project A has no open PRs (triggers cleanup)
+			// Project B still has PR 1
+			await pollPRConflictsForRepo(
+				'project-A',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[], // No open PRs for project A
+			);
+
+			// Project B's cycle 2: should dispatch (its tracking is intact)
+			mockBatchCheckLedger.mockResolvedValue(new Set());
+			const resultB = await pollPRConflictsForRepo(
+				'project-B',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+				[pr1],
+			);
+
+			expect(resultB.emitted).toBe(1);
+			expect(mockDispatchAndRecord).toHaveBeenCalledTimes(1);
 		});
 	});
 });
