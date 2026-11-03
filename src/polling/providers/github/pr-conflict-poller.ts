@@ -296,7 +296,10 @@ export async function pollPRConflictsForRepo(
 			try {
 				workItemId = await resolveWorkItemId(projectId, pr.number);
 			} catch (err) {
-				// Fail-closed: skip this PR, count as error, no ledger write
+				// Note: resolveWorkItemId swallows DB errors internally and returns
+				// undefined, so this catch handles only unexpected throws. A DB lookup
+				// failure results in workItemId=undefined, skipping lock protection
+				// (fail-open, matching trigger handler behavior).
 				logger.error('Failed to resolve workItemId for lock check', {
 					prNumber: pr.number,
 					error: String(err),

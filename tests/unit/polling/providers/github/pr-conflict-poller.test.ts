@@ -1142,7 +1142,7 @@ describe('pollPRConflictsForRepo', () => {
 			expect(mockResolveWorkItemId).not.toHaveBeenCalled();
 		});
 
-		it('counts error and skips when resolveWorkItemId throws (fail-closed)', async () => {
+		it('counts error and skips when resolveWorkItemId throws unexpectedly', async () => {
 			const pr1 = createMockOpenPR(1, 'head-sha-1');
 			const prDetails = new Map([[1, { mergeable: false, mergeableState: 'dirty' }]]);
 			const octokit = createMockOctokit(new Map([['main', 'base-sha-123']]), prDetails);
