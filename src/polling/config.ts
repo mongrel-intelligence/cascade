@@ -41,3 +41,15 @@ export const pollingConfig = {
 
 /** Type for the polling config object. */
 export type PollingConfig = typeof pollingConfig;
+
+/**
+ * Watermark overlap window in milliseconds.
+ *
+ * When advancing the watermark, we subtract this value from the cycle start time
+ * to ensure that events occurring during cycle execution are not missed.
+ * This creates a small overlap window where events may be re-scanned, but the
+ * dedup ledger ensures they are not processed twice.
+ *
+ * Not configurable via env var as this is an implementation detail.
+ */
+export const WATERMARK_OVERLAP_MS = 5000;
