@@ -17,6 +17,10 @@ vi.mock('../../../../../src/db/client.js', () => ({
 	})),
 }));
 
+vi.mock('../../../../../src/polling/config.js', () => ({
+	WATERMARK_OVERLAP_MS: 5000,
+}));
+
 vi.mock('../../../../../src/polling/dispatch.js', () => ({
 	batchCheckLedger: vi.fn().mockResolvedValue(new Set()),
 	dispatchAndRecord: vi
@@ -313,6 +317,200 @@ describe('pollMergedPRsForRepo', () => {
 			expect(result.skipped).toBe(1);
 			expect(result.emitted).toBe(1);
 			expect(dispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe('watermark overlap race condition fix', () => {
+		it('sets watermark to cycleStart minus overlap, not cycle end time', async () => {
+			const mergedPR = createMockPR({
+				number: 42,
+				merged_at: new Date().toISOString(),
+			});
+			const octokit = createMockOctokit([mergedPR]);
+
+			let capturedWatermark: Date | undefined;
+			mockValues.mockImplementation((values: { watermark: Date }) => {
+				capturedWatermark = values.watermark;
+				return { onConflictDoUpdate: mockOnConflictDoUpdate };
+			});
+
+			const beforeCall = new Date();
+			await pollMergedPRsForRepo('p1', 'owner', 'repo', octokit, mockAdapter, mockTriggerRegistry);
+
+			expect(mockInsert).toHaveBeenCalled();
+			expect(capturedWatermark).toBeDefined();
+
+			// Watermark should be cycleStart - 5000ms (WATERMARK_OVERLAP_MS)
+			// It should be BEFORE beforeCall (not at or after cycle end)
+			const watermarkTime = capturedWatermark?.getTime() ?? 0;
+			const beforeCallTime = beforeCall.getTime();
+
+			expect(watermarkTime).toBeLessThan(beforeCallTime);
+			expect(beforeCallTime - watermarkTime).toBeGreaterThanOrEqual(4900);
+			expect(beforeCallTime - watermarkTime).toBeLessThan(10000);
+		});
+
+		it('no-merged-PRs path still advances watermark with overlap', async () => {
+			// Return a closed PR that is NOT merged
+			const closedNotMerged = createMockPR({
+				number: 42,
+				merged_at: null,
+			});
+			const octokit = createMockOctokit([closedNotMerged]);
+
+			let capturedWatermark: Date | undefined;
+			mockValues.mockImplementation((values: { watermark: Date }) => {
+				capturedWatermark = values.watermark;
+				return { onConflictDoUpdate: mockOnConflictDoUpdate };
+			});
+
+			const beforeCall = new Date();
+			await pollMergedPRsForRepo('p1', 'owner', 'repo', octokit, mockAdapter, mockTriggerRegistry);
+
+			expect(mockInsert).toHaveBeenCalled();
+			expect(capturedWatermark).toBeDefined();
+
+			const watermarkTime = capturedWatermark?.getTime() ?? 0;
+			expect(watermarkTime).toBeLessThan(beforeCall.getTime());
+		});
+
+		it('re-seen merge in overlap window does not trigger pr-merged twice (ledger dedup)', async () => {
+			const mergedPR = createMockPR({
+				number: 42,
+				merged_at: new Date().toISOString(),
+			});
+			const octokit = createMockOctokit([mergedPR]);
+
+			// First call: PR is new, should be dispatched
+			const result1 = await pollMergedPRsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result1.emitted).toBe(1);
+			expect(dispatchAndRecord).toHaveBeenCalledTimes(1);
+
+			// Second call: PR is in ledger (re-seen in overlap window), should be skipped
+			vi.mocked(batchCheckLedger).mockResolvedValueOnce(
+				new Set(['github:owner/repo:merged_pr:42']),
+			);
+
+			const result2 = await pollMergedPRsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result2.total).toBe(1);
+			expect(result2.skipped).toBe(1);
+			expect(result2.emitted).toBe(0);
+			// dispatchAndRecord should not be called again
+			expect(dispatchAndRecord).toHaveBeenCalledTimes(1);
+		});
+
+		it('errors > 0 prevents watermark advance', async () => {
+			const mergedPR = createMockPR({
+				number: 42,
+				merged_at: new Date().toISOString(),
+			});
+			const octokit = createMockOctokit([mergedPR]);
+
+			// Make dispatch fail
+			vi.mocked(dispatchAndRecord).mockResolvedValueOnce({
+				recorded: false,
+				deferred: false,
+				skipped: false,
+				enqueued: false,
+				error: new Error('Dispatch failed'),
+			});
+
+			const result = await pollMergedPRsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			expect(result.errors).toBe(1);
+			expect(mockInsert).not.toHaveBeenCalled();
+		});
+
+		it('cold start uses 24-hour lookback, not overlap', async () => {
+			mockFindFirst.mockResolvedValueOnce(undefined); // No watermark
+
+			const recentMerge = createMockPR({
+				number: 42,
+				merged_at: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(), // 12 hours ago
+			});
+			const oldMerge = createMockPR({
+				number: 43,
+				merged_at: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(), // 48 hours ago
+			});
+
+			const octokit = createMockOctokit([recentMerge, oldMerge]);
+
+			const result = await pollMergedPRsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			// Only the recent merge should be picked up (within 24 hours)
+			expect(result.total).toBe(1);
+			expect(result.emitted).toBe(1);
+		});
+
+		it('synthetic payload contains fields needed for PRMergedTrigger (Jira transition, snapshot cleanup)', async () => {
+			const mergedPR = createMockPR({
+				number: 42,
+				title: 'Add feature X',
+				merged_at: new Date().toISOString(),
+				head: { ref: 'feature/x', sha: 'abc123' },
+				base: { ref: 'main' },
+				user: { login: 'cascade-implementer' },
+			});
+
+			const octokit = createMockOctokit([mergedPR]);
+
+			await pollMergedPRsForRepo('p1', 'owner', 'repo', octokit, mockAdapter, mockTriggerRegistry);
+
+			// PRMergedTrigger needs: action='closed', pull_request.merged=true,
+			// pull_request.number, pull_request.base.ref, repository.full_name
+			expect(dispatchAndRecord).toHaveBeenCalledWith(
+				'p1',
+				'github',
+				'merged_pr',
+				expect.any(String),
+				expect.objectContaining({
+					action: 'closed',
+					pull_request: expect.objectContaining({
+						number: 42,
+						merged: true,
+						state: 'closed',
+						title: 'Add feature X',
+						head: expect.objectContaining({ ref: 'feature/x' }),
+						base: expect.objectContaining({ ref: 'main' }),
+						user: expect.objectContaining({ login: 'cascade-implementer' }),
+					}),
+					repository: expect.objectContaining({
+						full_name: 'owner/repo',
+					}),
+				}),
+				mockAdapter,
+				mockTriggerRegistry,
+			);
 		});
 	});
 });

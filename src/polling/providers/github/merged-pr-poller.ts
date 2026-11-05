@@ -12,6 +12,7 @@ import { pollingWatermarks } from '../../../db/schema/polling.js';
 import type { RouterPlatformAdapter } from '../../../router/platform-adapter.js';
 import type { TriggerRegistry } from '../../../triggers/registry.js';
 import { logger } from '../../../utils/logging.js';
+import { WATERMARK_OVERLAP_MS } from '../../config.js';
 import { batchCheckLedger, dispatchAndRecord, type PollingEventType } from '../../dispatch.js';
 import {
 	buildMergedPRDedupKey,
@@ -94,6 +95,10 @@ export async function pollMergedPRsForRepo(
 		errors: 0,
 	};
 
+	// Capture cycle start time BEFORE any fetches or watermark reads.
+	// This is used to compute the new watermark with overlap window.
+	const cycleStart = new Date();
+
 	// Get watermark
 	const watermark = await getWatermark(projectId, repoFullName);
 	const sinceDate = watermark ?? new Date(Date.now() - 24 * 60 * 60 * 1000); // Default: 24 hours ago
@@ -146,8 +151,12 @@ export async function pollMergedPRsForRepo(
 	result.total = closedPRs.length;
 
 	if (closedPRs.length === 0) {
-		// Update watermark to now even if no PRs
-		await updateWatermark(projectId, repoFullName, new Date());
+		// Update watermark to cycleStart - overlap to prevent race conditions
+		await updateWatermark(
+			projectId,
+			repoFullName,
+			new Date(cycleStart.getTime() - WATERMARK_OVERLAP_MS),
+		);
 		return result;
 	}
 
@@ -167,9 +176,6 @@ export async function pollMergedPRsForRepo(
 	});
 
 	result.skipped = existingKeys.size;
-
-	// Track the latest merge time for watermark update
-	let latestMergeTime = sinceDate;
 
 	// Dispatch new merged PRs
 	for (const pr of newMergedPRs) {
@@ -196,19 +202,17 @@ export async function pollMergedPRsForRepo(
 		} else if (dispatchResult.enqueued || dispatchResult.skipped) {
 			result.emitted++;
 		}
-
-		// Update latest merge time
-		if (pr.merged_at) {
-			const mergeTime = new Date(pr.merged_at);
-			if (mergeTime > latestMergeTime) {
-				latestMergeTime = mergeTime;
-			}
-		}
 	}
 
 	// Only update watermark if no errors
+	// Use cycleStart - overlap to prevent race conditions where merges
+	// occurring during cycle execution could be missed
 	if (result.errors === 0) {
-		await updateWatermark(projectId, repoFullName, latestMergeTime);
+		await updateWatermark(
+			projectId,
+			repoFullName,
+			new Date(cycleStart.getTime() - WATERMARK_OVERLAP_MS),
+		);
 	}
 
 	return result;
