@@ -241,7 +241,9 @@ describe('open-source readiness', () => {
 		// root. A tool that exists solely as a nested copy under another package (or not
 		// at all) fails the build with "<tool>: not found" — which is exactly how the
 		// self-hosted image broke when an override stopped hoisting esbuild. Self-install
-		// forms (`npx --yes <pkg>@<version>`) fetch their own copy and are exempt.
+		// forms (`npx --yes <pkg>@<version>`) fetch their own copy and are exempt. The check
+		// does not model stages: a devDependency `npx`'d after `npm ci --omit=dev` would pass
+		// here and fail at runtime; today every `npx` runs in a full-install stage.
 		const SHELL_FORM_RE = /\bnpx\s+(?!--yes\b|-y\b)([@a-z0-9][\w./-]*)/g;
 		const EXEC_FORM_RE = /"npx",\s*"([^"]+)"/g;
 		const dockerfiles = readdirSync(ROOT).filter((name) => name.startsWith('Dockerfile'));
@@ -264,7 +266,7 @@ describe('open-source readiness', () => {
 
 		it.each(
 			dockerfiles,
-		)('%s: every `npx <tool>` is a declared dependency that npm ci installs at the root', (dockerfile) => {
+		)('%s: every `npx <tool>` is a declared dependency hoisted to the lockfile root', (dockerfile) => {
 			for (const tool of npxTools(dockerfile)) {
 				expect(
 					Object.hasOwn(declared, tool),

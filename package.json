@@ -149,7 +149,7 @@
 		"js-yaml": "^4.3.2",
 		"shell-quote": "^1.11.0",
 		"tinypool": "^2.1.2",
-		"esbuild": "^0.25.0",
+		"esbuild": "$esbuild",
 		"zod": "^4.6.7"
 	}
 }
