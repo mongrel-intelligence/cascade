@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import semver from 'semver';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = path.resolve(import.meta.dirname, '../..');
@@ -127,6 +128,70 @@ describe('open-source readiness', () => {
 		});
 	});
 
+	describe('npm overrides', () => {
+		type LockEntry = {
+			version?: string;
+			dev?: boolean;
+			dependencies?: Record<string, string>;
+			optionalDependencies?: Record<string, string>;
+			peerDependencies?: Record<string, string>;
+		};
+
+		// A version's compatibility line: its major, or its minor while still 0.x.
+		const releaseLine = (version: string) =>
+			semver.major(version) > 0 ? `${semver.major(version)}.x` : `0.${semver.minor(version)}.x`;
+
+		// Node module resolution: the nearest node_modules/<name>, walking up from the dependent.
+		function resolveInstalled(
+			packages: Record<string, LockEntry>,
+			dependentPath: string,
+			name: string,
+		): LockEntry | undefined {
+			const candidates: string[] = [];
+			let dir = dependentPath;
+			while (dir) {
+				candidates.push(`${dir}/node_modules/${name}`);
+				const parentEnd = dir.lastIndexOf('/node_modules/');
+				dir = parentEnd === -1 ? '' : dir.slice(0, parentEnd);
+			}
+			candidates.push(`node_modules/${name}`);
+			return candidates.map((candidate) => packages[candidate]).find(Boolean);
+		}
+
+		function offLineOverrides(dir: string): string[] {
+			const overrides = JSON.parse(readRoot(path.join(dir, 'package.json'))).overrides ?? {};
+			const { packages } = JSON.parse(readRoot(path.join(dir, 'package-lock.json'))) as {
+				packages: Record<string, LockEntry>;
+			};
+
+			return Object.entries(packages)
+				.filter(([, entry]) => !entry.dev)
+				.flatMap(([dependentPath, entry]) =>
+					Object.entries({
+						...entry.dependencies,
+						...entry.optionalDependencies,
+						...entry.peerDependencies,
+					})
+						.filter(([name]) => name in overrides)
+						.flatMap(([name, range]) => {
+							const installed = resolveInstalled(packages, dependentPath, name)?.version;
+							return installed && !semver.intersects(range, releaseLine(installed))
+								? [`${dependentPath} declares ${name}@${range}, override installs ${installed}`]
+								: [];
+						}),
+				);
+		}
+
+		it.each([
+			{ workspace: 'root', dir: '.' },
+			{ workspace: 'web/', dir: 'web' },
+		])('$workspace: never move a production package off a release line its dependents declare', ({
+			dir,
+		}) => {
+			expect(offLineOverrides(dir)).toEqual([]);
+		});
+	});
+
 	describe('config/projects.json', () => {
 		const config = JSON.parse(readRoot('config/projects.json'));
 
@@ -162,6 +227,69 @@ describe('open-source readiness', () => {
 
 		it('gates web/ production dependencies on high-severity advisories', () => {
 			expect(ciRunLines()).toContain(`run: cd web && ${PROD_AUDIT}`);
+		});
+
+		it('builds the self-hosted image, not only the router and worker ones', () => {
+			// The self-hosted Dockerfile is what single-tenant deployments build on their
+			// own host; a break there only surfaced at deploy time until CI covered it.
+			expect(ciRunLines().some((line) => line.includes('-f Dockerfile.selfhosted'))).toBe(true);
+		});
+	});
+
+	describe('Dockerfile tool dependencies', () => {
+		// `npx <tool>` inside an image build can only run what `npm ci` installed at the
+		// root. A tool that exists solely as a nested copy under another package (or not
+		// at all) fails the build with "<tool>: not found" — which is exactly how the
+		// self-hosted image broke when an override stopped hoisting esbuild. Self-install
+		// forms (`npx --yes <pkg>@<version>`) fetch their own copy and are exempt. The check
+		// does not model stages: a devDependency `npx`'d after `npm ci --omit=dev` would pass
+		// here and fail at runtime; today every `npx` runs in a full-install stage.
+		const SHELL_FORM_RE = /\bnpx\s+(?!--yes\b|-y\b)([@a-z0-9][\w./-]*)/g;
+		const EXEC_FORM_RE = /"npx",\s*"([^"]+)"/g;
+		const dockerfiles = readdirSync(ROOT).filter((name) => name.startsWith('Dockerfile'));
+		const pkg = JSON.parse(readRoot('package.json'));
+		const declared: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
+		const { packages: lock } = JSON.parse(readRoot('package-lock.json')) as {
+			packages: Record<string, unknown>;
+		};
+
+		function npxTools(dockerfile: string): string[] {
+			const text = readRoot(dockerfile);
+			return [...text.matchAll(SHELL_FORM_RE), ...text.matchAll(EXEC_FORM_RE)]
+				.map((match) => match[1])
+				.filter((tool) => !tool.includes('@', 1));
+		}
+
+		it('finds the root Dockerfiles', () => {
+			expect(dockerfiles).toContain('Dockerfile.selfhosted');
+		});
+
+		it.each(
+			dockerfiles,
+		)('%s: every `npx <tool>` is a declared dependency hoisted to the lockfile root', (dockerfile) => {
+			for (const tool of npxTools(dockerfile)) {
+				expect(
+					Object.hasOwn(declared, tool),
+					`${dockerfile} runs \`npx ${tool}\` but package.json does not declare it`,
+				).toBe(true);
+				expect(
+					Object.hasOwn(lock, `node_modules/${tool}`),
+					`${dockerfile} runs \`npx ${tool}\` but package-lock.json has no root node_modules/${tool}`,
+				).toBe(true);
+			}
+		});
+	});
+
+	describe('Docker build context', () => {
+		it('excludes node_modules at every depth, not only at the root', () => {
+			// `COPY web ./web` runs after the image's own `npm ci`; a host `web/node_modules`
+			// in the context overlays a stale Vite/rolldown pair onto the clean install and
+			// the web build dies loading vite.config.ts. A bare `node_modules` pattern only
+			// matches the root directory.
+			const patterns = readRoot('.dockerignore')
+				.split('\n')
+				.map((line) => line.trim());
+			expect(patterns).toContain('**/node_modules');
 		});
 	});
 
