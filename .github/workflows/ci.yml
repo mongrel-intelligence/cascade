@@ -152,6 +152,16 @@ jobs:
       - name: Build router image
         run: docker build -f Dockerfile.router -t cascade-router:ci-check .
 
+      # Single-tenant deployments build this image on their own host (it bundles
+      # the admin/credential tools with `npx esbuild` and the SPA). Build it here
+      # and check the bundled tool parses, so a dependency change that removes a
+      # build-time tool fails CI instead of the next self-hosted deploy.
+      - name: Build self-hosted dashboard image
+        run: docker build -f Dockerfile.selfhosted -t cascade-selfhosted:ci-check .
+
+      - name: Smoke-test self-hosted image tools
+        run: docker run --rm cascade-selfhosted:ci-check node --check dist/tools/create-admin-user.mjs
+
       - name: Build worker image
         run: docker build -f Dockerfile.worker -t cascade-worker:ci-check .
 
