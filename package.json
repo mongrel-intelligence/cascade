@@ -109,6 +109,7 @@
 		"commander": "^14.0.2",
 		"concurrently": "^10.0.4",
 		"drizzle-kit": "^0.31.9",
+		"esbuild": "^0.25.0",
 		"jsdom": "^28.1.0",
 		"lefthook": "^1.10.10",
 		"react": "^19.2.4",
@@ -148,7 +149,7 @@
 		"js-yaml": "^4.3.2",
 		"shell-quote": "^1.11.0",
 		"tinypool": "^2.1.2",
-		"esbuild": "^0.25.0",
+		"esbuild": "$esbuild",
 		"zod": "^4.6.7"
 	}
 }
