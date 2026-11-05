@@ -12,7 +12,7 @@ import { pollingWatermarks } from '../../../db/schema/polling.js';
 import type { RouterPlatformAdapter } from '../../../router/platform-adapter.js';
 import type { TriggerRegistry } from '../../../triggers/registry.js';
 import { logger } from '../../../utils/logging.js';
-import { pollingConfig } from '../../config.js';
+import { pollingConfig, WATERMARK_OVERLAP_MS } from '../../config.js';
 import { batchCheckLedger, dispatchAndRecord, type PollingEventType } from '../../dispatch.js';
 import {
 	buildPRReviewDedupKey,
@@ -99,6 +99,10 @@ export async function pollPRReviewsForRepo(
 		openPRs: [],
 	};
 
+	// Capture cycle start time BEFORE any fetches or watermark reads.
+	// This is used to compute the new watermark with overlap window.
+	const cycleStart = new Date();
+
 	// Get watermark
 	const watermark = await getWatermark(projectId, repoFullName);
 	const sinceDate = watermark ?? new Date(Date.now() - 60 * 60 * 1000); // Default: 1 hour ago
@@ -145,8 +149,12 @@ export async function pollPRReviewsForRepo(
 	result.openPRs = openPRs;
 
 	if (openPRs.length === 0) {
-		// Update watermark to now even if no PRs
-		await updateWatermark(projectId, repoFullName, new Date());
+		// Update watermark to cycleStart - overlap to prevent race conditions
+		await updateWatermark(
+			projectId,
+			repoFullName,
+			new Date(cycleStart.getTime() - WATERMARK_OVERLAP_MS),
+		);
 		return result;
 	}
 
@@ -215,7 +223,11 @@ export async function pollPRReviewsForRepo(
 	if (allReviews.length === 0) {
 		// Only update watermark if no errors occurred (e.g., all listReviews calls succeeded)
 		if (result.errors === 0) {
-			await updateWatermark(projectId, repoFullName, new Date());
+			await updateWatermark(
+				projectId,
+				repoFullName,
+				new Date(cycleStart.getTime() - WATERMARK_OVERLAP_MS),
+			);
 		}
 		return result;
 	}
@@ -238,9 +250,6 @@ export async function pollPRReviewsForRepo(
 	});
 
 	result.skipped = existingKeys.size;
-
-	// Track the latest review time for watermark update
-	let latestReviewTime = sinceDate;
 
 	// Dispatch new reviews
 	for (const { review, pr } of newReviews) {
@@ -268,19 +277,17 @@ export async function pollPRReviewsForRepo(
 		} else if (dispatchResult.enqueued || dispatchResult.skipped) {
 			result.emitted++;
 		}
-
-		// Update latest review time
-		if (review.submitted_at) {
-			const reviewTime = new Date(review.submitted_at);
-			if (reviewTime > latestReviewTime) {
-				latestReviewTime = reviewTime;
-			}
-		}
 	}
 
 	// Only update watermark if no errors
+	// Use cycleStart - overlap to prevent race conditions where reviews
+	// submitted during cycle execution could be missed
 	if (result.errors === 0) {
-		await updateWatermark(projectId, repoFullName, latestReviewTime);
+		await updateWatermark(
+			projectId,
+			repoFullName,
+			new Date(cycleStart.getTime() - WATERMARK_OVERLAP_MS),
+		);
 	}
 
 	return result;
