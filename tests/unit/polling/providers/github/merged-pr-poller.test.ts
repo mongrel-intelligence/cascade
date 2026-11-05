@@ -513,4 +513,124 @@ describe('pollMergedPRsForRepo', () => {
 			);
 		});
 	});
+
+	describe('race condition scenarios (two-cycle simulation)', () => {
+		/**
+		 * These tests simulate two consecutive polling cycles to verify that
+		 * merge events occurring mid-cycle are not missed due to watermark timing.
+		 */
+
+		it('two-cycle race: PR merged after list fetch is picked up next cycle', async () => {
+			// Use fake timers to control time precisely
+			vi.useFakeTimers();
+
+			// In-memory watermark storage to persist between cycles
+			const watermarkStorage = new Map<string, Date>();
+
+			// Cycle 1 starts at T=0
+			const T0 = new Date('2024-06-01T12:00:00.000Z');
+			vi.setSystemTime(T0);
+
+			// Mock watermark get/set to use in-memory storage
+			mockFindFirst.mockImplementation(() => {
+				const stored = watermarkStorage.get('owner/repo');
+				return stored ? { watermark: stored } : undefined;
+			});
+			mockValues.mockImplementation((values: { watermark: Date; resourceId: string }) => {
+				watermarkStorage.set(values.resourceId, values.watermark);
+				return { onConflictDoUpdate: mockOnConflictDoUpdate };
+			});
+
+			// Track ledger entries to simulate dedup
+			const ledgerEntries = new Set<string>();
+			vi.mocked(batchCheckLedger).mockImplementation(async (_projectId, _provider, keys) => {
+				const existing = new Set<string>();
+				for (const key of keys) {
+					if (ledgerEntries.has(key)) {
+						existing.add(key);
+					}
+				}
+				return existing;
+			});
+			vi.mocked(dispatchAndRecord).mockImplementation(
+				async (_projectId, _provider, _eventType, dedupKey) => {
+					ledgerEntries.add(dedupKey);
+					return { recorded: true, deferred: false, skipped: false, enqueued: true };
+				},
+			);
+
+			// CYCLE 1: No closed PRs returned
+			// (PR #42 will be merged at T+8s, after the list fetch)
+			const cycle1Octokit = createMockOctokit([]);
+
+			const result1 = await pollMergedPRsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				cycle1Octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			// Cycle 1: no merged PRs found
+			expect(result1.total).toBe(0);
+			expect(result1.emitted).toBe(0);
+			expect(dispatchAndRecord).not.toHaveBeenCalled();
+
+			// Verify watermark was stored (cycleStart - 5000ms = T0 - 5s)
+			const storedWatermark = watermarkStorage.get('owner/repo');
+			expect(storedWatermark).toBeDefined();
+			expect(storedWatermark?.getTime()).toBe(T0.getTime() - 5000);
+
+			// CYCLE 2: Advance time to T+60s
+			const T60 = new Date(T0.getTime() + 60000);
+			vi.setSystemTime(T60);
+
+			// PR #42 was merged at T+8s (after cycle 1's list fetch)
+			const mergedAt = new Date(T0.getTime() + 8000).toISOString();
+
+			// Cycle 2: PR #42 now shows as merged
+			const cycle2Octokit = createMockOctokit([
+				createMockPR({
+					number: 42,
+					merged_at: mergedAt,
+					updated_at: mergedAt,
+				}),
+			]);
+
+			const result2 = await pollMergedPRsForRepo(
+				'p1',
+				'owner',
+				'repo',
+				cycle2Octokit,
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			// Cycle 2: the merge should be picked up
+			// - Watermark from cycle 1: T0 - 5s
+			// - PR merged_at: T0 + 8s
+			// - T0 + 8s > T0 - 5s, so merge passes watermark filter
+			expect(result2.total).toBe(1);
+			expect(result2.emitted).toBe(1);
+			expect(dispatchAndRecord).toHaveBeenCalledTimes(1);
+			expect(dispatchAndRecord).toHaveBeenCalledWith(
+				'p1',
+				'github',
+				'merged_pr',
+				'github:owner/repo:merged_pr:42',
+				expect.objectContaining({
+					action: 'closed',
+					pull_request: expect.objectContaining({
+						number: 42,
+						merged: true,
+					}),
+				}),
+				mockAdapter,
+				mockTriggerRegistry,
+			);
+
+			vi.useRealTimers();
+		});
+	});
 });
