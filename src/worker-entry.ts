@@ -20,6 +20,11 @@
 import './integrations/entrypoint.js';
 import { BootFailureError } from './agents/shared/bootFailureError.js';
 import { registerBuiltInEngines } from './backends/bootstrap.js';
+import {
+	flushRateLimitWrites,
+	getRateLimitRejection,
+	shouldExitForRateLimit,
+} from './backends/claude-code/rateLimitTracker.js';
 import { loadEnvConfigSafe } from './config/env.js';
 import { loadConfig } from './config/provider.js';
 import { getDb } from './db/client.js';
@@ -45,6 +50,7 @@ import { processTrelloWebhook } from './triggers/trello/webhook-handler.js';
 import type { TriggerResult } from './types/index.js';
 import { scrubSensitiveEnv } from './utils/envScrub.js';
 import { logger, setLogLevel } from './utils/index.js';
+import { setWatchdogExitCodeResolver } from './utils/lifecycle.js';
 
 export interface TrelloJobData {
 	type: 'trello';
@@ -526,6 +532,21 @@ async function resolveRawJobData(): Promise<string> {
 	process.exit(1);
 }
 
+/** Exit 3 = run stopped by a Claude subscription rate limit; the router fails over. */
+async function exitIfRateLimited(jobId?: string): Promise<void> {
+	if (!shouldExitForRateLimit()) return;
+	const r = getRateLimitRejection();
+	logger.warn('[Worker] Claude subscription rate-limited, exiting for failover', {
+		jobId,
+		subscriptionId: process.env.CASCADE_SUBSCRIPTION_ID,
+		window: r?.window,
+		resetAt: r?.resetAt.toISOString(),
+	});
+	await flushRateLimitWrites();
+	await flush();
+	process.exit(3);
+}
+
 export async function main(): Promise<void> {
 	const jobId = process.env.JOB_ID;
 	const jobType = process.env.JOB_TYPE;
@@ -606,12 +627,21 @@ export async function main(): Promise<void> {
 	const triggerRegistry = createTriggerRegistry();
 	registerBuiltInTriggers(triggerRegistry);
 
+	// A watchdog kill after a hard rate-limit rejection still triggers failover.
+	setWatchdogExitCodeResolver(async () => {
+		if (!shouldExitForRateLimit()) return 1;
+		await flushRateLimitWrites();
+		return 3;
+	});
+
 	try {
 		await dispatchJob(jobId, jobData, triggerRegistry);
+		await exitIfRateLimited(jobId);
 		logger.info('[Worker] Job completed successfully', { jobId });
 		await flush();
 		process.exit(0);
 	} catch (err) {
+		await exitIfRateLimited(jobId);
 		// Spec 018: distinguish boot-time failures (template load, plan
 		// resolution, context-pipeline assembly) from in-execution crashes
 		// via a dedicated exit code. The router's crash-reason interpreter
@@ -639,6 +669,7 @@ export async function main(): Promise<void> {
 // Only auto-run when executed as an entry point, not when imported by tests.
 if (!process.env.VITEST) {
 	main().catch(async (err) => {
+		await exitIfRateLimited();
 		console.error('[Worker] Unhandled error:', err);
 		captureException(err, { tags: { source: 'worker_unhandled' }, level: 'fatal' });
 		await flush();

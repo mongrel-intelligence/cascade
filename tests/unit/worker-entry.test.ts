@@ -102,9 +102,23 @@ vi.mock('../../src/agents/prompts/index.js', () => ({
 	initPrompts: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../src/backends/claude-code/rateLimitTracker.js', () => ({
+	shouldExitForRateLimit: vi.fn(() => false),
+	getRateLimitRejection: vi.fn(() => null),
+	flushRateLimitWrites: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('../../src/utils/lifecycle.js', () => ({
+	setWatchdogExitCodeResolver: vi.fn(),
+}));
+
 // ── Imports (after vi.mock calls) ─────────────────────────────────────────────
 
 import { BootFailureError } from '../../src/agents/shared/bootFailureError.js';
+import {
+	flushRateLimitWrites,
+	shouldExitForRateLimit,
+} from '../../src/backends/claude-code/rateLimitTracker.js';
 import { loadProjectConfigById } from '../../src/config/provider.js';
 import { getRunById, markDebugAnalysisFailed } from '../../src/db/repositories/runsRepository.js';
 import {
@@ -122,6 +136,7 @@ import { processSentryWebhook } from '../../src/triggers/sentry/webhook-handler.
 import { triggerDebugAnalysis } from '../../src/triggers/shared/debug-runner.js';
 import { triggerManualRun, triggerRetryRun } from '../../src/triggers/shared/manual-runner.js';
 import { processTrelloWebhook } from '../../src/triggers/trello/webhook-handler.js';
+import { setWatchdogExitCodeResolver } from '../../src/utils/lifecycle.js';
 import {
 	type DebugAnalysisJobData,
 	dispatchJob,
@@ -1050,6 +1065,66 @@ describe('main() - environment variable validation', () => {
 
 		await expect(main()).rejects.toThrow('process.exit(2)');
 		expect(flush).toHaveBeenCalled();
+	});
+
+	describe('subscription rate limit (exit 3)', () => {
+		const githubJob = JSON.stringify({
+			type: 'github',
+			source: 'github',
+			payload: {},
+			eventType: 'push',
+			repoFullName: 'org/repo',
+			receivedAt: '2024-01-01T00:00:00Z',
+		});
+
+		beforeEach(() => {
+			process.env.JOB_ID = 'job-rl-1';
+			process.env.JOB_TYPE = 'github';
+			process.env.JOB_DATA = githubJob;
+		});
+
+		afterEach(() => {
+			vi.mocked(shouldExitForRateLimit).mockReset().mockReturnValue(false);
+		});
+
+		it('exits 3 after a successful dispatch when the tracker flags a rate limit', async () => {
+			vi.mocked(processGitHubWebhook).mockResolvedValue(undefined);
+			vi.mocked(shouldExitForRateLimit).mockReturnValue(true);
+
+			await expect(main()).rejects.toThrow('process.exit(3)');
+			expect(exitSpy).toHaveBeenNthCalledWith(1, 3);
+			expect(flushRateLimitWrites).toHaveBeenCalled();
+		});
+
+		it('exits 3 when dispatch throws and the tracker flags a rate limit', async () => {
+			vi.mocked(processGitHubWebhook).mockRejectedValue(new Error('boom'));
+			vi.mocked(shouldExitForRateLimit).mockReturnValue(true);
+
+			await expect(main()).rejects.toThrow('process.exit(3)');
+			expect(exitSpy).toHaveBeenNthCalledWith(1, 3);
+			expect(captureException).not.toHaveBeenCalledWith(
+				expect.anything(),
+				expect.objectContaining({ tags: { source: 'worker_job_failure' } }),
+			);
+		});
+
+		it('keeps exit 1 when dispatch throws without a rate limit', async () => {
+			vi.mocked(processGitHubWebhook).mockRejectedValue(new Error('boom'));
+
+			await expect(main()).rejects.toThrow('process.exit(1)');
+			expect(exitSpy).not.toHaveBeenCalledWith(3);
+		});
+
+		it('registers a watchdog resolver returning 3 when rate-limited, 1 otherwise', async () => {
+			vi.mocked(processGitHubWebhook).mockResolvedValue(undefined);
+			await expect(main()).rejects.toThrow('process.exit(');
+
+			const resolver = vi.mocked(setWatchdogExitCodeResolver).mock.calls.at(-1)?.[0];
+			expect(resolver).toBeDefined();
+			expect(await resolver?.()).toBe(1);
+			vi.mocked(shouldExitForRateLimit).mockReturnValue(true);
+			expect(await resolver?.()).toBe(3);
+		});
 	});
 
 	it('reads the offloaded payload from Redis when JOB_DATA_REDIS_KEY is set, then dispatches', async () => {

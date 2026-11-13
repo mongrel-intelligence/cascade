@@ -9,7 +9,20 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeLlmCall: (...args: unknown[]) => mockStoreLlmCall(...args),
 }));
 
-import { logClaudeCodeLlmCall } from '../../../src/backends/claude-code/messageProcessing.js';
+const { mockOnRateLimitInfo, mockShouldExit } = vi.hoisted(() => ({
+	mockOnRateLimitInfo: vi.fn(() => false),
+	mockShouldExit: vi.fn(() => false),
+}));
+vi.mock('../../../src/backends/claude-code/rateLimitTracker.js', () => ({
+	onRateLimitInfo: mockOnRateLimitInfo,
+	shouldExitForRateLimit: mockShouldExit,
+}));
+
+import {
+	buildResult,
+	consumeStream,
+	logClaudeCodeLlmCall,
+} from '../../../src/backends/claude-code/messageProcessing.js';
 import type { AgentExecutionPlan } from '../../../src/backends/types.js';
 
 function makeInput(overrides: Partial<AgentExecutionPlan> = {}): AgentExecutionPlan {
@@ -163,5 +176,93 @@ describe('logClaudeCodeLlmCall', () => {
 		logClaudeCodeLlmCall(input, msg as never, 1, 'claude-sonnet-4-5-20250929');
 
 		expect(mockStoreLlmCall).not.toHaveBeenCalled();
+	});
+});
+
+function makeStream(messages: unknown[]) {
+	const interrupt = vi.fn().mockResolvedValue(undefined);
+	const stream = {
+		interrupt,
+		async *[Symbol.asyncIterator]() {
+			for (const m of messages) yield m;
+		},
+	};
+	return { stream, interrupt };
+}
+
+const rateLimitEvent = (status: string, extra: Record<string, unknown> = {}) => ({
+	type: 'rate_limit_event',
+	rate_limit_info: { status, rateLimitType: 'five_hour', resetsAt: 1_900_000_000, ...extra },
+	uuid: 'u',
+	session_id: 's',
+});
+
+describe('consumeStream rate_limit_event', () => {
+	beforeEach(() => {
+		mockOnRateLimitInfo.mockReset().mockReturnValue(false);
+	});
+
+	it('passes the event to the tracker and logs it', async () => {
+		const input = makeInput();
+		const { stream, interrupt } = makeStream([rateLimitEvent('allowed_warning')]);
+		await consumeStream(stream as never, input, 'm', 0);
+		expect(mockOnRateLimitInfo).toHaveBeenCalledWith(
+			expect.objectContaining({ status: 'allowed_warning' }),
+		);
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'INFO',
+			'Claude rate limit event',
+			expect.objectContaining({ status: 'allowed_warning' }),
+		);
+		expect(interrupt).not.toHaveBeenCalled();
+	});
+
+	it('interrupts the stream only when the tracker asks for it', async () => {
+		mockOnRateLimitInfo.mockReturnValue(true);
+		const input = makeInput();
+		const { stream, interrupt } = makeStream([rateLimitEvent('rejected')]);
+		await consumeStream(stream as never, input, 'm', 0);
+		expect(interrupt).toHaveBeenCalledTimes(1);
+		expect(input.logWriter).toHaveBeenCalledWith(
+			'WARN',
+			'Claude rate limit event',
+			expect.anything(),
+		);
+	});
+
+	it('does not interrupt for an overage rejection or a worker without subscription', async () => {
+		const { stream, interrupt } = makeStream([
+			rateLimitEvent('rejected', { isUsingOverage: true }),
+		]);
+		await consumeStream(stream as never, makeInput(), 'm', 0);
+		expect(interrupt).not.toHaveBeenCalled();
+	});
+
+	it('still collects the result message', async () => {
+		const result = { type: 'result', subtype: 'success', result: 'ok' };
+		const { stream } = makeStream([rateLimitEvent('allowed'), result]);
+		const out = await consumeStream(stream as never, makeInput(), 'm', 0);
+		expect(out.resultMessage).toBe(result);
+	});
+});
+
+describe('buildResult with rate limit flag', () => {
+	beforeEach(() => {
+		mockShouldExit.mockReset().mockReturnValue(false);
+	});
+
+	const success = { type: 'result', subtype: 'success', result: 'done', total_cost_usd: 1 };
+
+	it("keeps today's success when no rate limit was flagged", () => {
+		const r = buildResult([], success as never, [], makeInput(), Date.now());
+		expect(r.success).toBe(true);
+		expect(r.error).toBeUndefined();
+	});
+
+	it('fails a success-subtype turn when a hard rate limit was flagged', () => {
+		mockShouldExit.mockReturnValue(true);
+		const r = buildResult([], success as never, [], makeInput(), Date.now());
+		expect(r.success).toBe(false);
+		expect(r.error).toContain('rate limit');
 	});
 });

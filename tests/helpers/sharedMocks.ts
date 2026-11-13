@@ -337,4 +337,5 @@ export const mockSentryModule = {
 export const mockLifecycleModule = {
 	setWatchdogCleanup: vi.fn(),
 	clearWatchdogCleanup: vi.fn(),
+	setWatchdogExitCodeResolver: vi.fn(),
 };

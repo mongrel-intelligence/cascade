@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type {
 	query,
 	SDKAssistantMessage,
+	SDKRateLimitEvent,
 	SDKResultMessage,
 	SDKResultSuccess,
 	SDKStatusMessage,
@@ -14,6 +15,7 @@ import { buildEngineResult } from '../shared/engineResult.js';
 import { logLlmCall } from '../shared/llmCallLogger.js';
 import { buildTextPrEvidence } from '../shared/resultBuilder.js';
 import type { AgentEngineResult, AgentExecutionPlan, ContextImage } from '../types.js';
+import { onRateLimitInfo, shouldExitForRateLimit } from './rateLimitTracker.js';
 
 export const CLAUDE_SUPPORTED_IMAGE_TYPES = new Set([
 	'image/jpeg',
@@ -316,6 +318,18 @@ export async function consumeStream(
 			}
 		} else if (message.type === 'result') {
 			resultMessage = message as SDKResultMessage;
+		} else if (message.type === 'rate_limit_event') {
+			const info = (message as SDKRateLimitEvent).rate_limit_info;
+			input.logWriter(info.status === 'rejected' ? 'WARN' : 'INFO', 'Claude rate limit event', {
+				status: info.status,
+				rateLimitType: info.rateLimitType,
+				utilization: info.utilization,
+				resetsAt: info.resetsAt,
+			});
+			if (onRateLimitInfo(info)) {
+				// Hard rejection on a managed subscription: stop the turn so the worker can exit 3.
+				await stream.interrupt().catch(() => {});
+			}
 		}
 	}
 
@@ -348,7 +362,9 @@ export function buildResult(
 	startTime: number,
 ): AgentEngineResult {
 	const finishComment = extractFinishComment(assistantMessages);
-	const success = resultMessage?.subtype === 'success';
+	// A rate-limited turn can still report subtype 'success'; fail it so continuation stops.
+	const rateLimited = shouldExitForRateLimit();
+	const success = !rateLimited && resultMessage?.subtype === 'success';
 	const cost = resultMessage?.total_cost_usd;
 
 	let output = finishComment ?? '';
@@ -357,7 +373,9 @@ export function buildResult(
 	}
 
 	let error: string | undefined;
-	if (resultMessage && resultMessage.subtype !== 'success') {
+	if (rateLimited) {
+		error = 'Claude subscription rate limit reached; the router will retry on another subscription';
+	} else if (resultMessage && resultMessage.subtype !== 'success') {
 		const errorResult = resultMessage as Exclude<SDKResultMessage, SDKResultSuccess>;
 		error = formatErrorMessage(errorResult, input.budgetUsd);
 	}

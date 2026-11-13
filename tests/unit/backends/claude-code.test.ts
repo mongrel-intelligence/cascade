@@ -14,6 +14,11 @@ vi.mock('../../../src/db/repositories/runsRepository.js', () => ({
 	storeLlmCall: (...args: unknown[]) => mockStoreLlmCall(...args),
 }));
 
+vi.mock('../../../src/backends/claude-code/rateLimitTracker.js', () => ({
+	onRateLimitInfo: vi.fn(() => false),
+	shouldExitForRateLimit: vi.fn(() => false),
+}));
+
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

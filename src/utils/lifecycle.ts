@@ -13,6 +13,13 @@ export function clearWatchdogCleanup(): void {
 	watchdogCleanup = null;
 }
 
+let watchdogExitCode: () => Promise<number> | number = () => 1;
+
+/** Lets the worker choose the watchdog's exit code (e.g. 3 after a subscription rate limit). */
+export function setWatchdogExitCodeResolver(resolve: () => Promise<number> | number): void {
+	watchdogExitCode = resolve;
+}
+
 // Watchdog timer - force kills if job exceeds maximum duration
 export function startWatchdog(timeoutMs: number): void {
 	clearWatchdog();
@@ -37,7 +44,13 @@ export function startWatchdog(timeoutMs: number): void {
 
 		await flush(3000);
 		logger.error('Force exiting');
-		process.exit(1);
+		let code = 1;
+		try {
+			code = await watchdogExitCode();
+		} catch {
+			code = 1;
+		}
+		process.exit(code);
 	}, timeoutMs);
 }
 

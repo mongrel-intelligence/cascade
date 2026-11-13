@@ -17,6 +17,7 @@ import {
 	clearWatchdog,
 	clearWatchdogCleanup,
 	setWatchdogCleanup,
+	setWatchdogExitCodeResolver,
 	startWatchdog,
 } from '../../../src/utils/lifecycle.js';
 
@@ -71,6 +72,28 @@ describe('lifecycle', () => {
 			expect(process.exit).not.toHaveBeenCalled();
 
 			await vi.advanceTimersByTimeAsync(5000);
+			expect(process.exit).toHaveBeenCalledWith(1);
+		});
+	});
+
+	describe('watchdog exit code resolver', () => {
+		afterEach(() => {
+			setWatchdogExitCodeResolver(() => 1);
+		});
+
+		it('exits with the resolver value', async () => {
+			setWatchdogExitCodeResolver(async () => 3);
+			startWatchdog(1000);
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(process.exit).toHaveBeenCalledWith(3);
+		});
+
+		it('falls back to 1 when the resolver throws', async () => {
+			setWatchdogExitCodeResolver(() => {
+				throw new Error('boom');
+			});
+			startWatchdog(1000);
+			await vi.advanceTimersByTimeAsync(1000);
 			expect(process.exit).toHaveBeenCalledWith(1);
 		});
 	});
