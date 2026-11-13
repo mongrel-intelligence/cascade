@@ -14,6 +14,8 @@ import { activeWorkers, cleanupWorker } from './active-workers.js';
 import { routerConfig } from './config.js';
 import { ROUTER_INSTANCE_ID } from './instance-id.js';
 import type { CascadeJob } from './queue.js';
+import type { RateLimitExitHandler } from './subscription-failover.js';
+import { extractSubscriptionIdFromEnv } from './worker-env.js';
 import { handleWorkerExit } from './worker-exit-handler.js';
 import { commitWorkerSnapshot, removeWorkerContainerBestEffort } from './worker-snapshots.js';
 import { killWorker } from './worker-timeouts.js';
@@ -46,6 +48,7 @@ export interface WorkerContainerLauncherDependencies {
 	removeWorkerContainerBestEffort: typeof removeWorkerContainerBestEffort;
 	cleanupWorker: typeof cleanupWorker;
 	captureException: typeof captureExceptionDefault;
+	handleRateLimitExit: RateLimitExitHandler;
 }
 
 const defaultDependencies: WorkerContainerLauncherDependencies = {
@@ -56,6 +59,9 @@ const defaultDependencies: WorkerContainerLauncherDependencies = {
 	removeWorkerContainerBestEffort,
 	cleanupWorker,
 	captureException: captureExceptionDefault,
+	// Lazy: subscription-failover imports queue.ts, which connects to Redis at module load.
+	handleRateLimitExit: async (jobId) =>
+		(await import('./subscription-failover.js')).handleRateLimitExit(jobId),
 };
 
 /**
@@ -125,6 +131,7 @@ export async function launchWorkerContainer(
 		projectId: projectId ?? undefined,
 		workItemId,
 		agentType,
+		subscriptionId: extractSubscriptionIdFromEnv(workerEnv),
 	});
 
 	logger.info('[WorkerManager] Worker started:', {
@@ -159,6 +166,7 @@ function monitorContainerExit(
 					commitWorkerSnapshot: dependencies.commitWorkerSnapshot,
 					removeWorkerContainerBestEffort: dependencies.removeWorkerContainerBestEffort,
 					cleanupWorker: dependencies.cleanupWorker,
+					handleRateLimitExit: dependencies.handleRateLimitExit,
 				},
 			});
 		})

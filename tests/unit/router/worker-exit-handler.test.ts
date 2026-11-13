@@ -67,6 +67,10 @@ function makeDependencies(events: string[] = []) {
 		cleanupWorker: vi.fn().mockImplementation(() => {
 			events.push('cleanup');
 		}),
+		handleRateLimitExit: vi.fn().mockImplementation(async () => {
+			events.push('failover');
+			return undefined;
+		}),
 	};
 }
 
@@ -228,5 +232,90 @@ describe('handleWorkerExit', () => {
 			oomKilled: false,
 			exitReason: undefined,
 		});
+	});
+});
+
+describe('handleWorkerExit — subscription rate limit (exit 3)', () => {
+	const state = {
+		OOMKilled: false,
+		Error: '',
+		StartedAt: '2026-04-25T08:00:00.000Z',
+		FinishedAt: '2026-04-25T08:00:10.000Z',
+	};
+
+	beforeEach(() => {
+		mockCaptureException.mockReset();
+	});
+
+	it('runs failover after inspect/logs/removal and before cleanup, then the re-mark callback', async () => {
+		const events: string[] = [];
+		const container = makeContainer({ events, state });
+		const dependencies = makeDependencies(events);
+		dependencies.handleRateLimitExit.mockImplementation(async () => {
+			events.push('failover');
+			return () => {
+				events.push('remark');
+			};
+		});
+
+		await handleWorkerExit({
+			container: container as never,
+			result: { StatusCode: 3 },
+			jobId: 'job-rl',
+			jobType: 'github',
+			snapshotEnabled: true,
+			projectId: 'proj-1',
+			workItemId: 'card-1',
+			dependencies,
+		});
+
+		expect(events).toEqual(['inspect', 'logs', 'remove', 'failover', 'cleanup', 'remark']);
+		expect(dependencies.handleRateLimitExit).toHaveBeenCalledWith('job-rl');
+		expect(dependencies.cleanupWorker).toHaveBeenCalledWith('job-rl');
+		expect(dependencies.commitWorkerSnapshot).not.toHaveBeenCalled();
+		expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+			tags: { source: 'worker_exit', jobType: 'github' },
+			extra: expect.objectContaining({ statusCode: 3 }),
+		});
+	});
+
+	it('captures a failover error and still cleans up without an exit code', async () => {
+		const events: string[] = [];
+		const container = makeContainer({ events, state });
+		const dependencies = makeDependencies(events);
+		dependencies.handleRateLimitExit.mockRejectedValue(new Error('redis down'));
+
+		await handleWorkerExit({
+			container: container as never,
+			result: { StatusCode: 3 },
+			jobId: 'job-rl-fail',
+			jobType: 'jira',
+			snapshotEnabled: false,
+			projectId: 'proj-1',
+			workItemId: 'card-1',
+			dependencies,
+		});
+
+		expect(dependencies.cleanupWorker).toHaveBeenCalledWith('job-rl-fail');
+		expect(mockCaptureException).toHaveBeenCalledWith(expect.any(Error), {
+			tags: { source: 'subscription_failover', jobType: 'jira' },
+			extra: { jobId: 'job-rl-fail' },
+		});
+	});
+
+	it.each([0, 1, 137])('never calls failover for exit %i and keeps the exit code', async (code) => {
+		const dependencies = makeDependencies();
+		await handleWorkerExit({
+			container: makeContainer({ state }) as never,
+			result: { StatusCode: code },
+			jobId: 'job-other',
+			jobType: 'github',
+			snapshotEnabled: false,
+			projectId: 'proj-1',
+			workItemId: 'card-1',
+			dependencies,
+		});
+		expect(dependencies.handleRateLimitExit).not.toHaveBeenCalled();
+		expect(dependencies.cleanupWorker).toHaveBeenCalledWith('job-other', code, expect.any(Object));
 	});
 });

@@ -24,6 +24,8 @@ export interface ActiveWorker {
 	workItemId?: string;
 	/** Resolved at spawn time for agent-type lock cleanup. */
 	agentType?: string;
+	/** Claude subscription injected at spawn, read by rate-limit failover. */
+	subscriptionId?: number;
 }
 
 /**

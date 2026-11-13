@@ -284,6 +284,26 @@ describe('active-workers', () => {
 			expect(mockFailOrphanedRun).not.toHaveBeenCalled();
 		});
 
+		it('without an exit code still releases both locks and the slot, and marks no run', () => {
+			activeWorkers.set(
+				'job-rl',
+				makeActiveWorker({
+					jobId: 'job-rl',
+					projectId: 'proj-1',
+					workItemId: 'card-1',
+					agentType: 'implementation',
+				}),
+			);
+
+			cleanupWorker('job-rl');
+
+			expect(mockClearAgentTypeEnqueued).toHaveBeenCalledWith('proj-1', 'implementation');
+			expect(mockClearWorkItemEnqueued).toHaveBeenCalledWith('proj-1', 'card-1', 'implementation');
+			expect(mockSlotReleased).toHaveBeenCalledTimes(1);
+			expect(mockFailOrphanedRun).not.toHaveBeenCalled();
+			expect(mockFailOrphanedRunFallback).not.toHaveBeenCalled();
+		});
+
 		it('does NOT call clearWorkItemEnqueued when agentType is missing', () => {
 			activeWorkers.set(
 				'job-no-agent',

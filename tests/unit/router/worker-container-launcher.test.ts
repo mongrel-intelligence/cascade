@@ -91,6 +91,7 @@ function makeDependencies(
 		removeWorkerContainerBestEffort: vi.fn().mockResolvedValue(undefined),
 		cleanupWorker: vi.fn(),
 		captureException: vi.fn(),
+		handleRateLimitExit: vi.fn().mockResolvedValue(undefined),
 		...overrides,
 	};
 }
@@ -330,9 +331,37 @@ describe('worker-container-launcher', () => {
 					commitWorkerSnapshot: dependencies.commitWorkerSnapshot,
 					removeWorkerContainerBestEffort: dependencies.removeWorkerContainerBestEffort,
 					cleanupWorker: dependencies.cleanupWorker,
+					handleRateLimitExit: dependencies.handleRateLimitExit,
 				},
 			}),
 		);
+	});
+
+	it('records the subscription id parsed from the launched env', async () => {
+		const container = makeContainer();
+		const dependencies = makeDependencies({
+			createContainer: vi.fn().mockResolvedValue(container),
+		});
+
+		await launchWorkerContainer(
+			{
+				job: makeJob() as never,
+				jobId: 'job-sub',
+				containerName: 'cascade-worker-job-sub',
+				projectId: 'proj-1',
+				workItemId: 'card-1',
+				agentType: 'implementation',
+			},
+			{
+				workerImage: 'base-worker:latest',
+				snapshotEnabled: false,
+				containerTimeoutMs: 5000,
+				workerEnv: ['JOB_ID=job-sub', 'CASCADE_SUBSCRIPTION_ID=42'],
+			},
+			dependencies,
+		);
+
+		expect(mockActiveWorkers.get('job-sub')).toMatchObject({ subscriptionId: 42 });
 	});
 
 	it('captures wait errors, removes snapshot containers, and clears tracking', async () => {

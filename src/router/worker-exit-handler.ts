@@ -10,6 +10,7 @@ import type Docker from 'dockerode';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
 import type { ExitDetails } from './active-workers.js';
+import type { RateLimitExitHandler } from './subscription-failover.js';
 
 type WorkerContainer = Docker.Container;
 
@@ -24,6 +25,7 @@ export interface WorkerExitSnapshotDependencies {
 
 export interface WorkerExitDependencies extends WorkerExitSnapshotDependencies {
 	cleanupWorker: (jobId: string, exitCode?: number, details?: ExitDetails) => void;
+	handleRateLimitExit: RateLimitExitHandler;
 }
 
 export interface HandleWorkerExitOptions {
@@ -147,6 +149,31 @@ export async function handleWorkerExit(opts: HandleWorkerExitOptions): Promise<v
 		}
 		// Always remove manually since AutoRemove is disabled for snapshot runs.
 		await dependencies.removeWorkerContainerBestEffort(container.id);
+	}
+
+	// Exit 3 = Claude subscription rate limit. Failover must run BEFORE cleanupWorker (it reads
+	// the activeWorkers entry), but the lock re-mark it returns must run AFTER cleanupWorker has
+	// released the original slot.
+	if (result.StatusCode === 3) {
+		let afterCleanup: (() => void) | undefined;
+		try {
+			afterCleanup = await dependencies.handleRateLimitExit(jobId);
+		} catch (err) {
+			logger.error('[WorkerManager] Subscription failover failed:', {
+				jobId,
+				error: String(err),
+			});
+			captureException(err, {
+				tags: { source: 'subscription_failover', jobType },
+				extra: { jobId },
+			});
+		}
+		// The worker already finalized its own run row; the generic orphan-run marking has no
+		// agent-type filter and could only hit a different, still-running run. Same convention
+		// as the timeout path: no exit code, so locks and slot are released but no run is marked.
+		dependencies.cleanupWorker(jobId);
+		afterCleanup?.();
+		return;
 	}
 
 	dependencies.cleanupWorker(jobId, result.StatusCode, { oomKilled, exitReason });
