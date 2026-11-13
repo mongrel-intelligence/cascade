@@ -9,6 +9,7 @@ import { projectsRouter } from './routers/projects.js';
 import { promptsRouter } from './routers/prompts.js';
 import { prsRouter } from './routers/prs.js';
 import { runsRouter } from './routers/runs.js';
+import { subscriptionsRouter } from './routers/subscriptions.js';
 import { usersRouter } from './routers/users.js';
 import { webhookLogsRouter } from './routers/webhookLogs.js';
 import { webhooksRouter } from './routers/webhooks.js';
@@ -35,6 +36,7 @@ export const appRouter = router({
 	workItems: workItemsRouter,
 	users: usersRouter,
 	workflowStatuses: workflowStatusesRouter,
+	subscriptions: subscriptionsRouter,
 });
 
 export type AppRouter = typeof appRouter;
