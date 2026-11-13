@@ -6,7 +6,17 @@
  */
 
 import type { Job } from 'bullmq';
-import { findProjectByRepo, getAllProjectCredentials } from '../config/provider.js';
+import { DEFAULT_ENGINE, resolveEngineName } from '../backends/resolution.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getAllProjectCredentials,
+} from '../config/provider.js';
+import {
+	hasEnabledSubscription,
+	selectBestSubscription,
+	selectLeastExhaustedSubscription,
+} from '../db/repositories/subscriptionsRepository.js';
 import { extractProjectIdFromJobViaRegistry } from '../integrations/pm/_shared/project-id-extractor.js';
 import { captureException } from '../sentry.js';
 import { logger } from '../utils/logging.js';
@@ -79,13 +89,14 @@ export async function buildWorkerEnv(job: Job<CascadeJob>): Promise<string[]> {
  * Append optional infrastructure env vars that are conditionally forwarded to workers.
  * Extracted to keep buildWorkerEnvWithProjectId within complexity limits.
  */
-function appendOptionalEnvVars(env: string[]): void {
+function appendOptionalEnvVars(env: string[], opts: { skipGlobalClaudeToken: boolean }): void {
 	// Forward DB SSL config so workers use the same TLS settings as the router.
 	if (process.env.DATABASE_SSL) env.push(`DATABASE_SSL=${process.env.DATABASE_SSL}`);
 	if (process.env.DATABASE_CA_CERT) env.push(`DATABASE_CA_CERT=${process.env.DATABASE_CA_CERT}`);
 
 	// CLAUDE_CODE_OAUTH_TOKEN is for the Claude Code backend (subscription auth).
-	if (process.env.CLAUDE_CODE_OAUTH_TOKEN)
+	// Skipped when a project subscription token was injected, to avoid a duplicate env key.
+	if (process.env.CLAUDE_CODE_OAUTH_TOKEN && !opts.skipGlobalClaudeToken)
 		env.push(`CLAUDE_CODE_OAUTH_TOKEN=${process.env.CLAUDE_CODE_OAUTH_TOKEN}`);
 
 	// Forward Sentry env vars so worker containers report to the same project.
@@ -97,6 +108,77 @@ function appendOptionalEnvVars(env: string[]): void {
 	// Forward dashboard URL so worker progress comments can include run links.
 	if (process.env.CASCADE_DASHBOARD_URL)
 		env.push(`CASCADE_DASHBOARD_URL=${process.env.CASCADE_DASHBOARD_URL}`);
+}
+
+export const SUBSCRIPTION_ENV_KEY = 'CASCADE_SUBSCRIPTION_ID';
+
+/** Parse the Claude subscription id the router actually injected into a worker env. */
+export function extractSubscriptionIdFromEnv(env: string[]): number | undefined {
+	const line = env.find((e) => e.startsWith(`${SUBSCRIPTION_ENV_KEY}=`));
+	const id = line ? Number.parseInt(line.slice(SUBSCRIPTION_ENV_KEY.length + 1), 10) : Number.NaN;
+	return Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
+/**
+ * Pick a Claude subscription for this job and inject it into `secrets`/`env`.
+ * Returns true when a subscription token was injected. Projects without an enabled
+ * subscription do nothing beyond the hasEnabledSubscription query.
+ */
+async function injectClaudeSubscription(
+	job: Job<CascadeJob>,
+	projectId: string,
+	secrets: Record<string, string>,
+	env: string[],
+): Promise<boolean> {
+	if (!(await hasEnabledSubscription(projectId))) return false;
+
+	const agentType = extractAgentType(job.data);
+	const project = await findProjectById(projectId);
+	const engine = !project
+		? DEFAULT_ENGINE
+		: agentType
+			? resolveEngineName(agentType, project)
+			: (project.agentEngine?.default ?? DEFAULT_ENGINE);
+	if (engine !== 'claude-code') {
+		logger.debug('[WorkerManager] Engine is not claude-code; no subscription', {
+			jobId: job.id,
+			projectId,
+			engine,
+		});
+		return false;
+	}
+	if (secrets.ANTHROPIC_API_KEY) {
+		// With an API key, plan limits and rate_limit_event data do not apply.
+		logger.warn(
+			'[WorkerManager] Project has ANTHROPIC_API_KEY; Claude subscriptions are not injected',
+			{ projectId },
+		);
+		return false;
+	}
+
+	const excluded =
+		(job.data as { excludedSubscriptionIds?: number[] }).excludedSubscriptionIds ?? [];
+	let sub = await selectBestSubscription(projectId, excluded);
+	if (!sub) {
+		// None eligible: still run on a managed subscription so exit 3 + delayed retry apply.
+		sub = await selectLeastExhaustedSubscription(projectId);
+		if (sub) {
+			logger.warn(
+				'[WorkerManager] No eligible Claude subscription; using least-exhausted for failover',
+				{ jobId: job.id, projectId, subscriptionId: sub.id },
+			);
+		}
+	}
+	if (!sub) return false;
+
+	secrets.CLAUDE_CODE_OAUTH_TOKEN = sub.token;
+	env.push(`${SUBSCRIPTION_ENV_KEY}=${sub.id}`);
+	logger.info('[WorkerManager] Selected Claude subscription', {
+		jobId: job.id,
+		projectId,
+		subscriptionId: sub.id,
+	});
+	return true;
 }
 
 /**
@@ -161,9 +243,24 @@ export async function buildWorkerEnvWithProjectId(
 
 	// Resolve project credentials in the router and set as individual env vars.
 	// NOTE: CREDENTIAL_MASTER_KEY is intentionally NOT passed to workers.
+	let subscriptionInjected = false;
 	if (projectId) {
 		try {
 			const secrets = await getAllProjectCredentials(projectId);
+			// Subscription lookup failures must never take the other credentials down with it.
+			try {
+				subscriptionInjected = await injectClaudeSubscription(job, projectId, secrets, env);
+			} catch (err) {
+				logger.warn('[WorkerManager] Subscription selection failed, using project credentials', {
+					projectId,
+					error: String(err),
+				});
+				captureException(err, {
+					tags: { source: 'subscription_selection' },
+					extra: { projectId },
+					level: 'warning',
+				});
+			}
 			for (const [key, value] of Object.entries(secrets)) {
 				env.push(`${key}=${value}`);
 			}
@@ -181,7 +278,7 @@ export async function buildWorkerEnvWithProjectId(
 		}
 	}
 
-	appendOptionalEnvVars(env);
+	appendOptionalEnvVars(env, { skipGlobalClaudeToken: subscriptionInjected });
 
 	return env;
 }

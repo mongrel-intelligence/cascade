@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/db/repositories/subscriptionsRepository.js', () => ({
+	hasEnabledSubscription: vi.fn().mockResolvedValue(false),
+	selectBestSubscription: vi.fn().mockResolvedValue(null),
+	selectLeastExhaustedSubscription: vi.fn().mockResolvedValue(null),
+}));
+
 // ---------------------------------------------------------------------------
 // Spec 023 / plan 2 — launch side for a DOCKERFILE-built worker image.
 //
@@ -54,6 +60,7 @@ vi.mock('../../../src/sentry.js', () => ({
 
 vi.mock('../../../src/config/provider.js', () => ({
 	findProjectByRepo: vi.fn(),
+	findProjectById: vi.fn().mockResolvedValue(undefined),
 	getAllProjectCredentials: vi.fn(),
 }));
 

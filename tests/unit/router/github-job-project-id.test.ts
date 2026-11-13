@@ -13,6 +13,13 @@
  * fallback purely for jobs already sitting in Redis when this deploys.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../../src/db/repositories/subscriptionsRepository.js', () => ({
+	hasEnabledSubscription: vi.fn().mockResolvedValue(false),
+	selectBestSubscription: vi.fn().mockResolvedValue(null),
+	selectLeastExhaustedSubscription: vi.fn().mockResolvedValue(null),
+}));
+
 import { mockLogger, mockWithGitHubToken } from '../../helpers/sharedMocks.js';
 
 const { mockProvider } = vi.hoisted(() => ({

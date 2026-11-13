@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/db/repositories/subscriptionsRepository.js', () => ({
+	hasEnabledSubscription: vi.fn().mockResolvedValue(false),
+	selectBestSubscription: vi.fn().mockResolvedValue(null),
+	selectLeastExhaustedSubscription: vi.fn().mockResolvedValue(null),
+}));
+
 // ---------------------------------------------------------------------------
 // Hoisted mocks — the diagnostic helpers don't touch loadProjectConfig or
 // credentials, but importing container-manager.ts pulls in its full dep

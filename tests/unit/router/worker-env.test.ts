@@ -10,7 +10,18 @@ vi.mock('../../../src/sentry.js', () => ({
 
 vi.mock('../../../src/config/provider.js', () => ({
 	findProjectByRepo: vi.fn(),
+	findProjectById: vi.fn().mockResolvedValue(undefined),
 	getAllProjectCredentials: vi.fn(),
+}));
+
+vi.mock('../../../src/db/repositories/subscriptionsRepository.js', () => ({
+	hasEnabledSubscription: vi.fn().mockResolvedValue(false),
+	selectBestSubscription: vi.fn().mockResolvedValue(null),
+	selectLeastExhaustedSubscription: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../../../src/utils/logging.js', () => ({
+	logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
 vi.mock('../../../src/config/configCache.js', () => ({
@@ -46,8 +57,19 @@ vi.mock('../../../src/router/job-data-offload.js', () => ({
 // Imports (after mocks)
 // ---------------------------------------------------------------------------
 
-import { findProjectByRepo, getAllProjectCredentials } from '../../../src/config/provider.js';
+import {
+	findProjectById,
+	findProjectByRepo,
+	getAllProjectCredentials,
+} from '../../../src/config/provider.js';
+import {
+	hasEnabledSubscription,
+	selectBestSubscription,
+	selectLeastExhaustedSubscription,
+} from '../../../src/db/repositories/subscriptionsRepository.js';
 import { offloadJobData } from '../../../src/router/job-data-offload.js';
+import { captureException } from '../../../src/sentry.js';
+import { logger } from '../../../src/utils/logging.js';
 // All PM providers (Trello 006/2, JIRA 006/3, Linear 006/4) resolve through
 // the PM provider manifest registry. Side-effect imports register them.
 import '../../../src/integrations/pm/trello/index.js';
@@ -59,6 +81,7 @@ import {
 	buildWorkerEnvWithProjectId,
 	extractAgentType,
 	extractProjectIdFromJob,
+	extractSubscriptionIdFromEnv,
 	extractWorkItemId,
 } from '../../../src/router/worker-env.js';
 
@@ -438,5 +461,149 @@ describe('buildWorkerEnvWithProjectId — JOB_DATA offload', () => {
 		await expect(
 			buildWorkerEnvWithProjectId(jobWithPayload({ description }) as never, 'p'),
 		).rejects.toThrow('Redis down');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// buildWorkerEnvWithProjectId — Claude subscriptions
+// ---------------------------------------------------------------------------
+
+describe('buildWorkerEnvWithProjectId — Claude subscriptions', () => {
+	const mockHas = vi.mocked(hasEnabledSubscription);
+	const mockBest = vi.mocked(selectBestSubscription);
+	const mockLeast = vi.mocked(selectLeastExhaustedSubscription);
+	const mockFindById = vi.mocked(findProjectById);
+	const sub = { id: 7, name: 'Sub 7', token: 'sub-token-7' };
+	const job = (data: Record<string, unknown> = {}) =>
+		makeJob({
+			data: {
+				type: 'github',
+				projectId: 'proj-1',
+				triggerResult: { agentType: 'implementation' },
+				...data,
+			} as unknown as CascadeJob,
+		});
+	const envValue = (env: string[], key: string) =>
+		env.filter((e) => e.startsWith(`${key}=`)).map((e) => e.slice(key.length + 1));
+
+	beforeEach(() => {
+		mockGetAllProjectCredentials.mockReset().mockResolvedValue({ GITHUB_TOKEN_IMPLEMENTER: 'gh' });
+		mockHas.mockReset().mockResolvedValue(true);
+		mockBest.mockReset().mockResolvedValue(sub);
+		mockLeast.mockReset().mockResolvedValue(null);
+		mockFindById.mockReset().mockResolvedValue({ id: 'proj-1' } as never);
+		vi.mocked(logger.warn).mockClear();
+		vi.mocked(captureException).mockClear();
+		delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+	});
+
+	it('injects the token and subscription id, listing the key in CASCADE_CREDENTIAL_KEYS', async () => {
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(envValue(env, 'CLAUDE_CODE_OAUTH_TOKEN')).toEqual(['sub-token-7']);
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual(['7']);
+		expect(envValue(env, 'CASCADE_CREDENTIAL_KEYS')[0].split(',')).toContain(
+			'CLAUDE_CODE_OAUTH_TOKEN',
+		);
+		expect(extractSubscriptionIdFromEnv(env)).toBe(7);
+	});
+
+	it('passes excludedSubscriptionIds to selection', async () => {
+		await buildWorkerEnvWithProjectId(job({ excludedSubscriptionIds: [1, 2] }) as never, 'proj-1');
+		expect(mockBest).toHaveBeenCalledWith('proj-1', [1, 2]);
+	});
+
+	it('falls back to the least-exhausted subscription when none is eligible', async () => {
+		mockBest.mockResolvedValue(null);
+		mockLeast.mockResolvedValue({ id: 9, name: 'Sub 9', token: 'tok-9' });
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual(['9']);
+		expect(logger.warn).toHaveBeenCalled();
+	});
+
+	it('skips subscriptions with a warning when the project has ANTHROPIC_API_KEY', async () => {
+		mockGetAllProjectCredentials.mockResolvedValue({ ANTHROPIC_API_KEY: 'k' });
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(mockBest).not.toHaveBeenCalled();
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual([]);
+		expect(logger.warn).toHaveBeenCalledWith(
+			expect.stringContaining('ANTHROPIC_API_KEY'),
+			expect.anything(),
+		);
+	});
+
+	it('skips subscriptions silently when the engine is not claude-code', async () => {
+		mockGetAllProjectCredentials.mockResolvedValue({ ANTHROPIC_API_KEY: 'k' });
+		mockFindById.mockResolvedValue({
+			id: 'proj-1',
+			agentEngine: { default: 'claude-code', overrides: { implementation: 'opencode' } },
+		} as never);
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(mockBest).not.toHaveBeenCalled();
+		expect(logger.warn).not.toHaveBeenCalled();
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual([]);
+	});
+
+	it('treats an unknown project as claude-code', async () => {
+		mockFindById.mockResolvedValue(undefined);
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual(['7']);
+	});
+
+	it('uses the project default engine when the job has no agent type', async () => {
+		mockFindById.mockResolvedValue({ id: 'proj-1', agentEngine: { default: 'opencode' } } as never);
+		const env = await buildWorkerEnvWithProjectId(
+			makeJob({ data: { type: 'github', projectId: 'proj-1' } as unknown as CascadeJob }) as never,
+			'proj-1',
+		);
+		expect(mockBest).not.toHaveBeenCalled();
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual([]);
+	});
+
+	it('does nothing new when the project has no enabled subscription', async () => {
+		mockHas.mockResolvedValue(false);
+		mockGetAllProjectCredentials.mockResolvedValue({ ANTHROPIC_API_KEY: 'k' });
+		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'global-token';
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(mockFindById).not.toHaveBeenCalled();
+		expect(mockBest).not.toHaveBeenCalled();
+		expect(mockLeast).not.toHaveBeenCalled();
+		expect(logger.warn).not.toHaveBeenCalled();
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual([]);
+		expect(envValue(env, 'CLAUDE_CODE_OAUTH_TOKEN')).toEqual(['global-token']);
+		delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+	});
+
+	it('skips the global CLAUDE_CODE_OAUTH_TOKEN only when a subscription is injected', async () => {
+		process.env.CLAUDE_CODE_OAUTH_TOKEN = 'global-token';
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(envValue(env, 'CLAUDE_CODE_OAUTH_TOKEN')).toEqual(['sub-token-7']);
+		delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+	});
+
+	it('keeps other credentials when subscription selection throws', async () => {
+		mockBest.mockRejectedValue(new Error('db down'));
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(envValue(env, 'GITHUB_TOKEN_IMPLEMENTER')).toEqual(['gh']);
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual([]);
+		expect(captureException).toHaveBeenCalledWith(
+			expect.any(Error),
+			expect.objectContaining({ tags: { source: 'subscription_selection' } }),
+		);
+	});
+
+	it('falls back when findProjectById throws', async () => {
+		mockFindById.mockRejectedValue(new Error('db down'));
+		const env = await buildWorkerEnvWithProjectId(job() as never, 'proj-1');
+		expect(envValue(env, 'GITHUB_TOKEN_IMPLEMENTER')).toEqual(['gh']);
+		expect(envValue(env, 'CASCADE_SUBSCRIPTION_ID')).toEqual([]);
+	});
+});
+
+describe('extractSubscriptionIdFromEnv', () => {
+	it('parses a valid id and rejects missing or invalid values', () => {
+		expect(extractSubscriptionIdFromEnv(['A=1', 'CASCADE_SUBSCRIPTION_ID=12'])).toBe(12);
+		expect(extractSubscriptionIdFromEnv(['A=1'])).toBeUndefined();
+		expect(extractSubscriptionIdFromEnv(['CASCADE_SUBSCRIPTION_ID=abc'])).toBeUndefined();
+		expect(extractSubscriptionIdFromEnv(['CASCADE_SUBSCRIPTION_ID=0'])).toBeUndefined();
 	});
 });

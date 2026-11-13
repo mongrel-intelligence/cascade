@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../../src/db/repositories/subscriptionsRepository.js', () => ({
+	hasEnabledSubscription: vi.fn().mockResolvedValue(false),
+	selectBestSubscription: vi.fn().mockResolvedValue(null),
+	selectLeastExhaustedSubscription: vi.fn().mockResolvedValue(null),
+}));
+
 /**
  * Direct regression for the MNG-1660 class: a job payload larger than the OS
  * MAX_ARG_STRLEN (128 KiB) must NOT appear inline in any worker env string, and
@@ -37,6 +43,7 @@ vi.mock('../../../src/utils/logging.js', () => ({
 
 vi.mock('../../../src/config/provider.js', () => ({
 	findProjectByRepo: vi.fn(),
+	findProjectById: vi.fn().mockResolvedValue(undefined),
 	getAllProjectCredentials: vi.fn().mockResolvedValue({}),
 }));
 
