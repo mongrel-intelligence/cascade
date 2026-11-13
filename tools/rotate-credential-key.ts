@@ -33,6 +33,36 @@ function encryptWithKey(plaintext: string, aad: string, keyHex: string): string 
 	return `${PREFIX}${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
 }
 
+/** Claude subscription tokens use the same AAD (projectId) as project credentials. */
+async function rotateSubscriptionTokens(newKeyHex: string, dryRun: boolean): Promise<number> {
+	const db = getDb();
+	const allSubs = await db
+		.select({
+			id: projectSubscriptions.id,
+			projectId: projectSubscriptions.projectId,
+			value: projectSubscriptions.value,
+		})
+		.from(projectSubscriptions);
+
+	for (const sub of allSubs) {
+		const plaintext = isEncryptedValue(sub.value)
+			? decryptCredential(sub.value, sub.projectId)
+			: sub.value;
+		const reEncrypted = encryptWithKey(plaintext, sub.projectId, newKeyHex);
+
+		if (dryRun) {
+			console.log(`  subscription #${sub.id}: would re-encrypt`);
+		} else {
+			await db
+				.update(projectSubscriptions)
+				.set({ value: reEncrypted, updatedAt: new Date() })
+				.where(eq(projectSubscriptions.id, sub.id));
+			console.log(`  subscription #${sub.id}: re-encrypted`);
+		}
+	}
+	return allSubs.length;
+}
+
 async function main() {
 	const dryRun = process.argv.includes('--dry-run');
 
@@ -86,35 +116,11 @@ async function main() {
 		rotated++;
 	}
 
-	// Claude subscription tokens use the same AAD (projectId) as project credentials.
-	const allSubs = await db
-		.select({
-			id: projectSubscriptions.id,
-			projectId: projectSubscriptions.projectId,
-			value: projectSubscriptions.value,
-		})
-		.from(projectSubscriptions);
-
-	for (const sub of allSubs) {
-		const plaintext = isEncryptedValue(sub.value)
-			? decryptCredential(sub.value, sub.projectId)
-			: sub.value;
-		const reEncrypted = encryptWithKey(plaintext, sub.projectId, newKeyHex);
-
-		if (dryRun) {
-			console.log(`  subscription #${sub.id}: would re-encrypt`);
-		} else {
-			await db
-				.update(projectSubscriptions)
-				.set({ value: reEncrypted, updatedAt: new Date() })
-				.where(eq(projectSubscriptions.id, sub.id));
-			console.log(`  subscription #${sub.id}: re-encrypted`);
-		}
-		rotated++;
-	}
+	const subsRotated = await rotateSubscriptionTokens(newKeyHex, dryRun);
+	rotated += subsRotated;
 
 	console.log(
-		`\n${dryRun ? '[DRY RUN] ' : ''}Done: ${rotated} rotated, ${allCreds.length + allSubs.length} total`,
+		`\n${dryRun ? '[DRY RUN] ' : ''}Done: ${rotated} rotated, ${allCreds.length + subsRotated} total`,
 	);
 	if (!dryRun) {
 		console.log(

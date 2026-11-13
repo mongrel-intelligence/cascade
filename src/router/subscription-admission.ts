@@ -15,6 +15,14 @@ import { extractAgentType, extractProjectIdFromJob, extractWorkItemId } from './
 /** Must equal DELAYED_RETRY_NAME_PREFIX in subscription-failover.ts (duplicated to avoid importing queue.ts). */
 const DELAYED_RETRY_NAME_PREFIX = 'subrl_';
 
+/** A trigger coalesce key could start with the prefix, so the retry counter is required too. */
+function isDelayedRetryJob(job: Job<CascadeJob>): boolean {
+	const data = job.data as CascadeJob & { subscriptionDelayedRetries?: number };
+	return (
+		job.name.startsWith(DELAYED_RETRY_NAME_PREFIX) && (data.subscriptionDelayedRetries ?? 0) >= 1
+	);
+}
+
 /**
  * Called for every cascade-jobs job before spawning. Only jobs created by the
  * delayed-retry path are gated; everything else passes straight through.
@@ -22,13 +30,8 @@ const DELAYED_RETRY_NAME_PREFIX = 'subrl_';
  * if a same-type run already covers the work item.
  */
 export async function admitDelayedRetry(job: Job<CascadeJob>): Promise<boolean> {
-	const data = job.data as CascadeJob & { subscriptionDelayedRetries?: number };
-	if (
-		!job.name.startsWith(DELAYED_RETRY_NAME_PREFIX) ||
-		(data.subscriptionDelayedRetries ?? 0) < 1
-	) {
-		return true;
-	}
+	if (!isDelayedRetryJob(job)) return true;
+	const data = job.data;
 
 	let projectId: string | null | undefined;
 	let workItemId: string | undefined;
