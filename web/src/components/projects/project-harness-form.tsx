@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { HelpCircle } from 'lucide-react';
 import { useState } from 'react';
 import { ENGINE_SECRETS } from '@/components/projects/engine-secrets.js';
+import { ProjectClaudeSubscriptions } from '@/components/projects/project-claude-subscriptions.js';
 import { ProjectSecretField } from '@/components/projects/project-secret-field.js';
 import { useProjectUpdate } from '@/components/projects/use-project-update.js';
 import { EngineSettingsFields } from '@/components/settings/engine-settings-fields.js';
@@ -339,6 +340,8 @@ export function ProjectHarnessForm({ project }: { project: Project }) {
 						</div>
 					</CardFooter>
 				</Card>
+
+				<ProjectClaudeSubscriptions projectId={project.id} />
 			</div>
 		</TooltipProvider>
 	);
