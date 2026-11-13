@@ -23,7 +23,8 @@ export interface SelectedSubscription {
 	token: string;
 }
 
-const metaColumns = {
+// Built lazily so modules that mock the schema barrel can still import this file.
+const metaColumns = () => ({
 	id: projectSubscriptions.id,
 	projectId: projectSubscriptions.projectId,
 	name: projectSubscriptions.name,
@@ -32,11 +33,13 @@ const metaColumns = {
 	fiveHourResetAt: projectSubscriptions.fiveHourResetAt,
 	sevenDayPct: projectSubscriptions.sevenDayPct,
 	sevenDayResetAt: projectSubscriptions.sevenDayResetAt,
-};
+});
 
 // A window's pct only counts while its reset time is still in the future.
-const effFive = sql<number>`CASE WHEN ${projectSubscriptions.fiveHourResetAt} <= NOW() THEN 0 ELSE ${projectSubscriptions.fiveHourPct} END`;
-const effSeven = sql<number>`CASE WHEN ${projectSubscriptions.sevenDayResetAt} <= NOW() THEN 0 ELSE ${projectSubscriptions.sevenDayPct} END`;
+const effFive = () =>
+	sql<number>`CASE WHEN ${projectSubscriptions.fiveHourResetAt} <= NOW() THEN 0 ELSE ${projectSubscriptions.fiveHourPct} END`;
+const effSeven = () =>
+	sql<number>`CASE WHEN ${projectSubscriptions.sevenDayResetAt} <= NOW() THEN 0 ELSE ${projectSubscriptions.sevenDayPct} END`;
 
 export async function selectBestSubscription(
 	projectId: string,
@@ -45,8 +48,8 @@ export async function selectBestSubscription(
 	const conditions = [
 		eq(projectSubscriptions.projectId, projectId),
 		eq(projectSubscriptions.enabled, true),
-		sql`${effFive} < ${EXHAUSTED_PCT}`,
-		sql`${effSeven} < ${EXHAUSTED_PCT}`,
+		sql`${effFive()} < ${EXHAUSTED_PCT}`,
+		sql`${effSeven()} < ${EXHAUSTED_PCT}`,
 	];
 	if (excludeIds.length > 0) conditions.push(notInArray(projectSubscriptions.id, excludeIds));
 	const [row] = await getDb()
@@ -57,7 +60,7 @@ export async function selectBestSubscription(
 		})
 		.from(projectSubscriptions)
 		.where(and(...conditions))
-		.orderBy(effFive, effSeven, asc(projectSubscriptions.id))
+		.orderBy(effFive(), effSeven(), asc(projectSubscriptions.id))
 		.limit(1);
 	if (!row) return null;
 	return { id: row.id, name: row.name, token: decryptCredential(row.value, projectId) };
@@ -80,7 +83,7 @@ export async function selectLeastExhaustedSubscription(
 		.where(
 			and(eq(projectSubscriptions.projectId, projectId), eq(projectSubscriptions.enabled, true)),
 		)
-		.orderBy(sql`GREATEST(${effFive}, ${effSeven})`, asc(projectSubscriptions.id))
+		.orderBy(sql`GREATEST(${effFive()}, ${effSeven()})`, asc(projectSubscriptions.id))
 		.limit(1);
 	if (!row) return null;
 	return { id: row.id, name: row.name, token: decryptCredential(row.value, projectId) };
@@ -125,7 +128,7 @@ export async function recordSubscriptionUsage(
 /** Earliest time any enabled, currently-ineligible subscription becomes eligible again. */
 export async function getEarliestEligibleAt(projectId: string): Promise<Date | null> {
 	const rows = await getDb()
-		.select(metaColumns)
+		.select(metaColumns())
 		.from(projectSubscriptions)
 		.where(
 			and(eq(projectSubscriptions.projectId, projectId), eq(projectSubscriptions.enabled, true)),
@@ -150,7 +153,7 @@ export async function getEarliestEligibleAt(projectId: string): Promise<Date | n
 
 export async function listSubscriptions(projectId: string): Promise<SubscriptionMeta[]> {
 	return getDb()
-		.select(metaColumns)
+		.select(metaColumns())
 		.from(projectSubscriptions)
 		.where(eq(projectSubscriptions.projectId, projectId))
 		.orderBy(asc(projectSubscriptions.id));
