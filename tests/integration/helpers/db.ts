@@ -116,6 +116,7 @@ export async function truncateAll() {
 			agent_run_logs,
 			agent_runs,
 			pr_work_items,
+			project_subscriptions,
 			project_credentials,
 			project_integrations,
 			agent_trigger_configs,

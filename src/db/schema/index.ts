@@ -5,6 +5,7 @@ export { projectIntegrations } from './integrations.js';
 export { organizations } from './organizations.js';
 export { orgMemberships } from './orgMemberships.js';
 export { projectCredentials } from './projectCredentials.js';
+export { projectSubscriptions } from './projectSubscriptions.js';
 export { projects } from './projects.js';
 export { promptPartials } from './promptPartials.js';
 export { prWorkItems } from './prWorkItems.js';

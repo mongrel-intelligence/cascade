@@ -1,7 +1,9 @@
+import { eq } from 'drizzle-orm';
 import type { AgentDefinition } from '../../../src/agents/definitions/schema.js';
 import { getDb } from '../../../src/db/client.js';
 import { upsertAgentDefinition } from '../../../src/db/repositories/agentDefinitionsRepository.js';
 import { writeProjectCredential } from '../../../src/db/repositories/credentialsRepository.js';
+import { createSubscription } from '../../../src/db/repositories/subscriptionsRepository.js';
 import {
 	agentConfigs,
 	agentRuns,
@@ -9,6 +11,7 @@ import {
 	organizations,
 	orgMemberships,
 	projectIntegrations,
+	projectSubscriptions,
 	projects,
 	promptPartials,
 	sessions,
@@ -73,6 +76,38 @@ export async function seedCredential(
 	const name = overrides.name ?? 'Test Key';
 	await writeProjectCredential(projectId, envVarKey, value, name);
 	return { projectId, envVarKey, value, name };
+}
+
+/**
+ * Seeds a Claude subscription via the repository, then sets usage columns directly.
+ */
+export async function seedSubscription(
+	overrides: {
+		projectId?: string;
+		name?: string;
+		token?: string;
+		enabled?: boolean;
+		fiveHourPct?: number;
+		fiveHourResetAt?: Date | null;
+		sevenDayPct?: number;
+		sevenDayResetAt?: Date | null;
+	} = {},
+) {
+	const projectId = overrides.projectId ?? 'test-project';
+	const name = overrides.name ?? 'Sub 1';
+	const token = overrides.token ?? 'test-oauth-token';
+	const id = await createSubscription(projectId, name, token);
+	await getDb()
+		.update(projectSubscriptions)
+		.set({
+			enabled: overrides.enabled ?? true,
+			fiveHourPct: overrides.fiveHourPct ?? 0,
+			fiveHourResetAt: overrides.fiveHourResetAt ?? null,
+			sevenDayPct: overrides.sevenDayPct ?? 0,
+			sevenDayResetAt: overrides.sevenDayResetAt ?? null,
+		})
+		.where(eq(projectSubscriptions.id, id));
+	return { id, projectId, name, token };
 }
 
 /**

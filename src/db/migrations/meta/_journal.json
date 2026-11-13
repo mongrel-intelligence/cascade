@@ -435,6 +435,13 @@
 			"when": 1796000000000,
 			"tag": "0061_repo_primary_topology",
 			"breakpoints": false
+		},
+		{
+			"idx": 62,
+			"version": "7",
+			"when": 1797000000000,
+			"tag": "0062_project_subscriptions",
+			"breakpoints": false
 		}
 	]
 }
