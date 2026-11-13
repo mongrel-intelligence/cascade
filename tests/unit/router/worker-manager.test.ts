@@ -49,6 +49,10 @@ vi.mock('../../../src/router/worker-image-build.js', () => ({
 	handleWorkerImageBuild: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock('../../../src/router/subscription-admission.js', () => ({
+	admitDelayedRetry: vi.fn(async () => true),
+}));
+
 vi.mock('../../../src/router/config.js', () => ({
 	routerConfig: {
 		redisUrl: 'redis://localhost:6379',
@@ -87,6 +91,7 @@ import {
 import { classifyDispatchError } from '../../../src/router/dispatch-error-classifier.js';
 import { acquireSlot } from '../../../src/router/slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from '../../../src/router/snapshot-cleanup.js';
+import { admitDelayedRetry } from '../../../src/router/subscription-admission.js';
 import { handleWorkerImageBuild } from '../../../src/router/worker-image-build.js';
 import { handleWorkerImageValidation } from '../../../src/router/worker-image-validation.js';
 import {
@@ -208,7 +213,24 @@ describe('startWorkerProcessor', () => {
 		mockGetActiveWorkerCount.mockReturnValue(0);
 		const fakeJob = { id: 'j1', data: { type: 'trello', projectId: 'p1' } };
 		await processFn(fakeJob);
+		expect(admitDelayedRetry).toHaveBeenCalledWith(fakeJob);
 		expect(mockSpawnWorker).toHaveBeenCalledWith(fakeJob);
+	});
+
+	it('processFn completes without spawning when admission drops a delayed retry', async () => {
+		startWorkerProcessor();
+		const cascadeJobsCall = mockCreateQueueWorker.mock.calls.find(
+			(call) => call[0].queueName === 'cascade-jobs',
+		);
+		const processFn = cascadeJobsCall?.[0].processFn as (j: unknown) => Promise<void>;
+		vi.mocked(admitDelayedRetry).mockResolvedValueOnce(false);
+		mockSpawnWorker.mockClear();
+		mockAcquireSlot.mockClear();
+
+		await processFn({ id: 'subrl_1', name: 'subrl_x', data: { type: 'github' } });
+
+		expect(mockAcquireSlot).not.toHaveBeenCalled();
+		expect(mockSpawnWorker).not.toHaveBeenCalled();
 	});
 
 	// REPLACED in spec 015/2: capacity miss now waits for a slot instead of

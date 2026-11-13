@@ -25,6 +25,7 @@ import type { CascadeJob } from './queue.js';
 import { acquireSlot, clearAllWaiters } from './slot-waiter.js';
 import { startSnapshotCleanup, stopSnapshotCleanup } from './snapshot-cleanup.js';
 import { syncSnapshotsFromDocker } from './snapshot-startup-sync.js';
+import { admitDelayedRetry } from './subscription-admission.js';
 import { handleWorkerImageBuild } from './worker-image-build.js';
 import { handleWorkerImageValidation } from './worker-image-validation.js';
 
@@ -68,6 +69,12 @@ async function guardedSpawn(job: Job<CascadeJob>): Promise<void> {
 		}
 		throw err;
 	}
+}
+
+async function processCascadeJob(job: Job<CascadeJob>): Promise<void> {
+	// A dropped delayed retry completes without spawning.
+	if (!(await admitDelayedRetry(job))) return;
+	await guardedSpawn(job);
 }
 
 /**
@@ -120,7 +127,7 @@ export function startWorkerProcessor(): void {
 		connection,
 		concurrency: routerConfig.maxWorkers,
 		lockDuration: BULLMQ_LOCK_DURATION_MS,
-		processFn: guardedSpawn,
+		processFn: processCascadeJob,
 	});
 
 	// Dashboard jobs queue — manual runs, retries, debug analyses submitted

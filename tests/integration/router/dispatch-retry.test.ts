@@ -67,6 +67,10 @@ vi.mock('../../../src/sentry.js', () => ({
 	captureException: vi.fn(),
 }));
 
+vi.mock('../../../src/router/subscription-admission.js', () => ({
+	admitDelayedRetry: vi.fn(async () => true),
+}));
+
 import { Worker } from 'bullmq';
 import { getActiveWorkerCount } from '../../../src/router/active-workers.js';
 import { spawnWorker } from '../../../src/router/container-manager.js';
