@@ -112,6 +112,28 @@ describe('sentry/project-filter', () => {
 			]);
 		});
 
+		it('extracts a numeric event.project as an id and the slug from event.url', () => {
+			const result = extractSentryPayloadProjects(
+				makeEventAlertPayload({
+					project: 6903,
+					url: 'https://sentry.io/api/0/projects/my-org/api/events/7a2b9ed11efd4339a1d9dc3851915ab3/',
+				}),
+			);
+
+			expect(result).toEqual([
+				{ id: '6903', source: 'data.event.project' },
+				{ slug: 'api', source: 'data.event.url' },
+			]);
+		});
+
+		it('ignores an event.url that does not embed a project slug', () => {
+			const result = extractSentryPayloadProjects(
+				makeEventAlertPayload({ project: 6903, url: 'https://sentry.io/organizations/my-org/' }),
+			);
+
+			expect(result).toEqual([{ id: '6903', source: 'data.event.project' }]);
+		});
+
 		it('extracts metric_alert projects from every metric_alert.projects entry', () => {
 			const result = extractSentryPayloadProjects(
 				makeMetricAlertPayload([
@@ -222,6 +244,36 @@ describe('sentry/project-filter', () => {
 				configuredProjectSlug: null,
 			});
 			expect(result.payloadProjects.length).toBeGreaterThan(0);
+		});
+
+		it('allows an event_alert with a numeric project id when the event.url slug matches', () => {
+			const result = matchSentryPayloadProject(
+				makeEventAlertPayload({
+					project: 6903,
+					url: 'https://sentry.io/api/0/projects/my-org/api/events/abc/',
+				}),
+				'api',
+			);
+
+			expect(result).toMatchObject({ allowed: true, reason: 'matched' });
+		});
+
+		it('allows an event_alert with a numeric project id when it equals the configured value', () => {
+			const result = matchSentryPayloadProject(makeEventAlertPayload({ project: 6903 }), '6903');
+
+			expect(result).toMatchObject({ allowed: true, reason: 'matched' });
+		});
+
+		it('rejects an event_alert with a numeric project id from another project', () => {
+			const result = matchSentryPayloadProject(
+				makeEventAlertPayload({
+					project: 7,
+					url: 'https://sentry.io/api/0/projects/my-org/other/events/abc/',
+				}),
+				'api',
+			);
+
+			expect(result).toMatchObject({ allowed: false, reason: 'project_mismatch' });
 		});
 
 		it('returns a structured result when payload project is missing', () => {
