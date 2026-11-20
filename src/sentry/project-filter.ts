@@ -48,6 +48,7 @@ export function formatSentryProjectMatchFailure(result: SentryProjectMatchResult
 
 type ProjectLike = {
 	project?: unknown;
+	url?: unknown;
 	id?: unknown;
 	slug?: unknown;
 	name?: unknown;
@@ -145,6 +146,7 @@ function extractEventAlertProjects(payload: SentryIssueAlertPayload): SentryProj
 
 	return compactCandidates([
 		candidateFromProjectValue(event.project, 'data.event.project'),
+		candidateFromEventUrl(event.url),
 		candidateFromString(event.project_slug, 'data.event.project_slug', 'slug'),
 		candidateFromString(event.projectSlug, 'data.event.projectSlug', 'slug'),
 	]);
@@ -171,6 +173,11 @@ function candidateFromProjectValue(value: unknown, source: string): SentryProjec
 		return candidateFromString(value, source, 'slug');
 	}
 
+	// NOTE: Sentry's event_alert webhook sends the project as a bare numeric id, not a slug.
+	if (typeof value === 'number' && Number.isFinite(value)) {
+		return { id: String(value), source };
+	}
+
 	if (!isRecord(value)) return null;
 
 	const candidate: SentryProjectCandidate = { source };
@@ -183,6 +190,14 @@ function candidateFromProjectValue(value: unknown, source: string): SentryProjec
 	if (name) candidate.name = name;
 
 	return hasProjectIdentifier(candidate) ? candidate : null;
+}
+
+// NOTE: event_alert payloads carry only the numeric project id, but `data.event.url` embeds the
+// slug (".../projects/<org>/<slug>/events/<id>/"), which is what the integration is configured with.
+function candidateFromEventUrl(value: unknown): SentryProjectCandidate | null {
+	if (typeof value !== 'string') return null;
+	const slug = /\/projects\/[^/]+\/([^/]+)\/events\//.exec(value)?.[1];
+	return slug ? { slug, source: 'data.event.url' } : null;
 }
 
 function candidateFromString(
