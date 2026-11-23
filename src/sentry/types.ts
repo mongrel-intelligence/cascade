@@ -113,8 +113,10 @@ export interface SentryEvent {
 	web_url?: string;
 	issue_id?: string;
 	issue_url?: string;
+	/** Sentry's event_alert webhook sends a bare numeric project id; other surfaces send a slug or object. */
 	project?:
 		| string
+		| number
 		| { id?: string; slug?: string; name?: string; project_slug?: string; projectSlug?: string };
 	project_slug?: string;
 	projectSlug?: string;
